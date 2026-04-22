@@ -3,12 +3,12 @@ Klaviyo REST client — thin httpx wrapper for profile subscription.
 
 Reads credentials from environment:
   KLAVIYO_PRIVATE_API_KEY  — private API key from Klaviyo account settings
-  KLAVIYO_LIST_ID          — default list to subscribe leads to (e.g. XfDjPT)
+  KLAVIYO_LIST_ID          — default list to subscribe leads to (e.g. XCpX75)
 
 Usage:
   from klaviyo.client import KlaviyoClient
   client = KlaviyoClient()
-  client.subscribe_to_list(email="jane@example.com", first_name="Jane", list_id="XfDjPT")
+  client.subscribe_to_list(email="jane@example.com", first_name="Jane", list_id="XCpX75")
 """
 
 import logging
@@ -23,7 +23,7 @@ load_dotenv()
 log = logging.getLogger(__name__)
 
 KLAVIYO_PRIVATE_API_KEY = os.getenv("KLAVIYO_PRIVATE_API_KEY", "")
-KLAVIYO_LIST_ID         = os.getenv("KLAVIYO_LIST_ID", "XfDjPT")  # Email List
+KLAVIYO_LIST_ID         = os.getenv("KLAVIYO_LIST_ID", "XCpX75")
 KLAVIYO_BASE_URL        = "https://a.klaviyo.com/api"
 KLAVIYO_API_REVISION    = "2024-10-15"
 
@@ -54,8 +54,9 @@ class KlaviyoClient:
         list_id: Optional[str] = None,
     ) -> bool:
         """
-        Subscribe a profile to email marketing on the given list.
-        Returns True on success, False on failure (errors are logged, not raised).
+        Upsert a profile and add them to the given Klaviyo list.
+        Two-step: profile-import (sync, returns ID) → list relationship add (sync).
+        Returns True on success, False on failure (errors logged, not raised).
         """
         if not email:
             log.warning("klaviyo.subscribe_to_list: no email provided — skipping")
@@ -63,52 +64,27 @@ class KlaviyoClient:
 
         target_list = list_id or self._list_id
 
-        # Subscription endpoint only accepts email, phone_number, subscriptions.
-        # Name fields must be set via upsert_profile separately.
-        profile_attrs: dict = {
-            "email": email,
-            "subscriptions": {
-                "email": {"marketing": {"consent": "SUBSCRIBED"}}
-            },
-        }
-        if phone:
-            profile_attrs["phone_number"] = phone
-
-        body = {
-            "data": {
-                "type": "profile-subscription-bulk-create-job",
-                "attributes": {
-                    "profiles": {
-                        "data": [
-                            {"type": "profile", "attributes": profile_attrs}
-                        ]
-                    }
-                },
-                "relationships": {
-                    "list": {
-                        "data": {"type": "list", "id": target_list}
-                    }
-                },
-            }
-        }
+        profile_id = self.upsert_profile(
+            email=email, first_name=first_name, last_name=last_name, phone=phone
+        )
+        if not profile_id:
+            return False
 
         try:
             resp = self._http.post(
-                f"{KLAVIYO_BASE_URL}/profile-subscription-bulk-create-jobs/",
-                json=body,
+                f"{KLAVIYO_BASE_URL}/lists/{target_list}/relationships/profiles/",
+                json={"data": [{"type": "profile", "id": profile_id}]},
             )
-            if resp.status_code in (200, 202):
-                log.info("klaviyo: subscribed %s to list %s", email, target_list)
-                if first_name or last_name:
-                    self.upsert_profile(email=email, first_name=first_name, last_name=last_name, phone=phone)
+            if resp.status_code in (200, 204):
+                log.info("klaviyo: added %s (id=%s) to list %s", email, profile_id, target_list)
                 return True
             log.error(
-                "klaviyo: subscribe failed for %s → HTTP %d: %s",
+                "klaviyo: list-add failed for %s → HTTP %d: %s",
                 email, resp.status_code, resp.text[:300],
             )
             return False
         except Exception as exc:
-            log.error("klaviyo: exception subscribing %s: %s", email, exc)
+            log.error("klaviyo: exception adding %s to list: %s", email, exc)
             return False
 
     def upsert_profile(
@@ -121,7 +97,6 @@ class KlaviyoClient:
     ) -> Optional[str]:
         """
         Create or update a Klaviyo profile. Returns the profile ID or None on failure.
-        Use this when you want to set profile properties without subscribing.
         """
         if not email:
             return None
@@ -136,21 +111,12 @@ class KlaviyoClient:
         if custom_properties:
             profile_attrs["properties"] = custom_properties
 
-        body = {
-            "data": {
-                "type": "profile",
-                "attributes": profile_attrs,
-            }
-        }
+        body = {"data": {"type": "profile", "attributes": profile_attrs}}
 
         try:
-            resp = self._http.post(
-                f"{KLAVIYO_BASE_URL}/profile-import/",
-                json=body,
-            )
+            resp = self._http.post(f"{KLAVIYO_BASE_URL}/profile-import/", json=body)
             if resp.status_code in (200, 201):
-                data = resp.json()
-                profile_id = data.get("data", {}).get("id")
+                profile_id = resp.json().get("data", {}).get("id")
                 log.info("klaviyo: upserted profile %s → id=%s", email, profile_id)
                 return profile_id
             log.error(
