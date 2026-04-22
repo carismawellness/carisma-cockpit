@@ -63,18 +63,14 @@ class KlaviyoClient:
 
         target_list = list_id or self._list_id
 
+        # Subscription endpoint only accepts email, phone_number, subscriptions.
+        # Name fields must be set via upsert_profile separately.
         profile_attrs: dict = {
             "email": email,
             "subscriptions": {
-                "email": {
-                    "marketing": {"consent": "SUBSCRIBED"}
-                }
+                "email": {"marketing": {"consent": "SUBSCRIBED"}}
             },
         }
-        if first_name:
-            profile_attrs["first_name"] = first_name
-        if last_name:
-            profile_attrs["last_name"] = last_name
         if phone:
             profile_attrs["phone_number"] = phone
 
@@ -103,6 +99,8 @@ class KlaviyoClient:
             )
             if resp.status_code in (200, 202):
                 log.info("klaviyo: subscribed %s to list %s", email, target_list)
+                if first_name or last_name:
+                    self.upsert_profile(email=email, first_name=first_name, last_name=last_name, phone=phone)
                 return True
             log.error(
                 "klaviyo: subscribe failed for %s → HTTP %d: %s",
