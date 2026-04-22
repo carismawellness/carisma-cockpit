@@ -348,7 +348,6 @@ async def lead_optin(
                 last_name=last_name,
                 phone=phone,
                 list_id=payload.klaviyoListId or None,
-                custom_properties={"ghl_brand": brand, "utm_content": utm_content, "form_name": form_name},
             )
             log.info("klaviyo sync for contact %s (%s): %s", contact_id, email, "ok" if klaviyo_ok else "failed")
         else:

@@ -52,7 +52,6 @@ class KlaviyoClient:
         last_name: str = "",
         phone: str = "",
         list_id: Optional[str] = None,
-        custom_properties: Optional[dict] = None,
     ) -> bool:
         """
         Subscribe a profile to email marketing on the given list.
@@ -78,8 +77,6 @@ class KlaviyoClient:
             profile_attrs["last_name"] = last_name
         if phone:
             profile_attrs["phone_number"] = phone
-        if custom_properties:
-            profile_attrs["properties"] = custom_properties
 
         body = {
             "data": {
