@@ -1,0 +1,50 @@
+export const hobbiesSeed = {
+  deepWorkHoursWeek: 18.5,
+  deepWorkTarget: 20,
+  booksFinishedYTD: 9,
+  booksTarget: 24,
+  hobbies: [
+    {
+      id: "h1",
+      name: "Guitar",
+      streakDays: 21,
+      lastSession: "2026-05-02 · 25 min · worked on barre chord transitions in 'Sunday Morning'",
+      practiceLast7: [25, 0, 30, 20, 15, 35, 25],
+      milestone: "Next: full song clean — 'Wonderwall' end of May",
+    },
+    {
+      id: "h2",
+      name: "Tennis",
+      streakDays: 0,
+      lastSession: "2026-04-26 · 90 min · doubles with Marco · won 6-4 / 4-6 / 7-5",
+      practiceLast7: [0, 0, 0, 90, 0, 0, 0],
+      milestone: "Next: serve speed >150 km/h consistently",
+    },
+    {
+      id: "h3",
+      name: "Cooking",
+      streakDays: 6,
+      lastSession: "2026-05-01 · made pasta cacio e pepe from scratch",
+      practiceLast7: [45, 0, 60, 30, 40, 25, 50],
+      milestone: "Next: master a Le Bernardin-level fish dish",
+    },
+  ],
+  reading: {
+    current: [
+      { title: "Outlive", author: "Peter Attia", progress: 78 },
+      { title: "Empire of the Summer Moon", author: "S.C. Gwynne", progress: 32 },
+      { title: "The Innovator's Dilemma", author: "Christensen", progress: 14 },
+    ],
+    finishedYTD: [
+      { title: "Same as Ever", author: "Morgan Housel", rating: 5 },
+      { title: "The Power of Now", author: "Eckhart Tolle", rating: 4 },
+      { title: "Build", author: "Tony Fadell", rating: 5 },
+      { title: "Anna Karenina", author: "Tolstoy", rating: 4 },
+      { title: "$100M Offers", author: "Hormozi", rating: 5 },
+      { title: "$100M Leads", author: "Hormozi", rating: 5 },
+      { title: "Skin in the Game", author: "Taleb", rating: 4 },
+      { title: "The Pathless Path", author: "Paul Millerd", rating: 4 },
+      { title: "Dopamine Nation", author: "Anna Lembke", rating: 4 },
+    ],
+  },
+};
