@@ -13,7 +13,7 @@ const SERVICE_TYPE_COLORS: Record<string, string> = {
   product:     "#B79E61",
 };
 
-function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
+function SlimmingDeepContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const {
     byStaff, byServiceType, byService, totals,
     isFetching, isSyncing, syncError, triggerSync,
@@ -26,7 +26,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
       {/* ── Page Header ─────────────────────────────────────────────── */}
       <div className="space-y-1">
         <h1 className="text-2xl font-bold text-foreground tracking-tight">
-          Slimming — Sales
+          Slimming — Deepa
         </h1>
         <p className="text-sm text-muted-foreground">
           All figures in EUR · ex-VAT and inc-VAT shown · Revenue = services delivered (Full Price)
@@ -223,11 +223,11 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
   );
 }
 
-export default function SlimmingSalesPage() {
+export default function SlimmingDeepPage() {
   return (
     <DashboardShell>
       {({ dateFrom, dateTo }) => (
-        <SlimmingSalesContent dateFrom={dateFrom} dateTo={dateTo} />
+        <SlimmingDeepContent dateFrom={dateFrom} dateTo={dateTo} />
       )}
     </DashboardShell>
   );

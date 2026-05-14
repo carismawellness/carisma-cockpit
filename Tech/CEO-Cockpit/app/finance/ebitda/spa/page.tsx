@@ -1,17 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { KPICardRow, KPIData } from "@/components/dashboard/KPICardRow";
 import { Card } from "@/components/ui/card";
 import { CIChat } from "@/components/ci/CIChat";
 import { formatCurrency } from "@/lib/charts/config";
-import {
-  monthIndicesToDateObjects,
-  getFilteredIndices,
-  formatDateRangeLabel,
-  filteredCountLabel,
-} from "@/lib/utils/mock-date-filter";
+import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
+import { useSpaEbitda, SpaLocationData } from "@/lib/hooks/useSpaEbitda";
 import {
   BarChart,
   Bar,
@@ -25,190 +21,8 @@ import {
 } from "recharts";
 
 /* ------------------------------------------------------------------ */
-/*  TYPES                                                              */
-/* ------------------------------------------------------------------ */
-
-interface MonthlyPL {
-  revenue: number;
-  salaries: number;
-  sga: number;
-  rent: number;
-}
-
-interface SpaLocation {
-  id: string;
-  name: string;
-  color: string;
-  years: string[];
-  data: (MonthlyPL | null)[];
-}
-
-/* ------------------------------------------------------------------ */
-/*  Expanded cost breakdown (7 cost centers)                           */
-/* ------------------------------------------------------------------ */
-
-interface ExpandedCosts {
-  wages: number;
-  cogs: number;
-  utilities: number;
-  sga: number;
-  advertising: number;
-  rent: number;
-  ebitda: number;
-}
-
-function expandCosts(
-  revenue: number,
-  salaries: number,
-  sga: number,
-  rent: number
-): ExpandedCosts {
-  const newWages = Math.round(salaries * 0.89);
-  const cogs = Math.round(salaries * 0.08);
-  const utilities = Math.round(salaries * 0.03);
-  const newSga = Math.round(sga * 0.6);
-  const advertising = Math.round(sga * 0.4);
-  const ebitda = revenue - newWages - cogs - utilities - newSga - advertising - rent;
-  return { wages: newWages, cogs, utilities, sga: newSga, advertising, rent, ebitda };
-}
-
-/* ------------------------------------------------------------------ */
-/*  DATA -- 8 Spa Locations, Jan 2024 - Apr 2026 (28 months)          */
-/* ------------------------------------------------------------------ */
-
-const MONTH_DATES = monthIndicesToDateObjects(2024, 28);
-
-function buildData(
-  rev: (number | null)[],
-  sal: (number | null)[],
-  sga: (number | null)[],
-  rent: (number | null)[]
-): (MonthlyPL | null)[] {
-  return rev.map((r, i) => {
-    if (r === null || sal[i] === null || sga[i] === null || rent[i] === null) return null;
-    return { revenue: r, salaries: sal[i]!, sga: sga[i]!, rent: rent[i]! };
-  });
-}
-
-const LOCATIONS: SpaLocation[] = [
-  {
-    id: "inter",
-    name: "InterContinental",
-    color: "#1B3A4B",
-    years: ["2024", "2025", "2026"],
-    data: buildData(
-      [38806,46282,52520,51826,48362,47792,49712,54569,53577,52550,46854,35540, 36040,45313,49185,48561,49080,42226,50103,60745,55492,59595,53433,43700, 37200,46800,51200,50100],
-      [18214,15252,17674,15803,13796,13936,13845,15315,11190,13384,13901,11687, 13151,12099,23048,18814,19153,22455,22736,22120,20955,23982,25689,19000, 14200,13500,22100,19800],
-      [4690,3295,416,495,143,484,556,586,487,533,1246,2548, 2914,1965,1453,1735,1792,1603,1586,1536,1630,1654,1995,1800, 2700,1850,1500,1680],
-      [4400,4400,4400,4400,4400,4400,5100,5100,5100,5100,5100,5100, 5100,5100,5100,5100,5100,5100,5100,5100,5100,5100,5100,5100, 5100,5100,5100,5100],
-    ),
-  },
-  {
-    id: "hugos",
-    name: "Hugo's",
-    color: "#96B2B2",
-    years: ["2024", "2025", "2026"],
-    data: buildData(
-      [39581,42237,47242,44581,41316,27918,28886,35135,44014,46741,51718,39818, 43373,48550,61182,57333,49058,43157,40712,45157,47571,60531,47660,36500, 41200,49300,58700,55800],
-      [11971,12210,13883,12319,11346,11769,11716,11145,11405,10809,10855,10913, 13708,27739,28752,21535,20266,18415,18104,19822,17528,21600,19583,15000, 14500,26200,27100,20800],
-      [753,0,0,1669,1494,3038,3503,979,1249,1592,35,1245, 1618,1648,1731,1993,1993,1993,1052,1353,1482,1679,1365,1200, 1550,1620,1700,1950],
-      [0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0],
-    ),
-  },
-  {
-    id: "hyatt",
-    name: "Hyatt",
-    color: "#B79E61",
-    years: ["2024", "2025", "2026"],
-    data: buildData(
-      [18623,28490,34882,25968,23240,24483,28983,25934,27200,26186,24628,20627, 23517,30813,29519,24622,25531,22240,23569,24503,24445,24688,22335,20700, 22100,29500,28800,24200],
-      [7444,7314,9763,7749,8877,10833,9429,6198,8772,9134,5597,6527, 10837,7808,9973,10404,10787,11182,10403,11771,13491,8678,10078,9000, 10200,8100,9800,10500],
-      [0,0,0,0,0,0,0,0,0,0,0,33, 39,25,25,25,165,258,47,134,81,397,66,100, 50,30,30,150],
-      [0,0,0,0,0,0,0,0,0,0,0,0, 1366,1366,1366,1366,1366,1366,1407,1407,1407,1407,1407,1407, 1407,1407,1407,1407],
-    ),
-  },
-  {
-    id: "ramla",
-    name: "Ramla",
-    color: "#8EB093",
-    years: ["2024", "2025", "2026"],
-    data: buildData(
-      [13911,23373,23672,23883,24343,22418,20569,20430,23952,22530,21930,17767, 21261,24740,29739,27299,32358,25052,27269,33298,33907,49210,34970,29800, 22500,26100,31200,28900],
-      [3477,3145,2910,2945,5306,6069,5066,5047,7602,7806,9216,8603, 10117,6209,5272,11526,13114,15310,13630,8946,16985,11914,13566,12000, 10800,7200,6100,12800],
-      [0,0,0,603,0,0,0,0,0,0,0,279, 238,320,348,448,448,448,331,252,310,399,264,300, 250,330,360,420],
-      [0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0],
-    ),
-  },
-  {
-    id: "labranda",
-    name: "Labranda",
-    color: "#E07A5F",
-    years: ["2024", "2025", "2026"],
-    data: buildData(
-      [8939,9049,12329,13659,20261,16006,16652,15518,13717,18301,18949,13188, 12637,13483,16739,17967,19812,20423,23015,27132,28589,23819,20133,15100, 13200,14600,17500,18800],
-      [5304,5536,8568,4928,5528,1637,6051,3677,6252,4099,7060,7565, 2714,2920,7425,8115,9745,5567,4438,8406,13328,10903,7313,6000, 3100,3400,7800,8500],
-      [1582,1115,823,1100,866,689,731,724,698,851,702,730, 705,697,766,741,715,715,819,881,722,775,777,700, 720,710,750,730],
-      [1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000, 1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000, 1000,1000,1000,1000],
-    ),
-  },
-  {
-    id: "sunny",
-    name: "Sunny Coast",
-    color: "#4A90D9",
-    years: ["2024", "2025", "2026"],
-    data: buildData(
-      [8488,10958,11558,17890,17408,17000,20711,19279,19624,20456,19926,15877, 10154,12312,12923,15724,19948,17615,21755,24891,28589,27076,20775,11600, 10800,13100,13500,16200],
-      [11587,8572,8210,8156,8422,10126,8745,7522,6490,5871,6013,8621, 6804,9089,4550,6495,7610,8146,8481,7188,12232,17011,12836,8500, 7100,9400,5000,6800],
-      [621,399,155,157,361,384,157,168,185,119,119,413, 535,483,603,495,526,372,380,461,439,676,451,400, 510,470,580,490],
-      [2833,2833,2833,2833,2833,2833,2833,2833,2833,2833,2833,2833, 1097,2833,2833,2833,2833,2833,2833,2833,2833,2833,2833,2833, 2833,2833,2833,2833],
-    ),
-  },
-  {
-    id: "excelsior",
-    name: "Excelsior",
-    color: "#7C3AED",
-    years: ["2025", "2026"],
-    data: buildData(
-      [null,null,null,null,null,null,null,null,null,null,null,null, null,null,null,null,null,null,21495,22574,25634,24960,24192,20000, 18500,21800,24300,23600],
-      [null,null,null,null,null,null,null,null,null,null,null,null, null,null,null,null,null,null,2708,10663,15772,12780,13038,11000, 11500,12200,14800,13100],
-      [null,null,null,null,null,null,null,null,null,null,null,null, null,null,null,null,null,null,0,0,0,0,0,0, 0,0,0,0],
-      [null,null,null,null,null,null,null,null,null,null,null,null, null,null,null,null,null,null,0,0,0,0,0,0, 0,0,0,0],
-    ),
-  },
-  {
-    id: "novotel",
-    name: "Novotel",
-    color: "#DC2626",
-    years: ["2025", "2026"],
-    data: buildData(
-      [null,null,null,null,null,null,null,null,null,null,null,null, null,null,null,null,null,null,null,null,null,3325,14194,10700, 11200,13800,15600,14200],
-      [null,null,null,null,null,null,null,null,null,null,null,null, null,null,null,null,null,null,null,null,null,0,1447,1200, 1500,1800,2100,1900],
-      [null,null,null,null,null,null,null,null,null,null,null,null, null,null,null,null,null,null,null,null,null,392,205,200, 220,190,210,200],
-      [null,null,null,null,null,null,null,null,null,null,null,null, null,null,null,null,null,null,null,null,null,0,0,0, 0,0,0,0],
-    ),
-  },
-];
-
-/* ------------------------------------------------------------------ */
 /*  HELPERS                                                            */
 /* ------------------------------------------------------------------ */
-
-function sumFieldIndices(loc: SpaLocation, indices: number[], field: keyof MonthlyPL): number {
-  let total = 0;
-  for (const i of indices) {
-    const m = loc.data[i];
-    if (m) total += m[field];
-  }
-  return total;
-}
-
-function activeMonthsIndices(loc: SpaLocation, indices: number[]): number {
-  let count = 0;
-  for (const i of indices) {
-    if (loc.data[i]) count++;
-  }
-  return count;
-}
 
 function pctOf(part: number, whole: number): number {
   if (whole === 0) return 0;
@@ -220,25 +34,16 @@ function fmtPct(val: number): string {
 }
 
 function fmtCurrencyShort(value: number): string {
-  if (Math.abs(value) >= 1_000_000) {
-    return `\u20AC${(value / 1_000_000).toFixed(1)}M`;
-  }
-  if (Math.abs(value) >= 1_000) {
-    return `\u20AC${Math.round(value / 1_000)}K`;
-  }
-  return `\u20AC${value}`;
+  if (Math.abs(value) >= 1_000_000) return `€${(value / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(value) >= 1_000)     return `€${Math.round(value / 1_000)}K`;
+  return `€${value}`;
 }
 
 /* ------------------------------------------------------------------ */
-/*  CUSTOM TOOLTIPS                                                    */
+/*  CUSTOM TOOLTIP                                                     */
 /* ------------------------------------------------------------------ */
 
-interface TooltipPayloadItem {
-  name: string;
-  value: number;
-  color: string;
-  dataKey: string;
-}
+interface TooltipPayloadItem { name: string; value: number; color: string; dataKey: string; }
 
 function BreakdownTooltip({ active, payload, label }: { active?: boolean; payload?: TooltipPayloadItem[]; label?: string }) {
   if (!active || !payload) return null;
@@ -265,15 +70,8 @@ const renderSegmentLabel = (props: any) => {
   const { x, y, width, height, value } = props;
   if (!value || Math.abs(height) < 18) return null;
   return (
-    <text
-      x={x + width / 2}
-      y={y + height / 2}
-      fill="#fff"
-      textAnchor="middle"
-      dominantBaseline="middle"
-      fontSize={9}
-      fontWeight="500"
-    >
+    <text x={x + width / 2} y={y + height / 2} fill="#fff"
+      textAnchor="middle" dominantBaseline="middle" fontSize={9} fontWeight="500">
       {value}%
     </text>
   );
@@ -284,321 +82,745 @@ const renderTopLabel = (props: any) => {
   const { x, y, width, value } = props;
   if (!value) return null;
   return (
-    <text
-      x={x + width / 2}
-      y={y - 8}
-      fill="#333"
-      textAnchor="middle"
-      fontSize={11}
-      fontWeight="bold"
-    >
+    <text x={x + width / 2} y={y - 8} fill="#333"
+      textAnchor="middle" fontSize={11} fontWeight="bold">
       {value}%
     </text>
   );
 };
 
 /* ------------------------------------------------------------------ */
-/*  LOCATION SUMMARY TYPE                                              */
+/*  EBITDA RECONCILIATION CHECK                                        */
 /* ------------------------------------------------------------------ */
 
-interface LocSummary {
-  loc: SpaLocation;
-  rev: number;
-  sal: number;
-  sga: number;
-  rent: number;
-  months: number;
-  expanded: ExpandedCosts;
+function toDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+interface BelowItem { label: string; amount: number; }
+interface GapItem   { code: string; name: string; amount: number; category?: string; note?: string; }
+interface GapAnalysis {
+  excluded_expenses:    GapItem[];
+  not_linked_expenses:  GapItem[];
+  not_in_db_expenses:   GapItem[];
+  below_ebitda:         GapItem[];
+  income_mapped_missing: GapItem[];
+  totals: {
+    excluded_total:      number;
+    not_linked_total:    number;
+    not_in_db_total:     number;
+    below_ebitda_total:  number;
+  };
+}
+interface CheckResult {
+  period:    { date_from: string; date_to: string };
+  zoho:      { revenue: number; costs: number; ebitda: number; below_ebitda: BelowItem[]; below_total: number };
+  salary_supplement: { total: number; by_slug: Record<string, number> };
+  reconciliation: {
+    zoho_ebitda: number;
+    salary_supplement: number;
+    expected_ebitda: number;
+    actual_ebitda_zoho_rev: number;
+    lapis_revenue: number;
+    zoho_revenue: number;
+    revenue_gap: number;
+    frontend_ebitda: number;
+    expected_with_lapis: number;
+    difference: number;
+    status: "ok" | "mismatch";
+  };
+  gap_analysis: GapAnalysis;
+}
+
+function fmt(v: number): string {
+  const abs = Math.abs(v);
+  const s = abs >= 1_000_000 ? `€${(abs / 1_000_000).toFixed(2)}M`
+          : abs >= 1_000     ? `€${(abs / 1_000).toFixed(1)}K`
+          : `€${abs.toFixed(0)}`;
+  return v < 0 ? `(${s})` : s;
+}
+
+function Row({ label, value, bold, indent, green, red, sub }: {
+  label: string; value: string | number; bold?: boolean; indent?: boolean;
+  green?: boolean; red?: boolean; sub?: string;
+}) {
+  const cls = bold ? "font-semibold" : "font-normal";
+  const vcls = green ? "text-emerald-600 font-semibold"
+             : red   ? "text-red-600 font-semibold"
+             : bold  ? "font-semibold text-foreground"
+             : "text-foreground";
+  return (
+    <div className={`flex items-start justify-between py-1 ${indent ? "pl-4" : ""} text-sm border-b border-border/40 last:border-0`}>
+      <span className={`text-muted-foreground ${cls}`}>{label}
+        {sub && <span className="ml-1 text-xs text-muted-foreground/60">{sub}</span>}
+      </span>
+      <span className={vcls}>{typeof value === "number" ? fmt(value) : value}</span>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  GAP ANALYSIS SECTION                                               */
+/* ------------------------------------------------------------------ */
+
+const GAP_CATEGORIES: { key: keyof GapAnalysis; label: string; totalKey?: keyof GapAnalysis["totals"]; color: string; desc: string }[] = [
+  { key: "excluded_expenses",   label: "Excluded in Settings",    totalKey: "excluded_total",      color: "text-amber-700",  desc: "Accounts mapped in Zoho CoA but marked as excluded — not pulled into any EBITDA line" },
+  { key: "not_linked_expenses", label: "Unlinked (No EBITDA Line)", totalKey: "not_linked_total",  color: "text-orange-700", desc: "In CoA mapping but with no EBITDA line assigned — cost falls through to default" },
+  { key: "not_in_db_expenses",  label: "Not in CoA Mapping",      totalKey: "not_in_db_total",     color: "text-red-700",    desc: "Account not found in CoA mapping at all — ETL used name-based default grouping" },
+  { key: "below_ebitda",        label: "Below EBITDA Line",       totalKey: "below_ebitda_total",  color: "text-slate-600",  desc: "D&A, interest and tax items correctly excluded from EBITDA (below the line)" },
+];
+
+function GapTable({ items, totalKey, total, emptyMsg }: {
+  items: GapItem[];
+  totalKey?: string;
+  total?: number;
+  emptyMsg: string;
+}) {
+  if (items.length === 0) {
+    return <p className="text-xs text-muted-foreground py-2 pl-1">{emptyMsg}</p>;
+  }
+  return (
+    <table className="w-full text-xs mt-1">
+      <thead>
+        <tr className="border-b border-border/60">
+          <th className="text-left py-1 px-1 text-muted-foreground font-medium w-16">Code</th>
+          <th className="text-left py-1 px-1 text-muted-foreground font-medium">Name</th>
+          <th className="text-right py-1 px-1 text-muted-foreground font-medium w-20">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((item, i) => (
+          <tr key={i} className="border-b border-border/30 last:border-0">
+            <td className="py-1 px-1 text-muted-foreground font-mono">{item.code}</td>
+            <td className="py-1 px-1 text-foreground">
+              {item.name}
+              {item.category && <span className="ml-1 text-muted-foreground/60">({item.category})</span>}
+            </td>
+            <td className="py-1 px-1 text-right font-medium text-foreground">{fmt(item.amount)}</td>
+          </tr>
+        ))}
+      </tbody>
+      {total !== undefined && items.length > 1 && (
+        <tfoot>
+          <tr className="border-t border-border">
+            <td colSpan={2} className="py-1 px-1 font-semibold text-foreground">Total</td>
+            <td className="py-1 px-1 text-right font-semibold text-foreground">{fmt(total)}</td>
+          </tr>
+        </tfoot>
+      )}
+    </table>
+  );
+}
+
+function GapAnalysisPanel({ gap }: { gap: GapAnalysis }) {
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggle = (key: string) => setOpen(prev => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
+
+  const expenseCategories = GAP_CATEGORIES;
+  const incomeItems = gap.income_mapped_missing;
+
+  const hasAnyExpense = expenseCategories.some(c => (gap[c.key] as GapItem[]).length > 0);
+
+  return (
+    <div className="mt-6 pt-6 border-t border-border">
+      <h3 className="text-sm font-semibold text-foreground mb-1">Account Gap Analysis</h3>
+      <p className="text-xs text-muted-foreground mb-4">
+        Accounts with activity in Zoho that are excluded or unlinked, plus income accounts mapped in settings but absent from Zoho this period.
+      </p>
+
+      {/* Expenses */}
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Expenses</p>
+      {!hasAnyExpense && (
+        <p className="text-xs text-emerald-600 mb-4">No gaps — all expense accounts are mapped and linked.</p>
+      )}
+      <div className="space-y-1">
+        {expenseCategories.map(cat => {
+          const items = gap[cat.key] as GapItem[];
+          const total = cat.totalKey ? gap.totals[cat.totalKey] : undefined;
+          const isOpen = open.has(cat.key);
+          const count = items.length;
+          return (
+            <div key={cat.key} className="rounded-md border border-border overflow-hidden">
+              <button
+                onClick={() => toggle(cat.key)}
+                className="w-full flex items-center justify-between px-3 py-2 text-left bg-muted/30 hover:bg-muted/50 transition-colors"
+              >
+                <span className="flex items-center gap-2 text-sm">
+                  <span className={`font-medium ${cat.color}`}>{cat.label}</span>
+                  <span className="text-muted-foreground text-xs">
+                    {count === 0 ? "— none" : `${count} account${count !== 1 ? "s" : ""}${total ? ` · ${fmt(total)}` : ""}`}
+                  </span>
+                </span>
+                <svg className={`h-4 w-4 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
+                  viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </button>
+              {isOpen && (
+                <div className="px-3 pb-3">
+                  <p className="text-xs text-muted-foreground/70 mt-2 mb-1">{cat.desc}</p>
+                  <GapTable items={items} total={total} emptyMsg="No accounts in this category for the selected period." />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Income */}
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mt-4 mb-2">Income</p>
+      <div className="rounded-md border border-border overflow-hidden">
+        <button
+          onClick={() => toggle("income_mapped_missing")}
+          className="w-full flex items-center justify-between px-3 py-2 text-left bg-muted/30 hover:bg-muted/50 transition-colors"
+        >
+          <span className="flex items-center gap-2 text-sm">
+            <span className="font-medium text-blue-700">Mapped as Revenue — No Zoho Figure</span>
+            <span className="text-muted-foreground text-xs">
+              {incomeItems.length === 0 ? "— none" : `${incomeItems.length} account${incomeItems.length !== 1 ? "s" : ""}`}
+            </span>
+          </span>
+          <svg className={`h-4 w-4 text-muted-foreground transition-transform ${open.has("income_mapped_missing") ? "rotate-180" : ""}`}
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </button>
+        {open.has("income_mapped_missing") && (
+          <div className="px-3 pb-3">
+            <p className="text-xs text-muted-foreground/70 mt-2 mb-1">
+              Accounts marked as revenue in CoA settings but returned no figure from Zoho for this period.
+            </p>
+            <GapTable items={incomeItems} emptyMsg="All revenue-mapped accounts have figures in Zoho this period." />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EbitdaReconciliation({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
+  const [status, setStatus]   = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [result, setResult]   = useState<CheckResult | null>(null);
+  const [errMsg, setErrMsg]   = useState<string>("");
+
+  const runCheck = useCallback(async () => {
+    setStatus("loading");
+    setResult(null);
+    setErrMsg("");
+    try {
+      const res = await fetch("/api/ebitda/zoho-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date_from: toDateStr(new Date(dateFrom.getFullYear(), dateFrom.getMonth(), 1)),
+          date_to:   toDateStr(new Date(dateTo.getFullYear(), dateTo.getMonth(),
+                       new Date(dateTo.getFullYear(), dateTo.getMonth() + 1, 0).getDate())),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) { setErrMsg(json.error ?? "Check failed"); setStatus("error"); return; }
+      setResult(json as CheckResult);
+      setStatus("done");
+    } catch (e) {
+      setErrMsg(String(e));
+      setStatus("error");
+    }
+  }, [dateFrom, dateTo]);
+
+  const r = result?.reconciliation;
+  const diffAbs = r ? Math.abs(r.difference) : 0;
+  const isMatch = r && diffAbs < 500;
+
+  return (
+    <Card className="p-4 md:p-6">
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">EBITDA Reconciliation Check</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Zoho P&amp;L net operating income (D&amp;A, interest &amp; tax excluded) minus salary supplement = Dashboard EBITDA
+          </p>
+        </div>
+        <button
+          onClick={runCheck}
+          disabled={status === "loading"}
+          className="shrink-0 text-xs px-3 py-1.5 rounded-md border border-border bg-background hover:bg-muted disabled:opacity-50 transition-colors flex items-center gap-1.5"
+        >
+          {status === "loading" && (
+            <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+            </svg>
+          )}
+          {status === "loading" ? "Running…" : "Run Check"}
+        </button>
+      </div>
+
+      {status === "idle" && (
+        <p className="text-sm text-muted-foreground">
+          Click <strong>Run Check</strong> to verify dashboard numbers against Zoho Books live P&amp;L.
+          Takes ~15 s (one Zoho API call).
+        </p>
+      )}
+
+      {status === "error" && (
+        <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{errMsg}</p>
+      )}
+
+      {status === "done" && result && r && (
+        <>
+        <div className="grid md:grid-cols-3 gap-6 mt-2">
+
+          {/* Column 1 — Zoho P&L */}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+              Zoho Books P&amp;L
+            </p>
+            <Row label="Revenue"          value={result.zoho.revenue} bold />
+            <Row label="Operating Costs"  value={-result.zoho.costs}  indent />
+            <Row label="Zoho EBITDA"      value={result.zoho.ebitda}  bold green={result.zoho.ebitda >= 0} red={result.zoho.ebitda < 0} />
+            {result.zoho.below_ebitda.length > 0 && (
+              <>
+                <p className="text-xs text-muted-foreground/60 mt-3 mb-1">Below EBITDA line (excluded)</p>
+                {result.zoho.below_ebitda.map((b) => (
+                  <Row key={b.label} label={b.label} value={-b.amount} indent sub="excl." />
+                ))}
+                <Row label="Total excluded" value={-result.zoho.below_total} bold />
+              </>
+            )}
+          </div>
+
+          {/* Column 2 — Salary Supplement */}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+              Salary Supplement (SPA)
+            </p>
+            {Object.entries(result.salary_supplement.by_slug)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([slug, amt]) => (
+                <Row key={slug} label={slug} value={-amt} indent />
+              ))}
+            <Row label="Total supplement" value={-result.salary_supplement.total} bold />
+            <div className="mt-3 pt-2 border-t border-border">
+              <Row label="Revenue gap (Lapis − Zoho)" value={r.revenue_gap} sub="note" />
+              <p className="text-xs text-muted-foreground/70 mt-1">
+                Frontend uses Lapis revenue; Zoho cost structure unchanged.
+              </p>
+            </div>
+          </div>
+
+          {/* Column 3 — Reconciliation */}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+              Reconciliation
+            </p>
+            <Row label="Zoho EBITDA"         value={r.zoho_ebitda} />
+            <Row label="+ Revenue gap"        value={r.revenue_gap} indent />
+            <Row label="− Salary supplement"  value={-r.salary_supplement} indent />
+            <Row label="Expected EBITDA"      value={r.expected_with_lapis} bold />
+            <Row label="Actual (frontend)"    value={r.frontend_ebitda}    bold />
+            <div className="mt-3 pt-2 border-t border-border flex items-center justify-between">
+              <span className="text-sm font-semibold text-foreground">Difference</span>
+              <span className={`text-sm font-bold ${isMatch ? "text-emerald-600" : "text-red-600"}`}>
+                {fmt(r.difference)}
+              </span>
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold
+                ${isMatch ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
+                {isMatch ? "✓ Numbers reconcile" : `✗ Gap of ${fmt(r.difference)}`}
+              </span>
+            </div>
+            {isMatch && diffAbs > 5 && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Difference of {fmt(r.difference)} is within rounding / day-proration tolerance.
+              </p>
+            )}
+          </div>
+
+        </div>
+
+        {result.gap_analysis && <GapAnalysisPanel gap={result.gap_analysis} />}
+        </>
+      )}
+    </Card>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  SYNC STATUS BANNER                                                 */
+/* ------------------------------------------------------------------ */
+
+function SyncBanner({
+  isSyncing,
+  syncError,
+  missingMonths,
+  onForceSync,
+}: {
+  isSyncing: boolean;
+  syncError: string | null;
+  missingMonths: string[];
+  onForceSync: () => void;
+}) {
+  if (!isSyncing && !syncError && missingMonths.length === 0) return null;
+
+  if (isSyncing) {
+    return (
+      <div className="flex items-center gap-2 rounded-md bg-blue-50 border border-blue-200 px-4 py-2 text-sm text-blue-700">
+        <svg className="animate-spin h-4 w-4 text-blue-500" viewBox="0 0 24 24" fill="none">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor"
+            d="M4 12a8 8 0 018-8v8H4z" />
+        </svg>
+        Fetching from Zoho Books for{" "}
+        {missingMonths.length > 0 ? `${missingMonths.length} missing month(s)` : "this date range"}
+        … this may take up to a minute.
+      </div>
+    );
+  }
+
+  if (syncError) {
+    return (
+      <div className="rounded-md bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">
+        Zoho sync error: {syncError}{" "}
+        <button className="underline ml-2" onClick={onForceSync}>Retry</button>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 /* ------------------------------------------------------------------ */
 /*  INNER COMPONENT                                                    */
 /* ------------------------------------------------------------------ */
 
-function SpaEBITDAContent({
-  dateFrom,
-  dateTo,
-}: {
-  dateFrom: Date;
-  dateTo: Date;
-}) {
-  /* --- Filtered indices from date range ------------------------------ */
-  const filteredIdx = useMemo(
-    () => getFilteredIndices(MONTH_DATES, dateFrom, dateTo),
-    [dateFrom, dateTo]
-  );
+function SpaEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
+  const { locations, isFetching, isSyncing, syncError, missingMonths, triggerSync } =
+    useSpaEbitda(dateFrom, dateTo);
 
-  const monthCount = filteredIdx.length;
   const rangeLabel = useMemo(() => formatDateRangeLabel(dateFrom, dateTo), [dateFrom, dateTo]);
 
   /* ---- Consolidated totals ---- */
-  const { locSummaries, totalRev, totalSal, totalSga, totalRent } = useMemo(() => {
-    let tRev = 0;
-    let tSal = 0;
-    let tSga = 0;
-    let tRent = 0;
+  const totals = useMemo((): SpaLocationData => {
+    const zero: SpaLocationData = {
+      id: 0, slug: "", name: "Total", color: "", lastSyncedAt: null,
+      revenue: 0, cogs: 0, wages: 0, advertising: 0,
+      rent: 0, utilities: 0, sga: 0, ebitda: 0,
+    };
+    for (const loc of locations) {
+      zero.revenue     += loc.revenue;
+      zero.cogs        += loc.cogs;
+      zero.wages       += loc.wages;
+      zero.advertising += loc.advertising;
+      zero.rent        += loc.rent;
+      zero.utilities   += loc.utilities;
+      zero.sga         += loc.sga;
+      zero.ebitda      += loc.ebitda;
+    }
+    return zero;
+  }, [locations]);
 
-    const summaries: LocSummary[] = LOCATIONS.map((loc) => {
-      const rev = sumFieldIndices(loc, filteredIdx, "revenue");
-      const sal = sumFieldIndices(loc, filteredIdx, "salaries");
-      const sga = sumFieldIndices(loc, filteredIdx, "sga");
-      const rent = sumFieldIndices(loc, filteredIdx, "rent");
-      const months = activeMonthsIndices(loc, filteredIdx);
-      const expanded = expandCosts(rev, sal, sga, rent);
-
-      tRev += rev;
-      tSal += sal;
-      tSga += sga;
-      tRent += rent;
-
-      return { loc, rev, sal, sga, rent, months, expanded };
-    });
-
-    return { locSummaries: summaries, totalRev: tRev, totalSal: tSal, totalSga: tSga, totalRent: tRent };
-  }, [filteredIdx]);
-
-  const totalExpanded = useMemo(
-    () => expandCosts(totalRev, totalSal, totalSga, totalRent),
-    [totalRev, totalSal, totalSga, totalRent]
-  );
-  const margin = totalRev > 0 ? Math.round((totalExpanded.ebitda / totalRev) * 1000) / 10 : 0;
+  const margin = totals.revenue > 0
+    ? Math.round((totals.ebitda / totals.revenue) * 1000) / 10
+    : 0;
 
   /* ---- KPI Cards ---- */
   const kpis: KPIData[] = useMemo(() => [
+    { label: "Spa Total Revenue", value: formatCurrency(totals.revenue) },
+    { label: "Spa Total EBITDA",  value: formatCurrency(totals.ebitda) },
     {
-      label: "Spa Total Revenue",
-      value: formatCurrency(totalRev),
+      label: "Spa EBITDA Margin", value: `${margin.toFixed(1)}%`,
+      target: "40%", targetValue: 40, currentValue: margin,
     },
-    {
-      label: "Spa Total EBITDA",
-      value: formatCurrency(totalExpanded.ebitda),
-    },
-    {
-      label: "Spa EBITDA Margin",
-      value: `${margin.toFixed(1)}%`,
-      target: "40%",
-      targetValue: 40,
-      currentValue: margin,
-    },
-  ], [totalRev, totalExpanded.ebitda, margin]);
+  ], [totals, margin]);
 
-  /* ---- Active locations with data ---- */
-  const activeLocs = useMemo(
-    () => locSummaries.filter((s) => s.months > 0),
-    [locSummaries]
+  /* ---- Chart data ---- */
+  const breakdownData = useMemo(() =>
+    locations.map((loc) => {
+      const r = loc.revenue || 1;
+      return {
+        name:           loc.name,
+        Wages:          loc.wages,
+        Advertising:    loc.advertising,
+        Rent:           loc.rent,
+        Utilities:      loc.utilities,
+        COGS:           loc.cogs,
+        "SG&A":         loc.sga,
+        EBITDA:         loc.ebitda,
+        WagesPct:       pctOf(loc.wages,       r),
+        AdvertisingPct: pctOf(loc.advertising, r),
+        RentPct:        pctOf(loc.rent,        r),
+        UtilitiesPct:   pctOf(loc.utilities,   r),
+        COGSPct:        pctOf(loc.cogs,        r),
+        "SG&APct":      pctOf(loc.sga,         r),
+        EBITDAPct:      pctOf(loc.ebitda,      r),
+      };
+    }),
+    [locations]
   );
 
-  /* ---- Stacked bar breakdown data (absolute EUR values) ---- */
-  const breakdownData = useMemo(
-    () =>
-      activeLocs.map((s) => {
-        const e = s.expanded;
-        const r = s.rev || 1;
-        return {
-          name: s.loc.name,
-          Wages: e.wages,
-          Advertising: e.advertising,
-          Rent: e.rent,
-          Utilities: e.utilities,
-          COGS: e.cogs,
-          "SG&A": e.sga,
-          EBITDA: e.ebitda,
-          WagesPct: pctOf(e.wages, r),
-          AdvertisingPct: pctOf(e.advertising, r),
-          RentPct: pctOf(e.rent, r),
-          UtilitiesPct: pctOf(e.utilities, r),
-          COGSPct: pctOf(e.cogs, r),
-          "SG&APct": pctOf(e.sga, r),
-          EBITDAPct: pctOf(e.ebitda, r),
-        };
-      }),
-    [activeLocs]
-  );
+  const isLoading = (isFetching || isSyncing) && locations.length === 0;
 
   return (
     <>
-      {/* Title */}
+      {/* Title + sync controls */}
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Spa — EBITDA Deep Dive</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Per-location P&amp;L breakdown | {rangeLabel} ({filteredCountLabel(monthCount, "month")})
+            Per-location P&amp;L breakdown | {rangeLabel}
           </p>
         </div>
+        <button
+          onClick={() => triggerSync(true)}
+          disabled={isSyncing}
+          className="text-xs px-3 py-1.5 rounded-md border border-border bg-background hover:bg-muted disabled:opacity-50 transition-colors"
+        >
+          {isSyncing ? "Syncing…" : "Re-Sync"}
+        </button>
       </div>
 
-      {/* KPI Cards */}
-      <KPICardRow kpis={kpis} />
+      {/* Sync status banner */}
+      <SyncBanner
+        isSyncing={isSyncing}
+        syncError={syncError}
+        missingMonths={missingMonths}
+        onForceSync={() => triggerSync(true)}
+      />
 
-      {/* Consolidated P&L Table */}
-      <Card className="p-3 md:p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-1">P&amp;L by Location</h2>
-        <p className="text-sm text-muted-foreground mb-4">
-          All {activeLocs.length} active locations side-by-side
-        </p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm whitespace-nowrap">
-            <thead>
-              <tr>
-                <th className="text-left py-2 px-3 font-semibold text-muted-foreground sticky left-0 bg-background z-10 min-w-[140px]">
-                  Line Item
-                </th>
-                {activeLocs.map((s) => (
-                  <th key={s.loc.id} className="text-right py-2 px-3 font-semibold text-foreground min-w-[110px]">
-                    <span className="inline-flex items-center gap-1.5">
-                      <span
-                        className="inline-block h-2.5 w-2.5 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: s.loc.color }}
-                      />
-                      {s.loc.name}
-                    </span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {/* Net Revenue */}
-              <tr className="border-b border-border">
-                <td className="py-1.5 px-3 font-bold text-foreground sticky left-0 bg-background z-10">Net Revenue</td>
-                {activeLocs.map((s) => (
-                  <td key={s.loc.id} className="py-1.5 px-3 text-right font-bold text-foreground">
-                    {fmtCurrencyShort(s.rev)}
-                  </td>
-                ))}
-              </tr>
-              {/* Wages & Salaries */}
-              <tr className="border-b border-border">
-                <td className="py-1.5 px-3 text-foreground sticky left-0 bg-background z-10">Wages &amp; Salaries</td>
-                {activeLocs.map((s) => (
-                  <td key={s.loc.id} className="py-1.5 px-3 text-right text-foreground">
-                    ({fmtCurrencyShort(s.expanded.wages)}) <span className="text-muted-foreground">{fmtPct(pctOf(s.expanded.wages, s.rev))}</span>
-                  </td>
-                ))}
-              </tr>
-              {/* Advertising */}
-              <tr className="border-b border-border">
-                <td className="py-1.5 px-3 text-foreground sticky left-0 bg-background z-10">Advertising</td>
-                {activeLocs.map((s) => (
-                  <td key={s.loc.id} className="py-1.5 px-3 text-right text-foreground">
-                    ({fmtCurrencyShort(s.expanded.advertising)}) <span className="text-muted-foreground">{fmtPct(pctOf(s.expanded.advertising, s.rev))}</span>
-                  </td>
-                ))}
-              </tr>
-              {/* Rent */}
-              <tr className="border-b border-border">
-                <td className="py-1.5 px-3 text-foreground sticky left-0 bg-background z-10">Rent</td>
-                {activeLocs.map((s) => (
-                  <td key={s.loc.id} className="py-1.5 px-3 text-right text-foreground">
-                    {s.expanded.rent > 0
-                      ? <>({fmtCurrencyShort(s.expanded.rent)}) <span className="text-muted-foreground">{fmtPct(pctOf(s.expanded.rent, s.rev))}</span></>
-                      : <span className="text-muted-foreground">&mdash;</span>
-                    }
-                  </td>
-                ))}
-              </tr>
-              {/* Utilities */}
-              <tr className="border-b border-border">
-                <td className="py-1.5 px-3 text-foreground sticky left-0 bg-background z-10">Utilities</td>
-                {activeLocs.map((s) => (
-                  <td key={s.loc.id} className="py-1.5 px-3 text-right text-foreground">
-                    ({fmtCurrencyShort(s.expanded.utilities)}) <span className="text-muted-foreground">{fmtPct(pctOf(s.expanded.utilities, s.rev))}</span>
-                  </td>
-                ))}
-              </tr>
-              {/* COGS */}
-              <tr className="border-b border-border">
-                <td className="py-1.5 px-3 text-foreground sticky left-0 bg-background z-10">COGS</td>
-                {activeLocs.map((s) => (
-                  <td key={s.loc.id} className="py-1.5 px-3 text-right text-foreground">
-                    ({fmtCurrencyShort(s.expanded.cogs)}) <span className="text-muted-foreground">{fmtPct(pctOf(s.expanded.cogs, s.rev))}</span>
-                  </td>
-                ))}
-              </tr>
-              {/* SG&A */}
-              <tr className="border-b border-border">
-                <td className="py-1.5 px-3 text-foreground sticky left-0 bg-background z-10">SG&amp;A</td>
-                {activeLocs.map((s) => (
-                  <td key={s.loc.id} className="py-1.5 px-3 text-right text-foreground">
-                    ({fmtCurrencyShort(s.expanded.sga)}) <span className="text-muted-foreground">{fmtPct(pctOf(s.expanded.sga, s.rev))}</span>
-                  </td>
-                ))}
-              </tr>
-              {/* EBITDA */}
-              <tr className="border-t-2 border-border">
-                <td className="py-1.5 px-3 font-bold text-foreground sticky left-0 bg-background z-10">EBITDA</td>
-                {activeLocs.map((s) => (
-                  <td
-                    key={s.loc.id}
-                    className={`py-1.5 px-3 text-right font-bold ${s.expanded.ebitda >= 0 ? "text-emerald-600" : "text-red-600"}`}
-                  >
-                    {fmtCurrencyShort(s.expanded.ebitda)}
-                  </td>
-                ))}
-              </tr>
-              {/* EBITDA % */}
-              <tr>
-                <td className="py-1.5 px-3 font-bold text-foreground sticky left-0 bg-background z-10">EBITDA %</td>
-                {activeLocs.map((s) => {
-                  const ebitdaMargin = pctOf(s.expanded.ebitda, s.rev);
-                  const badgeClass =
-                    ebitdaMargin >= 50
-                      ? "bg-emerald-100 text-emerald-800"
-                      : ebitdaMargin >= 30
-                      ? "bg-amber-100 text-amber-800"
-                      : "bg-red-100 text-red-800";
-                  return (
-                    <td key={s.loc.id} className="py-1.5 px-3 text-right">
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${badgeClass}`}>
-                        {fmtPct(ebitdaMargin)}
-                      </span>
+      {/* Loading skeleton */}
+      {isLoading && (
+        <Card className="p-6 flex items-center justify-center min-h-[200px]">
+          <p className="text-sm text-muted-foreground">
+            Pulling data from Zoho Books — please wait…
+          </p>
+        </Card>
+      )}
+
+      {/* Main content — only shown once data is available */}
+      {!isLoading && locations.length > 0 && (
+        <>
+          <KPICardRow kpis={kpis} />
+
+          {/* P&L Table */}
+          <Card className="p-3 md:p-6">
+            <h2 className="text-lg font-semibold text-foreground mb-1">P&amp;L by Location</h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              {locations.length} active locations · live Zoho Books data
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm whitespace-nowrap">
+                <thead>
+                  <tr>
+                    <th className="text-left py-2 px-3 font-semibold text-muted-foreground sticky left-0 bg-background z-10 min-w-[140px]">
+                      Line Item
+                    </th>
+                    {locations.map((loc) => (
+                      <th key={loc.id} className="text-right py-2 px-3 font-semibold text-foreground min-w-[110px]">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="inline-block h-2.5 w-2.5 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: loc.color }} />
+                          {loc.name}
+                        </span>
+                      </th>
+                    ))}
+                    <th className="text-right py-2 px-3 font-semibold text-foreground min-w-[110px] bg-muted/40 border-l border-border">
+                      Total
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Net Revenue */}
+                  <tr className="border-b border-border">
+                    <td className="py-1.5 px-3 font-bold text-foreground sticky left-0 bg-background z-10">Net Revenue</td>
+                    {locations.map((loc) => (
+                      <td key={loc.id} className="py-1.5 px-3 text-right font-bold text-foreground">
+                        {fmtCurrencyShort(loc.revenue)}
+                      </td>
+                    ))}
+                    <td className="py-1.5 px-3 text-right font-bold text-foreground bg-muted/20 border-l border-border">
+                      {fmtCurrencyShort(totals.revenue)}
                     </td>
-                  );
-                })}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </Card>
+                  </tr>
+                  {/* Wages */}
+                  <tr className="border-b border-border">
+                    <td className="py-1.5 px-3 text-foreground sticky left-0 bg-background z-10">Wages &amp; Salaries</td>
+                    {locations.map((loc) => (
+                      <td key={loc.id} className="py-1.5 px-3 text-right text-foreground">
+                        ({fmtCurrencyShort(loc.wages)}){" "}
+                        <span className="text-muted-foreground">{fmtPct(pctOf(loc.wages, loc.revenue))}</span>
+                      </td>
+                    ))}
+                    <td className="py-1.5 px-3 text-right text-foreground bg-muted/20 border-l border-border">
+                      ({fmtCurrencyShort(totals.wages)}){" "}
+                      <span className="text-muted-foreground">{fmtPct(pctOf(totals.wages, totals.revenue))}</span>
+                    </td>
+                  </tr>
+                  {/* Advertising */}
+                  <tr className="border-b border-border">
+                    <td className="py-1.5 px-3 text-foreground sticky left-0 bg-background z-10">Advertising</td>
+                    {locations.map((loc) => (
+                      <td key={loc.id} className="py-1.5 px-3 text-right text-foreground">
+                        ({fmtCurrencyShort(loc.advertising)}){" "}
+                        <span className="text-muted-foreground">{fmtPct(pctOf(loc.advertising, loc.revenue))}</span>
+                      </td>
+                    ))}
+                    <td className="py-1.5 px-3 text-right text-foreground bg-muted/20 border-l border-border">
+                      ({fmtCurrencyShort(totals.advertising)}){" "}
+                      <span className="text-muted-foreground">{fmtPct(pctOf(totals.advertising, totals.revenue))}</span>
+                    </td>
+                  </tr>
+                  {/* Rent */}
+                  <tr className="border-b border-border">
+                    <td className="py-1.5 px-3 text-foreground sticky left-0 bg-background z-10">Rent</td>
+                    {locations.map((loc) => (
+                      <td key={loc.id} className="py-1.5 px-3 text-right text-foreground">
+                        {loc.rent > 0
+                          ? <>({fmtCurrencyShort(loc.rent)}){" "}<span className="text-muted-foreground">{fmtPct(pctOf(loc.rent, loc.revenue))}</span></>
+                          : <span className="text-muted-foreground">&mdash;</span>
+                        }
+                      </td>
+                    ))}
+                    <td className="py-1.5 px-3 text-right text-foreground bg-muted/20 border-l border-border">
+                      {totals.rent > 0
+                        ? <>({fmtCurrencyShort(totals.rent)}){" "}<span className="text-muted-foreground">{fmtPct(pctOf(totals.rent, totals.revenue))}</span></>
+                        : <span className="text-muted-foreground">&mdash;</span>
+                      }
+                    </td>
+                  </tr>
+                  {/* Utilities */}
+                  <tr className="border-b border-border">
+                    <td className="py-1.5 px-3 text-foreground sticky left-0 bg-background z-10">Utilities</td>
+                    {locations.map((loc) => (
+                      <td key={loc.id} className="py-1.5 px-3 text-right text-foreground">
+                        ({fmtCurrencyShort(loc.utilities)}){" "}
+                        <span className="text-muted-foreground">{fmtPct(pctOf(loc.utilities, loc.revenue))}</span>
+                      </td>
+                    ))}
+                    <td className="py-1.5 px-3 text-right text-foreground bg-muted/20 border-l border-border">
+                      ({fmtCurrencyShort(totals.utilities)}){" "}
+                      <span className="text-muted-foreground">{fmtPct(pctOf(totals.utilities, totals.revenue))}</span>
+                    </td>
+                  </tr>
+                  {/* COGS */}
+                  <tr className="border-b border-border">
+                    <td className="py-1.5 px-3 text-foreground sticky left-0 bg-background z-10">COGS</td>
+                    {locations.map((loc) => (
+                      <td key={loc.id} className="py-1.5 px-3 text-right text-foreground">
+                        ({fmtCurrencyShort(loc.cogs)}){" "}
+                        <span className="text-muted-foreground">{fmtPct(pctOf(loc.cogs, loc.revenue))}</span>
+                      </td>
+                    ))}
+                    <td className="py-1.5 px-3 text-right text-foreground bg-muted/20 border-l border-border">
+                      ({fmtCurrencyShort(totals.cogs)}){" "}
+                      <span className="text-muted-foreground">{fmtPct(pctOf(totals.cogs, totals.revenue))}</span>
+                    </td>
+                  </tr>
+                  {/* SG&A */}
+                  <tr className="border-b border-border">
+                    <td className="py-1.5 px-3 text-foreground sticky left-0 bg-background z-10">SG&amp;A</td>
+                    {locations.map((loc) => (
+                      <td key={loc.id} className="py-1.5 px-3 text-right text-foreground">
+                        ({fmtCurrencyShort(loc.sga)}){" "}
+                        <span className="text-muted-foreground">{fmtPct(pctOf(loc.sga, loc.revenue))}</span>
+                      </td>
+                    ))}
+                    <td className="py-1.5 px-3 text-right text-foreground bg-muted/20 border-l border-border">
+                      ({fmtCurrencyShort(totals.sga)}){" "}
+                      <span className="text-muted-foreground">{fmtPct(pctOf(totals.sga, totals.revenue))}</span>
+                    </td>
+                  </tr>
+                  {/* EBITDA */}
+                  <tr className="border-t-2 border-border">
+                    <td className="py-1.5 px-3 font-bold text-foreground sticky left-0 bg-background z-10">EBITDA</td>
+                    {locations.map((loc) => (
+                      <td key={loc.id}
+                        className={`py-1.5 px-3 text-right font-bold ${loc.ebitda >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                        {fmtCurrencyShort(loc.ebitda)}
+                      </td>
+                    ))}
+                    <td className={`py-1.5 px-3 text-right font-bold bg-muted/20 border-l border-border ${totals.ebitda >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                      {fmtCurrencyShort(totals.ebitda)}
+                    </td>
+                  </tr>
+                  {/* EBITDA % */}
+                  <tr>
+                    <td className="py-1.5 px-3 font-bold text-foreground sticky left-0 bg-background z-10">EBITDA %</td>
+                    {locations.map((loc) => {
+                      const m = pctOf(loc.ebitda, loc.revenue);
+                      const badge = m >= 50 ? "bg-emerald-100 text-emerald-800"
+                        : m >= 30 ? "bg-amber-100 text-amber-800"
+                        : "bg-red-100 text-red-800";
+                      return (
+                        <td key={loc.id} className="py-1.5 px-3 text-right">
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${badge}`}>
+                            {fmtPct(m)}
+                          </span>
+                        </td>
+                      );
+                    })}
+                    <td className="py-1.5 px-3 text-right bg-muted/20 border-l border-border">
+                      {(() => {
+                        const m = pctOf(totals.ebitda, totals.revenue);
+                        const badge = m >= 50 ? "bg-emerald-100 text-emerald-800"
+                          : m >= 30 ? "bg-amber-100 text-amber-800"
+                          : "bg-red-100 text-red-800";
+                        return (
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${badge}`}>
+                            {fmtPct(m)}
+                          </span>
+                        );
+                      })()}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </Card>
 
-      {/* Revenue Breakdown by Location - Stacked Bar Chart */}
-      <Card className="p-3 md:p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-1">Revenue Breakdown by Location</h2>
-        <p className="text-sm text-muted-foreground mb-4">Cost structure per spa. Green = EBITDA margin.</p>
-        <div className="h-[300px] md:h-[420px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={breakdownData} margin={{ top: 25, right: 10, left: 10, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-25} textAnchor="end" height={60} />
-            <YAxis tickFormatter={(v: number) => fmtCurrencyShort(v)} />
-            <Tooltip content={<BreakdownTooltip />} />
-            <Legend />
-            <Bar dataKey="Wages" stackId="stack" fill="#F59E0B" name="Wages">
-              <LabelList dataKey="WagesPct" content={renderSegmentLabel} />
-            </Bar>
-            <Bar dataKey="Advertising" stackId="stack" fill="#EC4899" name="Advertising">
-              <LabelList dataKey="AdvertisingPct" content={renderSegmentLabel} />
-            </Bar>
-            <Bar dataKey="Rent" stackId="stack" fill="#9CA3AF" name="Rent">
-              <LabelList dataKey="RentPct" content={renderSegmentLabel} />
-            </Bar>
-            <Bar dataKey="Utilities" stackId="stack" fill="#06B6D4" name="Utilities">
-              <LabelList dataKey="UtilitiesPct" content={renderSegmentLabel} />
-            </Bar>
-            <Bar dataKey="COGS" stackId="stack" fill="#3B82F6" name="COGS">
-              <LabelList dataKey="COGSPct" content={renderSegmentLabel} />
-            </Bar>
-            <Bar dataKey="SG&A" stackId="stack" fill="#8B5CF6" name="SG&A">
-              <LabelList dataKey="SG&APct" content={renderSegmentLabel} />
-            </Bar>
-            <Bar dataKey="EBITDA" stackId="stack" fill="#22C55E" name="EBITDA">
-              <LabelList dataKey="EBITDAPct" content={renderTopLabel} />
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-        </div>
-      </Card>
+          {/* Stacked bar chart */}
+          <Card className="p-3 md:p-6">
+            <h2 className="text-lg font-semibold text-foreground mb-1">Revenue Breakdown by Location</h2>
+            <p className="text-sm text-muted-foreground mb-4">Cost structure per spa. Green = EBITDA margin.</p>
+            <div className="h-[300px] md:h-[420px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={breakdownData} margin={{ top: 25, right: 10, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-25} textAnchor="end" height={60} />
+                  <YAxis tickFormatter={(v: number) => fmtCurrencyShort(v)} />
+                  <Tooltip content={<BreakdownTooltip />} />
+                  <Legend />
+                  <Bar dataKey="Wages"       stackId="s" fill="#F59E0B"><LabelList dataKey="WagesPct"       content={renderSegmentLabel} /></Bar>
+                  <Bar dataKey="Advertising" stackId="s" fill="#EC4899"><LabelList dataKey="AdvertisingPct" content={renderSegmentLabel} /></Bar>
+                  <Bar dataKey="Rent"        stackId="s" fill="#9CA3AF"><LabelList dataKey="RentPct"        content={renderSegmentLabel} /></Bar>
+                  <Bar dataKey="Utilities"   stackId="s" fill="#06B6D4"><LabelList dataKey="UtilitiesPct"   content={renderSegmentLabel} /></Bar>
+                  <Bar dataKey="COGS"        stackId="s" fill="#3B82F6"><LabelList dataKey="COGSPct"        content={renderSegmentLabel} /></Bar>
+                  <Bar dataKey="SG&A"        stackId="s" fill="#8B5CF6"><LabelList dataKey="SG&APct"        content={renderSegmentLabel} /></Bar>
+                  <Bar dataKey="EBITDA"      stackId="s" fill="#22C55E"><LabelList dataKey="EBITDAPct"      content={renderTopLabel}     /></Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+        </>
+      )}
 
-      {/* CI Chat */}
+      {/* No data state (after sync completed but Zoho returned nothing) */}
+      {!isLoading && !isSyncing && locations.length === 0 && (
+        <Card className="p-6 text-center text-sm text-muted-foreground">
+          No Zoho data found for this date range.{" "}
+          <button className="underline" onClick={() => triggerSync(true)}>Try syncing again</button>
+        </Card>
+      )}
+
+      {/* Reconciliation check — always visible once page has data */}
+      {!isLoading && locations.length > 0 && (
+        <EbitdaReconciliation dateFrom={dateFrom} dateTo={dateTo} />
+      )}
+
       <CIChat />
     </>
   );
