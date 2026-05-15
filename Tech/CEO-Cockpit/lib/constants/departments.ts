@@ -3,7 +3,6 @@ import {
   Megaphone,
   DollarSign,
   Headphones,
-  PiggyBank,
   Users,
   Settings,
   Activity,
@@ -12,7 +11,6 @@ import {
   Heart,
   Filter,
   BookOpen,
-  Layers,
   type LucideIcon,
 } from "lucide-react";
 
@@ -64,16 +62,9 @@ export const departments: Department[] = [
   },
   {
     slug: "finance",
-    label: "Finance",
-    icon: PiggyBank,
-    path: "/finance",
-    children: [
-      { slug: "ebitda", label: "EBITDA Overview", path: "/finance/ebitda", icon: TrendingUp },
-      { slug: "ebitda-group", label: "Group EBITDA", path: "/finance/ebitda/group", icon: Layers },
-      { slug: "ebitda-spa", label: "EBITDA Spa", path: "/finance/ebitda/spa", icon: Sparkles },
-      { slug: "ebitda-aesthetics", label: "EBITDA Aesthetics", path: "/finance/ebitda/aesthetics", icon: Heart },
-      { slug: "ebitda-slimming", label: "EBITDA Slimming", path: "/finance/ebitda/slimming", icon: Activity },
-    ],
+    label: "EBITDA",
+    icon: TrendingUp,
+    path: "/finance/ebitda",
   },
   {
     slug: "hr",

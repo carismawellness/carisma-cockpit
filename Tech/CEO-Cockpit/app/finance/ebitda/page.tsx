@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { CIChat } from "@/components/ci/CIChat";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { KPICardRow, KPIData } from "@/components/dashboard/KPICardRow";
@@ -25,8 +26,6 @@ import {
   ResponsiveContainer,
   ReferenceLine,
   Cell,
-  LabelList,
-  Legend,
 } from "recharts";
 
 /* ------------------------------------------------------------------ */
@@ -233,41 +232,41 @@ function buildWaterfall(indices: number[]) {
 /*  STACKED BAR CHART DATA BUILDER                                     */
 /* ------------------------------------------------------------------ */
 
-interface CostBreakdownRow {
+type Brand = "Spa" | "Aesthetics" | "Slimming";
+
+interface VenueRow {
+  id: string;
   name: string;
+  brand: Brand;
+  brandColor: string;
   wages: number;
-  wagesPct: number;
   advertising: number;
-  adPct: number;
   rent: number;
-  rentPct: number;
   utilities: number;
-  utilPct: number;
   cogs: number;
-  cogsPct: number;
   sga: number;
-  sgaPct: number;
   ebitda: number;
-  ebitdaPct: number;
   revenue: number;
-  revenueLabel: string;
 }
 
-function buildCostBreakdownData(indices: number[]): CostBreakdownRow[] {
+const BRAND_ORDER: Record<Brand, number> = { Spa: 0, Aesthetics: 1, Slimming: 2 };
+
+function venueBrand(locId: string): { brand: Brand; color: string } {
+  if (locId === "aesthetics") return { brand: "Aesthetics", color: chartColors.aesthetics };
+  if (locId === "slimming") return { brand: "Slimming", color: chartColors.slimming };
+  return { brand: "Spa", color: chartColors.spa };
+}
+
+function buildVenueRows(indices: number[]): VenueRow[] {
   return LOCATIONS.map(loc => {
     const totals = sumRangeIndices(loc.id, indices);
     const rev = totals.revenue;
+    const { brand, color } = venueBrand(loc.id);
     if (rev <= 0) {
       return {
-        name: loc.name,
-        wages: 0, wagesPct: 0,
-        advertising: 0, adPct: 0,
-        rent: 0, rentPct: 0,
-        utilities: 0, utilPct: 0,
-        cogs: 0, cogsPct: 0,
-        sga: 0, sgaPct: 0,
-        ebitda: 0, ebitdaPct: 0,
-        revenue: 0, revenueLabel: "\u20AC0",
+        id: loc.id, name: loc.name, brand, brandColor: color,
+        wages: 0, advertising: 0, rent: 0, utilities: 0,
+        cogs: 0, sga: 0, ebitda: 0, revenue: 0,
       };
     }
 
@@ -280,72 +279,68 @@ function buildCostBreakdownData(indices: number[]): CostBreakdownRow[] {
     const rentVal = totals.rent;
     const ebitdaVal = rev - newWages - cogsVal - utilitiesVal - newSga - advertisingVal - rentVal;
 
-    const pct = (v: number) => Math.round((v / rev) * 100);
-    const formatRevLabel = (v: number) => {
-      if (v >= 1000000) return `\u20AC${(v / 1000000).toFixed(1)}M`;
-      if (v >= 1000) return `\u20AC${Math.round(v / 1000)}K`;
-      return `\u20AC${v}`;
-    };
-
     return {
+      id: loc.id,
       name: loc.name,
+      brand,
+      brandColor: color,
       wages: newWages,
-      wagesPct: pct(newWages),
       advertising: advertisingVal,
-      adPct: pct(advertisingVal),
       rent: rentVal,
-      rentPct: pct(rentVal),
       utilities: utilitiesVal,
-      utilPct: pct(utilitiesVal),
       cogs: cogsVal,
-      cogsPct: pct(cogsVal),
       sga: newSga,
-      sgaPct: pct(newSga),
       ebitda: ebitdaVal,
-      ebitdaPct: pct(ebitdaVal),
       revenue: rev,
-      revenueLabel: formatRevLabel(rev),
     };
-  }).filter(r => r.revenue > 0)
-    .sort((a, b) => b.revenue - a.revenue);
+  })
+    .filter(r => r.revenue > 0)
+    .sort((a, b) => {
+      const bd = BRAND_ORDER[a.brand] - BRAND_ORDER[b.brand];
+      return bd !== 0 ? bd : b.revenue - a.revenue;
+    });
+}
+
+function pctOf(part: number, whole: number): number {
+  if (whole === 0) return 0;
+  return Math.round((part / whole) * 100);
+}
+
+function fmtPct(val: number): string {
+  return `${Math.round(val)}%`;
+}
+
+function fmtCurrencyShort(value: number): string {
+  if (Math.abs(value) >= 1_000_000) return `\u20AC${(value / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(value) >= 1_000)     return `\u20AC${Math.round(value / 1_000)}K`;
+  return `\u20AC${value}`;
 }
 
 /* ------------------------------------------------------------------ */
-/*  CUSTOM LABEL RENDERERS                                             */
+/*  SG&A CATEGORY BREAKDOWN                                            */
+/*  Total SG&A comes from Zoho. We allocate it across these categories */
+/*  using fixed weights until Zoho line-item CoA mapping is wired up. */
+/*  See: 09-Miscellaneous/Workflows/sga-categorization.md              */
 /* ------------------------------------------------------------------ */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const renderSegmentLabel = (props: any) => {
-  const { x, y, width, height, value } = props;
-  if (!value || Math.abs(height) < 18) return null;
-  return (
-    <text x={x + width / 2} y={y + height / 2} fill="#fff" textAnchor="middle" dominantBaseline="middle" fontSize={9} fontWeight="500">
-      {value}%
-    </text>
-  );
-};
+const SGA_CATEGORIES: { label: string; weight: number }[] = [
+  { label: "Prof services", weight: 20000 },
+  { label: "Fuel",          weight: 5000 },
+  { label: "Laundry",       weight: 50 },
+  { label: "Software",      weight: 10 },
+  { label: "Cleaning",      weight: 10 },
+  { label: "Travel",        weight: 10 },
+  { label: "Misc",          weight: 10 },
+  { label: "Insurance",     weight: 8 },
+  { label: "Events",        weight: 5 },
+  { label: "Maintenance",   weight: 5 },
+  { label: "Telecom",       weight: 2 },
+];
+const SGA_WEIGHT_TOTAL = SGA_CATEGORIES.reduce((a, c) => a + c.weight, 0);
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const renderTopLabel = (props: any) => {
-  const { x, y, width, value } = props;
-  if (!value) return null;
-  return (
-    <text x={x + width / 2} y={y - 8} fill="#22C55E" textAnchor="middle" fontSize={11} fontWeight="bold">
-      {value}%
-    </text>
-  );
-};
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const renderRevenueLabel = (props: any) => {
-  const { x, y, width, value } = props;
-  if (!value) return null;
-  return (
-    <text x={x + width / 2} y={y - 22} fill="currentColor" textAnchor="middle" fontSize={10} fontWeight="600">
-      {value}
-    </text>
-  );
-};
+function sgaShare(sgaTotal: number, weight: number): number {
+  return Math.round(sgaTotal * (weight / SGA_WEIGHT_TOTAL));
+}
 
 /* ------------------------------------------------------------------ */
 /*  INNER COMPONENT                                                    */
@@ -403,8 +398,25 @@ function EBITDAOverviewContent({
   /* --- Waterfall --------------------------------------------------- */
   const waterfallData = useMemo(() => buildWaterfall(filteredIdx), [filteredIdx]);
 
-  /* --- Stacked bar chart data -------------------------------------- */
-  const costBreakdownData = useMemo(() => buildCostBreakdownData(filteredIdx), [filteredIdx]);
+  /* --- Per-venue rows for the P&L by Venue table -------------------- */
+  const venueRows = useMemo(() => buildVenueRows(filteredIdx), [filteredIdx]);
+  const venueTotals = useMemo(() => venueRows.reduce(
+    (acc, v) => ({
+      revenue:     acc.revenue + v.revenue,
+      wages:       acc.wages + v.wages,
+      advertising: acc.advertising + v.advertising,
+      rent:        acc.rent + v.rent,
+      utilities:   acc.utilities + v.utilities,
+      cogs:        acc.cogs + v.cogs,
+      sga:         acc.sga + v.sga,
+      ebitda:      acc.ebitda + v.ebitda,
+    }),
+    { revenue: 0, wages: 0, advertising: 0, rent: 0, utilities: 0, cogs: 0, sga: 0, ebitda: 0 },
+  ), [venueRows]);
+
+  const [rentExpanded, setRentExpanded] = useState(false);
+  const [adsExpanded, setAdsExpanded] = useState(false);
+  const [sgaExpanded, setSgaExpanded] = useState(false);
 
   /* --- Brand cards data -------------------------------------------- */
   const brands = useMemo(() => [
@@ -485,64 +497,293 @@ function EBITDAOverviewContent({
         ))}
       </div>
 
-      {/* EBITDA by Business Unit — Stacked Bar Chart */}
+      {/* P&L by Venue */}
       <Card className="p-3 md:p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-1">EBITDA by Business Unit — Revenue Breakdown</h2>
-        <p className="text-xs text-muted-foreground mb-4">Stacked cost structure per location. Green = EBITDA margin.</p>
-        <div className="h-[300px] md:h-[420px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={costBreakdownData} margin={{ top: 40, right: 10, left: 10, bottom: 70 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" angle={-40} textAnchor="end" height={80} tick={{ fontSize: 11 }} />
-            <YAxis tickFormatter={(v: number) => `\u20AC${Math.round(v / 1000)}k`} />
-            <Tooltip
-              content={({ active, payload, label }) => {
-                if (!active || !payload?.length) return null;
-                const row = costBreakdownData.find(d => d.name === label);
-                if (!row) return null;
-                return (
-                  <div className="bg-background border border-border rounded-lg p-3 shadow-lg text-sm">
-                    <p className="font-semibold text-foreground mb-1">{row.name}</p>
-                    <p className="text-muted-foreground">Revenue: <span className="font-medium text-foreground">{formatCurrency(row.revenue)}</span></p>
-                    <p className="text-amber-600">Wages: {formatCurrency(row.wages)} ({row.wagesPct}%)</p>
-                    <p className="text-pink-600">Advertising: {formatCurrency(row.advertising)} ({row.adPct}%)</p>
-                    <p className="text-gray-500">Rent: {formatCurrency(row.rent)} ({row.rentPct}%)</p>
-                    <p className="text-cyan-600">Utilities: {formatCurrency(row.utilities)} ({row.utilPct}%)</p>
-                    <p className="text-blue-600">COGS: {formatCurrency(row.cogs)} ({row.cogsPct}%)</p>
-                    <p className="text-purple-600">SG&A: {formatCurrency(row.sga)} ({row.sgaPct}%)</p>
-                    <p className={`font-bold ${row.ebitda >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                      EBITDA: {formatCurrency(row.ebitda)} ({row.ebitdaPct}%)
-                    </p>
-                  </div>
-                );
-              }}
-            />
-            <Legend verticalAlign="top" height={36} />
-            <Bar dataKey="wages" stackId="costs" fill="#F59E0B" name="Wages">
-              <LabelList dataKey="wagesPct" content={renderSegmentLabel} />
-            </Bar>
-            <Bar dataKey="advertising" stackId="costs" fill="#EC4899" name="Advertising">
-              <LabelList dataKey="adPct" content={renderSegmentLabel} />
-            </Bar>
-            <Bar dataKey="rent" stackId="costs" fill="#9CA3AF" name="Rent">
-              <LabelList dataKey="rentPct" content={renderSegmentLabel} />
-            </Bar>
-            <Bar dataKey="utilities" stackId="costs" fill="#06B6D4" name="Utilities">
-              <LabelList dataKey="utilPct" content={renderSegmentLabel} />
-            </Bar>
-            <Bar dataKey="cogs" stackId="costs" fill="#3B82F6" name="COGS">
-              <LabelList dataKey="cogsPct" content={renderSegmentLabel} />
-            </Bar>
-            <Bar dataKey="sga" stackId="costs" fill="#8B5CF6" name="SG&A">
-              <LabelList dataKey="sgaPct" content={renderSegmentLabel} />
-            </Bar>
-            <Bar dataKey="ebitda" stackId="costs" fill="#22C55E" name="EBITDA">
-              <LabelList dataKey="ebitdaPct" content={renderSegmentLabel} />
-              <LabelList dataKey="ebitdaPct" content={renderTopLabel} />
-              <LabelList dataKey="revenueLabel" content={renderRevenueLabel} />
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        <h2 className="text-lg font-semibold text-foreground mb-1">P&amp;L by Venue</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          All {venueRows.length} active venues side-by-side. Color dots indicate brand.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm whitespace-nowrap">
+            <thead>
+              <tr>
+                <th className="text-left py-2 px-3 font-semibold text-muted-foreground sticky left-0 bg-background z-10 min-w-[140px]">
+                  Line Item
+                </th>
+                {venueRows.map((v) => (
+                  <th key={v.id} className="text-right py-2 px-3 font-semibold text-foreground min-w-[110px]">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span
+                        className="inline-block h-2.5 w-2.5 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: v.brandColor }}
+                        title={v.brand}
+                      />
+                      {v.name}
+                    </span>
+                  </th>
+                ))}
+                <th className="text-right py-2 px-3 font-semibold text-foreground bg-muted/20 border-l border-border min-w-[110px]">
+                  Group
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* Net Revenue */}
+              <tr className="border-b border-border">
+                <td className="py-1.5 px-3 font-bold text-foreground sticky left-0 bg-background z-10">Net Revenue</td>
+                {venueRows.map((v) => (
+                  <td key={v.id} className="py-1.5 px-3 text-right font-bold text-foreground">
+                    {fmtCurrencyShort(v.revenue)}
+                  </td>
+                ))}
+                <td className="py-1.5 px-3 text-right font-bold text-foreground bg-muted/20 border-l border-border">
+                  {fmtCurrencyShort(venueTotals.revenue)}
+                </td>
+              </tr>
+              {/* Wages & Salaries */}
+              <tr className="border-b border-border">
+                <td className="py-1.5 px-3 text-foreground sticky left-0 bg-background z-10">Wages &amp; Salaries</td>
+                {venueRows.map((v) => (
+                  <td key={v.id} className="py-1.5 px-3 text-right text-foreground">
+                    ({fmtCurrencyShort(v.wages)}) <span className="text-muted-foreground">{fmtPct(pctOf(v.wages, v.revenue))}</span>
+                  </td>
+                ))}
+                <td className="py-1.5 px-3 text-right text-foreground bg-muted/20 border-l border-border">
+                  ({fmtCurrencyShort(venueTotals.wages)}) <span className="text-muted-foreground">{fmtPct(pctOf(venueTotals.wages, venueTotals.revenue))}</span>
+                </td>
+              </tr>
+              {/* Advertising Plus (collapsible: Meta / Google / Klaviyo) */}
+              <tr className="border-b border-border">
+                <td className="py-1.5 px-3 text-foreground sticky left-0 bg-background z-10">
+                  <button
+                    type="button"
+                    onClick={() => setAdsExpanded((x) => !x)}
+                    className="flex items-center gap-1.5 hover:text-foreground/70 transition-colors"
+                    aria-expanded={adsExpanded}
+                  >
+                    {adsExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                    <span>Advertising</span>
+                  </button>
+                </td>
+                {venueRows.map((v) => (
+                  <td key={v.id} className="py-1.5 px-3 text-right text-foreground">
+                    ({fmtCurrencyShort(v.advertising)}) <span className="text-muted-foreground">{fmtPct(pctOf(v.advertising, v.revenue))}</span>
+                  </td>
+                ))}
+                <td className="py-1.5 px-3 text-right text-foreground bg-muted/20 border-l border-border">
+                  ({fmtCurrencyShort(venueTotals.advertising)}) <span className="text-muted-foreground">{fmtPct(pctOf(venueTotals.advertising, venueTotals.revenue))}</span>
+                </td>
+              </tr>
+              {adsExpanded && (
+                <>
+                  {/* TODO(api): replace placeholder splits with live Meta / Google / Klaviyo spend.
+                      SPA venues currently share one Meta/Google account — distribute spend across
+                      SPA venues by revenue share. Aesthetics and Slimming have their own ad accounts. */}
+                  {(() => {
+                    const META_PCT = 0.60;
+                    const GOOGLE_PCT = 0.30;
+                    const KLAVIYO_PCT = 0.10;
+                    const channels: { label: string; pct: number }[] = [
+                      { label: "Meta",    pct: META_PCT },
+                      { label: "Google",  pct: GOOGLE_PCT },
+                      { label: "Klaviyo", pct: KLAVIYO_PCT },
+                    ];
+                    return channels.map(({ label, pct }) => (
+                      <tr key={label} className="border-b border-border">
+                        <td className="py-1.5 px-3 pl-9 text-muted-foreground sticky left-0 bg-background z-10">
+                          {label} <span className="text-[10px] uppercase tracking-wider opacity-60">(api pending)</span>
+                        </td>
+                        {venueRows.map((v) => {
+                          const part = Math.round(v.advertising * pct);
+                          return (
+                            <td key={v.id} className="py-1.5 px-3 text-right text-foreground">
+                              ({fmtCurrencyShort(part)}) <span className="text-muted-foreground">{fmtPct(pctOf(part, v.revenue))}</span>
+                            </td>
+                          );
+                        })}
+                        <td className="py-1.5 px-3 text-right text-foreground bg-muted/20 border-l border-border">
+                          {(() => {
+                            const part = Math.round(venueTotals.advertising * pct);
+                            return <>({fmtCurrencyShort(part)}) <span className="text-muted-foreground">{fmtPct(pctOf(part, venueTotals.revenue))}</span></>;
+                          })()}
+                        </td>
+                      </tr>
+                    ));
+                  })()}
+                </>
+              )}
+              {/* Rent Plus (collapsible: Rent + Utilities) */}
+              <tr className="border-b border-border">
+                <td className="py-1.5 px-3 text-foreground sticky left-0 bg-background z-10">
+                  <button
+                    type="button"
+                    onClick={() => setRentExpanded((x) => !x)}
+                    className="flex items-center gap-1.5 hover:text-foreground/70 transition-colors"
+                    aria-expanded={rentExpanded}
+                  >
+                    {rentExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                    <span>Rent Plus</span>
+                  </button>
+                </td>
+                {venueRows.map((v) => {
+                  const sum = v.rent + v.utilities;
+                  return (
+                    <td key={v.id} className="py-1.5 px-3 text-right text-foreground">
+                      ({fmtCurrencyShort(sum)}) <span className="text-muted-foreground">{fmtPct(pctOf(sum, v.revenue))}</span>
+                    </td>
+                  );
+                })}
+                <td className="py-1.5 px-3 text-right text-foreground bg-muted/20 border-l border-border">
+                  {(() => {
+                    const sum = venueTotals.rent + venueTotals.utilities;
+                    return <>({fmtCurrencyShort(sum)}) <span className="text-muted-foreground">{fmtPct(pctOf(sum, venueTotals.revenue))}</span></>;
+                  })()}
+                </td>
+              </tr>
+              {rentExpanded && (
+                <>
+                  <tr className="border-b border-border">
+                    <td className="py-1.5 px-3 pl-9 text-muted-foreground sticky left-0 bg-background z-10">Rent</td>
+                    {venueRows.map((v) => (
+                      <td key={v.id} className="py-1.5 px-3 text-right text-foreground">
+                        {v.rent > 0
+                          ? <>({fmtCurrencyShort(v.rent)}) <span className="text-muted-foreground">{fmtPct(pctOf(v.rent, v.revenue))}</span></>
+                          : <span className="text-muted-foreground">&mdash;</span>
+                        }
+                      </td>
+                    ))}
+                    <td className="py-1.5 px-3 text-right text-foreground bg-muted/20 border-l border-border">
+                      {venueTotals.rent > 0
+                        ? <>({fmtCurrencyShort(venueTotals.rent)}) <span className="text-muted-foreground">{fmtPct(pctOf(venueTotals.rent, venueTotals.revenue))}</span></>
+                        : <span className="text-muted-foreground">&mdash;</span>
+                      }
+                    </td>
+                  </tr>
+                  <tr className="border-b border-border">
+                    <td className="py-1.5 px-3 pl-9 text-muted-foreground sticky left-0 bg-background z-10">Utilities</td>
+                    {venueRows.map((v) => (
+                      <td key={v.id} className="py-1.5 px-3 text-right text-foreground">
+                        ({fmtCurrencyShort(v.utilities)}) <span className="text-muted-foreground">{fmtPct(pctOf(v.utilities, v.revenue))}</span>
+                      </td>
+                    ))}
+                    <td className="py-1.5 px-3 text-right text-foreground bg-muted/20 border-l border-border">
+                      ({fmtCurrencyShort(venueTotals.utilities)}) <span className="text-muted-foreground">{fmtPct(pctOf(venueTotals.utilities, venueTotals.revenue))}</span>
+                    </td>
+                  </tr>
+                </>
+              )}
+              {/* COGS */}
+              <tr className="border-b border-border">
+                <td className="py-1.5 px-3 text-foreground sticky left-0 bg-background z-10">COGS</td>
+                {venueRows.map((v) => (
+                  <td key={v.id} className="py-1.5 px-3 text-right text-foreground">
+                    ({fmtCurrencyShort(v.cogs)}) <span className="text-muted-foreground">{fmtPct(pctOf(v.cogs, v.revenue))}</span>
+                  </td>
+                ))}
+                <td className="py-1.5 px-3 text-right text-foreground bg-muted/20 border-l border-border">
+                  ({fmtCurrencyShort(venueTotals.cogs)}) <span className="text-muted-foreground">{fmtPct(pctOf(venueTotals.cogs, venueTotals.revenue))}</span>
+                </td>
+              </tr>
+              {/* SG&A (collapsible: category breakdown) */}
+              <tr className="border-b border-border">
+                <td className="py-1.5 px-3 text-foreground sticky left-0 bg-background z-10">
+                  <button
+                    type="button"
+                    onClick={() => setSgaExpanded((x) => !x)}
+                    className="flex items-center gap-1.5 hover:text-foreground/70 transition-colors"
+                    aria-expanded={sgaExpanded}
+                  >
+                    {sgaExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                    <span>SG&amp;A</span>
+                  </button>
+                </td>
+                {venueRows.map((v) => (
+                  <td key={v.id} className="py-1.5 px-3 text-right text-foreground">
+                    ({fmtCurrencyShort(v.sga)}) <span className="text-muted-foreground">{fmtPct(pctOf(v.sga, v.revenue))}</span>
+                  </td>
+                ))}
+                <td className="py-1.5 px-3 text-right text-foreground bg-muted/20 border-l border-border">
+                  ({fmtCurrencyShort(venueTotals.sga)}) <span className="text-muted-foreground">{fmtPct(pctOf(venueTotals.sga, venueTotals.revenue))}</span>
+                </td>
+              </tr>
+              {sgaExpanded && SGA_CATEGORIES.map(({ label, weight }) => (
+                <tr key={label} className="border-b border-border">
+                  <td className="py-1.5 px-3 pl-9 text-muted-foreground sticky left-0 bg-background z-10">
+                    {label} <span className="text-[10px] uppercase tracking-wider opacity-60">(allocated)</span>
+                  </td>
+                  {venueRows.map((v) => {
+                    const part = sgaShare(v.sga, weight);
+                    return (
+                      <td key={v.id} className="py-1.5 px-3 text-right text-foreground">
+                        ({fmtCurrencyShort(part)}) <span className="text-muted-foreground">{fmtPct(pctOf(part, v.revenue))}</span>
+                      </td>
+                    );
+                  })}
+                  <td className="py-1.5 px-3 text-right text-foreground bg-muted/20 border-l border-border">
+                    {(() => {
+                      const part = sgaShare(venueTotals.sga, weight);
+                      return <>({fmtCurrencyShort(part)}) <span className="text-muted-foreground">{fmtPct(pctOf(part, venueTotals.revenue))}</span></>;
+                    })()}
+                  </td>
+                </tr>
+              ))}
+              {/* EBITDA */}
+              <tr className="border-t-2 border-border">
+                <td className="py-1.5 px-3 font-bold text-foreground sticky left-0 bg-background z-10">EBITDA</td>
+                {venueRows.map((v) => (
+                  <td key={v.id} className={`py-1.5 px-3 text-right font-bold ${v.ebitda >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                    {fmtCurrencyShort(v.ebitda)}
+                  </td>
+                ))}
+                <td className={`py-1.5 px-3 text-right font-bold bg-muted/20 border-l border-border ${venueTotals.ebitda >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                  {fmtCurrencyShort(venueTotals.ebitda)}
+                </td>
+              </tr>
+              {/* EBITDA % */}
+              <tr>
+                <td className="py-1.5 px-3 font-bold text-foreground sticky left-0 bg-background z-10">EBITDA %</td>
+                {venueRows.map((v) => {
+                  const m = pctOf(v.ebitda, v.revenue);
+                  const badge = m >= 50 ? "bg-emerald-100 text-emerald-800"
+                              : m >= 30 ? "bg-amber-100 text-amber-800"
+                              : "bg-red-100 text-red-800";
+                  return (
+                    <td key={v.id} className="py-1.5 px-3 text-right">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${badge}`}>
+                        {fmtPct(m)}
+                      </span>
+                    </td>
+                  );
+                })}
+                <td className="py-1.5 px-3 text-right bg-muted/20 border-l border-border">
+                  {(() => {
+                    const m = pctOf(venueTotals.ebitda, venueTotals.revenue);
+                    const badge = m >= 50 ? "bg-emerald-100 text-emerald-800"
+                                : m >= 30 ? "bg-amber-100 text-amber-800"
+                                : "bg-red-100 text-red-800";
+                    return (
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${badge}`}>
+                        {fmtPct(m)}
+                      </span>
+                    );
+                  })()}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Brand legend */}
+        <div className="flex flex-wrap gap-4 mt-4 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: chartColors.spa }} /> Spa
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: chartColors.aesthetics }} /> Aesthetics
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: chartColors.slimming }} /> Slimming
+          </span>
         </div>
       </Card>
 
