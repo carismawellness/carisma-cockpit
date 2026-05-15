@@ -37,14 +37,24 @@ interface CoaRow {
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 const EBITDA_LINES = [
-  { value: "revenue",     label: "Revenue" },
-  { value: "cogs",        label: "COGS" },
-  { value: "wages",       label: "Wages & Salaries" },
-  { value: "advertising", label: "Advertising & Marketing" },
-  { value: "rent",        label: "Rent" },
-  { value: "utilities",   label: "Utilities" },
-  { value: "sga",         label: "SG&A" },
-  { value: "excluded",    label: "Excluded" },
+  { value: "revenue",              label: "Revenue" },
+  { value: "cogs",                 label: "COGS" },
+  { value: "wages",                label: "Wages & Salaries" },
+  { value: "advertising",          label: "Advertising & Marketing" },
+  { value: "rent",                 label: "Rent" },
+  { value: "utilities",            label: "Utilities" },
+  { value: "sga_prof_services",    label: "SG&A - Prof services" },
+  { value: "sga_fuel",             label: "SG&A - Fuel" },
+  { value: "sga_laundry",          label: "SG&A - Laundry" },
+  { value: "sga_software",         label: "SG&A - Software" },
+  { value: "sga_cleaning",         label: "SG&A - Cleaning" },
+  { value: "sga_travel",           label: "SG&A - Travel" },
+  { value: "sga_misc",             label: "SG&A - Misc" },
+  { value: "sga_insurance",        label: "SG&A - Insurance" },
+  { value: "sga_events",           label: "SG&A - Events" },
+  { value: "sga_maintenance",      label: "SG&A - Maintenance" },
+  { value: "sga_telecom",          label: "SG&A - Telecom" },
+  { value: "excluded",             label: "Excluded" },
 ];
 
 const SPA_LOCATIONS: { key: string; label: string }[] = [

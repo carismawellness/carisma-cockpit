@@ -283,7 +283,7 @@ export async function runAestheticsEbitdaMonth(
   if (!rawAccounts.length) { log.push(`${monthKey}: no accounts returned`); return { rowsUpserted: 0, log }; }
 
   // ── Step 1: Map every account ─────────────────────────────────────────────
-  const EBITDA_LINES = new Set(["revenue", "cogs", "wages", "advertising", "rent", "utilities", "sga"]);
+  const BASE_LINES = new Set(["revenue", "cogs", "wages", "advertising", "rent", "utilities", "sga"]);
   const mapped: [string, string, number][] = [];
 
   for (const acc of rawAccounts) {
@@ -303,7 +303,9 @@ export async function runAestheticsEbitdaMonth(
       line = detectLine(acc.name, acc.section);
     }
 
-    if (!EBITDA_LINES.has(line)) continue;
+    // Normalise granular sga_* sub-categories → sga bucket
+    if (line.startsWith("sga_")) line = "sga";
+    if (!BASE_LINES.has(line)) continue;
     const dept = detectDept(acc.name);
     const rule = dept ?? configuredRule;
     mapped.push([rule, line, acc.amount]);

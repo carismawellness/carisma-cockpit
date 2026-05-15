@@ -514,7 +514,7 @@ export async function runSpaEbitdaMonth(
   }
 
   // ── Step 1: Map every account ─────────────────────────────────────────────
-  const EBITDA_LINES = new Set(["revenue", "cogs", "wages", "advertising", "rent", "utilities", "sga"]);
+  const BASE_LINES = new Set(["revenue", "cogs", "wages", "advertising", "rent", "utilities", "sga"]);
   const mapped: [string, string, number][] = [];  // [rule, line, amount]
 
   for (const acc of rawAccounts) {
@@ -534,9 +534,11 @@ export async function runSpaEbitdaMonth(
       line = detectLineFromName(acc.name, acc.section);
     }
 
+    // Normalise granular sga_* sub-categories → sga bucket
+    if (line.startsWith("sga_")) line = "sga";
     const loc  = detectLocation(acc.name);
     const rule = loc ?? configuredRule;
-    if (!EBITDA_LINES.has(line)) continue;
+    if (!BASE_LINES.has(line)) continue;
     mapped.push([rule, line, acc.amount]);
   }
 
