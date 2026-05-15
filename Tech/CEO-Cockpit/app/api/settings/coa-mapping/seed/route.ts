@@ -517,6 +517,38 @@ function accountTypeForLine(ebitdaLine: string): string {
   return "Expense";
 }
 
+// ── SG&A sub-category fuzzy classifier ───────────────────────────────────────
+// Returns a granular sga_* ebitda_line based on account name keywords.
+// Order matters: more specific patterns first.
+const SGA_KEYWORD_MAP: [string[], string][] = [
+  [["laundry", "linen", "dry clean", "uniform clean", "washing"],                              "sga_laundry"],
+  [["fuel", "petrol", "diesel", "motor expense", "vehicle fuel"],                              "sga_fuel"],
+  [["software", "subscription", "saas", "licence", "license", "hosting", "cloud",
+    "microsoft", "google workspace", "adobe", "platform", "it service"],                      "sga_software"],
+  [["cleaning", "sanitation", "hygiene", "pest control", "janitorial", "disinfect"],          "sga_cleaning"],
+  [["travel", "transport", "taxi", "uber", "flight", "accommodation",
+    "parking", "car hire", "vehicle hire", "transfer expense"],                               "sga_travel"],
+  [["insurance", "policy premium", "indemnity"],                                              "sga_insurance"],
+  [["event", "conference", "seminar", "entertainment", "hospitality",
+    "team building", "staff function", "function expense"],                                   "sga_events"],
+  [["maintenance", "repair", "upkeep", "equipment service", "machine service", "fix"],        "sga_maintenance"],
+  [["telecom", "telephone", "mobile", "internet", "broadband", "wifi",
+    "communication", "phone", "data plan"],                                                   "sga_telecom"],
+  [["professional", "consultant", "consult", "legal", "accounting", "audit",
+    "advisory", "outsourc", "subcontract", "solicitor", "lawyer",
+    "architect", "surveyor", "notary", "prof service"],                                       "sga_prof_services"],
+  [["misc", "miscellaneous", "sundry", "other expense", "general expense",
+    "petty cash", "unprocessed"],                                                             "sga_misc"],
+];
+
+function classifySgaSubcategory(name: string): string {
+  const low = name.toLowerCase();
+  for (const [keywords, line] of SGA_KEYWORD_MAP) {
+    if (keywords.some(kw => low.includes(kw))) return line;
+  }
+  return "sga_misc";
+}
+
 // ── Aesthetics & Slimming auto-classification ─────────────────────────────────
 // Applied when org === "aesthetics". Classifies already-synced accounts by name
 // keyword. Split rule assignment:
@@ -552,7 +584,7 @@ function classifyAestheticsAccount(name: string, accountType: string): string {
   const t = accountType.toLowerCase().replace(/\s+/g, "_");
   if (t === "income" || t === "other_income") return "revenue";
   if (t === "cost_of_goods_sold") return "cogs";
-  return "sga";
+  return classifySgaSubcategory(name);
 }
 
 async function seedAesthetics(
@@ -667,8 +699,7 @@ export async function POST(req: NextRequest) {
     inserted += insertRows.slice(i, i + CHUNK).length;
   }
 
-  // ── Post-pass: any account whose name contains "depreciat" or "amortis"
-  //    must always be excluded, regardless of COA_DEFAULTS.
+  // ── Post-pass 1: exclude depreciation / amortisation accounts ───────────────
   const EXCL_KEYWORDS = ["depreciat", "amortis"];
   const { data: allSpaRows } = await supabase
     .from("zoho_coa_mapping")
@@ -690,6 +721,20 @@ export async function POST(req: NextRequest) {
       )
     );
     updated += toExclude.length;
+  }
+
+  // ── Post-pass 2: refine generic "sga" accounts → granular sga_* sub-category
+  const toRefine = (allSpaRows ?? []).filter(r => r.ebitda_line === "sga");
+  if (toRefine.length > 0) {
+    await Promise.all(
+      toRefine.map(r =>
+        supabase
+          .from("zoho_coa_mapping")
+          .update({ ebitda_line: classifySgaSubcategory(r.account_name ?? "") })
+          .eq("id", r.id)
+      )
+    );
+    updated += toRefine.length;
   }
 
   return NextResponse.json({ ok: true, updated, inserted, total: updated + inserted });
