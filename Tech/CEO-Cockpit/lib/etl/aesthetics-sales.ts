@@ -179,6 +179,7 @@ export async function runAestheticsSales(
     log.push(`Fetching ${tab}…`);
     const rawRows = await fetchTab(tab);
     if (!rawRows.length) { log.push(`  ${tab}: not found or empty — skipping`); continue; }
+    if (rawRows[0]) log.push(`  ${tab}: columns = [${Object.keys(rawRows[0]).join(", ")}]`);
     const rows = processTab(tab, rawRows, year, month);
     if (!rows.length) { log.push(`  ${tab}: 0 usable rows — skipping`); continue; }
     await deleteWhere("aesthetics_sales_daily", { sheet_tab: tab });
