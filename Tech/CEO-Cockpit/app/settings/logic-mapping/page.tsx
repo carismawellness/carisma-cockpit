@@ -69,9 +69,10 @@ const SGA_WEIGHT_TOTAL = SGA_CATEGORIES.reduce((a, c) => a + c.weight, 0);
 
 const AD_CHANNELS: AllocationRow[] = [
   { category: "Meta",    weight: 55 },
-  { category: "Google",  weight: 25 },
+  { category: "Google",  weight: 20 },
   { category: "Klaviyo", weight: 10 },
   { category: "GHL",     weight: 10 },
+  { category: "Misc",    weight:  5 },
 ];
 
 interface VenueMap {
@@ -112,7 +113,7 @@ const HARDCODED_CONSTANTS: ConstantRow[] = [
   { name: "Wages-from-salaries split",   value: "89 % wages, 8 % COGS, 3 % utilities", where: "app/finance/ebitda/page.tsx (buildVenueRows)" },
   { name: "SG&A-vs-advertising split",   value: "60 % SG&A, 40 % advertising",         where: "app/finance/ebitda/page.tsx (buildVenueRows)" },
   { name: "SG&A category weights",       value: "11 weights summing to 25,110",         where: "app/finance/ebitda/page.tsx (SGA_CATEGORIES) + sga-categorization skill" },
-  { name: "Ad-channel split",            value: "55 % Meta, 25 % Google, 10 % Klaviyo, 10 % GHL (placeholder)", where: "app/finance/ebitda/page.tsx (adsExpanded block)" },
+  { name: "Ad-channel split",            value: "55 % Meta, 20 % Google, 10 % Klaviyo, 10 % GHL, 5 % Misc (placeholder)", where: "app/finance/ebitda/page.tsx (adsExpanded block)" },
   { name: "EBITDA margin badge thresholds", value: "≥50 % green, ≥30 % amber, <30 % red", where: "app/finance/ebitda/page.tsx (EBITDA % row)" },
   { name: "Group EBITDA margin target",  value: "30 %",                                 where: "app/finance/ebitda/page.tsx (KPI cards)" },
 ];
