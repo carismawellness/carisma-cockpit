@@ -133,7 +133,10 @@ export function useAestheticsSales(dateFrom: Date, dateTo: Date): UseAestheticsS
       if (!res.ok) throw new Error(json.error ?? "Sync failed");
       return json;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["aesthetics-sales", fromDateStr, toDateStr_] }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["aesthetics-sales", fromDateStr, toDateStr_] });
+      return data;
+    },
   });
 
   // ── 3. Missing months + auto-refresh logic ────────────────────────────────
@@ -341,6 +344,7 @@ export function useAestheticsSales(dateFrom: Date, dateTo: Date): UseAestheticsS
     isFetching,
     isSyncing:     syncMutation.isPending,
     syncError:     syncMutation.error ? (syncMutation.error as Error).message : null,
+    syncLog:       (syncMutation.data as { log?: string[] } | undefined)?.log ?? null,
     missingMonths,
     triggerSync:   () => syncMutation.mutate({}),
   };

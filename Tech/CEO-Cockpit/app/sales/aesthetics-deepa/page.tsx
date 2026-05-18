@@ -7,7 +7,7 @@ import { chartColors, formatCurrency } from "@/lib/charts/config";
 import { RefreshCw, FileSpreadsheet } from "lucide-react";
 
 function AestheticsDeepContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
-  const { byPerson, byService, totals, isFetching, isSyncing, syncError, triggerSync } =
+  const { byPerson, byService, totals, isFetching, isSyncing, syncError, syncLog, triggerSync } =
     useAestheticsSales(dateFrom, dateTo);
 
 
@@ -51,6 +51,9 @@ function AestheticsDeepContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
         </div>
         {syncError && (
           <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2 mb-3">{syncError}</p>
+        )}
+        {syncLog && (
+          <pre className="text-xs text-slate-600 bg-slate-50 rounded px-3 py-2 mb-3 whitespace-pre-wrap overflow-auto max-h-40">{syncLog.join("\n")}</pre>
         )}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="p-3 rounded-lg bg-muted/40">
