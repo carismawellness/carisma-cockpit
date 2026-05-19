@@ -111,13 +111,14 @@ export async function POST(req: NextRequest) {
   }
 
   const lines = csv.split("\n").filter(Boolean);
-  // Find the header row — look for "Active employee" (case-insensitive) in any
-  // of the first 30 rows, checking columns C-F (indices 2-5) to handle layout shifts.
+  // Find the header row — locate "Active employee" in cols 2-6 and record its exact index
+  // so data rows use the same column (sheet may have Cash/Gross or other columns before it).
   let dataStartIdx = -1;
+  let statusCol = 3; // fallback; overwritten when header is found
   for (let i = 0; i < Math.min(lines.length, 30); i++) {
     const cols = parseCsvLine(lines[i]);
-    const found = cols.slice(2, 6).some(c => c?.trim().toLowerCase() === "active employee");
-    if (found) { dataStartIdx = i + 1; break; }
+    const idx = cols.findIndex((c, ci) => ci >= 2 && ci <= 6 && c?.trim().toLowerCase() === "active employee");
+    if (idx !== -1) { dataStartIdx = i + 1; statusCol = idx; break; }
   }
   if (dataStartIdx === -1) {
     // Return first 5 rows to help diagnose the sheet layout
@@ -141,10 +142,10 @@ export async function POST(req: NextRequest) {
 
   for (let i = dataStartIdx; i < lines.length; i++) {
     const cols = parseCsvLine(lines[i]);
-    const name   = cols[1]?.trim() ?? "";   // B
-    const spaRaw = cols[2]?.trim() ?? "";   // C — location
-    const status = cols[3]?.trim() ?? "";   // D
-    const amtRaw = cols[27]?.trim() ?? "";  // AB
+    const name   = cols[1]?.trim() ?? "";            // B
+    const spaRaw = cols[2]?.trim() ?? "";            // C — location
+    const status = cols[statusCol]?.trim() ?? "";    // Active employee (dynamic col)
+    const amtRaw = cols[27]?.trim() ?? "";           // AB
 
     if (!name || status.toLowerCase() !== "active") continue;
 
