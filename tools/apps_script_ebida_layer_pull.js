@@ -67,13 +67,14 @@ function showEbidaLayerDialog() {
 }
 
 function pullAndWriteEbidaLayer(dateFrom, dateTo, org) {
-  var url = COCKPIT_BASE + "/api/finance/zoho-transactions-daily";
-  var payload = { date_from: dateFrom, date_to: dateTo, org: org };
+  var orgParam = (org || "SPA").toLowerCase();
+  var url = COCKPIT_BASE + "/api/finance/zoho-transactions-daily"
+          + "?date_from=" + encodeURIComponent(dateFrom)
+          + "&date_to="   + encodeURIComponent(dateTo)
+          + "&org="       + encodeURIComponent(orgParam);
 
   var resp = UrlFetchApp.fetch(url, {
-    method:             "post",
-    contentType:        "application/json",
-    payload:            JSON.stringify(payload),
+    method:             "get",
     muteHttpExceptions: true,
     headers:            { "Accept": "application/json" }
   });
@@ -90,17 +91,12 @@ function pullAndWriteEbidaLayer(dateFrom, dateTo, org) {
   }
 
   var data = JSON.parse(body);
-
-  if (typeof data.rows_written === "number") {
-    return data.message || ("✓ Written " + data.rows_written + " rows to " + EBIDA_TAB);
+  if (!Array.isArray(data.rows) || !Array.isArray(data.dates)) {
+    throw new Error("Unexpected response structure: missing rows/dates");
   }
 
-  if (Array.isArray(data.rows) && Array.isArray(data.dates)) {
-    var n = _writeEbidaLayerGrid(data.rows, data.dates, dateFrom, dateTo, org);
-    return "✓ Written " + data.rows.length + " rows × " + data.dates.length + " days to " + EBIDA_TAB;
-  }
-
-  throw new Error("Unexpected response structure: expected rows_written or rows+dates");
+  _writeEbidaLayerGrid(data.rows, data.dates, dateFrom, dateTo, org);
+  return "✓ Written " + data.rows.length + " rows × " + data.dates.length + " days to " + EBIDA_TAB;
 }
 
 function _writeEbidaLayerGrid(rows, dates, dateFrom, dateTo, org) {
