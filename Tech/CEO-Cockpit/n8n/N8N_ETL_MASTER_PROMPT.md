@@ -44,7 +44,7 @@ These are pre-seeded in Supabase. Use these IDs in all ETL writes:
 | location_id | slug | name | brand_id |
 |-------------|------|------|----------|
 | 1 | inter | InterContinental | 1 (spa) |
-| 2 | hugos | Hugo's | 1 (spa) |
+| 2 | hugos | Hugos | 1 (spa) |
 | 3 | hyatt | Hyatt | 1 (spa) |
 | 4 | ramla | Ramla Bay | 1 (spa) |
 | 5 | labranda | Labranda | 1 (spa) |
@@ -65,7 +65,7 @@ These are pre-seeded in Supabase. Use these IDs in all ETL writes:
 ### Sales Tab → `sales_weekly`
 - **Tab name:** `Sales`
 - **Week date headers:** Row 2, starting from column D (0-indexed col 3)
-- **Spa location revenue rows (1-indexed):** Inter=46, Hugo's=47, Hyatt=48, Ramla=49, Labranda=50, Odycy=51, Novotel=52, Excelsior=53
+- **Spa location revenue rows (1-indexed):** Inter=46, Hugos=47, Hyatt=48, Ramla=49, Labranda=50, Odycy=51, Novotel=52, Excelsior=53
 - **Upsert conflict:** `(week_start, location_id)`
 - **Columns to write:** `week_start` (DATE), `location_id` (INT), `brand_id` (INT, always 1 for spa), `revenue_ex_vat` (NUMERIC — strip EUR/€/comma symbols before parsing)
 

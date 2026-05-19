@@ -86,7 +86,7 @@ const MOCK_SPA_EBITDA = [35426, 17202, 8180, 12206, 14586, 19755, 32735, 27942, 
 // --- PER-SPA EBITDA ---
 const MOCK_LOC_EBITDA: Record<string, number[]> = {
   "Inter":      [9413, 8596, 552, 3005, 3568, 8673, 8623, 7599, 9409, 6897, 10268, 10515, 8740, 9820, 11240, 8430],
-  "Hugo's":     [14595, 7546, 6450, 6345, 7971, 7617, 15308, 11520, 11885, 9010, 10303, 13453, 12180, 14560, 13820, 11690],
+  "Hugos":      [14595, 7546, 6450, 6345, 7971, 7617, 15308, 11520, 11885, 9010, 10303, 13453, 12180, 14560, 13820, 11690],
   "Hyatt":      [5825, 3422, 4179, 5572, 3433, 1046, 4883, 6594, 5105, 5424, 5249, 6760, 5890, 5240, 6180, 5640],
   "Ramla":      [561, -1291, -1202, -1723, -1599, 398, 887, -330, -485, -1014, -691, 31, 420, -280, 640, -190],
   "Labranda":   [1095, -929, -1711, -1254, 126, -124, -350, -440, -181, -471, 177, -555, -120, 380, -240, 310],
@@ -298,7 +298,7 @@ function FinanceContent({
     () =>
       filteredIdx.map((i) => ({
         week: WEEKS[i],
-        "Hugo's": MOCK_LOC_EBITDA["Hugo's"][i],
+        Hugos: MOCK_LOC_EBITDA["Hugos"][i],
         Inter: MOCK_LOC_EBITDA["Inter"][i],
         Hyatt: MOCK_LOC_EBITDA["Hyatt"][i],
         Aesthetics: MOCK_AES_EBITDA[i],
@@ -707,7 +707,7 @@ function FinanceContent({
               <ReferenceLine y={0} stroke="#9CA3AF" strokeDasharray="3 3" />
               <Area
                 type="monotone"
-                dataKey="Hugo's"
+                dataKey="Hugos"
                 stroke={chartColors.spa}
                 fill={chartColors.spa}
                 fillOpacity={0.15}

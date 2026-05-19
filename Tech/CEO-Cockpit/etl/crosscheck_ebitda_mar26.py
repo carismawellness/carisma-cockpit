@@ -34,7 +34,7 @@ YEAR, MONTH = 2026, 3
 FROM_DATE  = f"{YEAR}-{MONTH:02d}-01"
 TO_DATE    = f"{YEAR}-{MONTH:02d}-{calendar.monthrange(YEAR, MONTH)[1]:02d}"
 MONTH_KEY  = FROM_DATE
-LOC_NAMES  = {1: "InterContinental", 2: "Hugo's", 3: "Hyatt", 4: "Ramla",
+LOC_NAMES  = {1: "InterContinental", 2: "Hugos", 3: "Hyatt", 4: "Ramla",
               5: "Labranda",         6: "Sunny Coast", 7: "Excelsior", 8: "Novotel"}
 
 sep = "─" * 70

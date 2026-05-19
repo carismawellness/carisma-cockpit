@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 // ── Location display metadata ─────────────────────────────────────────────
 export const SPA_LOCATION_META: Record<string, { name: string; color: string }> = {
   inter:     { name: "InterContinental", color: "#1B3A4B" },
-  hugos:     { name: "Hugo's",           color: "#96B2B2" },
+  hugos:     { name: "Hugos",            color: "#96B2B2" },
   hyatt:     { name: "Hyatt",            color: "#B79E61" },
   ramla:     { name: "Ramla",            color: "#8EB093" },
   labranda:  { name: "Labranda",         color: "#E07A5F" },

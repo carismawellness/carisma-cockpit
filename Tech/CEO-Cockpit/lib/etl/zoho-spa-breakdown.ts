@@ -29,7 +29,7 @@ export const ZOHO_TAG_TO_SLUG: Record<string, string> = {
 export const SLUG_DISPLAY: Record<string, string> = {
   hq:               "HQ",
   intercontinental: "InterContinental",
-  hugos:            "Hugo's",
+  hugos:            "Hugos",
   hyatt:            "Hyatt",
   ramla:            "Ramla Bay",
   labranda:         "Labranda",

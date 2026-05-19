@@ -88,7 +88,7 @@ SUPP_SLUG_TO_LOC: dict[str, int] = {
 # Excludes Directors (616110), Other (616112), Center (602220) per approved rules.
 SALARY_RATIO_ACCOUNTS: dict[str, int] = {
     "30001": 1,   # Salaries & Wages - Inter       → InterContinental
-    "30002": 2,   # Salaries & Wages - Hugo's      → Hugo's
+    "30002": 2,   # Salaries & Wages - Hugo's      → Hugos
     "30003": 3,   # Salaries & Wages - Hyatt       → Hyatt
     "30005": 4,   # Salaries & Wages - Ramla       → Ramla
     "30006": 5,   # Salaries & Wages - Labranda    → Labranda
@@ -274,7 +274,7 @@ COA_MAP: dict[str, tuple[str, str]] = {
     "611526":  ("hyatt",            "sga"),
     "611527":  ("hyatt",            "sga"),
     "611528":  ("hyatt",            "sga"),
-    # Hugo's direct
+    # Hugos direct
     "611530":  ("sales_ratio",      "sga"),   # Telephone & Communications (general)
     "611532":  ("hugos",            "sga"),
     "611533":  ("hugos",            "sga"),

@@ -18,7 +18,7 @@ const ALL_LOCATION_IDS = Object.values(LOCATION_MAP);
 
 const BENCHMARK_RENT_MONTHLY: Record<number, number> = {
   1: 5100.00,  // InterContinental
-  2: 1000.00,  // Hugo's
+  2: 1000.00,  // Hugos
   3: 1407.00,  // Hyatt
   4: 1000.00,  // Ramla
   5: 1000.00,  // Labranda

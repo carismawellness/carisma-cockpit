@@ -90,7 +90,7 @@ const HEADCOUNT = {
   ],
   byOrgUnit: [
     { name: "InterContinental", count: 15 },
-    { name: "Hugo's", count: 12 },
+    { name: "Hugos", count: 12 },
     { name: "Hyatt", count: 10 },
     { name: "Ramla Bay", count: 9 },
     { name: "Labranda", count: 8 },
@@ -178,7 +178,7 @@ const PAYROLL = {
   avgCostPerEmployee: 1797,
   locationData: [
     { name: "InterContinental", gross: 28500, headcount: 15, avgCost: 1900 },
-    { name: "Hugo's", gross: 22800, headcount: 12, avgCost: 1900 },
+    { name: "Hugos", gross: 22800, headcount: 12, avgCost: 1900 },
     { name: "Hyatt", gross: 18500, headcount: 10, avgCost: 1850 },
     { name: "Ramla Bay", gross: 15750, headcount: 9, avgCost: 1750 },
     { name: "Labranda", gross: 14400, headcount: 8, avgCost: 1800 },
@@ -189,7 +189,7 @@ const PAYROLL = {
 };
 
 const REVPAH_BY_LOCATION = [
-  { location: "Hugo's", revpah: 48.20, revenue: 52400 },
+  { location: "Hugos", revpah: 48.20, revenue: 52400 },
   { location: "Hyatt", revpah: 43.80, revenue: 41200 },
   { location: "InterContinental", revpah: 39.50, revenue: 58700 },
   { location: "Odycy", revpah: 37.10, revenue: 29800 },
@@ -208,7 +208,7 @@ const HC_BY_LOCATION = [
   { name: "InterContinental", hcPct: 32.1, payroll: 28500, revenue: 88786, headcount: 15 },
   { name: "Odycy", hcPct: 33.8, payroll: 13600, revenue: 40236, headcount: 8 },
   { name: "Ramla Bay", hcPct: 34.9, payroll: 15750, revenue: 45129, headcount: 9 },
-  { name: "Hugo's", hcPct: 36.5, payroll: 22800, revenue: 62466, headcount: 12 },
+  { name: "Hugos", hcPct: 36.5, payroll: 22800, revenue: 62466, headcount: 12 },
   { name: "Hyatt", hcPct: 38.2, payroll: 18500, revenue: 48429, headcount: 10 },
 ];
 

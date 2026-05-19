@@ -82,7 +82,7 @@ interface VenueMap {
 }
 
 const VENUE_MAP: VenueMap[] = [
-  { brand: "Spa",        color: chartColors.spa,        venues: ["Inter", "Hugo's", "Hyatt", "Ramla", "Excelsior", "Reviera", "Odycy", "Novotel"] },
+  { brand: "Spa",        color: chartColors.spa,        venues: ["Inter", "Hugos", "Hyatt", "Ramla", "Excelsior", "Reviera", "Odycy", "Novotel"] },
   { brand: "Aesthetics", color: chartColors.aesthetics, venues: ["Aesthetics (single unit)"] },
   { brand: "Slimming",   color: chartColors.slimming,   venues: ["Slimming (single unit)"] },
 ];

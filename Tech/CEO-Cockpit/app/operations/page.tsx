@@ -35,7 +35,7 @@ import {
 
 const REVIEW_LOCATIONS = [
   { name: "InterContinental", short: "Inter",  totalReviews: 190, avgScore: 4.5, prevScore: 4.4, color: "#1B3A4B" },
-  { name: "Hugo's",           short: "Hugos",  totalReviews: 151, avgScore: 4.8, prevScore: 4.7, color: "#96B2B2" },
+  { name: "Hugos",            short: "Hugos",  totalReviews: 151, avgScore: 4.8, prevScore: 4.7, color: "#96B2B2" },
   { name: "Ramla Bay",        short: "Ramla",  totalReviews: 99,  avgScore: 4.9, prevScore: 4.8, color: "#E07A5F" },
   { name: "Hyatt",            short: "Hyatt",  totalReviews: 64,  avgScore: 4.8, prevScore: 4.7, color: "#B79E61" },
   { name: "Excelsior",        short: "Excel",  totalReviews: 52,  avgScore: 4.8, prevScore: 4.6, color: "#6366F1" },
@@ -100,7 +100,7 @@ interface StandardsRow {
 
 const FACILITY_STANDARDS: StandardsRow[] = [
   { location: "InterContinental", score: 92, issues: [] },
-  { location: "Hugo's",           score: 88, issues: ["Treatment room towel replacement frequency below standard"] },
+  { location: "Hugos",            score: 88, issues: ["Treatment room towel replacement frequency below standard"] },
   { location: "Hyatt",            score: 95, issues: [] },
   { location: "Ramla Bay",        score: 78, issues: ["Pool area cleanliness flagged", "Changing room maintenance overdue"] },
   { location: "Excelsior",        score: 91, issues: [] },
@@ -113,7 +113,7 @@ const FACILITY_STANDARDS: StandardsRow[] = [
 
 const MYSTERY_GUEST: StandardsRow[] = [
   { location: "InterContinental", score: 89, issues: ["Front desk wait time exceeded 3 minutes"] },
-  { location: "Hugo's",           score: 93, issues: [] },
+  { location: "Hugos",            score: 93, issues: [] },
   { location: "Hyatt",            score: 91, issues: [] },
   { location: "Ramla Bay",        score: 72, issues: ["No welcome drink offered", "Therapist didn't introduce themselves", "Post-treatment recommendations missing"] },
   { location: "Excelsior",        score: 88, issues: ["Upselling opportunity missed at checkout"] },

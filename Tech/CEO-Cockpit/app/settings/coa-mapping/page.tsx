@@ -59,7 +59,7 @@ const EBITDA_LINES = [
 
 const SPA_LOCATIONS: { key: string; label: string }[] = [
   { key: "inter",     label: "InterContinental" },
-  { key: "hugos",     label: "Hugo's" },
+  { key: "hugos",     label: "Hugos" },
   { key: "hyatt",     label: "Hyatt" },
   { key: "ramla",     label: "Ramla" },
   { key: "labranda",  label: "Labranda" },

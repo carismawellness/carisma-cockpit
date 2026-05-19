@@ -49,7 +49,7 @@ from etl_zoho_spa_raw_layer import (
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 LOCATION_NAMES = {
-    1: "InterContinental", 2: "Hugo's", 3: "Hyatt",
+    1: "InterContinental", 2: "Hugos", 3: "Hyatt",
     4: "Ramla Bay", 5: "Labranda", 6: "Sunny Coast",
     7: "Excelsior", 8: "Novotel",
 }

@@ -50,7 +50,7 @@ VAT_RATE     = 0.18
 
 # Lapis Sales Point → location_id (matches locations table)
 LAPIS_SPA_MAP: dict[str, int] = {
-    "HUGOS":                         2,   # Hugo's
+    "HUGOS":                         2,   # Hugos
     "INTER":                         1,   # InterContinental
     "RAMLA":                         4,   # Ramla
     "SUNNY COAST":                   6,   # Sunny Coast / Odycy

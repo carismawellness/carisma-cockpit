@@ -52,7 +52,7 @@ const MOCK_ADDON     = [1400,1500,1400,1700,1500,1600,1700,1800,1600,1500,1700,1
 
 const HOTELS = [
   { id: "ic",       name: "InterContinental", data: MOCK_IC,       color: "#1B3A4B", weeklyTarget: 11000, aov: 165, aovLY: 158 },
-  { id: "hugos",    name: "Hugo's",           data: MOCK_HUGOS,    color: "#96B2B2", weeklyTarget: 12000, aov: 178, aovLY: 165 },
+  { id: "hugos",    name: "Hugos",            data: MOCK_HUGOS,    color: "#96B2B2", weeklyTarget: 12000, aov: 178, aovLY: 165 },
   { id: "hyatt",    name: "Hyatt",            data: MOCK_HYATT,    color: "#B79E61", weeklyTarget: 6000,  aov: 142, aovLY: 148 },
   { id: "ramla",    name: "Ramla Bay",        data: MOCK_RAMLA,    color: "#8EB093", weeklyTarget: 6000,  aov: 138, aovLY: 132 },
   { id: "labranda", name: "Labranda",         data: MOCK_LABRANDA, color: "#E07A5F", weeklyTarget: 3500,  aov: 112, aovLY: 105 },

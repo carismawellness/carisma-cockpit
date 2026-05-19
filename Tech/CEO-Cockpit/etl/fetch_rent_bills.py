@@ -47,7 +47,7 @@ RENT_ACCOUNTS: dict[str, str] = {
 
 LOCATION_DISPLAY: dict[str, str] = {
     "intercontinental": "InterContinental",
-    "hugos":            "Hugo's",
+    "hugos":            "Hugos",
     "hyatt":            "Hyatt",
     "ramla":            "Ramla Bay",
     "labranda":         "Labranda",

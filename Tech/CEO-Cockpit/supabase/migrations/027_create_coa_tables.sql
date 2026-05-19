@@ -17,7 +17,7 @@ INSERT INTO coa_split_rules (name, zoho_org, rule_type, is_system, config) VALUE
   ('By sales ratio',            'spa', 'sales_ratio',  true, NULL),
   ('By salary cost',            'spa', 'salary_cost',  true, NULL),
   ('100% InterContinental',     'spa', 'custom_fixed', true, '{"inter":100}'),
-  ('100% Hugo''s',              'spa', 'custom_fixed', true, '{"hugos":100}'),
+  ('100% Hugos',                'spa', 'custom_fixed', true, '{"hugos":100}'),
   ('100% Hyatt',                'spa', 'custom_fixed', true, '{"hyatt":100}'),
   ('100% Ramla',                'spa', 'custom_fixed', true, '{"ramla":100}'),
   ('100% Labranda',             'spa', 'custom_fixed', true, '{"labranda":100}'),

@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 // ── Location display metadata (shared with useSpaEbitda) ──────────────────────
 export const SPA_LOCATION_META: Record<string, { name: string; color: string }> = {
   1: { name: "InterContinental", color: "#1B3A4B" },
-  2: { name: "Hugo's",           color: "#96B2B2" },
+  2: { name: "Hugos",            color: "#96B2B2" },
   3: { name: "Hyatt",            color: "#B79E61" },
   4: { name: "Ramla",            color: "#8EB093" },
   5: { name: "Labranda",         color: "#E07A5F" },
