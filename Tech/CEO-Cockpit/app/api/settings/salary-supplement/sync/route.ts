@@ -90,7 +90,8 @@ function parseCsvLine(line: string): string[] {
 
 export async function POST(req: NextRequest) {
   const supabase = getAdminClient();
-  const { month } = await req.json(); // "2026-03-01"
+  const body = await req.json();
+  const { month, debug } = body; // debug=true returns parsed rows without writing
   if (!month) return NextResponse.json({ error: "month required" }, { status: 400 });
 
   const [year, mo] = month.split("-").map(Number);
@@ -172,7 +173,19 @@ export async function POST(req: NextRequest) {
   }
 
   if (employees.length === 0) {
-    return NextResponse.json({ synced: 0, excluded, tab: usedTab });
+    // Return header row + first 3 data rows to diagnose column layout
+    const headerCols = parseCsvLine(lines[dataStartIdx - 1]);
+    const sampleRows = lines.slice(dataStartIdx, dataStartIdx + 3).map(l => parseCsvLine(l));
+    return NextResponse.json({
+      synced: 0, excluded, tab: usedTab, statusCol,
+      header: headerCols.map((h, i) => `[${i}] ${h}`),
+      sample: sampleRows.map(r => r.map((v, i) => `[${i}] ${v}`)),
+    });
+  }
+
+  if (debug) {
+    const total = employees.reduce((s, e) => s + e.amount, 0);
+    return NextResponse.json({ debug: true, statusCol, count: employees.length, total, employees, excluded });
   }
 
   // Delete existing unfrozen rows for this month, then insert fresh
