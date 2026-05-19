@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   format,
   subDays,
@@ -11,11 +11,21 @@ import {
   endOfMonth,
   subMonths,
   isSameDay,
+  parse,
+  isValid,
 } from "date-fns";
 import { Calendar as CalendarIcon } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+
+const DATE_FMT = "dd/MM/yyyy";
+
+function parseDmy(value: string): Date | null {
+  const parsed = parse(value, DATE_FMT, new Date());
+  return isValid(parsed) ? parsed : null;
+}
 
 interface DateRangePickerProps {
   from: Date;
@@ -67,6 +77,16 @@ function isPresetActive(preset: (typeof presets)[number], from: Date, to: Date) 
 
 export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
   const [open, setOpen] = useState(false);
+  const [fromText, setFromText] = useState(format(from, DATE_FMT));
+  const [toText, setToText] = useState(format(to, DATE_FMT));
+
+  useEffect(() => {
+    setFromText(format(from, DATE_FMT));
+    setToText(format(to, DATE_FMT));
+  }, [from, to, open]);
+
+  const fromValid = parseDmy(fromText);
+  const toValid = parseDmy(toText);
 
   const activeKey = useMemo(
     () => presets.find((p) => isPresetActive(p, from, to))?.key ?? null,
@@ -76,6 +96,16 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
   const applyPreset = (preset: (typeof presets)[number]) => {
     const range = preset.fn();
     onChange(range.from, range.to);
+  };
+
+  const commitTyped = () => {
+    if (!fromValid || !toValid) return;
+    const [a, b] =
+      fromValid.getTime() <= toValid.getTime()
+        ? [fromValid, toValid]
+        : [toValid, fromValid];
+    onChange(a, b);
+    setOpen(false);
   };
 
   return (
@@ -142,6 +172,36 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
                 </button>
               );
             })}
+          </div>
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-white">
+            <label className="flex items-center gap-1.5 text-[11px] text-text-secondary">
+              From
+              <Input
+                value={fromText}
+                onChange={(e) => setFromText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitTyped();
+                }}
+                onBlur={commitTyped}
+                placeholder="DD/MM/YYYY"
+                aria-invalid={!fromValid}
+                className="h-7 w-[7.5rem] text-xs tabular-nums"
+              />
+            </label>
+            <label className="flex items-center gap-1.5 text-[11px] text-text-secondary">
+              To
+              <Input
+                value={toText}
+                onChange={(e) => setToText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitTyped();
+                }}
+                onBlur={commitTyped}
+                placeholder="DD/MM/YYYY"
+                aria-invalid={!toValid}
+                className="h-7 w-[7.5rem] text-xs tabular-nums"
+              />
+            </label>
           </div>
           <Calendar
             mode="range"
