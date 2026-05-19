@@ -32,13 +32,21 @@ const BRAND_MAP: Record<string, string> = {
 
 async function fetchLapisCsv(gid: string): Promise<Record<string, string>[]> {
   const url  = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${gid}`;
-  const resp = await fetch(url);
+  const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) throw new Error(`Lapis CSV fetch failed: ${resp.status}`);
   const text  = await resp.text();
   const lines = text.split("\n").filter(l => l.trim());
   if (lines.length < 2) return [];
-  const headers = parseCSVRow(lines[0]);
-  return lines.slice(1).map(line => {
+  // The Lapis sheets prefix the data with a single-cell title row like
+  // "Service data is from 1 Jan 2025,,,,," — skip rows with fewer than 3
+  // non-empty cells until we find the real header row.
+  let headerIdx = 0;
+  for (let i = 0; i < Math.min(lines.length, 5); i++) {
+    const nonEmpty = parseCSVRow(lines[i]).filter(c => c.trim()).length;
+    if (nonEmpty >= 3) { headerIdx = i; break; }
+  }
+  const headers = parseCSVRow(lines[headerIdx]);
+  return lines.slice(headerIdx + 1).map(line => {
     const cells = parseCSVRow(line);
     return Object.fromEntries(headers.map((h, i) => [h.trim(), (cells[i] ?? "").trim()]));
   });
