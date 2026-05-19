@@ -25,8 +25,8 @@ export async function POST(req: NextRequest) {
   let totalRows = 0;
 
   try {
-    // HQ transactions live in the Aesthetics Zoho org, filtered by HQ tag
-    const client = new ZohoBooksClient("aesthetics");
+    // HQ accounts live in the SPA Zoho org (same org as Carisma Spas)
+    const client = new ZohoBooksClient("spa");
 
     log.push("Loading HQ CoA mapping…");
     let coaMap: Record<string, [string, string]> = {};

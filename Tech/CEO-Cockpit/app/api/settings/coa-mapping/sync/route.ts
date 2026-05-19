@@ -25,8 +25,8 @@ export async function POST(req: NextRequest) {
   const supabase = getAdminClient();
   const { org = "spa" } = await req.json().catch(() => ({}));
 
-  // HQ shares Aesthetics org credentials in Zoho but is stored as a separate org in Supabase
-  const zohoOrg = org === "hq" ? "aesthetics" : org;
+  // HQ accounts live in the SPA Zoho org
+  const zohoOrg = org === "hq" ? "spa" : org;
 
   const clientId     = process.env.ZOHO_BOOKS_CLIENT_ID;
   const clientSecret = process.env.ZOHO_BOOKS_CLIENT_SECRET;

@@ -31,19 +31,6 @@ export async function loadHqCoaMap(): Promise<Record<string, [string, string]>> 
   return result;
 }
 
-// ── Name-based EBITDA line detection (fallback) ───────────────────────────────
-
-function detectLine(name: string, section: string): string {
-  const low = name.toLowerCase();
-  if (section === "income") return "revenue";
-  if (/salary|salaries|wage|overtime|bonus|national insurance|ni |payroll|sick pay/.test(low)) return "wages";
-  if (/rent|lease/.test(low)) return "rent";
-  if (/electric|water|internet|broadband|telephone|mobile|utility|wifi/.test(low)) return "utilities";
-  if (/advertis|marketing|digital|social media|meta ads|google ads|influenc/.test(low)) return "advertising";
-  if (section === "cogs" || section === "cost_of_goods_sold") return "cogs";
-  return "sga";
-}
-
 // ── Idempotency check ─────────────────────────────────────────────────────────
 
 async function monthAlreadySynced(monthKey: string): Promise<boolean> {
@@ -80,15 +67,17 @@ export async function runHqEbitdaMonth(
     return { rowsUpserted: 0, log };
   }
 
-  const tagId = opts.tagId ?? process.env.ZOHO_BOOKS_HQ_TAG_ID;
-  if (!tagId) {
-    log.push(`${monthKey}: ZOHO_BOOKS_HQ_TAG_ID not set — skipping`);
+  const coaMap = opts.coaMap ?? {};
+  if (!Object.keys(coaMap).length) {
+    log.push(`${monthKey}: HQ CoA map is empty — sync accounts on the HQ tab in COA Mapping first`);
     return { rowsUpserted: 0, log };
   }
 
-  const coaMap = opts.coaMap ?? {};
-  log.push(`${monthKey}: fetching HQ-tagged P&L from Zoho Books (tag_id=${tagId})…`);
-  const rawAccounts = await fetchPlAccounts(client, fromDate, toDate, tagId);
+  // Fetch full SPA org P&L (no tag filter). Only accounts present in the HQ CoA map
+  // are processed — everything else is ignored. This avoids needing Zoho tag option IDs
+  // and gives the user control via the COA Mapping UI.
+  log.push(`${monthKey}: fetching full SPA P&L from Zoho Books (${Object.keys(coaMap).length} HQ-mapped accounts)…`);
+  const rawAccounts = await fetchPlAccounts(client, fromDate, toDate);
   if (!rawAccounts.length) {
     log.push(`${monthKey}: no HQ-tagged accounts returned`);
     return { rowsUpserted: 0, log };
@@ -101,20 +90,11 @@ export async function runHqEbitdaMonth(
 
   for (const acc of rawAccounts) {
     if (acc.amount === 0) continue;
-    if (acc.section === "other_income" && !(acc.code in coaMap)) continue;
-
-    let line: string;
-    if (acc.code in coaMap) {
-      const [, mappedLine] = coaMap[acc.code];
-      if (mappedLine === "excluded") continue;
-      line = mappedLine;
-    } else if (acc.section === "income") {
-      line = "revenue";
-    } else {
-      line = detectLine(acc.name, acc.section);
-    }
-
-    // Normalise sga sub-categories → sga bucket
+    // Only process accounts explicitly mapped in the HQ CoA map
+    if (!(acc.code in coaMap)) continue;
+    const [, mappedLine] = coaMap[acc.code];
+    if (mappedLine === "excluded") continue;
+    let line = mappedLine;
     if (line.startsWith("sga_")) line = "sga";
     if (!BASE_LINES.has(line)) continue;
     totals[line] += acc.amount;
