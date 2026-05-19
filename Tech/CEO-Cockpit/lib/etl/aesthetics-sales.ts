@@ -1,7 +1,9 @@
 import { deleteWhere, insertRows } from "./supabase-etl";
 
-const SHEET_ID    = "1j6tz8k8TRSulB35Sg4X1xSlcV_JLf-8QKx-32UUkoBc";
+const SHEET_ID = "1Mr_aRRbRf3ex--WmUJIqXwko7okCyD82KxBOXWYnW24";
+const LOW_VAT_PERSONS = new Set(["francesca", "giovanni", "kendra"]);
 const DEFAULT_VAT = 0.18;
+const LOW_VAT     = 0.12;
 
 const MONTH_NAMES = [
   "January","February","March","April","May","June",
@@ -54,19 +56,13 @@ async function listTabNames(): Promise<string[]> {
 // case-insensitively against the spreadsheet's actual tab list.
 function tabCandidates(year: number, month: number): string[] {
   const m  = MONTH_NAMES[month - 1];
-  const ab = m.slice(0, 3);  // "Feb", "Apr", …
   const yy = String(year).slice(2);
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const name of [m, ab]) {
-    for (const yr of [yy, String(year)]) {
-      for (const prefix of ["Sales", "Sale"]) {
-        const c = `${prefix} ${name} ${yr}`;
-        if (!seen.has(c)) { seen.add(c); out.push(c); }
-      }
-    }
-  }
-  return out;
+  return [
+    `Sales ${m} ${yy}`,   // "Sales April 26"  ← current naming
+    `Sale ${m} ${yy}`,    // "Sale April 26"
+    `Sales ${m} ${year}`, // "Sales April 2026"
+    `Sale ${m} ${year}`,  // "Sale April 2026"  ← old naming
+  ];
 }
 
 async function fetchTab(tab: string): Promise<{ rows: Record<string, string>[]; headers: string[] } | null> {
@@ -78,15 +74,8 @@ async function fetchTab(tab: string): Promise<{ rows: Record<string, string>[]; 
   const data   = await resp.json() as { values?: string[][] };
   const values = data.values ?? [];
   if (values.length < 2) return null;
-  // Normalise headers to lowercase; deduplicate with _2, _3 suffix so later
-  // columns (e.g. a second "sale of") don't silently overwrite earlier ones.
-  const seen = new Map<string, number>();
-  const headers = values[0].map(h => {
-    const k = h.trim().toLowerCase();
-    const n = (seen.get(k) ?? 0) + 1;
-    seen.set(k, n);
-    return n === 1 ? k : `${k}_${n}`;
-  });
+  // Normalise headers to lowercase so lookups are case-insensitive
+  const headers = values[0].map(h => h.trim().toLowerCase());
   const rows = values.slice(1).map(row => {
     const padded = [...row, ...Array(Math.max(0, headers.length - row.length)).fill("")];
     return Object.fromEntries(headers.map((h, i) => [h, padded[i] ?? ""]));
@@ -108,15 +97,15 @@ async function fetchBestTab(
     return allTabs.find(t => t.toLowerCase().trim() === candidate.toLowerCase().trim()) ?? null;
   }
 
-  // First pass: prefer the tab that has a "paid" or "client" column (new sheet format)
+  // First pass: prefer the tab that has a "price" or "paid" column
   for (const candidate of candidates) {
     const actualTab = findActual(candidate);
     if (!actualTab) continue;
     const result = await fetchTab(actualTab);
     if (!result) continue;
     log.push(`  Found tab '${actualTab}' — columns: [${result.headers.join(", ")}]`);
-    if (result.headers.includes("paid") || result.headers.includes("client")) return { rows: result.rows, tabName: actualTab, headers: result.headers };
-    log.push(`  (tab '${actualTab}' has no paid/client column — checking next candidate)`);
+    if (result.headers.includes("price") || result.headers.includes("paid")) return { rows: result.rows, tabName: actualTab, headers: result.headers };
+    log.push(`  (tab '${actualTab}' has no price/paid column — checking next candidate)`);
   }
 
   // Second pass: fall back to the first matching tab that has any data
@@ -178,18 +167,24 @@ function processTab(tab: string, rawRows: Record<string, string>[], year: number
   const results: Record<string, unknown>[] = [];
 
   for (const row of rawRows) {
-    const customer   = col(row, "client") || null;
-    if (!customer) continue;
-    const service    = col(row, "weight loss", "treatments", "medical consultation", "products") || null;
-    const dateRaw    = col(row, "date");
-    const priceRaw   = col(row, "paid");
-    const notePerson = col(row, "sale of") || null;
+    const invoice     = col(row, "invoice")      || null;
+    const customer    = col(row, "costumer", "customer") || null;
+    const service     = col(row, "service / products", "service/products") || null;
+    const dateRaw     = col(row, "date of service");
+    const priceRaw    = col(row, "price", "paid");
+    const payment     = col(row, "payment")      || null;
+    const salesStaff  = col(row, "sales staf", "sales staff") || null;
+    const note        = col(row, "note");
 
     if (!priceRaw || priceRaw === "-") continue;
     const priceInc = Math.abs(parseFloat(priceRaw.replace(/[€$,]/g, "").trim()));
     if (!isFinite(priceInc) || priceInc === 0) continue;
 
-    const rate    = DEFAULT_VAT;
+    const notePerson = note.trim() || null;
+    if (notePerson?.toLowerCase() === "total") continue;
+    if (!customer && !service && !invoice) continue;
+
+    const rate    = (notePerson && LOW_VAT_PERSONS.has(notePerson.toLowerCase())) ? LOW_VAT : DEFAULT_VAT;
     const priceEx = +(priceInc / (1 + rate)).toFixed(2);
     const svcDate = parseDate(dateRaw, year, month);
 
@@ -197,14 +192,14 @@ function processTab(tab: string, rawRows: Record<string, string>[], year: number
       sheet_tab:       tab,
       month:           monthKey,
       date_of_service: svcDate,
-      invoice:         null,
+      invoice,
       customer,
       service_product: service,
       price_inc_vat:   +priceInc.toFixed(2),
       vat_rate:        rate,
       price_ex_vat:    priceEx,
-      payment_method:  null,
-      sales_staff:     null,
+      payment_method:  payment,
+      sales_staff:     salesStaff,
       note_person:     notePerson,
     });
   }

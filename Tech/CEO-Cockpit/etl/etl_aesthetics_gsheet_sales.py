@@ -33,9 +33,11 @@ load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
-SHEET_ID = "1j6tz8k8TRSulB35Sg4X1xSlcV_JLf-8QKx-32UUkoBc"
+SHEET_ID = "1Mr_aRRbRf3ex--WmUJIqXwko7okCyD82KxBOXWYnW24"
 
-DEFAULT_VAT = 0.18
+LOW_VAT_PERSONS = {"francesca", "giovanni", "kendra"}   # 12% VAT
+DEFAULT_VAT     = 0.18
+LOW_VAT         = 0.12
 
 MONTH_NAMES = [
     "January","February","March","April","May","June",
@@ -84,19 +86,14 @@ def _get_access_token() -> str | None:
 # ── Sheet helpers ──────────────────────────────────────────────────────────────
 
 def tab_candidates_for(year: int, month: int) -> list[str]:
-    m   = MONTH_NAMES[month - 1]
-    ab  = m[:3]   # "Feb", "Apr", "Mar" …
-    yy  = str(year)[2:]
-    seen: set[str] = set()
-    out: list[str] = []
-    for name in [m, ab]:
-        for yr in [yy, str(year)]:
-            for prefix in ["Sales", "Sale"]:
-                c = f"{prefix} {name} {yr}"
-                if c not in seen:
-                    seen.add(c)
-                    out.append(c)
-    return out
+    m  = MONTH_NAMES[month - 1]
+    yy = str(year)[2:]
+    return [
+        f"Sales {m} {yy}",   # "Sales April 26"
+        f"Sale {m} {yy}",    # "Sale April 26"
+        f"Sales {m} {year}", # "Sales April 2026"
+        f"Sale {m} {year}",  # "Sale April 2026"
+    ]
 
 
 def fetch_tab(tab: str) -> list[dict]:
@@ -127,21 +124,11 @@ def fetch_tab(tab: str) -> list[dict]:
     values = data.get("values", [])
     if len(values) < 2:
         return []
-    # Convert rows to list-of-dicts using first row as header.
-    # Duplicate column names (e.g. two "Sale of" columns) get a _2, _3 suffix
-    # so later columns don't silently overwrite earlier ones.
-    raw_headers = [str(h).strip().lower() for h in values[0]]
-    seen_h: dict[str, int] = {}
-    headers_row: list[str] = []
-    for h in raw_headers:
-        if h in seen_h:
-            seen_h[h] += 1
-            headers_row.append(f"{h}_{seen_h[h]}")
-        else:
-            seen_h[h] = 1
-            headers_row.append(h)
+    # Convert rows to list-of-dicts using first row as header
+    headers_row = [str(h).strip().lower() for h in values[0]]
     rows = []
     for row in values[1:]:
+        # Pad short rows
         padded = row + [""] * (len(headers_row) - len(row))
         rows.append(dict(zip(headers_row, padded)))
     return rows
@@ -195,7 +182,9 @@ def parse_date(raw: str, fallback_year: int, fallback_month: int) -> date | None
 
 # ── VAT logic ─────────────────────────────────────────────────────────────────
 
-def get_vat_rate() -> float:
+def get_vat_rate(note_person: str | None) -> float:
+    if note_person and note_person.strip().lower() in LOW_VAT_PERSONS:
+        return LOW_VAT
     return DEFAULT_VAT
 
 
@@ -270,15 +259,16 @@ def process_tab(tab: str, year: int, month: int) -> list[dict]:
                     return str(v).strip()
             return ""
 
-        customer    = col("client") or None
-        service     = col("weight loss", "treatments", "medical consultation", "products") or None
-        date_raw    = col("date")
-        price_raw   = col("paid")
-        note_person = col("sale of") or None
+        invoice      = col("invoice")      or None
+        customer     = col("costumer", "customer") or None
+        service      = col("service / products", "service/products") or None
+        date_raw     = col("date of service")
+        price_raw    = col("price", "paid")
+        payment      = col("payment")      or None
+        sales_staff  = col("sales staf", "sales staff") or None
+        note         = col("note")
 
-        # Skip summary rows: no client or price
-        if not customer:
-            continue
+        # Skip rows with no price
         if not price_raw or price_raw.strip() in ("", "-"):
             continue
         try:
@@ -290,7 +280,15 @@ def process_tab(tab: str, year: int, month: int) -> list[dict]:
         if price_inc == 0:
             continue
 
-        rate         = get_vat_rate()
+        note_person  = note.strip() or None
+
+        # Skip summary/total rows: note says "total", or no identifying fields at all
+        if note_person and note_person.lower() == "total":
+            continue
+        if not customer and not service and not invoice:
+            continue
+
+        rate         = get_vat_rate(note_person)
         price_ex     = round(price_inc / (1 + rate), 2)
         svc_date     = parse_date(date_raw, year, month)
 
@@ -298,14 +296,14 @@ def process_tab(tab: str, year: int, month: int) -> list[dict]:
             "sheet_tab":       tab,
             "month":           month_key,
             "date_of_service": svc_date.isoformat() if svc_date else None,
-            "invoice":         None,
+            "invoice":         invoice,
             "customer":        customer,
             "service_product": service,
             "price_inc_vat":   round(price_inc, 2),
             "vat_rate":        rate,
             "price_ex_vat":    price_ex,
-            "payment_method":  None,
-            "sales_staff":     None,
+            "payment_method":  payment,
+            "sales_staff":     sales_staff,
             "note_person":     note_person,
         })
 
