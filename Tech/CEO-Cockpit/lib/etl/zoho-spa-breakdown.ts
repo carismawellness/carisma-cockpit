@@ -9,7 +9,7 @@ const SPA_VENUE_SLUGS = [
   "labranda", "sunny_coast", "excelsior", "novotel",
 ];
 
-const ZOHO_TAG_TO_SLUG: Record<string, string> = {
+export const ZOHO_TAG_TO_SLUG: Record<string, string> = {
   hq:               "hq",
   inter:            "intercontinental",
   intercontinental: "intercontinental",
@@ -40,7 +40,7 @@ export const SLUG_DISPLAY: Record<string, string> = {
 
 const EBITDA_LINE_ORDER = ["revenue", "cogs", "wages", "advertising", "rent", "utilities", "sga"];
 
-const SALARY_RATIO_CODES: Record<string, string> = {
+export const SALARY_RATIO_CODES: Record<string, string> = {
   "30001":  "intercontinental",
   "30002":  "hugos",
   "30003":  "hyatt",
@@ -51,7 +51,7 @@ const SALARY_RATIO_CODES: Record<string, string> = {
   "602222": "novotel",
 };
 
-const UI_KEY_TO_SLUG: Record<string, string> = {
+export const UI_KEY_TO_SLUG: Record<string, string> = {
   inter:     "intercontinental",
   hugos:     "hugos",
   hyatt:     "hyatt",
@@ -89,7 +89,7 @@ export type ZohoSpaBreakdownResult = {
 
 // ── Tag discovery ─────────────────────────────────────────────────────────────
 
-async function discoverTagOptions(client: ZohoBooksClient): Promise<TagOption[]> {
+export async function discoverTagOptions(client: ZohoBooksClient): Promise<TagOption[]> {
   const list = await client.get("settings/tags", {}) as {
     reporting_tags?: Array<{ tag_id: string; tag_options?: string }>;
     tags?:           Array<{ tag_id: string; tag_options?: string }>;
