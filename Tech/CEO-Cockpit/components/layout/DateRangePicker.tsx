@@ -18,6 +18,7 @@ import { Calendar as CalendarIcon } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const DATE_FMT = "dd/MM/yyyy";
@@ -202,6 +203,14 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
                 className="h-7 w-[7.5rem] text-xs tabular-nums"
               />
             </label>
+            <Button
+              size="xs"
+              onClick={commitTyped}
+              disabled={!fromValid || !toValid}
+              className="ml-1"
+            >
+              OK
+            </Button>
           </div>
           <Calendar
             mode="range"
