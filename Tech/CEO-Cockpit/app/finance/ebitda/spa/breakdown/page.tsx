@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
-import { ChevronDown, ChevronRight, RefreshCw, Tag, SplitSquareHorizontal } from "lucide-react";
+import { ChevronDown, ChevronRight, RefreshCw, Tag, SplitSquareHorizontal, Sheet } from "lucide-react";
 import type { ZohoSpaBreakdownResult, AccountRow, TagOption } from "@/lib/etl/zoho-spa-breakdown";
 
 /* ------------------------------------------------------------------ */
@@ -262,11 +262,34 @@ function SummaryBar({ result }: { result: ZohoSpaBreakdownResult }) {
 /* ------------------------------------------------------------------ */
 
 function BreakdownContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
-  const [status,      setStatus]      = useState<"idle" | "loading" | "done" | "error">("idle");
-  const [result,      setResult]      = useState<ZohoSpaBreakdownResult | null>(null);
-  const [errorMsg,    setErrorMsg]    = useState("");
-  const [showRevenue, setShowRevenue] = useState(false);
-  const [logOpen,     setLogOpen]     = useState(false);
+  const [status,       setStatus]      = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [result,       setResult]      = useState<ZohoSpaBreakdownResult | null>(null);
+  const [errorMsg,     setErrorMsg]    = useState("");
+  const [showRevenue,  setShowRevenue] = useState(false);
+  const [logOpen,      setLogOpen]     = useState(false);
+  const [pushStatus,   setPushStatus]  = useState<"idle" | "pushing" | "done" | "error">("idle");
+  const [pushMsg,      setPushMsg]     = useState("");
+
+  const pushToSheets = useCallback(async (from: Date, to: Date) => {
+    setPushStatus("pushing");
+    setPushMsg("");
+    try {
+      const fromStr = toDateStr(new Date(from.getFullYear(), from.getMonth(), 1));
+      const toStr   = toDateStr(new Date(to.getFullYear(), to.getMonth() + 1, 0));
+      const resp    = await window.fetch("/api/finance/zoho-spa-breakdown", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date_from: fromStr, date_to: toStr }),
+      });
+      const json = await resp.json();
+      if (!resp.ok) { setPushMsg(json.error ?? "Push failed"); setPushStatus("error"); return; }
+      setPushMsg(`Done — ${json.rows_written} rows written to "EBITDA Zoho data" sheet.`);
+      setPushStatus("done");
+    } catch (e) {
+      setPushMsg(String(e));
+      setPushStatus("error");
+    }
+  }, []);
 
   const fetch = useCallback(async (from: Date, to: Date) => {
     setStatus("loading");
@@ -298,15 +321,47 @@ function BreakdownContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }
             All non-excluded accounts split by Zoho venue tags, with COA split rules for untagged amounts.
           </p>
         </div>
-        <button
-          onClick={() => fetch(dateFrom, dateTo)}
-          disabled={status === "loading"}
-          className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground shadow-sm hover:bg-muted/50 disabled:opacity-50 transition-colors"
-        >
-          <RefreshCw className={`h-4 w-4 ${status === "loading" ? "animate-spin" : ""}`} />
-          {status === "loading" ? "Fetching from Zoho…" : status === "done" ? "Re-Fetch" : "Fetch from Zoho"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => pushToSheets(dateFrom, dateTo)}
+            disabled={pushStatus === "pushing"}
+            className="inline-flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-800 shadow-sm hover:bg-emerald-100 disabled:opacity-50 transition-colors"
+            title="Fetch from Zoho and write directly to the 'EBITDA Zoho data' Google Sheet"
+          >
+            <Sheet className={`h-4 w-4 ${pushStatus === "pushing" ? "animate-pulse" : ""}`} />
+            {pushStatus === "pushing" ? "Pushing to Sheets…" : "Push to Google Sheets"}
+          </button>
+          <button
+            onClick={() => fetch(dateFrom, dateTo)}
+            disabled={status === "loading"}
+            className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground shadow-sm hover:bg-muted/50 disabled:opacity-50 transition-colors"
+          >
+            <RefreshCw className={`h-4 w-4 ${status === "loading" ? "animate-spin" : ""}`} />
+            {status === "loading" ? "Fetching…" : status === "done" ? "Preview" : "Preview"}
+          </button>
+        </div>
       </div>
+
+      {/* Push status */}
+      {pushStatus === "done" && (
+        <div className="rounded-md bg-emerald-50 border border-emerald-200 px-4 py-2 text-sm text-emerald-700 flex items-center gap-2">
+          <Sheet className="h-4 w-4 shrink-0" />
+          {pushMsg}
+          <a
+            href="https://docs.google.com/spreadsheets/d/1WWM7W6S5wtSC-5hdlcuJgW3zbYaO7YRgg4_-Bju4-5s/edit#gid=1505489272"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-auto text-emerald-700 underline text-xs shrink-0"
+          >
+            Open sheet ↗
+          </a>
+        </div>
+      )}
+      {pushStatus === "error" && (
+        <div className="rounded-md bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">
+          Google Sheets error: {pushMsg}
+        </div>
+      )}
 
       {/* Idle prompt */}
       {status === "idle" && (
