@@ -34,7 +34,7 @@ const SPA_VENUE_SLUGS = [
   "intercontinental", "hugos", "hyatt", "ramla",
   "labranda", "sunny_coast", "excelsior", "novotel",
 ];
-const PAGE_THROTTLE_MS = 750;
+const PAGE_THROTTLE_MS = 1500;
 
 const MONTHS: Record<string, string> = {
   jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
