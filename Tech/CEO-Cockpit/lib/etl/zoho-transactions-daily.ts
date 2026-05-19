@@ -2,7 +2,6 @@ import { ZohoBooksClient } from "./zoho-client";
 import {
   COA_MAP,
   detectLocation,
-  detectLineFromName,
   loadSpaCoaFromSupabase,
 } from "./spa-ebitda";
 import {
@@ -181,18 +180,13 @@ async function fetchJournalChunk(
   return out;
 }
 
-function lineFromCoaOrName(
+function lineFromCoaStrict(
   code: string,
-  name: string,
-  section: "income" | "expense",
   coaMap: Record<string, [string, string]>,
-): { rule: string; line: string } {
-  if (code && code in coaMap) {
-    const [rule, line] = coaMap[code];
-    return { rule, line };
-  }
-  if (section === "income") return { rule: "sales_ratio", line: "revenue" };
-  return { rule: "equal", line: detectLineFromName(name, section) };
+): { rule: string; line: string } | null {
+  if (!code || !(code in coaMap)) return null;
+  const [rule, line] = coaMap[code];
+  return { rule, line };
 }
 
 function venueShares(
@@ -297,12 +291,16 @@ export async function fetchZohoTransactionsDaily(
   const buckets = new Map<string, Bucket>();
   const venueDisplay = (slug: string): string => SLUG_DISPLAY[slug] ?? slug;
 
+  let droppedUnmapped = 0;
+  let droppedExcluded = 0;
   for (const ln of allLines) {
-    const lineSection: "income" | "expense" = ln.section === "income" ? "income" : "expense";
-    const { rule: rawRule, line: rawLine } = lineFromCoaOrName(ln.account_code, ln.account_name, lineSection, coaMap);
+    const mapped = lineFromCoaStrict(ln.account_code, coaMap);
+    if (!mapped) { droppedUnmapped++; continue; }
+    const { rule: rawRule, line: rawLine } = mapped;
     let ebitdaLine = rawLine;
     if (ebitdaLine.startsWith("sga_")) ebitdaLine = "sga";
-    if (ebitdaLine === "excluded" || !VALID_LINES.has(ebitdaLine)) continue;
+    if (ebitdaLine === "excluded") { droppedExcluded++; continue; }
+    if (!VALID_LINES.has(ebitdaLine)) { droppedExcluded++; continue; }
 
     const nameLoc = detectLocation(ln.account_name);
     const effectiveRule = nameLoc ?? rawRule;
@@ -368,6 +366,6 @@ export async function fetchZohoTransactionsDaily(
     a.venue.localeCompare(b.venue)
   );
 
-  log.push(`Done: ${rows.length} (account, venue) rows`);
+  log.push(`Done: ${rows.length} (account, venue) rows  (dropped: ${droppedUnmapped} unmapped, ${droppedExcluded} excluded)`);
   return { rows, dates, period, log };
 }
