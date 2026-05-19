@@ -419,7 +419,7 @@ function CoaTableRow({ row, rules, onSave, hidesSplitRule = false }: {
 // Main page
 // ─────────────────────────────────────────────────────────────────────────────
 export default function CoaMappingPage() {
-  const [org, setOrg]    = useState<"spa" | "aesthetics" | "hq">("spa");
+  const [org, setOrg]    = useState<"spa" | "aesthetics">("spa");
   const [filter, setFilter] = useState<"all" | "unmapped">("all");
   const [search, setSearch]  = useState("");
   const [syncMsg, setSyncMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -437,7 +437,7 @@ export default function CoaMappingPage() {
   });
 
   const unmappedCount = rows.filter(r =>
-    !r.ebitda_line || (r.ebitda_line !== "excluded" && org !== "hq" && !r.split_rule_id)
+    !r.ebitda_line || (r.ebitda_line !== "excluded" && !r.split_rule_id)
   ).length;
 
   const patchMut = useMutation({
@@ -508,8 +508,7 @@ export default function CoaMappingPage() {
               {([
                 { key: "spa",        label: "SPA" },
                 { key: "aesthetics", label: "Aesthetics & Slimming" },
-                { key: "hq",         label: "HQ" },
-              ] as { key: "spa" | "aesthetics" | "hq"; label: string }[]).map(tab => (
+              ] as { key: "spa" | "aesthetics"; label: string }[]).map(tab => (
                 <button
                   key={tab.key}
                   onClick={() => { setOrg(tab.key); setFilter("all"); setSearch(""); setSyncMsg(null); }}
@@ -525,8 +524,8 @@ export default function CoaMappingPage() {
             </div>
           </div>
 
-          {/* Split Rules Panel — not applicable for HQ (no distribution) */}
-          {org !== "hq" && <SplitRulesPanel org={org as "spa" | "aesthetics"} rules={rules} />}
+          {/* Split Rules Panel */}
+          <SplitRulesPanel org={org} rules={rules} />
 
           {/* COA Table Card */}
           <Card className="overflow-hidden">
@@ -621,7 +620,7 @@ export default function CoaMappingPage() {
                       <th className="px-4 py-2.5 text-xs font-semibold text-text-secondary uppercase tracking-wide">Code</th>
                       <th className="px-4 py-2.5 text-xs font-semibold text-text-secondary uppercase tracking-wide">Type</th>
                       <th className="px-4 py-2.5 text-xs font-semibold text-text-secondary uppercase tracking-wide">EBITDA Line</th>
-                      {org !== "hq" && <th className="px-4 py-2.5 text-xs font-semibold text-text-secondary uppercase tracking-wide">Split Rule</th>}
+                      <th className="px-4 py-2.5 text-xs font-semibold text-text-secondary uppercase tracking-wide">Split Rule</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -631,7 +630,6 @@ export default function CoaMappingPage() {
                         row={row}
                         rules={rules}
                         onSave={handleSave}
-                        hidesSplitRule={org === "hq"}
                       />
                     ))}
                   </tbody>
