@@ -32,7 +32,7 @@ const SPA_OPTIONS = [
   { slug: "novotel",     label: "Novotel" },
   { slug: "aesthetics",  label: "Aesthetics" },
   { slug: "slimming",    label: "Slimming" },
-  { slug: "centre",      label: "Centre" },
+  { slug: "hq",          label: "HQ" },
 ];
 
 const SPA_LABEL: Record<string, string> = Object.fromEntries(

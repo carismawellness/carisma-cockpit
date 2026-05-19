@@ -40,7 +40,7 @@ BELOW_EBITDA_KEYWORDS = [
     "corporate tax", "income tax",
 ]
 SPA_SUPP_SLUGS = {"inter", "hugos", "hyatt", "ramla", "labranda",
-                  "odycy", "excelsior", "novotel", "centre"}
+                  "odycy", "excelsior", "novotel", "hq"}
 
 
 def is_below_ebitda(code: str, name: str) -> tuple[bool, str]:

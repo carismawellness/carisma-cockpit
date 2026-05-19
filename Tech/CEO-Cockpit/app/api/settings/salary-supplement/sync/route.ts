@@ -23,8 +23,8 @@ const SPA_NAME_TO_SLUG: Record<string, string | null> = {
   excelsior: "excelsior",
   novotel: "novotel",
   // Non-SPA brands — still valid slugs
-  centre: "centre",
-  center: "centre",
+  centre: "hq",
+  center: "hq",
   aesthetics: "aesthetics",
   aesthtics: "aesthetics",
   slimming: "slimming",

@@ -845,7 +845,7 @@ def run_month(client: ZohoBooksClient, year: int, month_num: int, force: bool = 
             amt  = float(sr.get("amount") or 0)
             if slug in SUPP_SLUG_TO_LOC:
                 prev_supp_by_loc[SUPP_SLUG_TO_LOC[slug]] += amt
-            elif slug == "centre":
+            elif slug == "hq":
                 centre_prev += amt
         if centre_prev > 0 and total_salary > 0:
             for loc_id, sal in loc_salary.items():
@@ -994,7 +994,7 @@ def run_month(client: ZohoBooksClient, year: int, month_num: int, force: bool = 
                 if slug in SUPP_SLUG_TO_LOC:
                     totals[SUPP_SLUG_TO_LOC[slug]]["wages"] += prorated
                     assigned_count += 1
-                elif slug == "centre":
+                elif slug == "hq":
                     centre_supplement += prorated
                     assigned_count += 1
                 # aesthetics slug intentionally skipped — not part of SPA EBITDA

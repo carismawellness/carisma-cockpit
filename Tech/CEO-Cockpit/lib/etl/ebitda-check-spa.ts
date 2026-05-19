@@ -19,7 +19,7 @@ const BELOW_EBITDA_KEYWORDS = [
   "corporate tax", "income tax",
 ];
 const SPA_SUPP_SLUGS = new Set([
-  "inter", "hugos", "hyatt", "ramla", "labranda", "odycy", "excelsior", "novotel", "centre",
+  "inter", "hugos", "hyatt", "ramla", "labranda", "odycy", "excelsior", "novotel", "hq",
 ]);
 
 function isBelowEbitda(code: string, name: string): [boolean, string] {

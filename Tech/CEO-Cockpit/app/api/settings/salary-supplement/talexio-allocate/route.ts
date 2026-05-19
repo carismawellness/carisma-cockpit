@@ -23,11 +23,11 @@ const UNIT_TO_SLUG: Record<string, string> = {
   aesthetics:       "aesthetics",
   aesthtics:        "aesthetics",
   slimming:         "slimming",
-  centre:           "centre",
-  center:           "centre",
-  "head office":    "centre",
-  management:       "centre",
-  central:          "centre",
+  centre:           "hq",
+  center:           "hq",
+  "head office":    "hq",
+  management:       "hq",
+  central:          "hq",
 };
 
 function unitToSlug(raw: string | null | undefined): string | null {

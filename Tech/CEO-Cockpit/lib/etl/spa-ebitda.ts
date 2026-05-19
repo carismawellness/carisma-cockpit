@@ -604,7 +604,7 @@ export async function runSpaEbitdaMonth(
       const slug = sr.spa_slug as string;
       const amt  = Number(sr.amount ?? 0);
       if (slug in SUPP_SLUG_TO_LOC) prevSuppByLoc[SUPP_SLUG_TO_LOC[slug]] += amt;
-      else if (slug === "centre") centrePrev += amt;
+      else if (slug === "hq") centrePrev += amt;
     }
     if (centrePrev > 0 && totalSalary > 0) {
       for (const id of ALL_LOCATION_IDS) prevSuppByLoc[id] += centrePrev * locSalary[id] / totalSalary;
@@ -725,7 +725,7 @@ export async function runSpaEbitdaMonth(
         if (slug in SUPP_SLUG_TO_LOC) {
           totals[SUPP_SLUG_TO_LOC[slug]].wages += prorated;
           assignedCount++;
-        } else if (slug === "centre") {
+        } else if (slug === "hq") {
           centreSupplement += prorated;
           assignedCount++;
         }
