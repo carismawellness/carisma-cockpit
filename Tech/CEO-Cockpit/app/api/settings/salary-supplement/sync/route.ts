@@ -142,14 +142,12 @@ export async function POST(req: NextRequest) {
 
   for (let i = dataStartIdx; i < lines.length; i++) {
     const cols = parseCsvLine(lines[i]);
-    const name      = cols[1]?.trim() ?? "";            // B
-    const spaRaw    = cols[2]?.trim() ?? "";            // C — location
-    const cashGross = cols[3]?.trim().toLowerCase() ?? ""; // D — Cash or Gross
-    const status    = cols[statusCol]?.trim() ?? "";    // Active employee (dynamic col)
-    const amtRaw    = cols[28]?.trim() ?? "";           // AC — cash salary
+    const name   = cols[1]?.trim() ?? "";            // B
+    const spaRaw = cols[2]?.trim() ?? "";            // C — location
+    const status = cols[statusCol]?.trim() ?? "";    // Active employee (dynamic col)
+    const amtRaw = cols[28]?.trim() ?? "";           // AC — cash salary
 
     if (!name || status.toLowerCase() !== "active") continue;
-    if (cashGross !== "cash") continue;
 
     const amount = parseAmount(amtRaw);
     if (amount <= 0) continue;
