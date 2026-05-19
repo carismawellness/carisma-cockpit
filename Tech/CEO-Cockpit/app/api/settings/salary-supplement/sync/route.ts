@@ -174,31 +174,52 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ synced: 0, excluded, tab: usedTab });
   }
 
-  // Carry forward spa_slug from the most recent prior month for employees
-  // whose column C location didn't map to a known slug (leaves them assignable)
+  // For employees whose column C didn't map to a known slug, carry forward
+  // their existing allocation: first from THIS month (preserves manual overrides
+  // on re-sync), then from the most recent prior month (helps with new months).
   const unassigned = employees.filter((e) => !e.spa_slug);
   if (unassigned.length > 0) {
     const unassignedNames = unassigned.map((e) => e.employee_name);
-    const { data: priorRows } = await supabase
-      .from("salary_supplement_monthly")
-      .select("employee_name, spa_slug, month")
-      .in("employee_name", unassignedNames)
-      .neq("month", month)
-      .not("spa_slug", "is", null)
-      .order("month", { ascending: false });
 
-    if (priorRows && priorRows.length > 0) {
-      const priorMap = new Map<string, string>();
-      for (const r of priorRows) {
-        if (!priorMap.has(r.employee_name) && r.spa_slug) {
-          priorMap.set(r.employee_name, r.spa_slug);
+    // Current month's existing allocations (manual overrides take priority)
+    const { data: currentRows } = await supabase
+      .from("salary_supplement_monthly")
+      .select("employee_name, spa_slug")
+      .in("employee_name", unassignedNames)
+      .eq("month", month)
+      .not("spa_slug", "is", null);
+
+    const currentMap = new Map<string, string>();
+    if (currentRows) {
+      for (const r of currentRows) {
+        if (r.spa_slug) currentMap.set(r.employee_name, r.spa_slug);
+      }
+    }
+
+    // Prior month fallback for employees not yet assigned this month
+    const needsPrior = unassignedNames.filter((n) => !currentMap.has(n));
+    const priorMap = new Map<string, string>();
+    if (needsPrior.length > 0) {
+      const { data: priorRows } = await supabase
+        .from("salary_supplement_monthly")
+        .select("employee_name, spa_slug, month")
+        .in("employee_name", needsPrior)
+        .neq("month", month)
+        .not("spa_slug", "is", null)
+        .order("month", { ascending: false });
+
+      if (priorRows) {
+        for (const r of priorRows) {
+          if (!priorMap.has(r.employee_name) && r.spa_slug) {
+            priorMap.set(r.employee_name, r.spa_slug);
+          }
         }
       }
-      for (const emp of employees) {
-        if (!emp.spa_slug) {
-          const prior = priorMap.get(emp.employee_name);
-          if (prior) emp.spa_slug = prior;
-        }
+    }
+
+    for (const emp of employees) {
+      if (!emp.spa_slug) {
+        emp.spa_slug = currentMap.get(emp.employee_name) ?? priorMap.get(emp.employee_name) ?? null;
       }
     }
   }
