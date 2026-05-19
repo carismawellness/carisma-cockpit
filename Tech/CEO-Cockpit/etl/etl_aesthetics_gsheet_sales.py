@@ -35,7 +35,7 @@ load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
 SHEET_ID = "1Mr_aRRbRf3ex--WmUJIqXwko7okCyD82KxBOXWYnW24"
 
-LOW_VAT_PERSONS = {"francesca", "giovanni"}   # 12% VAT
+LOW_VAT_PERSONS = {"francesca", "giovanni", "kendra"}   # 12% VAT
 DEFAULT_VAT     = 0.18
 LOW_VAT         = 0.12
 

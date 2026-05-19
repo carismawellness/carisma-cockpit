@@ -1,7 +1,7 @@
 import { deleteWhere, insertRows } from "./supabase-etl";
 
 const SHEET_ID = "1Mr_aRRbRf3ex--WmUJIqXwko7okCyD82KxBOXWYnW24";
-const LOW_VAT_PERSONS = new Set(["francesca", "giovanni"]);
+const LOW_VAT_PERSONS = new Set(["francesca", "giovanni", "kendra"]);
 const DEFAULT_VAT = 0.18;
 const LOW_VAT     = 0.12;
 

@@ -1,6 +1,6 @@
 -- Aesthetics clinic: transaction-level sales from Google Sheets
 -- Source: "Sale MONTH YEAR" tabs in the Aesthetics Sales spreadsheet
--- VAT: 12% for Francesca/Giovanni (Note column), 18% for all others
+-- VAT: 12% for Francesca/Giovanni/Kendra (Note column), 18% for all others
 CREATE TABLE IF NOT EXISTS aesthetics_sales_daily (
     id              SERIAL PRIMARY KEY,
     sheet_tab       TEXT          NOT NULL,   -- e.g. "Sale April 2026"
