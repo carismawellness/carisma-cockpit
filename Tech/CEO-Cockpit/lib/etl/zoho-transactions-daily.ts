@@ -35,6 +35,27 @@ const SPA_VENUE_SLUGS = [
   "labranda", "sunny_coast", "excelsior", "novotel",
 ];
 const PAGE_THROTTLE_MS = 1500;
+const RATE_LIMIT_BACKOFFS_MS = [15000, 30000, 60000]; // 15s, 30s, 60s
+
+async function callWithRetry<T>(fn: () => Promise<T>, label: string, log: string[]): Promise<T> {
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt <= RATE_LIMIT_BACKOFFS_MS.length; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const msg = String(e);
+      const is429 = /\b429\b/.test(msg) || /code":?\s*4[34]\b/.test(msg) || /maximum number of requests/i.test(msg);
+      if (!is429 || attempt === RATE_LIMIT_BACKOFFS_MS.length) {
+        lastErr = e;
+        throw e;
+      }
+      const wait = RATE_LIMIT_BACKOFFS_MS[attempt];
+      log.push(`  rate-limited on ${label}, waiting ${wait / 1000}s before retry (attempt ${attempt + 1}/${RATE_LIMIT_BACKOFFS_MS.length})`);
+      await new Promise(r => setTimeout(r, wait));
+    }
+  }
+  throw lastErr ?? new Error("callWithRetry exhausted");
+}
 
 const MONTHS: Record<string, string> = {
   jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
@@ -95,11 +116,15 @@ function monthChunks(fromDate: string, toDate: string): Array<{ from: string; to
 
 type AccountMeta = { code: string; name: string; type: string; section: "income" | "expense" | "other" };
 
-async function loadAccountMeta(client: ZohoBooksClient): Promise<Map<string, AccountMeta>> {
+async function loadAccountMeta(client: ZohoBooksClient, log: string[]): Promise<Map<string, AccountMeta>> {
   const result = new Map<string, AccountMeta>();
   let page = 1;
   while (true) {
-    const data = await client.get("chartofaccounts", { page: String(page), per_page: "200" }) as Record<string, unknown>;
+    const data = await callWithRetry(
+      () => client.get("chartofaccounts", { page: String(page), per_page: "200" }) as Promise<Record<string, unknown>>,
+      `chartofaccounts page ${page}`,
+      log,
+    );
     const accounts = (data.chartofaccounts ?? []) as Array<Record<string, unknown>>;
     for (const a of accounts) {
       const id = String(a.account_id ?? "");
@@ -131,14 +156,18 @@ async function fetchJournalChunk(
   let pageCount = 0;
   while (true) {
     if (pageCount > 0) await new Promise(r => setTimeout(r, PAGE_THROTTLE_MS));
-    const data = await client.get("reports/journal", {
-      filter_by: "TransactionDate.CustomDate",
-      from_date: fromDate,
-      to_date: toDate,
-      page: String(page),
-      per_page: "200",
-      report_basis: "Accrual",
-    }) as Record<string, unknown>;
+    const data = await callWithRetry(
+      () => client.get("reports/journal", {
+        filter_by: "TransactionDate.CustomDate",
+        from_date: fromDate,
+        to_date: toDate,
+        page: String(page),
+        per_page: "200",
+        report_basis: "Accrual",
+      }) as Promise<Record<string, unknown>>,
+      `reports/journal ${fromDate}..${toDate} page ${page}`,
+      log,
+    );
     pageCount++;
 
     const journals = (data.journal ?? []) as Array<Record<string, unknown>>;
@@ -241,7 +270,7 @@ export async function fetchZohoTransactionsDaily(
   }
 
   log.push("Loading chart of accounts…");
-  const accountMeta = await loadAccountMeta(client);
+  const accountMeta = await loadAccountMeta(client, log);
   log.push(`Loaded ${accountMeta.size} accounts`);
 
   log.push("Loading SPA CoA mapping…");
