@@ -2,30 +2,41 @@ import { ZohoBooksClient } from "./zoho-client";
 import { upsert, select } from "./supabase-etl";
 import { fetchPlAccounts } from "./zoho-pl-parser";
 
-// ── CoA map loader ────────────────────────────────────────────────────────────
-// HQ has its own zoho_org='hq' mapping in Supabase.
-// Falls back to name-based detection for any unmapped accounts.
+// ── HQ tag option ID discovery ────────────────────────────────────────────────
+// Fetches Zoho reporting tags and finds the numeric option ID for the "HQ" option.
+// This replaces the old ZOHO_BOOKS_HQ_TAG_ID env var — no manual config needed.
 
-export async function loadHqCoaMap(): Promise<Record<string, [string, string]>> {
+async function getHqTagOptionId(client: ZohoBooksClient): Promise<string | null> {
+  try {
+    const data = await client.get("settings/tags", {}) as {
+      tags?: Array<{
+        tag_id: string;
+        tag_name: string;
+        tag_options?: Array<{ tag_option_id: string; value: string }>;
+      }>;
+    };
+    for (const tag of data.tags ?? []) {
+      for (const option of tag.tag_options ?? []) {
+        if (option.value.trim().toLowerCase() === "hq") return option.tag_option_id;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ── CoA map loader ────────────────────────────────────────────────────────────
+// Reads EBITDA line assignments from the SPA COA mapping.
+// Split rules are not needed here — Zoho tag filtering already scopes the amounts to HQ.
+
+export async function loadHqCoaMap(): Promise<Record<string, string>> {
   const base = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const key  = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-  // Find the "100% HQ" split rule ID in the SPA org
-  const ruleQs = new URLSearchParams({ select: "id", name: "eq.100% HQ", zoho_org: "eq.spa" });
-  const ruleResp = await fetch(`${base}/rest/v1/coa_split_rules?${ruleQs}`, {
-    headers: { apikey: key, Authorization: `Bearer ${key}` },
-  });
-  if (!ruleResp.ok) throw new Error(`Failed to load HQ split rule: ${ruleResp.status}`);
-  const rules = await ruleResp.json() as { id: number }[];
-  if (!rules.length) return {};
-  const ruleId = rules[0].id;
-
-  // Fetch all SPA accounts assigned the "100% HQ" split rule
-  const qs = new URLSearchParams({
-    select:        "account_code,ebitda_line",
-    zoho_org:      "eq.spa",
-    ebitda_line:   "not.is.null",
-    split_rule_id: `eq.${ruleId}`,
+  const qs   = new URLSearchParams({
+    select:      "account_code,ebitda_line",
+    zoho_org:    "eq.spa",
+    ebitda_line: "not.is.null",
   });
   const resp = await fetch(`${base}/rest/v1/zoho_coa_mapping?${qs}`, {
     headers: { apikey: key, Authorization: `Bearer ${key}` },
@@ -33,12 +44,10 @@ export async function loadHqCoaMap(): Promise<Record<string, [string, string]>> 
   if (!resp.ok) throw new Error(`Failed to load HQ CoA: ${resp.status}`);
   const data = await resp.json() as { account_code: string; ebitda_line: string }[];
 
-  const result: Record<string, [string, string]> = {};
+  const result: Record<string, string> = {};
   for (const row of data) {
     const code = String(row.account_code ?? "").trim();
-    const line = row.ebitda_line;
-    if (line === "excluded") { result[code] = ["excluded", "excluded"]; continue; }
-    result[code] = ["hq", line];
+    if (row.ebitda_line && row.ebitda_line !== "excluded") result[code] = row.ebitda_line;
   }
   return result;
 }
@@ -62,10 +71,9 @@ export async function runHqEbitdaMonth(
   month: number,
   opts: {
     force?: boolean;
-    coaMap?: Record<string, [string, string]>;
+    coaMap?: Record<string, string>;
     fromDateOverride?: string;
     toDateOverride?: string;
-    tagId?: string;
   } = {},
 ): Promise<{ rowsUpserted: number; log: string[] }> {
   const log: string[] = [];
@@ -79,19 +87,19 @@ export async function runHqEbitdaMonth(
     return { rowsUpserted: 0, log };
   }
 
-  const coaMap = opts.coaMap ?? {};
-  if (!Object.keys(coaMap).length) {
-    log.push(`${monthKey}: HQ CoA map is empty — assign '100% HQ' split rule to accounts in COA Mapping (SPA tab)`);
+  // Discover the HQ tag option ID from Zoho at runtime
+  const tagOptionId = await getHqTagOptionId(client);
+  if (!tagOptionId) {
+    log.push(`${monthKey}: could not find 'HQ' reporting tag option in Zoho — ensure the HQ tag exists under Settings > Reporting Tags in Zoho Books`);
     return { rowsUpserted: 0, log };
   }
+  log.push(`${monthKey}: HQ tag option ID = ${tagOptionId}`);
 
-  // Fetch full SPA org P&L (no tag filter). Only accounts present in the HQ CoA map
-  // are processed — everything else is ignored. This avoids needing Zoho tag option IDs
-  // and gives the user control via the COA Mapping UI.
-  log.push(`${monthKey}: fetching full SPA P&L from Zoho Books (${Object.keys(coaMap).length} HQ-mapped accounts)…`);
-  const rawAccounts = await fetchPlAccounts(client, fromDate, toDate);
+  const coaMap = opts.coaMap ?? {};
+  log.push(`${monthKey}: fetching HQ-tagged P&L from Zoho Books…`);
+  const rawAccounts = await fetchPlAccounts(client, fromDate, toDate, tagOptionId);
   if (!rawAccounts.length) {
-    log.push(`${monthKey}: no HQ-tagged accounts returned`);
+    log.push(`${monthKey}: no HQ-tagged transactions found`);
     return { rowsUpserted: 0, log };
   }
 
@@ -102,11 +110,8 @@ export async function runHqEbitdaMonth(
 
   for (const acc of rawAccounts) {
     if (acc.amount === 0) continue;
-    // Only process accounts explicitly mapped in the HQ CoA map
-    if (!(acc.code in coaMap)) continue;
-    const [, mappedLine] = coaMap[acc.code];
-    if (mappedLine === "excluded") continue;
-    let line = mappedLine;
+    // Use COA map for EBITDA line; fall back to section-based detection
+    let line = coaMap[acc.code] ?? (acc.section === "income" ? "revenue" : "sga");
     if (line.startsWith("sga_")) line = "sga";
     if (!BASE_LINES.has(line)) continue;
     totals[line] += acc.amount;

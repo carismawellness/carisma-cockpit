@@ -29,12 +29,12 @@ export async function POST(req: NextRequest) {
     const client = new ZohoBooksClient("spa");
 
     log.push("Loading HQ CoA mapping…");
-    let coaMap: Record<string, [string, string]> = {};
+    let coaMap: Record<string, string> = {};
     try {
       coaMap = await loadHqCoaMap();
-      log.push(`Loaded ${Object.keys(coaMap).length} accounts from Supabase.`);
+      log.push(`Loaded ${Object.keys(coaMap).length} SPA accounts with EBITDA lines.`);
     } catch (e) {
-      log.push(`Failed to load HQ CoA (${e}) — using name-based detection.`);
+      log.push(`Warning: failed to load CoA (${e}) — will use section-based fallback.`);
     }
 
     const fromD = new Date(dateFrom);
