@@ -86,12 +86,15 @@ export async function fetchPlAccounts(
   client: ZohoBooksClient,
   fromDate: string,
   toDate: string,
+  tagId?: string,
 ): Promise<PlAccount[]> {
-  const data = await client.get("reports/profitandloss", {
+  const params: Record<string, string> = {
     from_date:  fromDate,
     to_date:    toDate,
     cash_based: "false",
-  }) as Record<string, unknown>;
+  };
+  if (tagId) params.tag_id = tagId;
+  const data = await client.get("reports/profitandloss", params) as Record<string, unknown>;
 
   const pl: unknown = data.profit_and_loss ?? data;
   const accounts: PlAccount[] = [];

@@ -5,6 +5,7 @@ const ZOHO_AUTH  = "https://accounts.zoho.eu/oauth/v2/token";
 const ZOHO_API   = "https://www.zohoapis.eu/books/v3";
 
 async function getZohoAccessToken(org: string): Promise<string> {
+  // HQ uses the same Zoho org/credentials as Aesthetics
   const refreshToken = org === "spa"
     ? process.env.ZOHO_BOOKS_SPA_REFRESH_TOKEN
     : process.env.ZOHO_BOOKS_REFRESH_TOKEN;
@@ -24,26 +25,29 @@ export async function POST(req: NextRequest) {
   const supabase = getAdminClient();
   const { org = "spa" } = await req.json().catch(() => ({}));
 
+  // HQ shares Aesthetics org credentials in Zoho but is stored as a separate org in Supabase
+  const zohoOrg = org === "hq" ? "aesthetics" : org;
+
   const clientId     = process.env.ZOHO_BOOKS_CLIENT_ID;
   const clientSecret = process.env.ZOHO_BOOKS_CLIENT_SECRET;
-  const refreshToken = org === "spa"
+  const refreshToken = zohoOrg === "spa"
     ? process.env.ZOHO_BOOKS_SPA_REFRESH_TOKEN
     : process.env.ZOHO_BOOKS_REFRESH_TOKEN;
-  const orgId        = org === "spa"
+  const orgId        = zohoOrg === "spa"
     ? process.env.ZOHO_BOOKS_SPA_ORG_ID
     : process.env.ZOHO_BOOKS_AESTH_ORG_ID;
 
   if (!clientId || !clientSecret || !refreshToken || !orgId ||
       [clientId, clientSecret, refreshToken, orgId].some(v => v === "TO_BE_FILLED")) {
-    const orgIdVar = org === "spa" ? "ZOHO_BOOKS_SPA_ORG_ID" : "ZOHO_BOOKS_AESTH_ORG_ID";
-    const tokenVar = org === "spa" ? "ZOHO_BOOKS_SPA_REFRESH_TOKEN" : "ZOHO_BOOKS_REFRESH_TOKEN";
+    const orgIdVar = zohoOrg === "spa" ? "ZOHO_BOOKS_SPA_ORG_ID" : "ZOHO_BOOKS_AESTH_ORG_ID";
+    const tokenVar = zohoOrg === "spa" ? "ZOHO_BOOKS_SPA_REFRESH_TOKEN" : "ZOHO_BOOKS_REFRESH_TOKEN";
     return NextResponse.json({
       error: `Zoho Books credentials not configured for ${org}. Check ZOHO_BOOKS_CLIENT_ID, CLIENT_SECRET, ${tokenVar} and ${orgIdVar} in .env.local`,
     }, { status: 400 });
   }
 
   try {
-    const token = await getZohoAccessToken(org);
+    const token = await getZohoAccessToken(zohoOrg);
 
     async function fetchAllPages(filterBy: string) {
       const accounts: Array<{ account_id: string; account_code?: string; account_name: string; account_type: string }> = [];
@@ -98,7 +102,7 @@ export async function POST(req: NextRequest) {
       account_code: code,
       account_name: a.account_name,
       account_type: a.account_type,
-      zoho_org:     org,
+      zoho_org:     org,   // store as 'hq' when org='hq', even though fetched from aesthetics Zoho org
       last_synced_at: new Date().toISOString(),
     }));
 

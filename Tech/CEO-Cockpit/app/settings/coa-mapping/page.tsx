@@ -350,13 +350,14 @@ function SplitRulesPanel({ org, rules }: { org: "spa" | "aesthetics"; rules: Spl
 // ─────────────────────────────────────────────────────────────────────────────
 // COA Table row
 // ─────────────────────────────────────────────────────────────────────────────
-function CoaTableRow({ row, rules, onSave }: {
+function CoaTableRow({ row, rules, onSave, hidesSplitRule = false }: {
   row: CoaRow;
   rules: SplitRule[];
   onSave: (id: number, field: "ebitda_line" | "split_rule_id", value: string | number | null) => void;
+  hidesSplitRule?: boolean;
 }) {
   const isExcluded = row.ebitda_line === "excluded";
-  const isMapped   = !!row.ebitda_line && (isExcluded || !!row.split_rule_id);
+  const isMapped   = !!row.ebitda_line && (isExcluded || hidesSplitRule || !!row.split_rule_id);
 
   return (
     <tr className={`border-b border-warm-border hover:bg-warm-gray/30 transition-colors ${!isMapped ? "bg-amber-50/40" : ""}`}>
@@ -383,31 +384,33 @@ function CoaTableRow({ row, rules, onSave }: {
           ))}
         </select>
       </td>
-      <td className="px-4 py-2.5">
-        {isExcluded ? (
-          <span className="text-xs text-text-secondary italic">— not required —</span>
-        ) : (
-          <select
-            className="text-xs border border-warm-border rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-gold/40 w-full"
-            value={row.split_rule_id ?? ""}
-            onChange={e => onSave(row.id, "split_rule_id", e.target.value ? Number(e.target.value) : null)}
-          >
-            <option value="">— select —</option>
-            <optgroup label="System rules">
-              {rules.filter(r => r.is_system && r.rule_type !== "direct").map(r => (
-                <option key={r.id} value={r.id}>{r.name}</option>
-              ))}
-            </optgroup>
-            {rules.filter(r => !r.is_system).length > 0 && (
-              <optgroup label="Custom rules">
-                {rules.filter(r => !r.is_system).map(r => (
+      {!hidesSplitRule && (
+        <td className="px-4 py-2.5">
+          {isExcluded ? (
+            <span className="text-xs text-text-secondary italic">— not required —</span>
+          ) : (
+            <select
+              className="text-xs border border-warm-border rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-gold/40 w-full"
+              value={row.split_rule_id ?? ""}
+              onChange={e => onSave(row.id, "split_rule_id", e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">— select —</option>
+              <optgroup label="System rules">
+                {rules.filter(r => r.is_system && r.rule_type !== "direct").map(r => (
                   <option key={r.id} value={r.id}>{r.name}</option>
                 ))}
               </optgroup>
-            )}
-          </select>
-        )}
-      </td>
+              {rules.filter(r => !r.is_system).length > 0 && (
+                <optgroup label="Custom rules">
+                  {rules.filter(r => !r.is_system).map(r => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          )}
+        </td>
+      )}
     </tr>
   );
 }
@@ -416,7 +419,7 @@ function CoaTableRow({ row, rules, onSave }: {
 // Main page
 // ─────────────────────────────────────────────────────────────────────────────
 export default function CoaMappingPage() {
-  const [org, setOrg]    = useState<"spa" | "aesthetics">("spa");
+  const [org, setOrg]    = useState<"spa" | "aesthetics" | "hq">("spa");
   const [filter, setFilter] = useState<"all" | "unmapped">("all");
   const [search, setSearch]  = useState("");
   const [syncMsg, setSyncMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -433,7 +436,9 @@ export default function CoaMappingPage() {
     staleTime: 0,
   });
 
-  const unmappedCount = rows.filter(r => !r.ebitda_line || (r.ebitda_line !== "excluded" && !r.split_rule_id)).length;
+  const unmappedCount = rows.filter(r =>
+    !r.ebitda_line || (r.ebitda_line !== "excluded" && org !== "hq" && !r.split_rule_id)
+  ).length;
 
   const patchMut = useMutation({
     mutationFn: (body: object) =>
@@ -503,7 +508,8 @@ export default function CoaMappingPage() {
               {([
                 { key: "spa",        label: "SPA" },
                 { key: "aesthetics", label: "Aesthetics & Slimming" },
-              ] as { key: "spa" | "aesthetics"; label: string }[]).map(tab => (
+                { key: "hq",         label: "HQ" },
+              ] as { key: "spa" | "aesthetics" | "hq"; label: string }[]).map(tab => (
                 <button
                   key={tab.key}
                   onClick={() => { setOrg(tab.key); setFilter("all"); setSearch(""); setSyncMsg(null); }}
@@ -519,8 +525,8 @@ export default function CoaMappingPage() {
             </div>
           </div>
 
-          {/* Split Rules Panel */}
-          <SplitRulesPanel org={org} rules={rules} />
+          {/* Split Rules Panel — not applicable for HQ (no distribution) */}
+          {org !== "hq" && <SplitRulesPanel org={org as "spa" | "aesthetics"} rules={rules} />}
 
           {/* COA Table Card */}
           <Card className="overflow-hidden">
@@ -615,7 +621,7 @@ export default function CoaMappingPage() {
                       <th className="px-4 py-2.5 text-xs font-semibold text-text-secondary uppercase tracking-wide">Code</th>
                       <th className="px-4 py-2.5 text-xs font-semibold text-text-secondary uppercase tracking-wide">Type</th>
                       <th className="px-4 py-2.5 text-xs font-semibold text-text-secondary uppercase tracking-wide">EBITDA Line</th>
-                      <th className="px-4 py-2.5 text-xs font-semibold text-text-secondary uppercase tracking-wide">Split Rule</th>
+                      {org !== "hq" && <th className="px-4 py-2.5 text-xs font-semibold text-text-secondary uppercase tracking-wide">Split Rule</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -625,6 +631,7 @@ export default function CoaMappingPage() {
                         row={row}
                         rules={rules}
                         onSave={handleSave}
+                        hidesSplitRule={org === "hq"}
                       />
                     ))}
                   </tbody>

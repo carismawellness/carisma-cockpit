@@ -12,6 +12,7 @@ import { chartColors, formatCurrency } from "@/lib/charts/config";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useSpaEbitda } from "@/lib/hooks/useSpaEbitda";
 import { useAestheticsEbitda } from "@/lib/hooks/useAestheticsEbitda";
+import { useHqEbitda } from "@/lib/hooks/useHqEbitda";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine, Cell,
@@ -36,29 +37,6 @@ interface VenueRow {
   sga: number;
   ebitda: number;
   revenue: number;
-}
-
-/* ------------------------------------------------------------------ */
-/*  CORPORATE OVERHEAD — placeholder until CoA is attributed to HQ    */
-/* ------------------------------------------------------------------ */
-
-interface CorporateCosts {
-  revenue: number;
-  wages: number;
-  advertising: number;
-  rent: number;
-  utilities: number;
-  cogs: number;
-  sga: number;
-}
-
-const CORPORATE: CorporateCosts = {
-  revenue: 0, wages: 0, advertising: 0,
-  rent: 0, utilities: 0, cogs: 0, sga: 0,
-};
-
-function corporateEbitda(c: CorporateCosts): number {
-  return -(c.wages + c.advertising + c.rent + c.utilities + c.cogs + c.sga);
 }
 
 /* ------------------------------------------------------------------ */
@@ -123,7 +101,7 @@ function TrendIcon({ trend }: { trend: number }) {
 /*  WATERFALL BUILDER                                                  */
 /* ------------------------------------------------------------------ */
 
-function buildWaterfall(rows: VenueRow[]) {
+function buildWaterfall(rows: VenueRow[], hqEbitda: number) {
   const entries: {
     name: string; value: number; cumulative: number;
     start: number; end: number; isTotal?: boolean;
@@ -141,11 +119,10 @@ function buildWaterfall(rows: VenueRow[]) {
     running += row.ebitda;
     entries.push({ name: row.name, value: row.ebitda, cumulative: running, start: s, end: running });
   }
-  const corpE = corporateEbitda(CORPORATE);
-  if (corpE !== 0) {
+  if (hqEbitda !== 0) {
     const s = running;
-    running += corpE;
-    entries.push({ name: "Corporate / HQ", value: corpE, cumulative: running, start: s, end: running });
+    running += hqEbitda;
+    entries.push({ name: "Corporate / HQ", value: hqEbitda, cumulative: running, start: s, end: running });
   }
   entries.push({ name: "Group EBITDA", value: running, cumulative: running, start: 0, end: running, isTotal: true });
   return entries;
@@ -160,11 +137,13 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
   /* ── Live data hooks ─────────────────────────────────────────────── */
   const spa = useSpaEbitda(dateFrom, dateTo);
   const aes = useAestheticsEbitda(dateFrom, dateTo);
+  const hq  = useHqEbitda(dateFrom, dateTo);
 
-  const isFetching    = spa.isFetching || aes.isFetching;
-  const isSyncing     = spa.isSyncing  || aes.isSyncing;
-  const syncError     = spa.syncError  || aes.syncError;
-  const missingMonths = [...spa.missingMonths, ...aes.missingMonths];
+  const isFetching    = spa.isFetching || aes.isFetching || hq.isFetching;
+  const isSyncing     = spa.isSyncing  || aes.isSyncing  || hq.isSyncing;
+  const syncError     = spa.syncError  || aes.syncError  || hq.syncError;
+  const missingMonths = [...spa.missingMonths, ...aes.missingMonths, ...hq.missingMonths];
+  const CORPORATE     = hq.data;
 
   /* ── Dept splits from aesthetics hook ───────────────────────────── */
   const aesData  = aes.depts.find(d => d.dept === "aesthetics");
@@ -191,8 +170,8 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
     ebitdaPct: slimData ? pctOf(slimData.ebitda, slimData.revenue) : 0,
   }), [slimData]);
 
-  const groupRevenue = spaTotals.revenue + aesSummary.revenue + slimSummary.revenue;
-  const groupEbitda  = spaTotals.ebitda  + aesSummary.ebitda  + slimSummary.ebitda;
+  const groupRevenue = spaTotals.revenue + aesSummary.revenue + slimSummary.revenue + CORPORATE.revenue;
+  const groupEbitda  = spaTotals.ebitda  + aesSummary.ebitda  + slimSummary.ebitda  + CORPORATE.ebitda;
   const groupMargin  = groupRevenue > 0 ? Math.round((groupEbitda / groupRevenue) * 100) : 0;
 
   /* ── Date labels ─────────────────────────────────────────────────── */
@@ -272,7 +251,7 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
   }, [venueRows, spaExpanded]);
 
   /* ── Waterfall & brand cards ─────────────────────────────────────── */
-  const waterfallData = useMemo(() => buildWaterfall(venueRows), [venueRows]);
+  const waterfallData = useMemo(() => buildWaterfall(venueRows, CORPORATE.ebitda), [venueRows, CORPORATE.ebitda]);
 
   const brands = useMemo(() => [
     {
@@ -310,7 +289,7 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
           )}
           <button
             type="button"
-            onClick={() => { spa.triggerSync(true); aes.triggerSync(true); }}
+            onClick={() => { spa.triggerSync(true); aes.triggerSync(true); hq.triggerSync(true); }}
             disabled={isSyncing || isFetching}
             className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
@@ -499,7 +478,9 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
                     {fmtCurrencyShort(v.revenue)}
                   </td>
                 ))}
-                <td className="py-2 px-2 text-right text-muted-foreground bg-slate-50/60 border-l-2 border-border/80 border-b border-border">&mdash;</td>
+                <td className="py-2 px-2 text-right text-[13px] font-semibold text-foreground tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border">
+                  {CORPORATE.revenue > 0 ? fmtCurrencyShort(CORPORATE.revenue) : <span className="text-muted-foreground font-normal">&mdash;</span>}
+                </td>
                 <td className="py-2 px-2 text-right text-[13px] font-bold text-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border">
                   {fmtCurrencyShort(venueTotals.revenue + CORPORATE.revenue)}
                 </td>
@@ -721,7 +702,7 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
                   </td>
                 ))}
                 {(() => {
-                  const corpE = corporateEbitda(CORPORATE);
+                  const corpE = CORPORATE.ebitda;
                   return (
                     <td className={`py-2 px-2 text-right text-[13px] font-semibold tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-t-2 border-foreground/15 border-b border-border ${corpE >= 0 ? "text-emerald-700" : "text-red-600"}`}>
                       {corpE !== 0 ? fmtCurrencyShort(corpE) : <span className="text-muted-foreground font-normal">&mdash;</span>}
@@ -729,7 +710,7 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
                   );
                 })()}
                 {(() => {
-                  const groupE = venueTotals.ebitda + corporateEbitda(CORPORATE);
+                  const groupE = venueTotals.ebitda + CORPORATE.ebitda;
                   return (
                     <td className={`py-2 px-2 text-right text-[13px] font-bold tabular-nums bg-slate-100/70 border-l-2 border-border border-t-2 border-foreground/15 border-b border-border ${groupE >= 0 ? "text-emerald-700" : "text-red-600"}`}>
                       {fmtCurrencyShort(groupE)}
@@ -757,7 +738,7 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
                 </td>
                 <td className="py-2 px-2 text-right bg-slate-100/70 border-l-2 border-border">
                   {(() => {
-                    const m = pctOf(venueTotals.ebitda + corporateEbitda(CORPORATE), venueTotals.revenue);
+                    const m = pctOf(venueTotals.ebitda + CORPORATE.ebitda, venueTotals.revenue);
                     const badge = m >= 50 ? "border-emerald-300 text-emerald-800 bg-emerald-50"
                                 : m >= 30 ? "border-amber-300 text-amber-800 bg-amber-50"
                                 :           "border-red-300 text-red-800 bg-red-50";
