@@ -8,19 +8,25 @@ import { fetchPlAccounts } from "./zoho-pl-parser";
 
 async function getHqTagOptionId(client: ZohoBooksClient): Promise<string | null> {
   try {
-    const data = await client.get("settings/tags", {}) as {
-      tags?: Array<{
-        tag_id: string;
-        tag_name: string;
-        tag_options?: Array<{ tag_option_id: string; value: string }>;
-      }>;
+    // Step 1: list all tag groups — tag_options here is a comma-separated string
+    const list = await client.get("settings/tags", {}) as {
+      reporting_tags?: Array<{ tag_id: string; tag_options?: string }>;
+      tags?:           Array<{ tag_id: string; tag_options?: string }>;
     };
-    for (const tag of data.tags ?? []) {
-      for (const option of tag.tag_options ?? []) {
-        if (option.value.trim().toLowerCase() === "hq") return option.tag_option_id;
-      }
-    }
-    return null;
+    const groups = list.reporting_tags ?? list.tags ?? [];
+    const group = groups.find(t =>
+      (t.tag_options ?? "").split(",").map(s => s.trim().toLowerCase()).includes("hq")
+    );
+    if (!group) return null;
+
+    // Step 2: fetch the specific tag group to get individual option IDs
+    const detail = await client.get(`settings/tags/${group.tag_id}`, {}) as {
+      tag?: { tag_options?: Array<{ tag_option_id: string; value: string }> };
+    };
+    const option = (detail.tag?.tag_options ?? []).find(
+      o => o.value.trim().toLowerCase() === "hq"
+    );
+    return option?.tag_option_id ?? null;
   } catch {
     return null;
   }

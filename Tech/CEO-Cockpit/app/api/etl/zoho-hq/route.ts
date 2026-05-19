@@ -7,8 +7,14 @@ import { ETLLogger } from "@/lib/etl/etl-logger";
 export async function GET() {
   try {
     const client = new ZohoBooksClient("spa");
-    const tagsRaw = await client.get("settings/tags", {}).catch((e: unknown) => ({ error: String(e) }));
-    return NextResponse.json({ tags: tagsRaw });
+    const list = await client.get("settings/tags", {}).catch((e: unknown) => ({ error: String(e) })) as Record<string, unknown>;
+    const groups = ((list.reporting_tags ?? list.tags ?? []) as Array<{ tag_id: string; tag_options?: string }>);
+    const group  = groups.find(t => (t.tag_options ?? "").split(",").map(s => s.trim().toLowerCase()).includes("hq"));
+    let detail: unknown = null;
+    if (group) {
+      detail = await client.get(`settings/tags/${group.tag_id}`, {}).catch((e: unknown) => ({ error: String(e) }));
+    }
+    return NextResponse.json({ list, hq_group: group ?? null, detail });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
