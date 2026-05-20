@@ -26,6 +26,7 @@ export type DailyRow = {
   ebitda_category: string;        // revenue / cogs / wages / advertising / rent / utilities / sga
   split_rule:      string;        // raw CoA rule (sales_ratio, equal, hugos, custom:{}, …)
   tag_source:      "tagged" | "split";
+  contact:         string;        // Advertising sub-bucket: Meta / Google / Klaviyo / GHL / Misc — empty for non-Advertising rows
   daily:           Record<string, number>;   // YYYY-MM-DD → amount
 };
 
@@ -68,6 +69,50 @@ const AESTH_BRAND_DISPLAY: Record<"aesthetics" | "slimming", { brand: "AES" | "S
   aesthetics: { brand: "AES",  venue: "Aesthetics" },
   slimming:   { brand: "SLIM", venue: "Slimming"   },
 };
+
+// ── Advertising contact mapping ─────────────────────────────────────────────
+// Maps Zoho vendor / customer names to canonical advertising channel
+// buckets (Meta, Google, Klaviyo, GHL, Misc). Loaded once per pull from
+// the advertising_contact_mapping Supabase table. Used only for lines
+// whose CoA mapping puts them on the "advertising" EBITDA line.
+
+type AdContactMappingEntry = { pattern: string; canonical: string; priority: number };
+
+async function loadAdvertisingContactMapping(): Promise<AdContactMappingEntry[]> {
+  const base = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key  = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!base || !key) return [];
+  try {
+    const qs = new URLSearchParams({ select: "pattern,canonical,priority" });
+    const resp = await fetch(`${base}/rest/v1/advertising_contact_mapping?${qs}`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+    });
+    if (!resp.ok) return [];
+    const rows = (await resp.json()) as Array<Record<string, unknown>>;
+    return rows
+      .map(r => ({
+        pattern:   String(r.pattern ?? "").trim().toLowerCase(),
+        canonical: String(r.canonical ?? "").trim(),
+        priority:  Number(r.priority ?? 100),
+      }))
+      .filter(r => r.pattern && r.canonical)
+      .sort((a, b) => a.priority - b.priority);
+  } catch {
+    return [];
+  }
+}
+
+function resolveAdvertisingContact(
+  contactName: string,
+  mapping: AdContactMappingEntry[],
+): string {
+  if (!contactName) return "Misc";
+  const low = contactName.toLowerCase();
+  for (const m of mapping) {
+    if (low.includes(m.pattern)) return m.canonical;
+  }
+  return "Misc";
+}
 
 // ── Tag resolution ──────────────────────────────────────────────────────────
 
@@ -211,8 +256,13 @@ async function buildSpaRows(
   period: { from_date: string; to_date: string },
   log:    string[],
 ): Promise<DailyResult> {
-  log.push("Loading SPA CoA mapping…");
-  const coaMap = (await loadSpaCoaFromSupabase()) ?? COA_MAP;
+  log.push("Loading SPA CoA mapping + advertising contact mapping…");
+  const [coaMapMaybe, adContactMap] = await Promise.all([
+    loadSpaCoaFromSupabase(),
+    loadAdvertisingContactMapping(),
+  ]);
+  const coaMap = coaMapMaybe ?? COA_MAP;
+  log.push(`  advertising contact patterns loaded: ${adContactMap.length}`);
 
   type Classified = {
     line:    TxnLine;
@@ -257,7 +307,7 @@ async function buildSpaRows(
   const salPct = Object.fromEntries(SPA_VENUE_SLUGS.map(s => [s, salBySlug[s] / totalSal]));
   log.push(`SPA revPct (untagged-only): ${SPA_VENUE_SLUGS.map(s => `${s}=${(revPct[s] * 100).toFixed(1)}%`).join(" ")}`);
 
-  // 3. Bucket per (account, venue) — daily values inside
+  // 3. Bucket per (account, venue, tag_source, contact) — daily values inside
   type Bucket = {
     brand:           "SPA";
     venue:           string;
@@ -267,6 +317,7 @@ async function buildSpaRows(
     ebitda_category: string;
     split_rule:      string;
     tag_source:      "tagged" | "split";
+    contact:         string;
     daily:           Record<string, number>;
   };
   const buckets = new Map<string, Bucket>();
@@ -280,8 +331,11 @@ async function buildSpaRows(
     tagSource: "tagged" | "split",
   ) {
     if (amount === 0) return;
+    const contact = c.ebitda === "advertising"
+      ? resolveAdvertisingContact(c.line.contact_name, adContactMap)
+      : "";
     const accountKey = c.line.account_code || c.line.account_name;
-    const key = `${accountKey}::${slug}::${tagSource}`;
+    const key = `${accountKey}::${slug}::${tagSource}::${contact}`;
     let b = buckets.get(key);
     if (!b) {
       b = {
@@ -293,11 +347,12 @@ async function buildSpaRows(
         ebitda_category: c.ebitda,
         split_rule:      c.rule,
         tag_source:      tagSource,
+        contact,
         daily:           {},
       };
       buckets.set(key, b);
     }
-    b.daily[c.line.date] = (b.daily[c.line.date] ?? 0) + amount;
+    b!.daily[c.line.date] = (b!.daily[c.line.date] ?? 0) + amount;
   }
 
   for (const c of classified) {
@@ -338,14 +393,19 @@ async function buildAesthRows(
   period: { from_date: string; to_date: string },
   log:    string[],
 ): Promise<DailyResult> {
-  log.push("Loading Aesthetics CoA mapping…");
+  log.push("Loading Aesthetics CoA mapping + advertising contact mapping…");
   let coaMap: Record<string, [string, string]> = {};
+  let adContactMap: AdContactMappingEntry[] = [];
   try {
-    coaMap = await loadAestheticsCoaMap();
+    [coaMap, adContactMap] = await Promise.all([
+      loadAestheticsCoaMap(),
+      loadAdvertisingContactMapping(),
+    ]);
   } catch (e) {
     log.push(`  failed to load Aesthetics CoA: ${e}`);
     return { rows: [], dates, period, log };
   }
+  log.push(`  advertising contact patterns loaded: ${adContactMap.length}`);
 
   type Classified = {
     line:    TxnLine;
@@ -397,7 +457,7 @@ async function buildAesthRows(
   };
   log.push(`AES/SLIM revPct (untagged-only): aesthetics=${(revPct.aesthetics * 100).toFixed(1)}% slimming=${(revPct.slimming * 100).toFixed(1)}%`);
 
-  // 3. Bucket per (account, dept)
+  // 3. Bucket per (account, dept, tag_source, contact)
   type Bucket = {
     brand:           "AES" | "SLIM";
     venue:           string;
@@ -407,6 +467,7 @@ async function buildAesthRows(
     ebitda_category: string;
     split_rule:      string;
     tag_source:      "tagged" | "split";
+    contact:         string;
     daily:           Record<string, number>;
   };
   const buckets = new Map<string, Bucket>();
@@ -419,9 +480,12 @@ async function buildAesthRows(
     tagSource: "tagged" | "split",
   ) {
     if (amount === 0) return;
+    const contact = c.ebitda === "advertising"
+      ? resolveAdvertisingContact(c.line.contact_name, adContactMap)
+      : "";
     const meta = AESTH_BRAND_DISPLAY[dept];
     const accountKey = c.line.account_code || c.line.account_name;
-    const key = `${accountKey}::${dept}::${tagSource}`;
+    const key = `${accountKey}::${dept}::${tagSource}::${contact}`;
     let b = buckets.get(key);
     if (!b) {
       b = {
@@ -433,6 +497,7 @@ async function buildAesthRows(
         ebitda_category: c.ebitda,
         split_rule:      c.rule,
         tag_source:      tagSource,
+        contact,
         daily:           {},
       };
       buckets.set(key, b);
@@ -472,6 +537,7 @@ type BucketLike = {
   ebitda_category: string;
   split_rule:      string;
   tag_source:      "tagged" | "split";
+  contact:         string;
   daily:           Record<string, number>;
 };
 
@@ -498,6 +564,7 @@ function finalizeRows(
       ebitda_category: b.ebitda_category,
       split_rule:      b.split_rule,
       tag_source:      b.tag_source,
+      contact:         b.contact,
       daily:           cleaned,
     });
   }
@@ -505,6 +572,7 @@ function finalizeRows(
     a.ebitda_category.localeCompare(b.ebitda_category) ||
     a.account_name.localeCompare(b.account_name) ||
     a.venue.localeCompare(b.venue) ||
+    a.contact.localeCompare(b.contact) ||
     a.tag_source.localeCompare(b.tag_source),
   );
   log.push(`Done: ${rows.length} (account, target, source) row(s)`);

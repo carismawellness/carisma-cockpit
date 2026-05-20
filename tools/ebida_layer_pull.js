@@ -29,9 +29,10 @@ var PROTECTED_COLOR = PROTECTED_BG_COLOR;
 var CHUNK_DAYS      = 5;           // each API call covers <= this many days
 var APPS_SCRIPT_BUDGET_MS = 5 * 60 * 1000;  // bail before hitting 6-min hard limit
 
-var META_COLS  = ["Brand", "Line Item", "Account Code", "EBITDA Category", "Venue", "Allocation"];
+var META_COLS  = ["Brand", "Line Item", "Account Code", "EBITDA Category", "Venue", "Contact", "Allocation"];
 var META_COUNT = META_COLS.length;
-var ALLOC_COL_IDX = 5;   // 0-indexed — "tag" if Zoho line tag drove it, else the split rule name
+var CONTACT_COL_IDX = 5;  // 0-indexed — Meta/Google/Klaviyo/GHL/Misc, populated only for Advertising rows
+var ALLOC_COL_IDX   = 6;  // 0-indexed — "tag" if Zoho line tag drove it, else the split rule name
 
 // Sheet layout: row 1 = pull controls, row 2 = spacer, row 3 = header, row 4+ = data
 var CONTROL_ROW    = 1;
@@ -138,7 +139,8 @@ function pullAndWriteEbidaLayer(dateFrom, dateTo, org) {
     for (var r = 0; r < chunkResult.rows.length; r++) {
       var row = chunkResult.rows[r];
       var allocation = row.tag_source === "tagged" ? "tag" : (row.split_rule || "split");
-      var key = row.brand + "|" + (row.account_code || row.account_name) + "|" + row.venue_slug + "|" + allocation;
+      var contact    = String(row.contact || "");
+      var key = row.brand + "|" + (row.account_code || row.account_name) + "|" + row.venue_slug + "|" + contact + "|" + allocation;
       if (!accRows[key]) {
         accRows[key] = {
           brand:           row.brand,
@@ -147,6 +149,7 @@ function pullAndWriteEbidaLayer(dateFrom, dateTo, org) {
           ebitda_category: _capitalize(row.ebitda_category),
           venue:           row.venue,
           venue_slug:      row.venue_slug,
+          contact:         contact,
           allocation:      allocation,
           daily:           {},
         };
@@ -509,11 +512,12 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo, org) {
     var accCode   = String(values[r][2]).trim();
     var ebitdaCat = String(values[r][3]).trim();
     var venue     = String(values[r][venueIdx]).trim();
+    var contact   = String(values[r][CONTACT_COL_IDX] || "").trim();
     var alloc     = String(values[r][ALLOC_COL_IDX] || "").trim() || "split";
     if (!brand) continue;
     if (brand && !lineItem && !accCode && !ebitdaCat && !venue) continue;
     var venueSlug = _venueToSlug(venue);
-    var key = brand + "|" + (accCode || lineItem) + "|" + venueSlug + "|" + alloc;
+    var key = brand + "|" + (accCode || lineItem) + "|" + venueSlug + "|" + contact + "|" + alloc;
     existingRowKey[key] = r;
   }
 
@@ -587,6 +591,7 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo, org) {
       rowData[2] = newRow.account_code;
       rowData[3] = newRow.ebitda_category;
       rowData[venueIdx] = newRow.venue;
+      rowData[CONTACT_COL_IDX] = newRow.contact || "";
       rowData[ALLOC_COL_IDX] = newRow.allocation;
       for (var iso in newRow.daily) {
         var colIdx = dateToCol[iso];
@@ -639,6 +644,7 @@ function _writeFreshSheet(sheet, accRows, allDates, refreshFrom, refreshTo, org)
     dataRow[2] = r.account_code;
     dataRow[3] = r.ebitda_category;
     dataRow[4] = r.venue;
+    dataRow[CONTACT_COL_IDX] = r.contact || "";
     dataRow[ALLOC_COL_IDX] = r.allocation;
     for (var iso in r.daily) {
       var idx = META_COUNT + allDates.indexOf(iso);

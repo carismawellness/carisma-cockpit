@@ -19,6 +19,7 @@ export type TxnLine = {
   section:      "income" | "expense" | "other";
   amount:       number;          // signed; income contributes positive to revenue, expense contributes positive to cost. Credit notes / vendor credits flip sign.
   tags:         LineTag[];
+  contact_name: string;          // Zoho vendor (for bills/expenses/vendorcredits) or customer (for invoices/creditnotes); "" for journals
 };
 
 export type AccountMeta = {
@@ -89,18 +90,19 @@ type EndpointConfig = {
   idField:       string;           // field name on summary item that holds the id
   dateField:     string;           // field on summary that has the transaction date (YYYY-MM-DD)
   lineKey:       string;           // field on detail entity holding line array
+  contactField:  string[];        // field(s) on detail entity holding contact name; tried in order
   signMultiplier: 1 | -1;          // -1 for creditnotes (negate revenue) and vendorcredits (negate expense)
   dateStartParam: string;          // list filter param for inclusive start date
   dateEndParam:   string;          // list filter param for inclusive end date
 };
 
 const ENDPOINTS: EndpointConfig[] = [
-  { source: "invoice",      listKey: "invoices",        detailKey: "invoice",       idField: "invoice_id",       dateField: "date",         lineKey: "line_items", signMultiplier:  1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
-  { source: "bill",         listKey: "bills",           detailKey: "bill",          idField: "bill_id",          dateField: "date",         lineKey: "line_items", signMultiplier:  1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
-  { source: "expense",      listKey: "expenses",        detailKey: "expense",       idField: "expense_id",       dateField: "date",         lineKey: "line_items", signMultiplier:  1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
-  { source: "creditnote",   listKey: "creditnotes",     detailKey: "creditnote",    idField: "creditnote_id",    dateField: "date",         lineKey: "line_items", signMultiplier: -1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
-  { source: "vendorcredit", listKey: "vendor_credits",  detailKey: "vendor_credit", idField: "vendor_credit_id", dateField: "date",         lineKey: "line_items", signMultiplier: -1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
-  { source: "journal",      listKey: "journals",        detailKey: "journal",       idField: "journal_id",       dateField: "journal_date", lineKey: "line_items", signMultiplier:  1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
+  { source: "invoice",      listKey: "invoices",        detailKey: "invoice",       idField: "invoice_id",       dateField: "date",         lineKey: "line_items", contactField: ["customer_name"],                        signMultiplier:  1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
+  { source: "bill",         listKey: "bills",           detailKey: "bill",          idField: "bill_id",          dateField: "date",         lineKey: "line_items", contactField: ["vendor_name"],                          signMultiplier:  1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
+  { source: "expense",      listKey: "expenses",        detailKey: "expense",       idField: "expense_id",       dateField: "date",         lineKey: "line_items", contactField: ["vendor_name", "paid_through_account_name", "customer_name"], signMultiplier:  1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
+  { source: "creditnote",   listKey: "creditnotes",     detailKey: "creditnote",    idField: "creditnote_id",    dateField: "date",         lineKey: "line_items", contactField: ["customer_name"],                        signMultiplier: -1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
+  { source: "vendorcredit", listKey: "vendor_credits",  detailKey: "vendor_credit", idField: "vendor_credit_id", dateField: "date",         lineKey: "line_items", contactField: ["vendor_name"],                          signMultiplier: -1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
+  { source: "journal",      listKey: "journals",        detailKey: "journal",       idField: "journal_id",       dateField: "journal_date", lineKey: "line_items", contactField: [],                                       signMultiplier:  1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
 ];
 
 const ENDPOINT_PATH: Record<TxnSource, string> = {
@@ -213,6 +215,14 @@ async function fetchDetails(
     // Transaction-header tags act as a fallback when no line tag is present
     const headerTags = extractTags(entity);
 
+    // Contact name (vendor / customer) — used downstream for the advertising
+    // sub-bucket. Try fields in priority order; fall back to summary then "".
+    let contactName = "";
+    for (const f of cfg.contactField) {
+      const v = entity[f] ?? s[f];
+      if (v && String(v).trim()) { contactName = String(v).trim(); break; }
+    }
+
     for (const ln of lineArr) {
       const accountId = String(ln.account_id ?? "");
       if (!accountId) continue;
@@ -241,6 +251,7 @@ async function fetchDetails(
         section,
         amount,
         tags:         effectiveTags,
+        contact_name: contactName,
       });
     }
   }
