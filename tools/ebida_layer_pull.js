@@ -260,13 +260,14 @@ function pullFromSheetControls() {
 function _coerceDateToIso(v) {
   if (!v) return "";
   if (v instanceof Date && !isNaN(v.getTime())) {
-    // Date objects from sheet cells are in the spreadsheet's timezone (e.g.
-    // Malta UTC+1/+2). Reading with UTC methods shifts by one day. Use local
-    // date components to match what the user typed in the cell.
-    var y  = v.getFullYear();
-    var m  = String(v.getMonth() + 1).padStart(2, "0");
-    var dd = String(v.getDate()).padStart(2, "0");
-    return y + "-" + m + "-" + dd;
+    // Date objects from sheet cells are anchored to the SPREADSHEET's
+    // timezone, not the script's. JS Date methods (getFullYear etc.) and
+    // even Session.getScriptTimeZone() may disagree with the sheet TZ —
+    // for example if the spreadsheet is Europe/Malta but Apps Script's
+    // V8 runtime falls back to UTC for Date methods. Format explicitly
+    // with the spreadsheet's TZ for a guaranteed-correct ISO date.
+    var ssTz = SpreadsheetApp.openById(EBIDA_SPREADSHEET_ID).getSpreadsheetTimeZone();
+    return Utilities.formatDate(v, ssTz, "yyyy-MM-dd");
   }
   var s = String(v).trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
