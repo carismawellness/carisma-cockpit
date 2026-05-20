@@ -30,6 +30,16 @@ var META_COLS  = ["Brand", "Line Item", "Account Code", "EBITDA Category", "Venu
 var META_COUNT = META_COLS.length;
 var ALLOC_COL_IDX = 5;   // 0-indexed — "tag" if Zoho line tag drove it, else the split rule name
 
+// Sheet layout: row 1 = pull controls, row 2 = spacer, row 3 = header, row 4+ = data
+var CONTROL_ROW    = 1;
+var HEADER_ROW     = 3;
+var FIRST_DATA_ROW = 4;
+// Control cells (1-indexed col on CONTROL_ROW)
+var CTRL_FROM_COL    = 2;   // B1: from-date
+var CTRL_TO_COL      = 4;   // D1: to-date
+var CTRL_ORG_COL     = 6;   // F1: org (SPA / Aesthetics)
+var CTRL_STATUS_COL  = 8;   // H1: last pulled / status
+
 var BRAND_HEADER_BG = "#134a45";   // dark teal — matches existing "SPA" section row
 var BRAND_HEADER_FG = "#ffffff";
 var HEADER_BG       = "#e8f0fe";
@@ -144,7 +154,7 @@ function pullAndWriteEbidaLayer(dateFrom, dateTo, org) {
   }
 
   var allDates = Object.keys(datesSet).sort();
-  var stats    = _mergeIntoSheet(accRows, allDates, dateFrom, dateTo);
+  var stats    = _mergeIntoSheet(accRows, allDates, dateFrom, dateTo, org);
 
   var elapsed = ((Date.now() - startedAt) / 1000).toFixed(0);
   return "✓ " + chunks.length + " chunk(s) pulled in " + elapsed + "s\n" +
@@ -167,6 +177,61 @@ function runTestPullJan1to7() {
   var result = pullAndWriteEbidaLayer("2025-01-01", "2025-01-07", "SPA");
   Logger.log(result);
   return result;
+}
+
+// Reads From/To/Org from the control row at the top of the Zoho Raw Layer
+// tab and triggers a pull. This is the function to assign to the in-sheet
+// "Pull" button (Insert → Drawing → make a button → right-click → Assign
+// script → pullFromSheetControls).
+function pullFromSheetControls() {
+  var ss    = SpreadsheetApp.openById(EBIDA_SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(EBIDA_TAB);
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert(
+      "Tab '" + EBIDA_TAB + "' doesn't exist yet. Use the EBIDA Layer menu to do a first pull " +
+      "(or run runTestPullJan1to7) — that creates the tab with the control row.");
+    return;
+  }
+  var fromVal = sheet.getRange(CONTROL_ROW, CTRL_FROM_COL).getValue();
+  var toVal   = sheet.getRange(CONTROL_ROW, CTRL_TO_COL).getValue();
+  var orgVal  = sheet.getRange(CONTROL_ROW, CTRL_ORG_COL).getValue();
+
+  var fromStr = _coerceDateToIso(fromVal);
+  var toStr   = _coerceDateToIso(toVal);
+  var org     = String(orgVal || "SPA").trim();
+
+  if (!fromStr || !toStr) {
+    sheet.getRange(CONTROL_ROW, CTRL_STATUS_COL).setValue("Error: set From & To dates first");
+    SpreadsheetApp.getUi().alert("Please set valid From and To dates in row " + CONTROL_ROW + " first.");
+    return;
+  }
+
+  sheet.getRange(CONTROL_ROW, CTRL_STATUS_COL).setValue("Pulling " + fromStr + " → " + toStr + "…");
+  SpreadsheetApp.flush();
+  try {
+    var result = pullAndWriteEbidaLayer(fromStr, toStr, org);
+    var stamp  = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm");
+    sheet.getRange(CONTROL_ROW, CTRL_STATUS_COL).setValue("✓ Last pulled " + stamp);
+    Logger.log(result);
+    return result;
+  } catch (e) {
+    sheet.getRange(CONTROL_ROW, CTRL_STATUS_COL).setValue("Error: " + e.message);
+    throw e;
+  }
+}
+
+function _coerceDateToIso(v) {
+  if (!v) return "";
+  if (v instanceof Date && !isNaN(v.getTime())) return _isoDate(v);
+  var s = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // Try common DD/MM/YYYY and MM/DD/YYYY
+  var m = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/.exec(s);
+  if (m) {
+    // Assume DD/MM/YYYY (European, matches Malta locale)
+    return m[3] + "-" + m[2].padStart(2, "0") + "-" + m[1].padStart(2, "0");
+  }
+  return "";
 }
 
 // ── Chunking ─────────────────────────────────────────────────────────────────
@@ -212,52 +277,48 @@ function _fetchChunk(from, to, org) {
 
 // ── Merge into sheet ────────────────────────────────────────────────────────
 
-function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo) {
+function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo, org) {
   var ss    = SpreadsheetApp.openById(EBIDA_SPREADSHEET_ID);
   var sheet = ss.getSheetByName(EBIDA_TAB) || ss.insertSheet(EBIDA_TAB);
   var stats = { appended: 0, updated: 0, protected: 0 };
 
-  // Empty / brand-new sheet → write fresh
-  if (sheet.getLastRow() === 0) {
-    _writeFreshSheet(sheet, accRows, allDates);
+  // Empty / brand-new sheet OR no header at HEADER_ROW → write fresh (control row + header + data)
+  if (sheet.getLastRow() < HEADER_ROW || String(sheet.getRange(HEADER_ROW, 1).getValue()).trim() !== "Brand") {
+    _writeFreshSheet(sheet, accRows, allDates, refreshFrom, refreshTo, org);
     stats.appended = Object.keys(accRows).length;
     return stats;
   }
 
-  // Snapshot current state
+  // Snapshot current state (full sheet, including control + header + data rows)
   var lastRow = sheet.getLastRow();
   var lastCol = sheet.getLastColumn();
   var values      = sheet.getRange(1, 1, lastRow, lastCol).getValues();
   var backgrounds = sheet.getRange(1, 1, lastRow, lastCol).getBackgrounds();
-  var header      = values[0].map(function(v) { return String(v).trim(); });
+  var header      = values[HEADER_ROW - 1].map(function(v) { return String(v).trim(); });
 
-  // Detect Venue column (insert if missing)
+  // Detect Venue column at HEADER_ROW (should always be present on this dedicated tab)
   var venueIdx = -1;
   for (var c = 0; c < Math.min(META_COUNT, header.length); c++) {
     if (header[c].toLowerCase() === "venue") { venueIdx = c; break; }
   }
   if (venueIdx === -1) {
-    // 4-col layout (existing user sheet) — insert Venue col at position 5 (after EBITDA Category)
     sheet.insertColumnAfter(4);
-    sheet.getRange(1, 5).setValue("Venue").setBackground(HEADER_BG).setFontColor(HEADER_FG).setFontWeight("bold");
-    // Auto-infer venue for existing rows from line item name
+    sheet.getRange(HEADER_ROW, 5).setValue("Venue").setBackground(HEADER_BG).setFontColor(HEADER_FG).setFontWeight("bold");
     var inferRows = [];
-    for (var r = 1; r < values.length; r++) {
+    for (var r = HEADER_ROW; r < values.length; r++) {
       var brand     = String(values[r][0]).trim();
       var lineItem  = String(values[r][1]).trim();
       var accCode   = String(values[r][2]).trim();
       var ebitdaCat = String(values[r][3]).trim();
-      // Skip brand-section rows and blanks
       if (!brand) { inferRows.push([""]); continue; }
       if (brand && !lineItem && !accCode && !ebitdaCat) { inferRows.push([""]); continue; }
       inferRows.push([_inferVenueFromName(lineItem)]);
     }
-    if (inferRows.length > 0) sheet.getRange(2, 5, inferRows.length, 1).setValues(inferRows);
-    // Re-snapshot
+    if (inferRows.length > 0) sheet.getRange(HEADER_ROW + 1, 5, inferRows.length, 1).setValues(inferRows);
     lastCol = sheet.getLastColumn();
     values      = sheet.getRange(1, 1, lastRow, lastCol).getValues();
     backgrounds = sheet.getRange(1, 1, lastRow, lastCol).getBackgrounds();
-    header      = values[0].map(function(v) { return String(v).trim(); });
+    header      = values[HEADER_ROW - 1].map(function(v) { return String(v).trim(); });
     venueIdx = 4;
   }
 
@@ -275,12 +336,10 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo) {
     var iso = _parseDateHeader(rawHeader, refreshYear);
     if (!iso) continue;
     if (iso in dateToCol) {
-      // Duplicate — merge this col's values into the leftmost, then blank header
       var leftCol = dateToCol[iso];
-      for (var rr = 1; rr < values.length; rr++) {
+      for (var rr = HEADER_ROW; rr < values.length; rr++) {
         var dupVal = values[rr][c];
         if (dupVal === "" || dupVal == null) continue;
-        // Preserve leftmost cell if it's protected OR already has a value
         var leftVal = values[rr][leftCol];
         var leftBg  = backgrounds[rr][leftCol] || "";
         if (leftBg.toLowerCase() === PROTECTED_COLOR) continue;
@@ -298,22 +357,18 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo) {
       }
     }
   }
-  // Apply header rewrites
   for (var hi = 0; hi < headerRewrites.length; hi++) {
-    sheet.getRange(1, headerRewrites[hi].col1based).setValue(headerRewrites[hi].value);
+    sheet.getRange(HEADER_ROW, headerRewrites[hi].col1based).setValue(headerRewrites[hi].value);
   }
-  // Delete duplicate columns (in reverse so indices stay valid)
   if (dupColsToBlank.length > 0) {
     dupColsToBlank.sort(function(a, b) { return b - a; });
     for (var di = 0; di < dupColsToBlank.length; di++) {
       sheet.deleteColumn(dupColsToBlank[di] + 1);
     }
-    // Re-snapshot after deletions (col indices for surviving date cols shift)
     lastCol     = sheet.getLastColumn();
     values      = sheet.getRange(1, 1, lastRow, lastCol).getValues();
     backgrounds = sheet.getRange(1, 1, lastRow, lastCol).getBackgrounds();
-    header      = values[0].map(function(v) { return String(v).trim(); });
-    // Rebuild dateToCol from the post-deletion header
+    header      = values[HEADER_ROW - 1].map(function(v) { return String(v).trim(); });
     dateToCol = {};
     for (var c = META_COUNT; c < header.length; c++) {
       var iso2 = _parseDateHeader(header[c], refreshYear);
@@ -321,7 +376,6 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo) {
     }
   }
 
-  // Append missing date columns (chronological sort applied at end)
   var missing = [];
   for (var i = 0; i < allDates.length; i++) {
     if (!(allDates[i] in dateToCol)) missing.push(allDates[i]);
@@ -331,20 +385,18 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo) {
     var insertAt = sheet.getLastColumn() + 1;
     sheet.insertColumnsAfter(sheet.getLastColumn(), missing.length);
     var headerCells = missing.map(_formatDateHeader);
-    sheet.getRange(1, insertAt, 1, missing.length).setValues([headerCells])
+    sheet.getRange(HEADER_ROW, insertAt, 1, missing.length).setValues([headerCells])
          .setBackground(HEADER_BG).setFontColor(HEADER_FG).setFontWeight("bold");
-    // Number format for the new daily cells
-    if (lastRow >= 2) {
-      sheet.getRange(2, insertAt, lastRow - 1, missing.length).setNumberFormat("#,##0.00;(#,##0.00);-");
+    if (lastRow > HEADER_ROW) {
+      sheet.getRange(HEADER_ROW + 1, insertAt, lastRow - HEADER_ROW, missing.length).setNumberFormat("#,##0.00;(#,##0.00);-");
     }
     for (var mi = 0; mi < missing.length; mi++) {
-      dateToCol[missing[mi]] = insertAt + mi - 1;  // 0-indexed col
+      dateToCol[missing[mi]] = insertAt + mi - 1;
     }
-    // Re-snapshot after inserts
     lastCol     = sheet.getLastColumn();
     values      = sheet.getRange(1, 1, lastRow, lastCol).getValues();
     backgrounds = sheet.getRange(1, 1, lastRow, lastCol).getBackgrounds();
-    header      = values[0].map(function(v) { return String(v).trim(); });
+    header      = values[HEADER_ROW - 1].map(function(v) { return String(v).trim(); });
   }
 
   // Refresh window date set
@@ -353,9 +405,9 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo) {
     if (allDates[i] >= refreshFrom && allDates[i] <= refreshTo) refreshDates[allDates[i]] = true;
   }
 
-  // Index existing rows by identity (skip brand-section + blank rows)
+  // Index existing rows by identity (start from first data row; skip section + blank rows)
   var existingRowKey = {};
-  for (var r = 1; r < values.length; r++) {
+  for (var r = HEADER_ROW; r < values.length; r++) {
     var brand     = String(values[r][0]).trim();
     var lineItem  = String(values[r][1]).trim();
     var accCode   = String(values[r][2]).trim();
@@ -438,8 +490,11 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo) {
 
 // ── Fresh-sheet writer (only used if the tab is completely empty) ───────────
 
-function _writeFreshSheet(sheet, accRows, allDates) {
+function _writeFreshSheet(sheet, accRows, allDates, refreshFrom, refreshTo, org) {
   var header = META_COLS.concat(allDates.map(_formatDateHeader));
+  var totalCols = header.length;
+
+  // Build the data block starting at HEADER_ROW
   var data = [header];
 
   var rows = [];
@@ -455,12 +510,12 @@ function _writeFreshSheet(sheet, accRows, allDates) {
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     if (r.brand !== currentBrand) {
-      var sectionRow = new Array(header.length).fill("");
+      var sectionRow = new Array(totalCols).fill("");
       sectionRow[0] = r.brand;
       data.push(sectionRow);
       currentBrand = r.brand;
     }
-    var dataRow = new Array(header.length).fill("");
+    var dataRow = new Array(totalCols).fill("");
     dataRow[0] = r.brand;
     dataRow[1] = r.line_item;
     dataRow[2] = r.account_code;
@@ -474,25 +529,50 @@ function _writeFreshSheet(sheet, accRows, allDates) {
     data.push(dataRow);
   }
 
-  sheet.getRange(1, 1, data.length, header.length).setValues(data);
-  sheet.getRange(1, 1, 1, header.length).setBackground(HEADER_BG).setFontColor(HEADER_FG).setFontWeight("bold");
+  // ── Control row at row 1 ─────────────────────────────────────────────────
+  // Layout: A1 "Pull:" | B1 from-date | C1 "to" | D1 to-date | E1 "Org:" | F1 org | G1 (button placeholder) | H1 status
+  var controlWidth = Math.max(totalCols, CTRL_STATUS_COL);
+  sheet.getRange(CONTROL_ROW, 1, 1, controlWidth).clearContent();
+  sheet.getRange(CONTROL_ROW, 1).setValue("Pull:").setFontWeight("bold");
+  sheet.getRange(CONTROL_ROW, CTRL_FROM_COL).setValue(refreshFrom).setNumberFormat("yyyy-mm-dd").setBackground("#fff2cc");
+  sheet.getRange(CONTROL_ROW, CTRL_FROM_COL + 1).setValue("to").setHorizontalAlignment("center");
+  sheet.getRange(CONTROL_ROW, CTRL_TO_COL).setValue(refreshTo).setNumberFormat("yyyy-mm-dd").setBackground("#fff2cc");
+  sheet.getRange(CONTROL_ROW, CTRL_ORG_COL - 1).setValue("Org:").setFontWeight("bold");
+  sheet.getRange(CONTROL_ROW, CTRL_ORG_COL).setValue(org || "SPA").setBackground("#fff2cc");
+  // Org dropdown
+  var orgValidation = SpreadsheetApp.newDataValidation()
+    .requireValueInList(["SPA", "Aesthetics"], true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(CONTROL_ROW, CTRL_ORG_COL).setDataValidation(orgValidation);
+  // Status cell
+  sheet.getRange(CONTROL_ROW, CTRL_STATUS_COL).setValue("Click the button to pull").setFontStyle("italic").setFontColor("#5f6368");
+  sheet.setRowHeight(CONTROL_ROW, 32);
 
-  for (var r = 2; r <= data.length; r++) {
-    if (data[r - 1][0] && !data[r - 1][1] && !data[r - 1][2]) {
-      sheet.getRange(r, 1, 1, header.length).setBackground(BRAND_HEADER_BG).setFontColor(BRAND_HEADER_FG).setFontWeight("bold");
+  // Spacer row 2 — leave blank
+
+  // ── Data area: header at row 3 ───────────────────────────────────────────
+  sheet.getRange(HEADER_ROW, 1, data.length, totalCols).setValues(data);
+  sheet.getRange(HEADER_ROW, 1, 1, totalCols).setBackground(HEADER_BG).setFontColor(HEADER_FG).setFontWeight("bold");
+
+  // Format brand section rows
+  for (var r = 1; r < data.length; r++) {
+    if (data[r][0] && !data[r][1] && !data[r][2]) {
+      sheet.getRange(HEADER_ROW + r, 1, 1, totalCols).setBackground(BRAND_HEADER_BG).setFontColor(BRAND_HEADER_FG).setFontWeight("bold");
     }
   }
   if (allDates.length > 0) {
-    sheet.getRange(2, META_COUNT + 1, data.length - 1, allDates.length)
+    sheet.getRange(HEADER_ROW + 1, META_COUNT + 1, data.length - 1, allDates.length)
          .setNumberFormat("#,##0.00;(#,##0.00);-");
   }
-  sheet.setFrozenRows(1);
+  sheet.setFrozenRows(HEADER_ROW);
   sheet.setFrozenColumns(META_COUNT);
   sheet.setColumnWidth(1, 80);
   sheet.setColumnWidth(2, 280);
   sheet.setColumnWidth(3, 90);
   sheet.setColumnWidth(4, 140);
   sheet.setColumnWidth(5, 140);
+  sheet.setColumnWidth(6, 110);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
