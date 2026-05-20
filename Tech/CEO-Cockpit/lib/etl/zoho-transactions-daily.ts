@@ -8,6 +8,11 @@ import {
   UI_KEY_TO_SLUG,
   ZOHO_TAG_TO_SLUG,
 } from "./zoho-spa-breakdown";
+import {
+  loadSpaCockpitRevenue,
+  loadAesthCockpitRevenue,
+  loadSlimCockpitRevenue,
+} from "./cockpit-revenue-feeds";
 
 // Daily-granular per (account, allocation-target) pull for the "EBIDA Layer"
 // Google Sheet tab. Source: zoho-line-extractor (invoices, bills, expenses,
@@ -242,19 +247,23 @@ export async function fetchZohoTransactionsDaily(
   const lines = pull.lines.filter(l => l.date >= fromDate && l.date <= toDate);
   log.push(`  filtered to window: ${lines.length} line(s)`);
 
-  if (!lines.length) return { rows: [], dates, period, log };
+  // NOTE: we no longer early-return on empty `lines`. Cockpit-side revenue
+  // (Lapis for SPA, Supabase POS tables for AES/SLIM) still needs to flow
+  // into the EBIDA Layer sheet even when Zoho returns nothing for the window.
 
-  if (org === "spa") return buildSpaRows(lines, dates, period, log);
-  return buildAesthRows(lines, dates, period, log);
+  if (org === "spa") return buildSpaRows(lines, dates, period, log, fromDate, toDate);
+  return buildAesthRows(lines, dates, period, log, fromDate, toDate);
 }
 
 // ── SPA rows ────────────────────────────────────────────────────────────────
 
 async function buildSpaRows(
-  lines:  TxnLine[],
-  dates:  string[],
-  period: { from_date: string; to_date: string },
-  log:    string[],
+  lines:    TxnLine[],
+  dates:    string[],
+  period:   { from_date: string; to_date: string },
+  log:      string[],
+  fromDate: string,
+  toDate:   string,
 ): Promise<DailyResult> {
   log.push("Loading SPA CoA mapping + advertising contact mapping…");
   const [coaMapMaybe, adContactMap] = await Promise.all([
@@ -382,16 +391,53 @@ async function buildSpaRows(
   }
   log.push(`SPA allocation: ${tagCount.tagged} tagged, ${tagCount.split} split-rule`);
 
+  // 4. Cockpit-side revenue (Lapis POS) — one bucket per (date, venue_slug).
+  //    Layered on TOP of Zoho-derived revenue so the EBIDA Layer sheet shows
+  //    both authoritative POS revenue and Zoho's non-excluded revenue CoA.
+  try {
+    log.push("Loading Lapis (Cockpit POS) revenue for SPA…");
+    const lapisRows = await loadSpaCockpitRevenue(fromDate, toDate);
+    log.push(`  Lapis rows fetched: ${lapisRows.length}`);
+    let added = 0;
+    for (const r of lapisRows) {
+      if (!SPA_VENUE_SLUGS.includes(r.venue_slug)) continue;
+      const key = `LAPIS_REV::${r.venue_slug}::split::`;
+      let b = buckets.get(key);
+      if (!b) {
+        b = {
+          brand:           "SPA",
+          venue:           venueDisplay(r.venue_slug),
+          venue_slug:      r.venue_slug,
+          account_name:    "SPA Revenue (Lapis)",
+          account_code:    "LAPIS_REV",
+          ebitda_category: "revenue",
+          split_rule:      "lapis_pos",
+          tag_source:      "split",
+          contact:         "",
+          daily:           {},
+        };
+        buckets.set(key, b);
+      }
+      b.daily[r.date] = (b.daily[r.date] ?? 0) + r.amount;
+      added++;
+    }
+    log.push(`  Lapis bucket entries added: ${added}`);
+  } catch (e) {
+    log.push(`  WARN failed to load Lapis revenue: ${e}`);
+  }
+
   return finalizeRows(buckets, dates, period, log);
 }
 
 // ── Aesthetics rows (covers AES + SLIM brands) ──────────────────────────────
 
 async function buildAesthRows(
-  lines:  TxnLine[],
-  dates:  string[],
-  period: { from_date: string; to_date: string },
-  log:    string[],
+  lines:    TxnLine[],
+  dates:    string[],
+  period:   { from_date: string; to_date: string },
+  log:      string[],
+  fromDate: string,
+  toDate:   string,
 ): Promise<DailyResult> {
   log.push("Loading Aesthetics CoA mapping + advertising contact mapping…");
   let coaMap: Record<string, [string, string]> = {};
@@ -522,6 +568,60 @@ async function buildAesthRows(
     tagCount.split++;
   }
   log.push(`AES/SLIM allocation: ${tagCount.tagged} tagged, ${tagCount.split} split-rule`);
+
+  // 4. Cockpit-side revenue (Supabase POS tables) — one bucket per date for
+  //    each brand. Layered on top of Zoho-derived revenue.
+  try {
+    log.push("Loading Cockpit POS revenue for AES + SLIM…");
+    const [aesRows, slimRows] = await Promise.all([
+      loadAesthCockpitRevenue(fromDate, toDate),
+      loadSlimCockpitRevenue(fromDate, toDate),
+    ]);
+    log.push(`  AES daily rows: ${aesRows.length}; SLIM daily rows: ${slimRows.length}`);
+
+    function upsertCockpitBucket(
+      brand:        "AES" | "SLIM",
+      venue:        string,
+      venue_slug:   string,
+      account_name: string,
+      account_code: string,
+      rows:         Array<{ date: string; amount: number }>,
+    ) {
+      const key = `${account_code}::${venue_slug}::split::`;
+      let b = buckets.get(key);
+      if (!b) {
+        b = {
+          brand,
+          venue,
+          venue_slug,
+          account_name,
+          account_code,
+          ebitda_category: "revenue",
+          split_rule:      "cockpit_pos",
+          tag_source:      "split",
+          contact:         "",
+          daily:           {},
+        };
+        buckets.set(key, b);
+      }
+      for (const r of rows) {
+        b.daily[r.date] = (b.daily[r.date] ?? 0) + r.amount;
+      }
+    }
+
+    upsertCockpitBucket(
+      "AES", "Aesthetics", "aesthetics",
+      "Aesthetics Revenue (Sales)", "POS_AES_REV",
+      aesRows,
+    );
+    upsertCockpitBucket(
+      "SLIM", "Slimming", "slimming",
+      "Slimming Revenue (Sales)", "POS_SLIM_REV",
+      slimRows,
+    );
+  } catch (e) {
+    log.push(`  WARN failed to load Cockpit POS revenue: ${e}`);
+  }
 
   return finalizeRows(buckets, dates, period, log);
 }
