@@ -1,224 +1,108 @@
 import { ZohoBooksClient } from "./zoho-client";
-import {
-  COA_MAP,
-  detectLocation,
-  loadSpaCoaFromSupabase,
-} from "./spa-ebitda";
+import { fetchTransactionLines, TxnLine } from "./zoho-line-extractor";
+import { COA_MAP, detectLocation, loadSpaCoaFromSupabase } from "./spa-ebitda";
+import { loadAestheticsCoaMap } from "./aesthetics-ebitda";
 import {
   SLUG_DISPLAY,
   SALARY_RATIO_CODES,
   UI_KEY_TO_SLUG,
+  ZOHO_TAG_TO_SLUG,
 } from "./zoho-spa-breakdown";
 
+// Daily-granular per (account, allocation-target) pull for the "EBIDA Layer"
+// Google Sheet tab. Source: zoho-line-extractor (invoices, bills, expenses,
+// creditnotes, vendorcredits, journals) — exposes per-line reporting_tags.
+//
+// Allocation precedence: line tag wins → account-name keyword override →
+// CoA split rule. tag_source = "tagged" only when a usable line tag drove the
+// allocation; everything else is "split".
+
 export type DailyRow = {
-  brand: "SPA" | "AES" | "SLIM";
-  venue: string;
-  venue_slug: string;
-  account_name: string;
-  account_code: string;
-  ebitda_category: string;
-  split_rule: string;
-  tag_source: "tagged" | "split";
-  daily: Record<string, number>;
+  brand:           "SPA" | "AES" | "SLIM";
+  venue:           string;        // display name (e.g. "Hugos", "AES", "SLIM")
+  venue_slug:      string;        // machine slug
+  account_name:    string;
+  account_code:    string;
+  ebitda_category: string;        // revenue / cogs / wages / advertising / rent / utilities / sga
+  split_rule:      string;        // raw CoA rule (sales_ratio, equal, hugos, custom:{}, …)
+  tag_source:      "tagged" | "split";
+  daily:           Record<string, number>;   // YYYY-MM-DD → amount
 };
 
 export type DailyResult = {
-  rows: DailyRow[];
-  dates: string[];
+  rows:   DailyRow[];
+  dates:  string[];
   period: { from_date: string; to_date: string };
-  log: string[];
+  log:    string[];
 };
 
 const VALID_LINES = new Set(["revenue", "cogs", "wages", "advertising", "rent", "utilities", "sga"]);
+
 const SPA_VENUE_SLUGS = [
   "intercontinental", "hugos", "hyatt", "ramla",
   "labranda", "sunny_coast", "excelsior", "novotel",
 ];
-const PAGE_THROTTLE_MS = 1500;
-const RATE_LIMIT_BACKOFFS_MS = [15000, 30000, 60000]; // 15s, 30s, 60s
 
-async function callWithRetry<T>(fn: () => Promise<T>, label: string, log: string[]): Promise<T> {
-  let lastErr: unknown = null;
-  for (let attempt = 0; attempt <= RATE_LIMIT_BACKOFFS_MS.length; attempt++) {
-    try {
-      return await fn();
-    } catch (e) {
-      const msg = String(e);
-      const is429 = /\b429\b/.test(msg) || /code":?\s*4[34]\b/.test(msg) || /maximum number of requests/i.test(msg);
-      if (!is429 || attempt === RATE_LIMIT_BACKOFFS_MS.length) {
-        lastErr = e;
-        throw e;
-      }
-      const wait = RATE_LIMIT_BACKOFFS_MS[attempt];
-      log.push(`  rate-limited on ${label}, waiting ${wait / 1000}s before retry (attempt ${attempt + 1}/${RATE_LIMIT_BACKOFFS_MS.length})`);
-      await new Promise(r => setTimeout(r, wait));
-    }
-  }
-  throw lastErr ?? new Error("callWithRetry exhausted");
-}
-
-const MONTHS: Record<string, string> = {
-  jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
-  jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
+// Aesthetics-org tag option name → department. Same map the dashboard ETL uses.
+const AESTH_TAG_TO_DEPT: Record<string, "aesthetics" | "slimming"> = {
+  "carisma aesthetics": "aesthetics",
+  "aesthetics":         "aesthetics",
+  "carisma slimming":   "slimming",
+  "slimming":           "slimming",
 };
 
-type JournalLine = {
-  date: string;
-  account_id: string;
-  account_code: string;
-  account_name: string;
-  section: "income" | "expense" | "other";
-  amount: number;
+const AESTH_DEPT_KEYWORDS: [string[], "aesthetics" | "slimming"][] = [
+  [["aesthetics", "aesthetic", " aest ", "clinic"],     "aesthetics"],
+  [["slimming", "slim ", "weight loss", "weight-loss"], "slimming"],
+];
+
+function detectAesthDept(name: string): "aesthetics" | "slimming" | null {
+  const low = ` ${name.toLowerCase()} `;
+  for (const [kws, dept] of AESTH_DEPT_KEYWORDS) {
+    if (kws.some(kw => low.includes(kw))) return dept;
+  }
+  return null;
+}
+
+const AESTH_BRAND_DISPLAY: Record<"aesthetics" | "slimming", { brand: "AES" | "SLIM"; venue: string }> = {
+  aesthetics: { brand: "AES",  venue: "Aesthetics" },
+  slimming:   { brand: "SLIM", venue: "Slimming"   },
 };
 
-function parseZohoDate(s: string): string | null {
-  // "01 Jan 2025" → "2025-01-01"
-  const m = /^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/.exec(s.trim());
-  if (!m) {
-    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-    return null;
+// ── Tag resolution ──────────────────────────────────────────────────────────
+
+function spaTagToSlug(tags: TxnLine["tags"]): string | null {
+  for (const t of tags) {
+    const norm = t.tag_option_name.trim().toLowerCase();
+    const slug = ZOHO_TAG_TO_SLUG[norm];
+    if (slug) return slug;        // "hq" or one of the 8 venue slugs
   }
-  const mon = MONTHS[m[2].toLowerCase()];
-  if (!mon) return null;
-  return `${m[3]}-${mon}-${m[1].padStart(2, "0")}`;
+  return null;
 }
+
+function aesthTagToDept(tags: TxnLine["tags"]): "aesthetics" | "slimming" | null {
+  for (const t of tags) {
+    const norm = t.tag_option_name.trim().toLowerCase();
+    if (norm in AESTH_TAG_TO_DEPT) return AESTH_TAG_TO_DEPT[norm];
+  }
+  return null;
+}
+
+// ── Date helpers ────────────────────────────────────────────────────────────
 
 function enumerateDates(fromDate: string, toDate: string): string[] {
   const out: string[] = [];
   const start = new Date(`${fromDate}T00:00:00Z`);
-  const end = new Date(`${toDate}T00:00:00Z`);
+  const end   = new Date(`${toDate}T00:00:00Z`);
   for (let t = start.getTime(); t <= end.getTime(); t += 86400000) {
     out.push(new Date(t).toISOString().slice(0, 10));
   }
   return out;
 }
 
-function monthChunks(fromDate: string, toDate: string): Array<{ from: string; to: string }> {
-  const chunks: Array<{ from: string; to: string }> = [];
-  const start = new Date(`${fromDate}T00:00:00Z`);
-  const end = new Date(`${toDate}T00:00:00Z`);
-  let cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
-  while (cursor.getTime() <= end.getTime()) {
-    const y = cursor.getUTCFullYear();
-    const m = cursor.getUTCMonth();
-    const monthStart = new Date(Date.UTC(y, m, 1));
-    const monthEnd = new Date(Date.UTC(y, m + 1, 0));
-    const chunkFrom = monthStart.getTime() < start.getTime() ? start : monthStart;
-    const chunkTo = monthEnd.getTime() > end.getTime() ? end : monthEnd;
-    chunks.push({
-      from: chunkFrom.toISOString().slice(0, 10),
-      to: chunkTo.toISOString().slice(0, 10),
-    });
-    cursor = new Date(Date.UTC(y, m + 1, 1));
-  }
-  return chunks;
-}
+// ── SPA venue split (CoA-rule path, untagged lines only) ────────────────────
 
-type AccountMeta = { code: string; name: string; type: string; section: "income" | "expense" | "other" };
-
-async function loadAccountMeta(client: ZohoBooksClient, log: string[]): Promise<Map<string, AccountMeta>> {
-  const result = new Map<string, AccountMeta>();
-  let page = 1;
-  while (true) {
-    const data = await callWithRetry(
-      () => client.get("chartofaccounts", { page: String(page), per_page: "200" }) as Promise<Record<string, unknown>>,
-      `chartofaccounts page ${page}`,
-      log,
-    );
-    const accounts = (data.chartofaccounts ?? []) as Array<Record<string, unknown>>;
-    for (const a of accounts) {
-      const id = String(a.account_id ?? "");
-      if (!id) continue;
-      const code = String(a.account_code ?? "").trim();
-      const name = String(a.account_name ?? "").trim();
-      const type = String(a.account_type ?? "").toLowerCase();
-      let section: AccountMeta["section"] = "other";
-      if (type.includes("income") || type.includes("revenue")) section = "income";
-      else if (type.includes("expense") || type.includes("cost_of_goods") || type.includes("cogs")) section = "expense";
-      result.set(id, { code, name, type, section });
-    }
-    const ctx = data.page_context as Record<string, unknown> | undefined;
-    if (!ctx?.has_more_page) break;
-    page++;
-  }
-  return result;
-}
-
-async function fetchJournalChunk(
-  client: ZohoBooksClient,
-  fromDate: string,
-  toDate: string,
-  accountMeta: Map<string, AccountMeta>,
-  log: string[],
-): Promise<JournalLine[]> {
-  const out: JournalLine[] = [];
-  let page = 1;
-  let pageCount = 0;
-  while (true) {
-    if (pageCount > 0) await new Promise(r => setTimeout(r, PAGE_THROTTLE_MS));
-    const data = await callWithRetry(
-      () => client.get("reports/journal", {
-        filter_by: "TransactionDate.CustomDate",
-        from_date: fromDate,
-        to_date: toDate,
-        page: String(page),
-        per_page: "200",
-        report_basis: "Accrual",
-      }) as Promise<Record<string, unknown>>,
-      `reports/journal ${fromDate}..${toDate} page ${page}`,
-      log,
-    );
-    pageCount++;
-
-    const journals = (data.journal ?? []) as Array<Record<string, unknown>>;
-    for (const j of journals) {
-      const date = parseZohoDate(String(j.date ?? ""));
-      if (!date) continue;
-      const lines = (j.account_transactions ?? []) as Array<Record<string, unknown>>;
-      for (const ln of lines) {
-        const accountId = String(ln.account_id ?? "");
-        if (!accountId) continue;
-        const meta = accountMeta.get(accountId);
-        const section = meta?.section ?? "other";
-        if (section === "other") continue; // skip balance-sheet movements
-
-        const code = (meta?.code || String(ln.account_code ?? "").trim());
-        const name = (meta?.name || String(ln.name ?? "").trim());
-        if (!code && !name) continue;
-
-        const debit  = Number(ln.debit_amount  ?? 0);
-        const credit = Number(ln.credit_amount ?? 0);
-        const net = section === "income" ? credit - debit : debit - credit;
-        if (net === 0) continue;
-
-        out.push({
-          date,
-          account_id: accountId,
-          account_code: code,
-          account_name: name,
-          section,
-          amount: net,
-        });
-      }
-    }
-    const ctx = data.page_context as Record<string, unknown> | undefined;
-    if (!ctx?.has_more_page) break;
-    page++;
-  }
-  log.push(`  ${fromDate}..${toDate}: ${pageCount} page(s), ${out.length} lines`);
-  return out;
-}
-
-function lineFromCoaStrict(
-  code: string,
-  coaMap: Record<string, [string, string]>,
-): { rule: string; line: string } | null {
-  if (!code || !(code in coaMap)) return null;
-  const [rule, line] = coaMap[code];
-  return { rule, line };
-}
-
-function venueShares(
+function spaVenueShares(
   rule: string,
   amount: number,
   revPct: Record<string, number>,
@@ -236,67 +120,133 @@ function venueShares(
     for (const s of SPA_VENUE_SLUGS) out[s] = amount * (revPct[s] ?? 0);
     return out;
   }
-  if (rule === "salary_cost") {
+  if (rule === "salary_cost" || rule === "salary_ratio") {
     for (const s of SPA_VENUE_SLUGS) out[s] = amount * (salPct[s] ?? 0);
     return out;
   }
   if (rule.startsWith("custom:")) {
-    const config: Record<string, number> = JSON.parse(rule.slice(7));
-    const totalPct = Object.values(config).reduce((a, b) => a + b, 0) || 100;
-    for (const [key, pct] of Object.entries(config)) {
-      const s = UI_KEY_TO_SLUG[key];
-      if (s && s in out) out[s] += amount * (pct / totalPct);
-    }
-    return out;
+    try {
+      const config: Record<string, number> = JSON.parse(rule.slice(7));
+      const totalPct = Object.values(config).reduce((a, b) => a + b, 0) || 100;
+      for (const [key, pct] of Object.entries(config)) {
+        const s = UI_KEY_TO_SLUG[key];
+        if (s && s in out) out[s] += amount * (pct / totalPct);
+      }
+      return out;
+    } catch { /* fall through to equal */ }
   }
   const share = amount / SPA_VENUE_SLUGS.length;
   for (const s of SPA_VENUE_SLUGS) out[s] = share;
   return out;
 }
 
+// ── Aesthetics dept split (CoA-rule path, untagged lines only) ──────────────
+
+function aesthDeptShares(
+  rule: string,
+  amount: number,
+  revPct: Record<"aesthetics" | "slimming", number>,
+): Record<"aesthetics" | "slimming", number> {
+  const out: Record<"aesthetics" | "slimming", number> = { aesthetics: 0, slimming: 0 };
+  if (amount === 0) return out;
+  if (rule === "aesthetics" || rule === "slimming") { out[rule] = amount; return out; }
+  if (rule === "equal") { out.aesthetics = amount / 2; out.slimming = amount / 2; return out; }
+  if (rule === "sales_ratio" || rule === "marketing_spend_ratio") {
+    out.aesthetics = amount * revPct.aesthetics;
+    out.slimming   = amount * revPct.slimming;
+    return out;
+  }
+  if (rule === "salary_ratio" || rule === "salary_cost") {
+    // No separate dept-salary base on the sheet pull — fall back to revenue.
+    out.aesthetics = amount * revPct.aesthetics;
+    out.slimming   = amount * revPct.slimming;
+    return out;
+  }
+  if (rule.startsWith("custom:")) {
+    try {
+      const cfg = JSON.parse(rule.slice(7)) as Record<string, number>;
+      const total = (cfg.aesthetics ?? 0) + (cfg.slimming ?? 0);
+      if (total > 0) {
+        out.aesthetics = amount * (cfg.aesthetics ?? 0) / total;
+        out.slimming   = amount * (cfg.slimming   ?? 0) / total;
+        return out;
+      }
+    } catch { /* fall through */ }
+  }
+  out.aesthetics = amount / 2;
+  out.slimming   = amount / 2;
+  return out;
+}
+
+// ── Main entry point ────────────────────────────────────────────────────────
+
 export async function fetchZohoTransactionsDaily(
-  client: ZohoBooksClient,
+  client:   ZohoBooksClient,
   fromDate: string,
-  toDate: string,
-  org: "spa" | "aesthetics",
+  toDate:   string,
+  org:      "spa" | "aesthetics",
 ): Promise<DailyResult> {
   const period = { from_date: fromDate, to_date: toDate };
-  const dates = enumerateDates(fromDate, toDate);
+  const dates  = enumerateDates(fromDate, toDate);
   const log: string[] = [];
 
-  if (org === "aesthetics") {
-    log.push("aesthetics not yet implemented");
-    return { rows: [], dates, period, log };
-  }
+  // 1. Pull all transaction lines from the 6 detail endpoints
+  log.push(`[${org}] pulling transaction lines ${fromDate} → ${toDate}…`);
+  const pull = await fetchTransactionLines(client, fromDate, toDate);
+  log.push(...pull.log.map(s => `  ${s}`));
+  const lines = pull.lines.filter(l => l.date >= fromDate && l.date <= toDate);
+  log.push(`  filtered to window: ${lines.length} line(s)`);
 
-  log.push("Loading chart of accounts…");
-  const accountMeta = await loadAccountMeta(client, log);
-  log.push(`Loaded ${accountMeta.size} accounts`);
+  if (!lines.length) return { rows: [], dates, period, log };
 
+  if (org === "spa") return buildSpaRows(lines, dates, period, log);
+  return buildAesthRows(lines, dates, period, log);
+}
+
+// ── SPA rows ────────────────────────────────────────────────────────────────
+
+async function buildSpaRows(
+  lines:  TxnLine[],
+  dates:  string[],
+  period: { from_date: string; to_date: string },
+  log:    string[],
+): Promise<DailyResult> {
   log.push("Loading SPA CoA mapping…");
   const coaMap = (await loadSpaCoaFromSupabase()) ?? COA_MAP;
 
-  const chunks = monthChunks(fromDate, toDate);
-  log.push(`Fetching journal across ${chunks.length} month chunk(s)…`);
-  const allLines: JournalLine[] = [];
-  for (const c of chunks) {
-    const lines = await fetchJournalChunk(client, c.from, c.to, accountMeta, log);
-    allLines.push(...lines);
-    await new Promise(r => setTimeout(r, PAGE_THROTTLE_MS));
-  }
-  log.push(`Total lines: ${allLines.length}`);
+  type Classified = {
+    line:    TxnLine;
+    ebitda:  string;          // revenue / cogs / wages / ...
+    rule:    string;          // CoA split rule from the mapping
+    tagSlug: string | null;   // "hq" or one of the 8 venue slugs (or null)
+  };
+  const classified: Classified[] = [];
+  let droppedUnmapped = 0, droppedExcluded = 0;
 
-  // Ratio bases (name-detected, since no tag info is available at line level)
+  for (const ln of lines) {
+    if (ln.amount === 0) continue;
+    const mapped = coaMap[ln.account_code];
+    if (!mapped) { droppedUnmapped++; continue; }
+    const [rule, rawLine] = mapped;
+    if (rawLine === "excluded") { droppedExcluded++; continue; }
+    const ebitda = rawLine.startsWith("sga_") ? "sga" : rawLine;
+    if (!VALID_LINES.has(ebitda)) { droppedExcluded++; continue; }
+    classified.push({ line: ln, ebitda, rule, tagSlug: spaTagToSlug(ln.tags) });
+  }
+  log.push(`SPA classified: ${classified.length} kept; dropped ${droppedUnmapped} unmapped, ${droppedExcluded} excluded`);
+
+  // 2. Ratio bases from UNTAGGED lines only (so tagged Hugo's revenue does
+  //    not double-count when allocating shared SG&A by sales_ratio).
   const revBySlug: Record<string, number> = Object.fromEntries(SPA_VENUE_SLUGS.map(s => [s, 0]));
   const salBySlug: Record<string, number> = Object.fromEntries(SPA_VENUE_SLUGS.map(s => [s, 0]));
-  for (const ln of allLines) {
-    if (ln.section === "income") {
-      const loc = detectLocation(ln.account_name);
-      if (loc && SPA_VENUE_SLUGS.includes(loc)) revBySlug[loc] += ln.amount;
+  for (const c of classified) {
+    if (c.ebitda === "revenue" && !c.tagSlug) {
+      const loc = detectLocation(c.line.account_name);
+      if (loc && SPA_VENUE_SLUGS.includes(loc)) revBySlug[loc] += c.line.amount;
     }
-    if (ln.account_code && SALARY_RATIO_CODES[ln.account_code]) {
-      const slug = SALARY_RATIO_CODES[ln.account_code];
-      if (SPA_VENUE_SLUGS.includes(slug)) salBySlug[slug] += ln.amount;
+    if (c.line.account_code && SALARY_RATIO_CODES[c.line.account_code]) {
+      const slug = SALARY_RATIO_CODES[c.line.account_code];
+      if (SPA_VENUE_SLUGS.includes(slug)) salBySlug[slug] += c.line.amount;
     }
   }
   let totalRev = Object.values(revBySlug).reduce((a, b) => a + b, 0);
@@ -305,96 +255,258 @@ export async function fetchZohoTransactionsDaily(
   if (totalSal === 0) totalSal = 1;
   const revPct = Object.fromEntries(SPA_VENUE_SLUGS.map(s => [s, revBySlug[s] / totalRev]));
   const salPct = Object.fromEntries(SPA_VENUE_SLUGS.map(s => [s, salBySlug[s] / totalSal]));
-  log.push(`revPct: ${SPA_VENUE_SLUGS.map(s => `${s}=${(revPct[s] * 100).toFixed(1)}%`).join(" ")}`);
+  log.push(`SPA revPct (untagged-only): ${SPA_VENUE_SLUGS.map(s => `${s}=${(revPct[s] * 100).toFixed(1)}%`).join(" ")}`);
 
+  // 3. Bucket per (account, venue) — daily values inside
   type Bucket = {
-    brand: "SPA";
-    venue: string;
-    venue_slug: string;
-    account_name: string;
-    account_code: string;
+    brand:           "SPA";
+    venue:           string;
+    venue_slug:      string;
+    account_name:    string;
+    account_code:    string;
     ebitda_category: string;
-    split_rule: string;
-    daily: Record<string, number>;
+    split_rule:      string;
+    tag_source:      "tagged" | "split";
+    daily:           Record<string, number>;
   };
   const buckets = new Map<string, Bucket>();
   const venueDisplay = (slug: string): string => SLUG_DISPLAY[slug] ?? slug;
+  const tagCount = { tagged: 0, split: 0 };
 
-  let droppedUnmapped = 0;
-  let droppedExcluded = 0;
-  for (const ln of allLines) {
-    const mapped = lineFromCoaStrict(ln.account_code, coaMap);
-    if (!mapped) { droppedUnmapped++; continue; }
-    const { rule: rawRule, line: rawLine } = mapped;
-    let ebitdaLine = rawLine;
-    if (ebitdaLine.startsWith("sga_")) ebitdaLine = "sga";
-    if (ebitdaLine === "excluded") { droppedExcluded++; continue; }
-    if (!VALID_LINES.has(ebitdaLine)) { droppedExcluded++; continue; }
-
-    const nameLoc = detectLocation(ln.account_name);
-    const effectiveRule = nameLoc ?? rawRule;
-
-    let allocations: Array<{ slug: string; amount: number }> = [];
-    if (effectiveRule === "hq") {
-      allocations.push({ slug: "hq", amount: ln.amount });
-    } else if (SPA_VENUE_SLUGS.includes(effectiveRule)) {
-      allocations.push({ slug: effectiveRule, amount: ln.amount });
-    } else {
-      const shares = venueShares(effectiveRule, ln.amount, revPct, salPct);
-      for (const [slug, amt] of Object.entries(shares)) {
-        if (amt !== 0) allocations.push({ slug, amount: amt });
-      }
+  function addToBucket(
+    c: Classified,
+    slug: string,
+    amount: number,
+    tagSource: "tagged" | "split",
+  ) {
+    if (amount === 0) return;
+    const accountKey = c.line.account_code || c.line.account_name;
+    const key = `${accountKey}::${slug}::${tagSource}`;
+    let b = buckets.get(key);
+    if (!b) {
+      b = {
+        brand:           "SPA",
+        venue:           venueDisplay(slug),
+        venue_slug:      slug,
+        account_name:    c.line.account_name,
+        account_code:    c.line.account_code,
+        ebitda_category: c.ebitda,
+        split_rule:      c.rule,
+        tag_source:      tagSource,
+        daily:           {},
+      };
+      buckets.set(key, b);
     }
-
-    const accountKey = ln.account_code || ln.account_name;
-    for (const alloc of allocations) {
-      if (alloc.amount === 0) continue;
-      const bucketKey = `${accountKey}::${alloc.slug}`;
-      let b = buckets.get(bucketKey);
-      if (!b) {
-        b = {
-          brand: "SPA",
-          venue: venueDisplay(alloc.slug),
-          venue_slug: alloc.slug,
-          account_name: ln.account_name,
-          account_code: ln.account_code,
-          ebitda_category: ebitdaLine,
-          split_rule: rawRule,
-          daily: {},
-        };
-        buckets.set(bucketKey, b);
-      }
-      b.daily[ln.date] = (b.daily[ln.date] ?? 0) + alloc.amount;
-    }
+    b.daily[c.line.date] = (b.daily[c.line.date] ?? 0) + amount;
   }
 
+  for (const c of classified) {
+    // Tag wins
+    if (c.tagSlug === "hq") {
+      addToBucket(c, "hq", c.line.amount, "tagged");
+      tagCount.tagged++;
+      continue;
+    }
+    if (c.tagSlug && SPA_VENUE_SLUGS.includes(c.tagSlug)) {
+      addToBucket(c, c.tagSlug, c.line.amount, "tagged");
+      tagCount.tagged++;
+      continue;
+    }
+    // No usable tag → name override → CoA rule
+    const nameLoc = detectLocation(c.line.account_name);
+    const effectiveRule = nameLoc ?? c.rule;
+    if (effectiveRule === "hq") {
+      addToBucket(c, "hq", c.line.amount, "split");
+    } else if (SPA_VENUE_SLUGS.includes(effectiveRule)) {
+      addToBucket(c, effectiveRule, c.line.amount, "split");
+    } else {
+      const shares = spaVenueShares(effectiveRule, c.line.amount, revPct, salPct);
+      for (const [slug, amt] of Object.entries(shares)) addToBucket(c, slug, amt, "split");
+    }
+    tagCount.split++;
+  }
+  log.push(`SPA allocation: ${tagCount.tagged} tagged, ${tagCount.split} split-rule`);
+
+  return finalizeRows(buckets, dates, period, log);
+}
+
+// ── Aesthetics rows (covers AES + SLIM brands) ──────────────────────────────
+
+async function buildAesthRows(
+  lines:  TxnLine[],
+  dates:  string[],
+  period: { from_date: string; to_date: string },
+  log:    string[],
+): Promise<DailyResult> {
+  log.push("Loading Aesthetics CoA mapping…");
+  let coaMap: Record<string, [string, string]> = {};
+  try {
+    coaMap = await loadAestheticsCoaMap();
+  } catch (e) {
+    log.push(`  failed to load Aesthetics CoA: ${e}`);
+    return { rows: [], dates, period, log };
+  }
+
+  type Classified = {
+    line:    TxnLine;
+    ebitda:  string;
+    rule:    string;
+    tagDept: "aesthetics" | "slimming" | null;
+  };
+  const classified: Classified[] = [];
+  let droppedUnmappedIncome = 0, droppedExcluded = 0, droppedUnmappedExpense = 0;
+
+  for (const ln of lines) {
+    if (ln.amount === 0) continue;
+    let rule: string, ebitda: string;
+    const mapped = coaMap[ln.account_code];
+    if (mapped) {
+      [rule, ebitda] = mapped;
+      if (ebitda === "excluded") { droppedExcluded++; continue; }
+    } else if (ln.section === "income") {
+      // Unmapped income skipped — pattern from dashboard ETL (Aesthetics revenue
+      // recorded outside Zoho on aesthetics_sales_daily / slimming_sales_daily).
+      droppedUnmappedIncome++;
+      continue;
+    } else {
+      // Unmapped expense — keep with equal split + SGA bucket (better than dropping)
+      droppedUnmappedExpense++;
+      rule   = "equal";
+      ebitda = "sga";
+    }
+    if (ebitda.startsWith("sga_")) ebitda = "sga";
+    if (!VALID_LINES.has(ebitda)) { droppedExcluded++; continue; }
+    classified.push({ line: ln, ebitda, rule, tagDept: aesthTagToDept(ln.tags) });
+  }
+  log.push(`AES/SLIM classified: ${classified.length} kept; dropped ${droppedUnmappedIncome} unmapped-income, ${droppedUnmappedExpense} unmapped-expense kept as SGA-equal, ${droppedExcluded} excluded`);
+
+  // 2. Revenue ratio base from untagged Zoho mapped income (best the sheet has;
+  //    dashboard uses sales_daily Supabase tables but the sheet stays Zoho-local).
+  const revBySlug: Record<"aesthetics" | "slimming", number> = { aesthetics: 0, slimming: 0 };
+  for (const c of classified) {
+    if (c.ebitda !== "revenue" || c.tagDept) continue;
+    const nameDept = detectAesthDept(c.line.account_name);
+    const eff = nameDept ?? (c.rule === "aesthetics" || c.rule === "slimming" ? c.rule : null);
+    if (eff) revBySlug[eff] += c.line.amount;
+  }
+  let totalRev = revBySlug.aesthetics + revBySlug.slimming;
+  if (totalRev === 0) { revBySlug.aesthetics = 1; revBySlug.slimming = 1; totalRev = 2; }
+  const revPct: Record<"aesthetics" | "slimming", number> = {
+    aesthetics: revBySlug.aesthetics / totalRev,
+    slimming:   revBySlug.slimming   / totalRev,
+  };
+  log.push(`AES/SLIM revPct (untagged-only): aesthetics=${(revPct.aesthetics * 100).toFixed(1)}% slimming=${(revPct.slimming * 100).toFixed(1)}%`);
+
+  // 3. Bucket per (account, dept)
+  type Bucket = {
+    brand:           "AES" | "SLIM";
+    venue:           string;
+    venue_slug:      string;
+    account_name:    string;
+    account_code:    string;
+    ebitda_category: string;
+    split_rule:      string;
+    tag_source:      "tagged" | "split";
+    daily:           Record<string, number>;
+  };
+  const buckets = new Map<string, Bucket>();
+  const tagCount = { tagged: 0, split: 0 };
+
+  function addToBucket(
+    c: Classified,
+    dept: "aesthetics" | "slimming",
+    amount: number,
+    tagSource: "tagged" | "split",
+  ) {
+    if (amount === 0) return;
+    const meta = AESTH_BRAND_DISPLAY[dept];
+    const accountKey = c.line.account_code || c.line.account_name;
+    const key = `${accountKey}::${dept}::${tagSource}`;
+    let b = buckets.get(key);
+    if (!b) {
+      b = {
+        brand:           meta.brand,
+        venue:           meta.venue,
+        venue_slug:      dept,
+        account_name:    c.line.account_name,
+        account_code:    c.line.account_code,
+        ebitda_category: c.ebitda,
+        split_rule:      c.rule,
+        tag_source:      tagSource,
+        daily:           {},
+      };
+      buckets.set(key, b);
+    }
+    b.daily[c.line.date] = (b.daily[c.line.date] ?? 0) + amount;
+  }
+
+  for (const c of classified) {
+    if (c.tagDept) {
+      addToBucket(c, c.tagDept, c.line.amount, "tagged");
+      tagCount.tagged++;
+      continue;
+    }
+    const nameDept = detectAesthDept(c.line.account_name);
+    if (nameDept) {
+      addToBucket(c, nameDept, c.line.amount, "split");
+    } else {
+      const shares = aesthDeptShares(c.rule, c.line.amount, revPct);
+      addToBucket(c, "aesthetics", shares.aesthetics, "split");
+      addToBucket(c, "slimming",   shares.slimming,   "split");
+    }
+    tagCount.split++;
+  }
+  log.push(`AES/SLIM allocation: ${tagCount.tagged} tagged, ${tagCount.split} split-rule`);
+
+  return finalizeRows(buckets, dates, period, log);
+}
+
+// ── Common finalisation ─────────────────────────────────────────────────────
+
+type BucketLike = {
+  brand:           "SPA" | "AES" | "SLIM";
+  venue:           string;
+  venue_slug:      string;
+  account_name:    string;
+  account_code:    string;
+  ebitda_category: string;
+  split_rule:      string;
+  tag_source:      "tagged" | "split";
+  daily:           Record<string, number>;
+};
+
+function finalizeRows(
+  buckets: Map<string, BucketLike>,
+  dates:   string[],
+  period:  { from_date: string; to_date: string },
+  log:     string[],
+): DailyResult {
   const rows: DailyRow[] = [];
   for (const b of buckets.values()) {
-    const cleanedDaily: Record<string, number> = {};
+    const cleaned: Record<string, number> = {};
     for (const [d, v] of Object.entries(b.daily)) {
       const r = Math.round(v * 100) / 100;
-      if (r !== 0) cleanedDaily[d] = r;
+      if (r !== 0) cleaned[d] = r;
     }
-    if (Object.keys(cleanedDaily).length === 0) continue;
+    if (Object.keys(cleaned).length === 0) continue;
     rows.push({
-      brand: b.brand,
-      venue: b.venue,
-      venue_slug: b.venue_slug,
-      account_name: b.account_name,
-      account_code: b.account_code,
+      brand:           b.brand,
+      venue:           b.venue,
+      venue_slug:      b.venue_slug,
+      account_name:    b.account_name,
+      account_code:    b.account_code,
       ebitda_category: b.ebitda_category,
-      split_rule: b.split_rule,
-      tag_source: "split",
-      daily: cleanedDaily,
+      split_rule:      b.split_rule,
+      tag_source:      b.tag_source,
+      daily:           cleaned,
     });
   }
-
   rows.sort((a, b) =>
     a.ebitda_category.localeCompare(b.ebitda_category) ||
     a.account_name.localeCompare(b.account_name) ||
-    a.venue.localeCompare(b.venue)
+    a.venue.localeCompare(b.venue) ||
+    a.tag_source.localeCompare(b.tag_source),
   );
-
-  log.push(`Done: ${rows.length} (account, venue) rows  (dropped: ${droppedUnmapped} unmapped, ${droppedExcluded} excluded)`);
+  log.push(`Done: ${rows.length} (account, target, source) row(s)`);
   return { rows, dates, period, log };
 }
