@@ -197,15 +197,19 @@ function runTestPullJan1to7() {
   return result;
 }
 
-// One-click reset: deletes the existing Zoho Raw Layer tab (if any) and runs
-// the 1-week test pull. Use this after a layout change to rebuild the tab
-// cleanly with the current schema.
+// One-click reset: clears the existing Zoho Raw Layer tab content (but
+// preserves the tab itself and any drawings/buttons on it) and runs the
+// 1-week test pull. Use this after a layout change to rebuild content
+// cleanly with the current schema without losing the assigned Pull button.
 function resetAndRunTestPull() {
   var ss = SpreadsheetApp.openById(EBIDA_SPREADSHEET_ID);
   var existing = ss.getSheetByName(EBIDA_TAB);
   if (existing) {
-    ss.deleteSheet(existing);
-    Logger.log("Deleted existing '" + EBIDA_TAB + "' tab.");
+    existing.clear();             // clears content + formatting; drawings/images survive
+    existing.clearDataValidations();
+    existing.setFrozenRows(0);    // reset frozen rows so next fresh-write applies cleanly
+    existing.setFrozenColumns(0);
+    Logger.log("Cleared existing '" + EBIDA_TAB + "' tab (button/drawing preserved).");
   } else {
     Logger.log("No existing '" + EBIDA_TAB + "' tab found.");
   }
