@@ -22,7 +22,10 @@ var EBIDA_SPREADSHEET_ID = "1WWM7W6S5wtSC-5hdlcuJgW3zbYaO7YRgg4_-Bju4-5s";
 var EBIDA_TAB            = "Zoho Raw Layer";
 var COCKPIT_BASE         = "https://carisma-support-u2vb.vercel.app";
 
-var PROTECTED_COLOR = "#ffff00";   // exact-match yellow = "do not overwrite"
+var PROTECTED_BG_COLOR   = "#ffff00";   // yellow background = "do not overwrite"
+var PROTECTED_FONT_COLOR = "#ff0000";   // red font = "do not overwrite"
+// Backward-compat alias (used in legacy spots that pre-date the font check)
+var PROTECTED_COLOR = PROTECTED_BG_COLOR;
 var CHUNK_DAYS      = 5;           // each API call covers <= this many days
 var APPS_SCRIPT_BUDGET_MS = 5 * 60 * 1000;  // bail before hitting 6-min hard limit
 
@@ -166,6 +169,17 @@ function pullAndWriteEbidaLayer(dateFrom, dateTo, org) {
   return "✓ " + chunks.length + " chunk(s) pulled in " + elapsed + "s\n" +
          "  " + Object.keys(accRows).length + " (account,venue) row(s) merged\n" +
          "  " + stats.appended + " new row(s), " + stats.updated + " cell update(s), " + stats.protected + " protected cell(s) skipped";
+}
+
+// Returns true if a cell should be treated as a manual edit and skipped
+// during overwrite. Two protection signals: yellow background OR red font.
+// Either alone is sufficient — user uses both as ad-hoc edit markers.
+function _isProtected(bgColor, fontColor) {
+  var bg = String(bgColor || "").toLowerCase();
+  var fg = String(fontColor || "").toLowerCase();
+  if (bg === PROTECTED_BG_COLOR) return true;
+  if (fg === PROTECTED_FONT_COLOR) return true;
+  return false;
 }
 
 // Writes a one-line status into the control row's status cell. Safe even
@@ -340,6 +354,7 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo, org) {
   var lastCol = sheet.getLastColumn();
   var values      = sheet.getRange(1, 1, lastRow, lastCol).getValues();
   var backgrounds = sheet.getRange(1, 1, lastRow, lastCol).getBackgrounds();
+  var fontColors  = sheet.getRange(1, 1, lastRow, lastCol).getFontColors();
   var header      = values[HEADER_ROW - 1].map(function(v) { return String(v).trim(); });
 
   // Detect Venue column at HEADER_ROW (should always be present on this dedicated tab)
@@ -364,6 +379,7 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo, org) {
     lastCol = sheet.getLastColumn();
     values      = sheet.getRange(1, 1, lastRow, lastCol).getValues();
     backgrounds = sheet.getRange(1, 1, lastRow, lastCol).getBackgrounds();
+    fontColors  = sheet.getRange(1, 1, lastRow, lastCol).getFontColors();
     header      = values[HEADER_ROW - 1].map(function(v) { return String(v).trim(); });
     venueIdx = 4;
   }
@@ -387,8 +403,7 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo, org) {
         var dupVal = values[rr][c];
         if (dupVal === "" || dupVal == null) continue;
         var leftVal = values[rr][leftCol];
-        var leftBg  = backgrounds[rr][leftCol] || "";
-        if (leftBg.toLowerCase() === PROTECTED_COLOR) continue;
+        if (_isProtected(backgrounds[rr][leftCol], fontColors[rr][leftCol])) continue;
         if (leftVal === "" || leftVal == null) {
           sheet.getRange(rr + 1, leftCol + 1).setValue(dupVal);
           values[rr][leftCol] = dupVal;
@@ -414,6 +429,7 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo, org) {
     lastCol     = sheet.getLastColumn();
     values      = sheet.getRange(1, 1, lastRow, lastCol).getValues();
     backgrounds = sheet.getRange(1, 1, lastRow, lastCol).getBackgrounds();
+    fontColors  = sheet.getRange(1, 1, lastRow, lastCol).getFontColors();
     header      = values[HEADER_ROW - 1].map(function(v) { return String(v).trim(); });
     dateToCol = {};
     for (var c = META_COUNT; c < header.length; c++) {
@@ -442,6 +458,7 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo, org) {
     lastCol     = sheet.getLastColumn();
     values      = sheet.getRange(1, 1, lastRow, lastCol).getValues();
     backgrounds = sheet.getRange(1, 1, lastRow, lastCol).getBackgrounds();
+    fontColors  = sheet.getRange(1, 1, lastRow, lastCol).getFontColors();
     header      = values[HEADER_ROW - 1].map(function(v) { return String(v).trim(); });
   }
 
@@ -467,6 +484,24 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo, org) {
     existingRowKey[key] = r;
   }
 
+  // ── DIAGNOSTIC LOGGING ──────────────────────────────────────────────────
+  Logger.log("=== MERGE DEBUG ===");
+  Logger.log("Pull window: " + refreshFrom + " → " + refreshTo + " (org=" + org + ")");
+  Logger.log("");
+  Logger.log("Existing row keys in sheet (" + Object.keys(existingRowKey).length + "):");
+  var existKeysSorted = Object.keys(existingRowKey).sort();
+  for (var ei = 0; ei < existKeysSorted.length; ei++) {
+    Logger.log("  EXIST  row " + (existingRowKey[existKeysSorted[ei]] + 1) + "  key=[" + existKeysSorted[ei] + "]");
+  }
+  Logger.log("");
+  Logger.log("New pull keys (" + Object.keys(accRows).length + "):");
+  var newKeysSorted = Object.keys(accRows).sort();
+  for (var ni = 0; ni < newKeysSorted.length; ni++) {
+    var matched = existingRowKey[newKeysSorted[ni]] != null ? "✓MATCH" : "✗NEW";
+    Logger.log("  " + matched + "  key=[" + newKeysSorted[ni] + "]");
+  }
+  Logger.log("=== END DEBUG ===");
+
   // Apply per-row updates
   for (var key in accRows) {
     var newRow = accRows[key];
@@ -475,8 +510,10 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo, org) {
     for (var iso in refreshDates) {
       var colIdx = dateToCol[iso];
       if (colIdx == null) continue;
-      var bg = backgrounds[existingIdx][colIdx] || "";
-      if (bg.toLowerCase() === PROTECTED_COLOR) { stats.protected++; continue; }
+      if (_isProtected(backgrounds[existingIdx][colIdx], fontColors[existingIdx][colIdx])) {
+        stats.protected++;
+        continue;
+      }
       var newVal = newRow.daily[iso];
       sheet.getRange(existingIdx + 1, colIdx + 1).setValue(newVal != null ? newVal : "");
       stats.updated++;
@@ -492,8 +529,10 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo, org) {
       if (colIdx == null) continue;
       var v = values[rowIdx][colIdx];
       if (v === "" || v == null) continue;
-      var bg = backgrounds[rowIdx][colIdx] || "";
-      if (bg.toLowerCase() === PROTECTED_COLOR) { stats.protected++; continue; }
+      if (_isProtected(backgrounds[rowIdx][colIdx], fontColors[rowIdx][colIdx])) {
+        stats.protected++;
+        continue;
+      }
       sheet.getRange(rowIdx + 1, colIdx + 1).setValue("");
       stats.updated++;
     }
