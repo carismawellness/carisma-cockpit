@@ -14,7 +14,10 @@ export type TxnSource =
   | "journal"
   | "customerpayment"
   | "vendorpayment"
-  | "salesreturn";
+  | "salesreturn"
+  | "journal_report";   // auto-generated counterpart lines from reports/journal
+                        // (e.g. invoice → COGS auto-postings) that don't appear
+                        // in any entity endpoint's line_items array.
 
 const BASE_CURRENCY = "EUR";
 
@@ -129,6 +132,10 @@ const ENDPOINT_PATH: Record<TxnSource, string> = {
   customerpayment: "customerpayments",
   vendorpayment:   "vendorpayments",
   salesreturn:     "salesreturns",
+  // Pseudo-source — these lines come from reports/journal, not a list+detail
+  // entity endpoint. The path is unused but the key must exist to satisfy the
+  // Record<TxnSource, string> type.
+  journal_report:  "reports/journal",
 };
 
 // ── List + detail pagination per endpoint ────────────────────────────────────
@@ -406,6 +413,137 @@ async function fetchDetails(
   return lines;
 }
 
+// ── reports/journal (supplementary auto-posting capture) ─────────────────────
+//
+// The 9 entity endpoints above only expose user-entered line_items. When Zoho
+// posts an invoice with a tracked inventory item, it auto-generates COGS and
+// inventory-credit JOURNAL counterparts on the back end — these never appear
+// on the invoice's line_items array, but they DO appear in the journal report.
+//
+// Strategy: pull reports/journal for the same window, then drop any
+// (transaction_id, account_id) pair already covered by an entity endpoint
+// (the entity version wins because it carries reporting_tags). Only gaps are
+// added with source="journal_report".
+
+// Zoho returns dates in "DD Mon YYYY" form on the journal report — parse to YYYY-MM-DD.
+const MONTH_ABBREV: Record<string, string> = {
+  jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+  jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
+};
+function parseJournalReportDate(s: string): string | null {
+  if (!s) return null;
+  // Already ISO?
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const m = s.trim().match(/^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})$/);
+  if (!m) return null;
+  const day = m[1].padStart(2, "0");
+  const mon = MONTH_ABBREV[m[2].slice(0, 3).toLowerCase()];
+  if (!mon) return null;
+  return `${m[3]}-${mon}-${day}`;
+}
+
+/**
+ * Compute the signed amount for one account_transactions row on the journal
+ * report. Income: credit positive (credit - debit). Expense: debit positive
+ * (debit - credit). The plain `debit_amount` / `credit_amount` are ALREADY in
+ * base currency (EUR) per the Zoho schema; `*_fcy_amount` is the foreign
+ * value. We deliberately use the base-currency fields so no FX conversion is
+ * needed.
+ */
+function pickJournalReportAmount(
+  at: Record<string, unknown>,
+  section: "income" | "expense" | "other",
+): number {
+  const debit  = Number(at.debit_amount  ?? 0);
+  const credit = Number(at.credit_amount ?? 0);
+  if (!debit && !credit) return 0;
+  if (section === "income")  return credit - debit;
+  if (section === "expense") return debit - credit;
+  return debit - credit;
+}
+
+async function fetchJournalReportLines(
+  client:      ZohoBooksClient,
+  fromDate:    string,
+  toDate:      string,
+  accountMeta: Map<string, AccountMeta>,
+  covered:     Set<string>,
+  log:         string[],
+): Promise<{ lines: TxnLine[]; rawCount: number; addedCount: number; skippedCovered: number; skippedSection: number; skippedZero: number; skippedNoMeta: number }> {
+  const lines: TxnLine[] = [];
+  let rawCount = 0, addedCount = 0, skippedCovered = 0, skippedSection = 0, skippedZero = 0, skippedNoMeta = 0;
+  let page = 1;
+  let pageCount = 0;
+  while (true) {
+    if (pageCount > 0) await new Promise(r => setTimeout(r, PAGE_THROTTLE_MS));
+    const params: Record<string, string> = {
+      filter_by: "TransactionDate.CustomDate",
+      from_date: fromDate,
+      to_date:   toDate,
+      per_page:  "200",
+      page:      String(page),
+    };
+    let data: Record<string, unknown>;
+    try {
+      data = await callWithRetry(
+        () => client.get("reports/journal", params) as Promise<Record<string, unknown>>,
+        `reports/journal page ${page}`,
+        log,
+      );
+    } catch (e) {
+      log.push(`  WARN reports/journal page ${page} failed: ${e}; aborting journal-report pull`);
+      break;
+    }
+    pageCount++;
+    const entries = (data.journal as Array<Record<string, unknown>>) ?? [];
+    for (const j of entries) {
+      const txnId = String(j.transaction_id ?? "");
+      if (!txnId) continue;
+      const rawDate = String(j.date ?? "");
+      const isoDate = parseJournalReportDate(rawDate);
+      if (!isoDate) {
+        log.push(`  WARN reports/journal: unparseable date "${rawDate}" on txn ${txnId}; skipping`);
+        continue;
+      }
+      const contactName = String(j.contact_name ?? "").trim();
+      const atRows      = (j.account_transactions as Array<Record<string, unknown>>) ?? [];
+      for (const at of atRows) {
+        rawCount++;
+        const accountId = String(at.account_id ?? "");
+        if (!accountId) continue;
+
+        const key = `${txnId}::${accountId}`;
+        if (covered.has(key)) { skippedCovered++; continue; }
+
+        const meta = accountMeta.get(accountId);
+        if (!meta) { skippedNoMeta++; continue; }
+        if (meta.section === "other") { skippedSection++; continue; }
+
+        const amount = pickJournalReportAmount(at, meta.section);
+        if (!amount) { skippedZero++; continue; }
+
+        lines.push({
+          date:         isoDate,
+          source:       "journal_report",
+          txn_id:       txnId,
+          account_id:   accountId,
+          account_code: meta.code || String(at.account_code ?? "").trim(),
+          account_name: meta.name || String(at.name ?? at.account_name ?? "").trim(),
+          section:      meta.section,
+          amount,
+          tags:         [],                // auto-postings carry no reporting_tags
+          contact_name: contactName,
+        });
+        addedCount++;
+      }
+    }
+    const ctx = data.page_context as Record<string, unknown> | undefined;
+    if (!ctx?.has_more_page) break;
+    page++;
+  }
+  return { lines, rawCount, addedCount, skippedCovered, skippedSection, skippedZero, skippedNoMeta };
+}
+
 // ── Public entry point ───────────────────────────────────────────────────────
 
 export type LinePullResult = {
@@ -429,7 +567,7 @@ export async function fetchTransactionLines(
   const allLines: TxnLine[] = [];
   const perSourceCount: Record<TxnSource, number> = {
     invoice: 0, bill: 0, expense: 0, creditnote: 0, vendorcredit: 0, journal: 0,
-    customerpayment: 0, vendorpayment: 0, salesreturn: 0,
+    customerpayment: 0, vendorpayment: 0, salesreturn: 0, journal_report: 0,
   };
 
   for (const cfg of ENDPOINTS) {
@@ -452,6 +590,28 @@ export async function fetchTransactionLines(
     perSourceCount[cfg.source] = lines.length;
     allLines.push(...lines);
     log.push(`[${cfg.source}] extracted ${lines.length} line(s)`);
+  }
+
+  // Supplementary pass: reports/journal captures auto-generated counterpart
+  // lines (e.g. invoice → COGS / inventory) that none of the entity endpoints
+  // expose. We only add lines whose (txn_id, account_id) isn't already covered.
+  log.push(`\n[journal_report] supplementary pull ${fromDate} … ${toDate}`);
+  const covered = new Set<string>();
+  for (const l of allLines) {
+    if (!l.txn_id || !l.account_id) continue;
+    covered.add(`${l.txn_id}::${l.account_id}`);
+  }
+  try {
+    const jr = await fetchJournalReportLines(client, fromDate, toDate, accountMeta, covered, log);
+    perSourceCount.journal_report = jr.lines.length;
+    allLines.push(...jr.lines);
+    log.push(
+      `[journal_report] raw=${jr.rawCount} added=${jr.addedCount} ` +
+      `skipped_covered=${jr.skippedCovered} skipped_section=${jr.skippedSection} ` +
+      `skipped_zero=${jr.skippedZero} skipped_no_meta=${jr.skippedNoMeta}`,
+    );
+  } catch (e) {
+    log.push(`  WARN journal_report pull failed: ${e}; continuing without supplementary lines`);
   }
 
   log.push(`\nTotal lines across endpoints: ${allLines.length}`);
