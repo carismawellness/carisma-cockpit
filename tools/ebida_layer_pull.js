@@ -153,6 +153,11 @@ function runPullNow() {
   return pullAndWriteEbidaLayer("2025-01-01", todayStr, "SPA");
 }
 
+// Test wrapper: small 1-week window, SPA. Safe to clasp-run without args.
+function runTestPullJan1to7() {
+  return pullAndWriteEbidaLayer("2025-01-01", "2025-01-07", "SPA");
+}
+
 // ── Chunking ─────────────────────────────────────────────────────────────────
 
 function _computeChunks(fromDate, toDate, chunkDays) {
