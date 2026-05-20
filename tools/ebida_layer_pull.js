@@ -128,11 +128,16 @@ function pullAndWriteEbidaLayer(dateFrom, dateTo, org) {
   var accRows  = {};        // brand|key|venue_slug -> { meta + daily }
   var datesSet = {};
   var done     = 0;
+  var aborted  = false;
+  var abortReason = "";
 
   for (var i = 0; i < chunks.length; i++) {
     if (Date.now() - startedAt > APPS_SCRIPT_BUDGET_MS) {
-      throw new Error("Apps Script budget exhausted after " + done + "/" + chunks.length +
-        " chunks. Re-run with a smaller window, or do the backfill locally via `npm run dev`.");
+      aborted = true;
+      abortReason = "Apps Script budget exhausted after " + done + "/" + chunks.length +
+        " chunks. Partial progress saved to sheet. Re-run with the remaining window " +
+        "(start from " + chunks[i].from + ").";
+      break;
     }
     var c = chunks[i];
     var chunkResult = _fetchChunk(c.from, c.to, orgParam);
@@ -163,11 +168,28 @@ function pullAndWriteEbidaLayer(dateFrom, dateTo, org) {
     done++;
   }
 
+  // Always write whatever we accumulated, even on partial completion. The merge
+  // scopes overwrites to the dates actually pulled (allDates), so writing partial
+  // progress is safe — dates that weren't fetched yet aren't touched.
   var allDates = Object.keys(datesSet).sort();
-  var stats    = _mergeIntoSheet(accRows, allDates, dateFrom, dateTo, org);
+  var stats    = { appended: 0, updated: 0, protected: 0 };
+  if (allDates.length > 0) {
+    // For partial runs, narrow the refresh window to dates actually pulled so
+    // we don't clear cells for accounts that *would* have appeared in later chunks.
+    var actualFrom = allDates[0];
+    var actualTo   = allDates[allDates.length - 1];
+    stats = _mergeIntoSheet(accRows, allDates, actualFrom, actualTo, org);
+  }
 
   var elapsed = ((Date.now() - startedAt) / 1000).toFixed(0);
   var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm");
+
+  if (aborted) {
+    _setStatus("⚠ Partial pull " + stamp + " — " + done + "/" + chunks.length + " chunks; " +
+      "next: " + chunks[done].from + " → " + dateTo);
+    throw new Error(abortReason);
+  }
+
   _setStatus("✓ Last pulled " + stamp + " (" + dateFrom + " → " + dateTo + ", " + (org || "SPA") + ")");
   return "✓ " + chunks.length + " chunk(s) pulled in " + elapsed + "s\n" +
          "  " + Object.keys(accRows).length + " (account,venue) row(s) merged\n" +
