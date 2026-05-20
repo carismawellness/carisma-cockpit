@@ -26,17 +26,6 @@ export interface UseHqEbitdaResult {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function monthsInRange(dateFrom: Date, dateTo: Date): string[] {
-  const months: string[] = [];
-  const d   = new Date(dateFrom.getFullYear(), dateFrom.getMonth(), 1);
-  const end = new Date(dateTo.getFullYear(),   dateTo.getMonth(),   1);
-  while (d <= end) {
-    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`);
-    d.setMonth(d.getMonth() + 1);
-  }
-  return months;
-}
-
 function toDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
@@ -49,45 +38,39 @@ const EMPTY: HqEbitdaData = {
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
 export function useHqEbitda(dateFrom: Date, dateTo: Date): UseHqEbitdaResult {
-  const supabase     = createClient();
+  const supabase = createClient();
 
-  const fromStr      = toDateStr(new Date(dateFrom.getFullYear(), dateFrom.getMonth(), 1));
-  const toStr        = toDateStr(new Date(dateTo.getFullYear(),   dateTo.getMonth(),   1));
-  const allMonths    = monthsInRange(dateFrom, dateTo);
+  const fromDateFull = toDateStr(dateFrom);
+  const toDateFull   = toDateStr(dateTo);
 
-  // ── Fetch from hq_ebitda_monthly ──────────────────────────────────────────
+  // ── Fetch raw daily rows for the period from hq_ebitda_daily ──────────────
+  // Sums across all `source` values (e.g. 'spa', 'aesthetics') so the HQ figure
+  // captures both orgs' HQ-tagged amounts.
   const { data: rows, isFetching } = useQuery({
-    queryKey: ["hq-ebitda", fromStr, toStr],
+    queryKey: ["hq-ebitda", fromDateFull, toDateFull],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("hq_ebitda_monthly")
-        .select("month, revenue, cogs, wages, advertising, rent, utilities, sga, zoho_synced_at")
-        .gte("month", fromStr)
-        .lte("month", toStr)
-        .order("month");
+        .from("hq_ebitda_daily")
+        .select("date, source, revenue, cogs, wages, advertising, rent, utilities, sga, zoho_synced_at")
+        .gte("date", fromDateFull)
+        .lte("date", toDateFull);
       if (error) throw error;
       return data ?? [];
     },
     staleTime: 0,
   });
 
-  // ── Missing months ────────────────────────────────────────────────────────
-  type HqRow = {
-    month: string; revenue: number; cogs: number; wages: number;
+  type HqDailyRow = {
+    date: string; source: string;
+    revenue: number; cogs: number; wages: number;
     advertising: number; rent: number; utilities: number; sga: number;
     zoho_synced_at: string | null;
   };
 
-  const presentMonths = new Set((rows ?? []).map((r: HqRow) => r.month));
-  const missingMonths = allMonths.filter(m => !presentMonths.has(m));
-
-  // Sync is owned by useSpaEbitda: the /api/etl/zoho-spa-transactions route
-  // writes BOTH spa_ebitda_monthly and hq_ebitda_monthly in a single call,
-  // and the SPA hook invalidates the hq-ebitda query on success.
-  // triggerSync here is a no-op to avoid double-firing the same ETL.
-
   // ── Aggregate ─────────────────────────────────────────────────────────────
-  const data = (rows ?? []).reduce<HqEbitdaData>((acc, row: HqRow) => {
+  // Sync is owned by useSpaEbitda for SPA-source rows; aesthetics-source rows
+  // are owned by useAestheticsEbitda. This hook only reads.
+  const data = (rows ?? []).reduce<HqEbitdaData>((acc, row: HqDailyRow) => {
     acc.revenue     += row.revenue     ?? 0;
     acc.cogs        += row.cogs        ?? 0;
     acc.wages       += row.wages       ?? 0;
@@ -116,7 +99,7 @@ export function useHqEbitda(dateFrom: Date, dateTo: Date): UseHqEbitdaResult {
     isFetching,
     isSyncing:    false,
     syncError:    null,
-    missingMonths,
-    triggerSync:  () => { /* no-op: handled by useSpaEbitda */ },
+    missingMonths: [],
+    triggerSync:  () => { /* no-op: handled by useSpaEbitda + useAestheticsEbitda */ },
   };
 }

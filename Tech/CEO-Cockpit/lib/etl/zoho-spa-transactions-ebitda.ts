@@ -1,5 +1,5 @@
 import { ZohoBooksClient } from "./zoho-client";
-import { upsert, select } from "./supabase-etl";
+import { upsert } from "./supabase-etl";
 import { fetchTransactionLines, TxnLine } from "./zoho-line-extractor";
 import {
   COA_MAP,
@@ -9,22 +9,16 @@ import {
   loadSpaCoaFromSupabase,
 } from "./spa-ebitda";
 
-// Per-line, tag-aware EBITDA ETL for the SPA Zoho org.
+// Per-line, tag-aware EBITDA ETL for the SPA Zoho org — DAILY granularity.
 //
-// Replaces the broken reports/profitandloss?tag_option_id=X pipeline: Zoho EU
-// silently ignores that filter, so the old ETL could never read true HQ vs venue
-// allocations. This module pulls every invoice / bill / expense / creditnote /
-// vendorcredit / journal line, applies the per-line reporting tag for primary
-// allocation, and falls back to the CoA split rule only for untagged lines.
-//
-// Writes monthly aggregates to `spa_ebitda_monthly` (venues 1–8) and
-// `hq_ebitda_monthly` (HQ totals). All rent / wages / laundry / salary-supplement
-// fallback behaviour from the previous runSpaEbitdaMonth is preserved verbatim.
+// Writes raw daily rows to spa_ebitda_daily and hq_ebitda_daily (source='spa').
+// No fallback logic here — wages / rent / laundry / salary-supplement fallbacks
+// are applied at read time in useSpaEbitda / useHqEbitda, proportional to the
+// user-selected period. The ETL's job is just to faithfully bucket Zoho line-
+// level amounts into (date, venue, ebitda-line) cells via tag → name override
+// → CoA rule.
 
 // ── Tag option name → internal slug ─────────────────────────────────────────
-// Source: discovered from Zoho on 2026-05-20 — "Cost Centre- Spas" tag group.
-// "Unallocated" intentionally maps to null so it's treated as untagged.
-
 const TAG_NAME_TO_SLUG: Record<string, string | null> = {
   excelsior:    "excelsior",
   hq:           "hq",
@@ -38,32 +32,16 @@ const TAG_NAME_TO_SLUG: Record<string, string | null> = {
   unallocated:  null,
 };
 
-const VENUE_SLUGS = [
-  "intercontinental", "hugos", "hyatt", "ramla",
-  "labranda", "sunny_coast", "excelsior", "novotel",
-] as const;
-type VenueSlug = (typeof VENUE_SLUGS)[number];
 const ALL_LOCATION_IDS = Object.values(LOCATION_MAP);
 
 const VALID_LINES = new Set(["revenue", "cogs", "wages", "advertising", "rent", "utilities", "sga"]);
 
-// Direct salary accounts → location id (used as denominator for salary_cost splits)
 const SALARY_RATIO_ACCOUNTS: Record<string, number> = {
   "30001":  1, "30002":  2, "30003":  3, "30005":  4,
   "30006":  5, "30004":  6, "602221": 7, "602222": 8,
 };
 
 const LAUNDRY_ACCOUNTS = new Set(["611514", "611520"]);
-
-const BENCHMARK_RENT_MONTHLY: Record<number, number> = {
-  1: 5100.00, 2: 1000.00, 3: 1407.00, 4: 1000.00,
-  5: 1000.00, 6:  944.44, 7: 2500.00, 8:    0.00,
-};
-
-const SUPP_SLUG_TO_LOC: Record<string, number> = {
-  inter:     1, hugos:     2, hyatt:     3, ramla:     4,
-  labranda:  5, odycy:     6, excelsior: 7, novotel:   8,
-};
 
 const UI_KEY_TO_LOC: Record<string, string> = {
   inter:     "intercontinental",
@@ -79,24 +57,24 @@ const UI_KEY_TO_LOC: Record<string, string> = {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-type LocMap = Record<number, number>;
+type LocMap     = Record<number, number>;
+type LineTotals = Record<string, number>;
+
 function emptyLocTotals(): LocMap {
   return Object.fromEntries(ALL_LOCATION_IDS.map(id => [id, 0]));
 }
-
-type LineTotals = Record<string, number>;
 function emptyLineTotals(): LineTotals {
   return { revenue: 0, cogs: 0, wages: 0, advertising: 0, rent: 0, utilities: 0, sga: 0 };
 }
+function emptyDayVenueMap(): Record<number, LineTotals> {
+  const r: Record<number, LineTotals> = {};
+  for (const id of ALL_LOCATION_IDS) r[id] = emptyLineTotals();
+  return r;
+}
 
 function daysInMonth(year: number, month: number): number { return new Date(year, month, 0).getDate(); }
-function prevMonth(year: number, month: number): [number, number] {
-  return month === 1 ? [year - 1, 12] : [year, month - 1];
-}
 
-function normalizeTagName(name: string): string {
-  return name.trim().toLowerCase();
-}
+function normalizeTagName(name: string): string { return name.trim().toLowerCase(); }
 
 function tagsToSlug(tags: TxnLine["tags"]): string | null {
   for (const t of tags) {
@@ -143,14 +121,7 @@ function distribute(
   return Object.fromEntries(ALL_LOCATION_IDS.map(id => [id, amount / ALL_LOCATION_IDS.length]));
 }
 
-async function monthAlreadySynced(monthKey: string): Promise<boolean> {
-  try {
-    const rows = await select("spa_ebitda_monthly", { month: monthKey });
-    return rows.length > 0;
-  } catch { return false; }
-}
-
-// ── Core month runner ────────────────────────────────────────────────────────
+// ── Core runner ──────────────────────────────────────────────────────────────
 
 export type SpaRunResult = {
   spaRowsUpserted: number;
@@ -167,7 +138,7 @@ export async function runSpaEbitdaMonthFromTransactions(
     coaMap?:           Record<string, [string, string]>;
     fromDateOverride?: string;
     toDateOverride?:   string;
-    preLoadedLines?:   TxnLine[];  // for multi-month runs that share one pull
+    preLoadedLines?:   TxnLine[];
   } = {},
 ): Promise<SpaRunResult> {
   const log: string[] = [];
@@ -176,16 +147,7 @@ export async function runSpaEbitdaMonthFromTransactions(
   const toDate    = opts.toDateOverride   ?? `${year}-${String(month).padStart(2, "0")}-${String(monthDays).padStart(2, "0")}`;
   const monthKey  = `${year}-${String(month).padStart(2, "0")}-01`;
 
-  const fromD = new Date(fromDate);
-  const toD   = new Date(toDate);
-  const periodDays = Math.round((toD.getTime() - fromD.getTime()) / 86400000) + 1;
-
-  if (!opts.force && await monthAlreadySynced(monthKey)) {
-    log.push(`${monthKey}: cached — skipping`);
-    return { spaRowsUpserted: 0, hqRowsUpserted: 0, log };
-  }
-
-  // ── 1. Pull all transaction lines for the period ─────────────────────────
+  // ── 1. Pull lines ────────────────────────────────────────────────────────
   let lines: TxnLine[];
   if (opts.preLoadedLines) {
     lines = opts.preLoadedLines.filter(l => l.date >= fromDate && l.date <= toDate);
@@ -205,16 +167,17 @@ export async function runSpaEbitdaMonthFromTransactions(
 
   // ── 2. Per-line CoA lookup + EBITDA line + initial classification ────────
   type Classified = {
-    line:    string;             // EBITDA line: revenue/cogs/wages/...
-    rule:    string;             // CoA split rule (e.g. "sales_ratio", "hugos", "equal")
-    tagSlug: string | null;      // direct allocation slug from line tag (hq or one of 8 venues) — wins over rule
+    date:    string;
+    line:    string;
+    rule:    string;
+    tagSlug: string | null;
     code:    string;
     amount:  number;
     section: TxnLine["section"];
   };
 
   const classified: Classified[] = [];
-  let droppedUnmapped = 0, droppedExcluded = 0, droppedZero = 0;
+  let droppedExcluded = 0, droppedZero = 0;
   for (const ln of lines) {
     if (ln.amount === 0) { droppedZero++; continue; }
 
@@ -231,11 +194,10 @@ export async function runSpaEbitdaMonthFromTransactions(
     if (!VALID_LINES.has(line)) { droppedExcluded++; continue; }
 
     const tagSlug = tagsToSlug(ln.tags);
-    // Name-based override (e.g. "Rent - Hugo's Hotels" without a tag) — applies
-    // only when the line itself has no usable tag.
     const nameLoc = tagSlug ? null : detectLocation(ln.account_name);
 
     classified.push({
+      date:    ln.date,
       line,
       rule:    nameLoc ?? rule,
       tagSlug,
@@ -245,260 +207,116 @@ export async function runSpaEbitdaMonthFromTransactions(
     });
   }
 
-  if (droppedUnmapped || droppedExcluded || droppedZero) {
+  if (droppedExcluded || droppedZero) {
     log.push(`${monthKey}: classify: ${classified.length} kept; dropped ${droppedExcluded} excluded, ${droppedZero} zero`);
   }
 
-  // ── 3. Bases for sales_ratio / salary_cost splits ────────────────────────
-  // Revenue base: any classified revenue line allocated to a direct venue (tag
-  // OR rule). HQ revenue is excluded from the SPA venue ratio (it has its own
-  // bucket).
+  // ── 3. Bases for sales_ratio / salary_cost splits (computed once, full window) ──
   const locRevenue = emptyLocTotals();
   for (const c of classified) {
     if (c.line !== "revenue") continue;
     let slug: string | null = null;
     if (c.tagSlug && c.tagSlug !== "hq") slug = c.tagSlug;
-    else if (c.tagSlug === "hq") continue;  // HQ revenue not in venue base
+    else if (c.tagSlug === "hq") continue;
     else if (c.rule in LOCATION_MAP) slug = c.rule;
     if (slug && slug in LOCATION_MAP) locRevenue[LOCATION_MAP[slug]] += c.amount;
   }
   const totalRevenue = Math.max(Object.values(locRevenue).reduce((a, b) => a + b, 0), 1);
 
-  // Salary base: sum of the 8 direct salary accounts.
   const locSalary = emptyLocTotals();
   for (const c of classified) {
-    if (c.code in SALARY_RATIO_ACCOUNTS) {
-      locSalary[SALARY_RATIO_ACCOUNTS[c.code]] += c.amount;
-    }
+    if (c.code in SALARY_RATIO_ACCOUNTS) locSalary[SALARY_RATIO_ACCOUNTS[c.code]] += c.amount;
   }
   const totalSalary = Math.max(Object.values(locSalary).reduce((a, b) => a + b, 0), 1);
 
-  // ── 4. Allocate every line: tag wins, otherwise CoA rule ─────────────────
-  const venueTotals: Record<number, LineTotals> = {};
-  for (const id of ALL_LOCATION_IDS) venueTotals[id] = emptyLineTotals();
-  const hqTotals: LineTotals = emptyLineTotals();
-  const laundryTotals = emptyLocTotals();
+  // ── 4. Allocate every line to (date, venue, ebitda-line) buckets ─────────
+  const dailyVenue:   Map<string, Record<number, LineTotals>> = new Map();
+  const dailyHq:      Map<string, LineTotals>                 = new Map();
+  const dailyLaundry: Map<string, LocMap>                     = new Map();
+
+  function dayBuckets(date: string) {
+    if (!dailyVenue.has(date))   dailyVenue.set(date, emptyDayVenueMap());
+    if (!dailyHq.has(date))      dailyHq.set(date, emptyLineTotals());
+    if (!dailyLaundry.has(date)) dailyLaundry.set(date, emptyLocTotals());
+    return { venue: dailyVenue.get(date)!, hq: dailyHq.get(date)!, laundry: dailyLaundry.get(date)! };
+  }
 
   for (const c of classified) {
-    // Tag-driven allocation
+    const b = dayBuckets(c.date);
+
     if (c.tagSlug === "hq") {
-      hqTotals[c.line] += c.amount;
-      if (LAUNDRY_ACCOUNTS.has(c.code)) {
-        // Laundry tracking is venue-only (no HQ laundry column). Skip.
-      }
+      b.hq[c.line] += c.amount;
       continue;
     }
     if (c.tagSlug && c.tagSlug in LOCATION_MAP) {
-      venueTotals[LOCATION_MAP[c.tagSlug]][c.line] += c.amount;
-      if (LAUNDRY_ACCOUNTS.has(c.code)) laundryTotals[LOCATION_MAP[c.tagSlug]] += c.amount;
+      const id = LOCATION_MAP[c.tagSlug];
+      b.venue[id][c.line] += c.amount;
+      if (LAUNDRY_ACCOUNTS.has(c.code)) b.laundry[id] += c.amount;
       continue;
     }
-
-    // No usable tag → apply rule
     if (c.rule === "hq") {
-      hqTotals[c.line] += c.amount;
+      b.hq[c.line] += c.amount;
       continue;
     }
     const dist = distribute(c.rule, c.amount, locRevenue, totalRevenue, locSalary, totalSalary);
     for (const [locId, share] of Object.entries(dist)) {
       const id = Number(locId);
-      venueTotals[id][c.line] += share;
-      if (LAUNDRY_ACCOUNTS.has(c.code)) laundryTotals[id] += share;
+      b.venue[id][c.line] += share;
+      if (LAUNDRY_ACCOUNTS.has(c.code)) b.laundry[id] += share;
     }
   }
 
-  // ── 5. Wages fallback (prorate from previous month if abnormally low) ────
-  const WAGE_ZERO_THRESHOLD = 100;
-  const WAGE_LOW_FRACTION   = 0.35;
-  const totalZohoWages = ALL_LOCATION_IDS.reduce((s, id) => s + venueTotals[id].wages, 0);
-  const [prevY, prevM] = prevMonth(year, month);
-  const prevKey  = `${prevY}-${String(prevM).padStart(2, "0")}-01`;
-  const prevDays = daysInMonth(prevY, prevM);
-
-  try {
-    const prevEbitda   = await select("spa_ebitda_monthly", { month: prevKey });
-    const prevSuppRows = await select("salary_supplement_monthly", { month: prevKey, is_frozen: "true" });
-
-    const prevSuppByLoc: Record<number, number> = Object.fromEntries(ALL_LOCATION_IDS.map(id => [id, 0]));
-    let centrePrev = 0;
-    for (const sr of prevSuppRows) {
-      const slug = sr.spa_slug as string;
-      const amt  = Number(sr.amount ?? 0);
-      if (slug in SUPP_SLUG_TO_LOC) prevSuppByLoc[SUPP_SLUG_TO_LOC[slug]] += amt;
-      else if (slug === "hq") centrePrev += amt;
-    }
-    if (centrePrev > 0 && totalSalary > 0) {
-      for (const id of ALL_LOCATION_IDS) prevSuppByLoc[id] += centrePrev * locSalary[id] / totalSalary;
-    } else if (centrePrev > 0) {
-      for (const id of ALL_LOCATION_IDS) prevSuppByLoc[id] += centrePrev / ALL_LOCATION_IDS.length;
-    }
-
-    const prevZohoWagesByLoc: Record<number, number> = {};
-    let prevTotalZohoWages = 0;
-    for (const pr of prevEbitda) {
-      const locId = Number(pr.location_id);
-      if (locId in venueTotals) {
-        const w = Math.max(0, Number(pr.wages ?? 0) - (prevSuppByLoc[locId] ?? 0));
-        prevZohoWagesByLoc[locId] = w;
-        prevTotalZohoWages += w;
-      }
-    }
-
-    const useFallback =
-      totalZohoWages < WAGE_ZERO_THRESHOLD ||
-      (prevTotalZohoWages > 0 && totalZohoWages < prevTotalZohoWages * WAGE_LOW_FRACTION);
-
-    if (useFallback && prevEbitda.length) {
-      for (const id of ALL_LOCATION_IDS) {
-        const w = prevZohoWagesByLoc[id] ?? 0;
-        venueTotals[id].wages = (w / prevDays) * periodDays;
-      }
-      log.push(`Wages fallback: Zoho €${totalZohoWages.toFixed(0)} < ${WAGE_LOW_FRACTION * 100}% of ${prevKey} €${prevTotalZohoWages.toFixed(0)} — using ${prevKey} prorated ${periodDays}/${prevDays} days`);
-    }
-  } catch (e) {
-    log.push(`Warning: wage fallback failed: ${e}`);
-  }
-
-  // ── 6. Rent fallback (previous month → benchmark → proration) ─────────────
-  const RENT_ZERO_THRESHOLD = 1;
-  const prevRentByLoc: Record<number, number> = {};
-  try {
-    const prevRows = await select("spa_ebitda_monthly", { month: prevKey });
-    for (const pr of prevRows) {
-      const locId = Number(pr.location_id);
-      if (locId in venueTotals) prevRentByLoc[locId] = Number(pr.rent ?? 0);
-    }
-  } catch (e) {
-    log.push(`Warning: could not load previous month rent: ${e}`);
-  }
-
-  let rentFallbackCount = 0, rentBenchmarkCount = 0;
-  for (const id of ALL_LOCATION_IDS) {
-    const currentRent = venueTotals[id].rent;
-    const prevRent    = prevRentByLoc[id] ?? 0;
-    const benchmark   = BENCHMARK_RENT_MONTHLY[id] ?? 0;
-    if (currentRent < RENT_ZERO_THRESHOLD && prevRent > 0) {
-      venueTotals[id].rent = (prevRent / prevDays) * periodDays;
-      rentFallbackCount++;
-    } else if (currentRent < RENT_ZERO_THRESHOLD && prevRent <= 0 && benchmark > 0) {
-      venueTotals[id].rent = (benchmark / monthDays) * periodDays;
-      rentBenchmarkCount++;
-    } else if (currentRent >= RENT_ZERO_THRESHOLD && periodDays < monthDays) {
-      venueTotals[id].rent = (currentRent / monthDays) * periodDays;
-    }
-  }
-  if (rentFallbackCount)  log.push(`Rent fallback: ${rentFallbackCount} locations used ${prevKey} prorated`);
-  if (rentBenchmarkCount) log.push(`Rent benchmark: ${rentBenchmarkCount} locations used hardcoded benchmark`);
-
-  // ── 7. Laundry fallback ───────────────────────────────────────────────────
-  const LAUNDRY_ZERO_THRESHOLD = 10;
-  const LAUNDRY_LOW_FRACTION   = 0.35;
-  const totalZohoLaundry = Object.values(laundryTotals).reduce((a, b) => a + b, 0);
-  try {
-    const prevLaundryRows = await select("spa_ebitda_monthly", { month: prevKey });
-    const prevLaundryByLoc: Record<number, number> = {};
-    let prevTotalLaundry = 0;
-    for (const pr of prevLaundryRows) {
-      const locId = Number(pr.location_id);
-      if (locId in venueTotals) {
-        const l = Number(pr.laundry ?? 0);
-        prevLaundryByLoc[locId] = l;
-        prevTotalLaundry += l;
-      }
-    }
-    const useLaundryFallback =
-      totalZohoLaundry < LAUNDRY_ZERO_THRESHOLD ||
-      (prevTotalLaundry > 0 && totalZohoLaundry < prevTotalLaundry * LAUNDRY_LOW_FRACTION);
-
-    if (useLaundryFallback && prevTotalLaundry > 0) {
-      for (const id of ALL_LOCATION_IDS) {
-        const fallbackL = (prevLaundryByLoc[id] ?? 0) / prevDays * periodDays;
-        const delta     = fallbackL - laundryTotals[id];
-        venueTotals[id].sga += delta;
-        laundryTotals[id] = fallbackL;
-      }
-      log.push(`Laundry fallback: Zoho €${totalZohoLaundry.toFixed(0)} < ${LAUNDRY_LOW_FRACTION * 100}% of ${prevKey} — using ${prevKey} prorated`);
-    }
-  } catch (e) {
-    log.push(`Warning: laundry fallback failed: ${e}`);
-  }
-
-  // ── 8. Salary supplement (frozen monthly entries → wages) ────────────────
-  try {
-    let suppRows = await select("salary_supplement_monthly", { month: monthKey, is_frozen: "true" });
-    let suppDays = monthDays;
-    if (!suppRows.length) {
-      const pk = `${prevY}-${String(prevM).padStart(2, "0")}-01`;
-      suppRows = await select("salary_supplement_monthly", { month: pk, is_frozen: "true" });
-      suppDays = daysInMonth(prevY, prevM);
-      if (suppRows.length) log.push(`Supplement: no frozen data for ${monthKey}, using ${pk}`);
-    }
-    if (suppRows.length) {
-      let centreSupplement = 0;
-      let assignedCount    = 0;
-      for (const sr of suppRows) {
-        const slug = sr.spa_slug as string;
-        if (!slug) continue;
-        const prorated = Number(sr.amount ?? 0) / suppDays * periodDays;
-        if (slug in SUPP_SLUG_TO_LOC) {
-          venueTotals[SUPP_SLUG_TO_LOC[slug]].wages += prorated;
-          assignedCount++;
-        } else if (slug === "hq") {
-          centreSupplement += prorated;
-          assignedCount++;
-        }
-      }
-      if (centreSupplement > 0 && totalSalary > 0) {
-        for (const id of ALL_LOCATION_IDS) {
-          venueTotals[id].wages += centreSupplement * locSalary[id] / totalSalary;
-        }
-      } else if (centreSupplement > 0) {
-        for (const id of ALL_LOCATION_IDS) {
-          venueTotals[id].wages += centreSupplement / ALL_LOCATION_IDS.length;
-        }
-      }
-      log.push(`Supplement: ${assignedCount} rows added to wages (${periodDays}/${suppDays} day proration)`);
-    }
-  } catch (e) {
-    log.push(`Warning: could not load salary supplement: ${e}`);
-  }
-
-  // ── 9. Upsert SPA venue rows + HQ row ────────────────────────────────────
+  // ── 5. Upsert SPA venue daily rows + HQ daily rows ────────────────────────
+  // Only non-zero rows are written (sparse). To overwrite stale prior-run cells
+  // when re-running with force=true, the caller should clear the window first;
+  // for now the route's force-clear is left to a separate code path.
   const nowTs = new Date().toISOString();
-  const spaRows = ALL_LOCATION_IDS.map(id => {
-    const d = venueTotals[id];
-    return {
-      month:          monthKey,
-      location_id:    id,
-      revenue:        +d.revenue.toFixed(2),
-      cogs:           +d.cogs.toFixed(2),
-      wages:          +d.wages.toFixed(2),
-      advertising:    +d.advertising.toFixed(2),
-      rent:           +d.rent.toFixed(2),
-      utilities:      +d.utilities.toFixed(2),
-      sga:            +d.sga.toFixed(2),
-      laundry:        +(laundryTotals[id] ?? 0).toFixed(2),
-      total:          +(d.revenue - d.cogs - d.wages - d.advertising - d.rent - d.utilities - d.sga).toFixed(2),
+
+  const spaRows: Record<string, unknown>[] = [];
+  for (const [date, venueT] of dailyVenue) {
+    const lndT = dailyLaundry.get(date) ?? emptyLocTotals();
+    for (const id of ALL_LOCATION_IDS) {
+      const d = venueT[id];
+      const lnd = lndT[id] ?? 0;
+      const any = d.revenue || d.cogs || d.wages || d.advertising || d.rent || d.utilities || d.sga || lnd;
+      if (!any) continue;
+      spaRows.push({
+        date,
+        location_id:    id,
+        revenue:        +d.revenue.toFixed(2),
+        cogs:           +d.cogs.toFixed(2),
+        wages:          +d.wages.toFixed(2),
+        advertising:    +d.advertising.toFixed(2),
+        rent:           +d.rent.toFixed(2),
+        utilities:      +d.utilities.toFixed(2),
+        sga:            +d.sga.toFixed(2),
+        laundry:        +lnd.toFixed(2),
+        zoho_synced_at: nowTs,
+      });
+    }
+  }
+
+  const hqRows: Record<string, unknown>[] = [];
+  for (const [date, hqT] of dailyHq) {
+    const any = hqT.revenue || hqT.cogs || hqT.wages || hqT.advertising || hqT.rent || hqT.utilities || hqT.sga;
+    if (!any) continue;
+    hqRows.push({
+      date,
+      source:         "spa",
+      revenue:        +hqT.revenue.toFixed(2),
+      cogs:           +hqT.cogs.toFixed(2),
+      wages:          +hqT.wages.toFixed(2),
+      advertising:    +hqT.advertising.toFixed(2),
+      rent:           +hqT.rent.toFixed(2),
+      utilities:      +hqT.utilities.toFixed(2),
+      sga:            +hqT.sga.toFixed(2),
       zoho_synced_at: nowTs,
-    };
-  });
+    });
+  }
 
-  const spaCount = await upsert("spa_ebitda_monthly", spaRows as Record<string, unknown>[], "month,location_id");
+  const spaCount = await upsert("spa_ebitda_daily", spaRows, "date,location_id");
+  const hqCount  = await upsert("hq_ebitda_daily",  hqRows,  "date,source");
 
-  const hqRow = {
-    month:          monthKey,
-    source:         "spa",
-    revenue:        +hqTotals.revenue.toFixed(2),
-    cogs:           +hqTotals.cogs.toFixed(2),
-    wages:          +hqTotals.wages.toFixed(2),
-    advertising:    +hqTotals.advertising.toFixed(2),
-    rent:           +hqTotals.rent.toFixed(2),
-    utilities:      +hqTotals.utilities.toFixed(2),
-    sga:            +hqTotals.sga.toFixed(2),
-    zoho_synced_at: nowTs,
-  };
-  const hqCount = await upsert("hq_ebitda_monthly", [hqRow as Record<string, unknown>], "month,source");
-
-  log.push(`${monthKey}: ${spaCount} spa rows + ${hqCount} hq row(s) upserted`);
+  log.push(`${monthKey}: ${spaCount} spa daily row(s) + ${hqCount} hq daily row(s) upserted (${dailyVenue.size} dates with activity)`);
   return { spaRowsUpserted: spaCount, hqRowsUpserted: hqCount, log };
 }

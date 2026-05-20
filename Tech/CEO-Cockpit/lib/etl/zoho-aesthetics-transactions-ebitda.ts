@@ -1,18 +1,17 @@
 import { ZohoBooksClient } from "./zoho-client";
-import { upsert, select } from "./supabase-etl";
+import { upsert } from "./supabase-etl";
 import { fetchTransactionLines, TxnLine } from "./zoho-line-extractor";
 import { loadAestheticsCoaMap } from "./aesthetics-ebitda";
 
-// Per-line, tag-aware EBITDA ETL for the Aesthetics Zoho org (both
-// Aesthetics and Slimming departments live in one org). Mirrors the SPA
-// orchestrator: tag wins for allocation, then account-name keyword, then
-// CoA split rule. Writes monthly rows (one per department) to
-// `aesthetics_ebitda_monthly`.
+// Per-line, tag-aware EBITDA ETL for the Aesthetics Zoho org — DAILY granularity.
+//
+// Writes raw daily rows to aesthetics_ebitda_daily (per date, dept). HQ-tagged
+// (custom_fixed {"hq":100}) lines route to hq_ebitda_daily with source='aesthetics'.
+// No fallback logic here — rent / supplement / wage fallbacks are applied at
+// read time in useAestheticsEbitda, period-aware.
 
 const DEPTS = ["aesthetics", "slimming"] as const;
 type Dept = (typeof DEPTS)[number];
-
-// ── Tag option name → dept (Aesthetics org has two single-option groups) ────
 
 const TAG_NAME_TO_DEPT: Record<string, Dept> = {
   "carisma aesthetics": "aesthetics",
@@ -20,8 +19,6 @@ const TAG_NAME_TO_DEPT: Record<string, Dept> = {
   "aesthetics":         "aesthetics",
   "slimming":           "slimming",
 };
-
-// ── Department keyword detection (~90% of Aesthetics-org lines are untagged) ─
 
 const DEPT_KEYWORDS: [string[], Dept][] = [
   [["aesthetics", "aesthetic", " aest ", "clinic"],  "aesthetics"],
@@ -44,20 +41,6 @@ function tagsToDept(tags: TxnLine["tags"]): Dept | null {
   return null;
 }
 
-// "100% HQ" rule: custom_fixed with hq as the only non-zero key. Lines whose CoA
-// rule matches this are routed to hq_ebitda_monthly (source='aesthetics') instead
-// of being split between the aesthetics/slimming dept buckets.
-function isHqOnlyRule(rule: string): boolean {
-  if (!rule.startsWith("custom:")) return false;
-  try {
-    const cfg = JSON.parse(rule.slice(7)) as Record<string, number>;
-    const nonZero = Object.keys(cfg).filter(k => Number(cfg[k]) > 0);
-    return nonZero.length === 1 && nonZero[0] === "hq";
-  } catch { return false; }
-}
-
-// ── Name-based EBITDA line detection (for accounts not in CoA mapping) ──────
-
 function detectLine(name: string, section: string): string {
   const low = name.toLowerCase();
   if (section === "income") return "revenue";
@@ -69,19 +52,7 @@ function detectLine(name: string, section: string): string {
   return "sga";
 }
 
-// ── Benchmark rent ──────────────────────────────────────────────────────────
-
-const BENCHMARK_RENT: Record<Dept, number> = { aesthetics: 0, slimming: 0 };
-const RENT_ZERO_THRESHOLD = 1;
-
-function daysInMonth(year: number, month: number): number { return new Date(year, month, 0).getDate(); }
-function prevMonth(year: number, month: number): [number, number] {
-  return month === 1 ? [year - 1, 12] : [year, month - 1];
-}
-
 // ── Marketing spend ratio (Growth Sheet) ─────────────────────────────────────
-// Same source/format as aesthetics-ebitda.ts. Inlined to avoid pulling in the
-// old ETL's data-fetch path.
 
 const GROWTH_SHEET_ID  = "1JGlBdii7Zu25yha0zrmi72PPH1BFZRdVeGvcig3r6GE";
 const GROWTH_SHEET_GID = "335421089";
@@ -95,7 +66,7 @@ async function loadMarketingRatio(fromDate: string, toDate: string): Promise<Rec
     const resp = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
     if (!resp.ok) return equal;
     const text = await resp.text();
-    const rows  = text.split("\n").map(r => r.split(",").map(c => c.replace(/^"|"$/g, "")));
+    const rows = text.split("\n").map(r => r.split(",").map(c => c.replace(/^"|"$/g, "")));
     if (rows.length < 3) return equal;
 
     const fromD = new Date(fromDate);
@@ -148,30 +119,6 @@ async function loadMarketingRatio(fromDate: string, toDate: string): Promise<Rec
   }
 }
 
-async function loadSalarySupplementAesth(monthKey: string): Promise<Record<Dept, number>> {
-  const result: Record<Dept, number> = { aesthetics: 0, slimming: 0 };
-  try {
-    const base = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const key  = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-    const qs   = new URLSearchParams([
-      ["select",   "spa_slug,amount"],
-      ["month",    `eq.${monthKey}`],
-      ["spa_slug", "in.(aesthetics,slimming)"],
-    ]);
-    const resp = await fetch(`${base}/rest/v1/salary_supplement_monthly?${qs}`, {
-      headers: { apikey: key, Authorization: `Bearer ${key}` },
-    });
-    if (resp.ok) {
-      const rows = await resp.json() as Record<string, unknown>[];
-      for (const row of rows) {
-        const slug = row.spa_slug as Dept;
-        if (slug in result) result[slug] += Number(row.amount ?? 0);
-      }
-    }
-  } catch { /* ignore */ }
-  return result;
-}
-
 async function loadRevenueBase(fromDate: string, toDate: string): Promise<Record<Dept, number>> {
   const rev: Record<Dept, number> = { aesthetics: 0, slimming: 0 };
   const base = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -182,7 +129,7 @@ async function loadRevenueBase(fromDate: string, toDate: string): Promise<Record
   ];
   for (const [table, dept] of tables) {
     try {
-      const qs   = new URLSearchParams([
+      const qs = new URLSearchParams([
         ["select",          "price_ex_vat"],
         ["date_of_service", `gte.${fromDate}`],
         ["date_of_service", `lte.${toDate}`],
@@ -198,8 +145,6 @@ async function loadRevenueBase(fromDate: string, toDate: string): Promise<Record
   }
   return rev;
 }
-
-// ── Distribution ────────────────────────────────────────────────────────────
 
 function distribute(
   rule: string,
@@ -232,12 +177,18 @@ function distribute(
   return { aesthetics: amount / 2, slimming: amount / 2 };
 }
 
-async function monthAlreadySynced(monthKey: string): Promise<boolean> {
-  try { return (await select("aesthetics_ebitda_monthly", { month: monthKey })).length > 0; }
-  catch { return false; }
+function isHqOnlyRule(rule: string): boolean {
+  if (!rule.startsWith("custom:")) return false;
+  try {
+    const cfg: Record<string, number> = JSON.parse(rule.slice(7));
+    const nonZero = Object.entries(cfg).filter(([, v]) => v > 0);
+    return nonZero.length === 1 && nonZero[0][0] === "hq";
+  } catch { return false; }
 }
 
-// ── Core month runner ──────────────────────────────────────────────────────
+// ── Core runner ────────────────────────────────────────────────────────────
+
+function daysInMonth(year: number, month: number): number { return new Date(year, month, 0).getDate(); }
 
 export type AesthRunResult = { rowsUpserted: number; log: string[] };
 
@@ -258,15 +209,6 @@ export async function runAestheticsEbitdaMonthFromTransactions(
   const fromDate  = opts.fromDateOverride ?? `${year}-${String(month).padStart(2, "0")}-01`;
   const toDate    = opts.toDateOverride   ?? `${year}-${String(month).padStart(2, "0")}-${String(monthDays).padStart(2, "0")}`;
   const monthKey  = `${year}-${String(month).padStart(2, "0")}-01`;
-
-  const fromD = new Date(fromDate);
-  const toD   = new Date(toDate);
-  const periodDays = Math.round((toD.getTime() - fromD.getTime()) / 86400000) + 1;
-
-  if (!opts.force && await monthAlreadySynced(monthKey)) {
-    log.push(`${monthKey}: cached — skipping`);
-    return { rowsUpserted: 0, log };
-  }
 
   // ── 1. Pull lines ────────────────────────────────────────────────────────
   let lines: TxnLine[];
@@ -289,11 +231,14 @@ export async function runAestheticsEbitdaMonthFromTransactions(
   // ── 2. Per-line classify ─────────────────────────────────────────────────
   const VALID_LINES = new Set(["revenue", "cogs", "wages", "advertising", "rent", "utilities", "sga"]);
   type Classified = {
+    date:    string;
     line:    string;
     rule:    string;
     tagDept: Dept | null;
+    nameDept: Dept | null;
     code:    string;
     amount:  number;
+    isHq:    boolean;
     section: TxnLine["section"];
   };
 
@@ -307,7 +252,7 @@ export async function runAestheticsEbitdaMonthFromTransactions(
       [rule, line] = coaMap[ln.account_code];
       if (line === "excluded") { droppedExcluded++; continue; }
     } else if (ln.section === "income") {
-      // unmapped income skipped — revenue comes from sales_daily, not Zoho.
+      // unmapped income skipped — revenue comes from sales_daily, not Zoho
       continue;
     } else {
       rule = "equal"; line = detectLine(ln.account_name, ln.section);
@@ -316,11 +261,14 @@ export async function runAestheticsEbitdaMonthFromTransactions(
     if (!VALID_LINES.has(line)) { droppedExcluded++; continue; }
 
     classified.push({
+      date:    ln.date,
       line,
       rule,
       tagDept: tagsToDept(ln.tags),
+      nameDept: detectDept(ln.account_name),
       code:    ln.account_code,
       amount:  ln.amount,
+      isHq:    isHqOnlyRule(rule),
       section: ln.section,
     });
   }
@@ -328,22 +276,17 @@ export async function runAestheticsEbitdaMonthFromTransactions(
     log.push(`${monthKey}: classify: ${classified.length} kept; dropped ${droppedExcluded} excluded, ${droppedZero} zero`);
   }
 
-  // ── 3. Bases ─────────────────────────────────────────────────────────────
+  // ── 3. Bases for ratio rules ─────────────────────────────────────────────
   const deptRevenue  = await loadRevenueBase(fromDate, toDate);
   const totalRevenue = Math.max(deptRevenue.aesthetics + deptRevenue.slimming, 1);
 
-  // Salary base: wages lines allocated to a direct dept (tag or name keyword
-  // or rule).
   const deptSalary: Record<Dept, number> = { aesthetics: 0, slimming: 0 };
   for (const c of classified) {
     if (c.line !== "wages") continue;
     let dept: Dept | null = null;
     if (c.tagDept) dept = c.tagDept;
-    else {
-      const nameDept = detectDept(c.code);  // codes don't carry names, but safe
-      if (nameDept) dept = nameDept;
-      else if (c.rule === "aesthetics" || c.rule === "slimming") dept = c.rule;
-    }
+    else if (c.nameDept) dept = c.nameDept;
+    else if (c.rule === "aesthetics" || c.rule === "slimming") dept = c.rule;
     if (dept) deptSalary[dept] += c.amount;
   }
   const totalSalary = Math.max(deptSalary.aesthetics + deptSalary.slimming, 1);
@@ -352,94 +295,90 @@ export async function runAestheticsEbitdaMonthFromTransactions(
   const deptMarketing  = needsMarketing ? await loadMarketingRatio(fromDate, toDate) : null;
   const totalMarketing = deptMarketing ? deptMarketing.aesthetics + deptMarketing.slimming : 1;
 
-  // ── 4. Allocate every line ───────────────────────────────────────────────
-  const totals: Record<Dept, Record<string, number>> = {
-    aesthetics: { revenue: 0, cogs: 0, wages: 0, advertising: 0, rent: 0, utilities: 0, sga: 0 },
-    slimming:   { revenue: 0, cogs: 0, wages: 0, advertising: 0, rent: 0, utilities: 0, sga: 0 },
-  };
-  const hqTotals: Record<string, number> = { revenue: 0, cogs: 0, wages: 0, advertising: 0, rent: 0, utilities: 0, sga: 0 };
+  // ── 4. Allocate every line to (date, dept, ebitda-line) buckets ─────────
+  type LineTotals = Record<string, number>;
+  function emptyLineTotals(): LineTotals {
+    return { revenue: 0, cogs: 0, wages: 0, advertising: 0, rent: 0, utilities: 0, sga: 0 };
+  }
+  function emptyDeptMap(): Record<Dept, LineTotals> {
+    return { aesthetics: emptyLineTotals(), slimming: emptyLineTotals() };
+  }
+
+  const dailyDept: Map<string, Record<Dept, LineTotals>> = new Map();
+  const dailyHq:   Map<string, LineTotals>                = new Map();
+
+  function dayBuckets(date: string) {
+    if (!dailyDept.has(date)) dailyDept.set(date, emptyDeptMap());
+    if (!dailyHq.has(date))   dailyHq.set(date, emptyLineTotals());
+    return { dept: dailyDept.get(date)!, hq: dailyHq.get(date)! };
+  }
 
   for (const c of classified) {
-    const dept: Dept | null = c.tagDept;
-    // If not tagged, name-based override is rule-level here (rule already
-    // baked nameDept in when loaded from CoA mapping). But account_name from
-    // CoA cache may still hint — handled by the existing CoA rule.
-    if (dept) {
-      totals[dept][c.line] += c.amount;
-    } else if (c.rule === "aesthetics" || c.rule === "slimming") {
-      totals[c.rule][c.line] += c.amount;
-    } else if (isHqOnlyRule(c.rule)) {
-      hqTotals[c.line] += c.amount;
-    } else {
-      const dist = distribute(c.rule, c.amount, deptRevenue, totalRevenue, deptSalary, totalSalary, deptMarketing, totalMarketing);
-      for (const d of DEPTS) totals[d][c.line] += dist[d];
+    const b = dayBuckets(c.date);
+    if (c.isHq) {
+      b.hq[c.line] += c.amount;
+      continue;
     }
+    if (c.tagDept) {
+      b.dept[c.tagDept][c.line] += c.amount;
+      continue;
+    }
+    if (c.nameDept) {
+      b.dept[c.nameDept][c.line] += c.amount;
+      continue;
+    }
+    if (c.rule === "aesthetics" || c.rule === "slimming") {
+      b.dept[c.rule][c.line] += c.amount;
+      continue;
+    }
+    const dist = distribute(c.rule, c.amount, deptRevenue, totalRevenue, deptSalary, totalSalary, deptMarketing, totalMarketing);
+    for (const d of DEPTS) b.dept[d][c.line] += dist[d];
   }
 
-  // ── 5. Rent fallback ─────────────────────────────────────────────────────
-  const [prevY, prevM] = prevMonth(year, month);
-  const prevKey  = `${prevY}-${String(prevM).padStart(2, "0")}-01`;
-  const prevDays = daysInMonth(prevY, prevM);
-  const prevRent: Record<Dept, number> = { aesthetics: 0, slimming: 0 };
-  try {
-    const prevRows = await select("aesthetics_ebitda_monthly", { month: prevKey });
-    for (const pr of prevRows) {
-      const dept = pr.department as Dept;
-      if (DEPTS.includes(dept)) prevRent[dept] = Number(pr.rent ?? 0);
-    }
-  } catch { /* ignore */ }
-
-  for (const dept of DEPTS) {
-    const cur   = totals[dept].rent;
-    const prev  = prevRent[dept];
-    const bench = BENCHMARK_RENT[dept];
-    if (cur < RENT_ZERO_THRESHOLD && prev > 0) totals[dept].rent = prev / prevDays * periodDays;
-    else if (cur < RENT_ZERO_THRESHOLD && prev <= 0 && bench > 0) totals[dept].rent = bench / monthDays * periodDays;
-    else if (cur >= RENT_ZERO_THRESHOLD && periodDays < monthDays) totals[dept].rent = cur / monthDays * periodDays;
-  }
-
-  // ── 6. Salary supplement ─────────────────────────────────────────────────
-  const supplement = await loadSalarySupplementAesth(monthKey);
-  for (const dept of DEPTS) {
-    if (supplement[dept] > 0) {
-      totals[dept].wages += supplement[dept];
-      log.push(`Salary supplement [${dept}]: +${supplement[dept].toFixed(2)} added to wages`);
-    }
-  }
-
-  // ── 7. Upsert ────────────────────────────────────────────────────────────
+  // ── 5. Upsert daily rows ────────────────────────────────────────────────
   const nowTs = new Date().toISOString();
-  const rows  = DEPTS.map(dept => ({
-    month:          monthKey,
-    department:     dept,
-    revenue:        +totals[dept].revenue.toFixed(2),
-    cogs:           +totals[dept].cogs.toFixed(2),
-    wages:          +totals[dept].wages.toFixed(2),
-    advertising:    +totals[dept].advertising.toFixed(2),
-    rent:           +totals[dept].rent.toFixed(2),
-    utilities:      +totals[dept].utilities.toFixed(2),
-    sga:            +totals[dept].sga.toFixed(2),
-    zoho_synced_at: nowTs,
-  }));
-  const n = await upsert("aesthetics_ebitda_monthly", rows as Record<string, unknown>[], "month,department");
+  const deptRows: Record<string, unknown>[] = [];
+  for (const [date, deptT] of dailyDept) {
+    for (const d of DEPTS) {
+      const t = deptT[d];
+      const any = t.revenue || t.cogs || t.wages || t.advertising || t.rent || t.utilities || t.sga;
+      if (!any) continue;
+      deptRows.push({
+        date,
+        department:     d,
+        revenue:        +t.revenue.toFixed(2),
+        cogs:           +t.cogs.toFixed(2),
+        wages:          +t.wages.toFixed(2),
+        advertising:    +t.advertising.toFixed(2),
+        rent:           +t.rent.toFixed(2),
+        utilities:      +t.utilities.toFixed(2),
+        sga:            +t.sga.toFixed(2),
+        zoho_synced_at: nowTs,
+      });
+    }
+  }
 
-  // HQ allocations from the Aesthetics org go to hq_ebitda_monthly with
-  // source='aesthetics'. The SPA ETL writes the same table with source='spa';
-  // useHqEbitda sums all source rows per month for the HQ dashboard.
-  const hqRow = {
-    month:          monthKey,
-    source:         "aesthetics",
-    revenue:        +hqTotals.revenue.toFixed(2),
-    cogs:           +hqTotals.cogs.toFixed(2),
-    wages:          +hqTotals.wages.toFixed(2),
-    advertising:    +hqTotals.advertising.toFixed(2),
-    rent:           +hqTotals.rent.toFixed(2),
-    utilities:      +hqTotals.utilities.toFixed(2),
-    sga:            +hqTotals.sga.toFixed(2),
-    zoho_synced_at: nowTs,
-  };
-  const hqCount = await upsert("hq_ebitda_monthly", [hqRow as Record<string, unknown>], "month,source");
+  const hqRows: Record<string, unknown>[] = [];
+  for (const [date, hqT] of dailyHq) {
+    const any = hqT.revenue || hqT.cogs || hqT.wages || hqT.advertising || hqT.rent || hqT.utilities || hqT.sga;
+    if (!any) continue;
+    hqRows.push({
+      date,
+      source:         "aesthetics",
+      revenue:        +hqT.revenue.toFixed(2),
+      cogs:           +hqT.cogs.toFixed(2),
+      wages:          +hqT.wages.toFixed(2),
+      advertising:    +hqT.advertising.toFixed(2),
+      rent:           +hqT.rent.toFixed(2),
+      utilities:      +hqT.utilities.toFixed(2),
+      sga:            +hqT.sga.toFixed(2),
+      zoho_synced_at: nowTs,
+    });
+  }
 
-  log.push(`${monthKey}: ${n} dept rows + ${hqCount} hq row(s) upserted`);
-  return { rowsUpserted: n, log };
+  const deptCount = await upsert("aesthetics_ebitda_daily", deptRows, "date,department");
+  const hqCount   = await upsert("hq_ebitda_daily",         hqRows,   "date,source");
+
+  log.push(`${monthKey}: ${deptCount} aesth daily row(s) + ${hqCount} hq-source-aesthetics daily row(s) upserted`);
+  return { rowsUpserted: deptCount + hqCount, log };
 }

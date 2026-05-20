@@ -11,7 +11,7 @@ export const SPA_LOCATION_META: Record<string, { name: string; color: string }> 
   hyatt:     { name: "Hyatt",            color: "#B79E61" },
   ramla:     { name: "Ramla",            color: "#8EB093" },
   labranda:  { name: "Labranda",         color: "#E07A5F" },
-  odycy:     { name: "Sunny Coast",      color: "#4A90D9" }, // DB slug is odycy, displayed as Sunny Coast
+  odycy:     { name: "Sunny Coast",      color: "#4A90D9" },
   excelsior: { name: "Excelsior",        color: "#7C3AED" },
   novotel:   { name: "Novotel",          color: "#DC2626" },
 };
@@ -41,190 +41,401 @@ export interface UseSpaEbitdaResult {
   triggerSync: (force?: boolean) => void;
 }
 
-// Generate every YYYY-MM-01 string in [dateFrom, dateTo]
+// ── Fallback constants (preserved from runSpaEbitdaMonth) ────────────────────
+
+const BENCHMARK_RENT_MONTHLY: Record<number, number> = {
+  1: 5100.00, 2: 1000.00, 3: 1407.00, 4: 1000.00,
+  5: 1000.00, 6:  944.44, 7: 2500.00, 8:    0.00,
+};
+
+const SUPP_SLUG_TO_LOC: Record<string, number> = {
+  inter:     1, hugos:     2, hyatt:     3, ramla:     4,
+  labranda:  5, odycy:     6, excelsior: 7, novotel:   8,
+};
+
+const ALL_LOC_IDS = [1, 2, 3, 4, 5, 6, 7, 8];
+
+const WAGE_ZERO_THRESHOLD    = 100;
+const WAGE_LOW_FRACTION      = 0.35;
+const RENT_ZERO_THRESHOLD    = 1;
+const LAUNDRY_ZERO_THRESHOLD = 10;
+const LAUNDRY_LOW_FRACTION   = 0.35;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function toDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function monthsInRange(dateFrom: Date, dateTo: Date): string[] {
   const months: string[] = [];
-  const d = new Date(dateFrom.getFullYear(), dateFrom.getMonth(), 1);
-  const end = new Date(dateTo.getFullYear(), dateTo.getMonth(), 1);
+  const d   = new Date(dateFrom.getFullYear(), dateFrom.getMonth(), 1);
+  const end = new Date(dateTo.getFullYear(),   dateTo.getMonth(),   1);
   while (d <= end) {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    months.push(`${y}-${m}-01`);
+    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`);
     d.setMonth(d.getMonth() + 1);
   }
   return months;
 }
 
-// Use local date parts to avoid UTC offset shifting the date (Malta is UTC+1)
-function toDateStr(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+function addDays(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
 }
 
+function periodDayCount(from: Date, to: Date): number {
+  return Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
+}
+
+function daysInMonth(year: number, month: number): number {
+  return new Date(year, month, 0).getDate();
+}
+
+// Number of days in [periodFrom, periodTo] that fall inside the calendar month
+function overlapDaysInMonth(periodFrom: Date, periodTo: Date, year: number, month: number): number {
+  const mStart = new Date(year, month - 1, 1);
+  const mEnd   = new Date(year, month - 1, daysInMonth(year, month));
+  const lo     = mStart > periodFrom ? mStart : periodFrom;
+  const hi     = mEnd   < periodTo   ? mEnd   : periodTo;
+  if (hi < lo) return 0;
+  return periodDayCount(lo, hi);
+}
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+type DailyRow = {
+  date: string;
+  location_id: number;
+  revenue: number;
+  cogs: number;
+  wages: number;
+  advertising: number;
+  rent: number;
+  utilities: number;
+  sga: number;
+  laundry: number;
+  zoho_synced_at: string | null;
+  locations: { id: number; slug: string; name: string } | null;
+};
+
+type LineTotals = { revenue: number; cogs: number; wages: number; advertising: number; rent: number; utilities: number; sga: number };
+type LocTotalsMap = Record<number, LineTotals & { laundry: number }>;
+
+function emptyTotals(): LineTotals & { laundry: number } {
+  return { revenue: 0, cogs: 0, wages: 0, advertising: 0, rent: 0, utilities: 0, sga: 0, laundry: 0 };
+}
+
+function aggregateByLocation(rows: DailyRow[]): LocTotalsMap {
+  const out: LocTotalsMap = {};
+  for (const id of ALL_LOC_IDS) out[id] = emptyTotals();
+  for (const r of rows) {
+    const id = r.location_id;
+    if (!(id in out)) continue;
+    out[id].revenue     += r.revenue     ?? 0;
+    out[id].cogs        += r.cogs        ?? 0;
+    out[id].wages       += r.wages       ?? 0;
+    out[id].advertising += r.advertising ?? 0;
+    out[id].rent        += r.rent        ?? 0;
+    out[id].utilities   += r.utilities   ?? 0;
+    out[id].sga         += r.sga         ?? 0;
+    out[id].laundry     += r.laundry     ?? 0;
+  }
+  return out;
+}
+
+// ── Hook ──────────────────────────────────────────────────────────────────────
+
 export function useSpaEbitda(dateFrom: Date, dateTo: Date): UseSpaEbitdaResult {
-  const supabase = createClient();
-  const queryClient = useQueryClient();
+  const supabase     = createClient();
+  const queryClient  = useQueryClient();
   const lastFiredRef = useRef("");
 
-  const fromStr = toDateStr(new Date(dateFrom.getFullYear(), dateFrom.getMonth(), 1));
-  const toStr   = toDateStr(new Date(dateTo.getFullYear(),   dateTo.getMonth(),   1));
-  const allMonths = monthsInRange(dateFrom, dateTo);
+  const fromDateFull = toDateStr(dateFrom);
+  const toDateFull   = toDateStr(dateTo);
+  const periodDays   = periodDayCount(dateFrom, dateTo);
 
-  // ── 1a. Fetch cost rows from spa_ebitda_monthly ──────────────────────
-  const { data: rawRows, isFetching: isFetchingCosts } = useQuery({
-    queryKey: ["spa-ebitda", fromStr, toStr],
+  // Prior period of same length immediately preceding [dateFrom, dateTo]
+  const priorFrom = addDays(dateFrom, -periodDays);
+  const priorTo   = addDays(dateFrom, -1);
+  const priorFromStr = toDateStr(priorFrom);
+  const priorToStr   = toDateStr(priorTo);
+
+  const allMonths    = monthsInRange(dateFrom, dateTo);
+
+  // ── 1a. Current-period daily cost rows ────────────────────────────────────
+  const { data: curRows, isFetching: isFetchingCur } = useQuery({
+    queryKey: ["spa-ebitda-daily", fromDateFull, toDateFull],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("spa_ebitda_monthly")
-        .select("*, locations(id, slug, name)")
-        .gte("month", fromStr)
-        .lte("month", toStr)
-        .order("month");
+        .from("spa_ebitda_daily")
+        .select("date, location_id, revenue, cogs, wages, advertising, rent, utilities, sga, laundry, zoho_synced_at, locations(id, slug, name)")
+        .gte("date", fromDateFull)
+        .lte("date", toDateFull)
+        .order("date");
       if (error) throw error;
-      return data ?? [];
+      return (data ?? []) as unknown as DailyRow[];
     },
     staleTime: 0,
   });
 
-  // ── 1b. Fetch Lapis net revenue from spa_revenue_monthly ─────────────
-  // Net revenue = services + products + wholesale - discount - refund
+  // ── 1b. Prior-period daily rows (for wage / laundry fallback) ─────────────
+  const { data: priorRows, isFetching: isFetchingPrior } = useQuery({
+    queryKey: ["spa-ebitda-prior", priorFromStr, priorToStr],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("spa_ebitda_daily")
+        .select("date, location_id, revenue, cogs, wages, advertising, rent, utilities, sga, laundry, zoho_synced_at, locations(id, slug, name)")
+        .gte("date", priorFromStr)
+        .lte("date", priorToStr);
+      if (error) throw error;
+      return (data ?? []) as unknown as DailyRow[];
+    },
+    staleTime: 0,
+  });
+
+  // ── 1c. Lapis net revenue (still monthly — prorate by overlap days) ───────
+  const fromMonthStr = `${dateFrom.getFullYear()}-${String(dateFrom.getMonth() + 1).padStart(2, "0")}-01`;
+  const toMonthStr   = `${dateTo.getFullYear()}-${String(dateTo.getMonth() + 1).padStart(2, "0")}-01`;
   const { data: revenueRows, isFetching: isFetchingRevenue } = useQuery({
-    queryKey: ["spa-revenue-for-ebitda", fromStr, toStr],
+    queryKey: ["spa-revenue-for-ebitda", fromMonthStr, toMonthStr],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("spa_revenue_monthly")
         .select("location_id, month, services, product_phytomer, product_purest, product_other, wholesale, sales_discount, sales_refund")
-        .gte("month", fromStr)
-        .lte("month", toStr);
+        .gte("month", fromMonthStr)
+        .lte("month", toMonthStr);
       if (error) throw error;
       return data ?? [];
     },
     staleTime: 0,
   });
 
-  // Aggregate Lapis net revenue per location_id across all months in range
-  const lapisRevByLoc = new Map<number, number>();
+  // ── 1d. Salary supplement (per month, frozen entries) ─────────────────────
+  // We need: each month overlapping [dateFrom, dateTo], plus the prior month
+  // (used when the current month has no frozen entry, mirroring the old ETL).
+  const supplementMonths = [
+    ...allMonths,
+    `${priorFrom.getFullYear()}-${String(priorFrom.getMonth() + 1).padStart(2, "0")}-01`,
+  ];
+  const { data: suppRowsRaw } = useQuery({
+    queryKey: ["spa-supp", supplementMonths.join(",")],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("salary_supplement_monthly")
+        .select("month, spa_slug, amount, is_frozen")
+        .in("month", supplementMonths)
+        .eq("is_frozen", true);
+      if (error) throw error;
+      return data ?? [];
+    },
+    staleTime: 0,
+  });
+
+  const isFetching = isFetchingCur || isFetchingPrior || isFetchingRevenue;
+
+  // ── 2. Aggregate current + prior period costs per venue ───────────────────
+  const curByLoc   = aggregateByLocation(curRows   ?? []);
+  const priorByLoc = aggregateByLocation(priorRows ?? []);
+
+  // Build location slug + last-synced map from current rows (or empty)
+  const locMeta = new Map<number, { slug: string; name: string; lastSyncedAt: string | null }>();
+  for (const r of (curRows ?? [])) {
+    if (r.locations && !locMeta.has(r.location_id)) {
+      locMeta.set(r.location_id, {
+        slug: r.locations.slug,
+        name: r.locations.name,
+        lastSyncedAt: r.zoho_synced_at,
+      });
+    } else if (r.zoho_synced_at) {
+      const m = locMeta.get(r.location_id);
+      if (m && (!m.lastSyncedAt || r.zoho_synced_at > m.lastSyncedAt)) m.lastSyncedAt = r.zoho_synced_at;
+    }
+  }
+
+  // ── 3. Lapis net revenue per location, prorated by overlap ────────────────
+  const lapisByLoc = new Map<number, number>();
   for (const r of (revenueRows ?? []) as {
-    location_id: number; services: number; product_phytomer: number;
-    product_purest: number; product_other: number; wholesale: number;
-    sales_discount: number; sales_refund: number;
+    location_id: number; month: string;
+    services: number; product_phytomer: number; product_purest: number; product_other: number;
+    wholesale: number; sales_discount: number; sales_refund: number;
   }[]) {
+    const monthStart = new Date(r.month);
+    const y = monthStart.getFullYear(), m = monthStart.getMonth() + 1;
+    const md = daysInMonth(y, m);
+    const overlap = overlapDaysInMonth(dateFrom, dateTo, y, m);
+    if (overlap === 0) continue;
     const net = (r.services ?? 0) + (r.product_phytomer ?? 0) + (r.product_purest ?? 0)
               + (r.product_other ?? 0) + (r.wholesale ?? 0)
               - (r.sales_discount ?? 0) - (r.sales_refund ?? 0);
-    lapisRevByLoc.set(r.location_id, (lapisRevByLoc.get(r.location_id) ?? 0) + net);
+    const prorated = net * overlap / md;
+    lapisByLoc.set(r.location_id, (lapisByLoc.get(r.location_id) ?? 0) + prorated);
   }
 
-  const isFetching = isFetchingCosts || isFetchingRevenue;
+  // ── 4. Salary supplement (prorate by month overlap) ───────────────────────
+  type SuppRow = { month: string; spa_slug: string; amount: number; is_frozen: boolean };
+  const suppByLoc: Record<number, number> = Object.fromEntries(ALL_LOC_IDS.map(id => [id, 0]));
+  let suppCentre = 0;
 
-  // ── 2. Determine which months are missing from Supabase ───────────────
-  const presentMonths = new Set((rawRows ?? []).map((r: { month: string }) => r.month));
-  const missingMonths = allMonths.filter((m) => !presentMonths.has(m));
+  // Group supplement rows by month for fallback (use prior month if current month has none)
+  const suppByMonth = new Map<string, SuppRow[]>();
+  for (const sr of (suppRowsRaw ?? []) as SuppRow[]) {
+    if (!suppByMonth.has(sr.month)) suppByMonth.set(sr.month, []);
+    suppByMonth.get(sr.month)!.push(sr);
+  }
 
-  // ── 3. Sync mutation (calls Next.js API route → Python ETL) ──────────
+  for (const monthKey of allMonths) {
+    const [y, m] = [parseInt(monthKey.slice(0, 4)), parseInt(monthKey.slice(5, 7))];
+    let monthRows = suppByMonth.get(monthKey);
+    let suppDays = daysInMonth(y, m);
+    if (!monthRows || !monthRows.length) {
+      // Fallback to prior month
+      const prevM = m === 1 ? 12 : m - 1;
+      const prevY = m === 1 ? y - 1 : y;
+      const prevKey = `${prevY}-${String(prevM).padStart(2, "0")}-01`;
+      monthRows = suppByMonth.get(prevKey);
+      suppDays = daysInMonth(prevY, prevM);
+    }
+    if (!monthRows || !monthRows.length) continue;
+
+    const overlap = overlapDaysInMonth(dateFrom, dateTo, y, m);
+    if (overlap === 0) continue;
+
+    for (const sr of monthRows) {
+      const prorated = (Number(sr.amount) ?? 0) * overlap / suppDays;
+      if (sr.spa_slug in SUPP_SLUG_TO_LOC) {
+        suppByLoc[SUPP_SLUG_TO_LOC[sr.spa_slug]] += prorated;
+      } else if (sr.spa_slug === "hq") {
+        suppCentre += prorated;
+      }
+    }
+  }
+
+  // ── 5. Apply wages fallback (period-aware) ────────────────────────────────
+  // Subtract supplement from prior wages so we compare apples to apples
+  const totalCurWages = ALL_LOC_IDS.reduce((s, id) => s + curByLoc[id].wages, 0);
+  const totalPriorWages = ALL_LOC_IDS.reduce((s, id) => s + priorByLoc[id].wages, 0);
+
+  const useWageFallback =
+    totalCurWages < WAGE_ZERO_THRESHOLD ||
+    (totalPriorWages > 0 && totalCurWages < totalPriorWages * WAGE_LOW_FRACTION);
+
+  if (useWageFallback && totalPriorWages > 0) {
+    for (const id of ALL_LOC_IDS) {
+      // Same period length, so no proration needed; use prior wages directly
+      curByLoc[id].wages = priorByLoc[id].wages;
+    }
+  }
+
+  // ── 6. Apply rent fallback ─────────────────────────────────────────────────
+  // For each venue: if current rent < threshold AND prior > 0 → use prior; else if both 0 AND benchmark > 0 → use benchmark proration.
+  // For partial-month windows where current rent is already non-zero, prorate by overlap/month_days.
+  for (const id of ALL_LOC_IDS) {
+    const curRent   = curByLoc[id].rent;
+    const priorRent = priorByLoc[id].rent;
+    const benchmark = BENCHMARK_RENT_MONTHLY[id] ?? 0;
+    if (curRent < RENT_ZERO_THRESHOLD && priorRent > 0) {
+      curByLoc[id].rent = priorRent;
+    } else if (curRent < RENT_ZERO_THRESHOLD && priorRent <= 0 && benchmark > 0) {
+      // Benchmark is monthly. Scale by total period days / avg month days (30.44).
+      curByLoc[id].rent = benchmark * (periodDays / 30.44);
+    }
+    // No partial-month proration here; the daily data is already date-bounded.
+  }
+
+  // ── 7. Apply laundry fallback ──────────────────────────────────────────────
+  const totalCurLaundry   = ALL_LOC_IDS.reduce((s, id) => s + curByLoc[id].laundry, 0);
+  const totalPriorLaundry = ALL_LOC_IDS.reduce((s, id) => s + priorByLoc[id].laundry, 0);
+  const useLaundryFallback =
+    totalCurLaundry < LAUNDRY_ZERO_THRESHOLD ||
+    (totalPriorLaundry > 0 && totalCurLaundry < totalPriorLaundry * LAUNDRY_LOW_FRACTION);
+  if (useLaundryFallback && totalPriorLaundry > 0) {
+    for (const id of ALL_LOC_IDS) {
+      const delta = priorByLoc[id].laundry - curByLoc[id].laundry;
+      curByLoc[id].sga     += delta;       // laundry sits inside SGA
+      curByLoc[id].laundry  = priorByLoc[id].laundry;
+    }
+  }
+
+  // ── 8. Apply salary supplement ─────────────────────────────────────────────
+  // Direct-assigned supplements
+  for (const id of ALL_LOC_IDS) curByLoc[id].wages += suppByLoc[id];
+  // Centre supplement → distribute by salary ratio (using direct-account totals
+  // already in cur wages). Falls back to equal split when no salary base.
+  if (suppCentre > 0) {
+    const salaryBase = ALL_LOC_IDS.reduce((s, id) => s + curByLoc[id].wages, 0);
+    if (salaryBase > 0) {
+      for (const id of ALL_LOC_IDS) curByLoc[id].wages += suppCentre * curByLoc[id].wages / salaryBase;
+    } else {
+      for (const id of ALL_LOC_IDS) curByLoc[id].wages += suppCentre / ALL_LOC_IDS.length;
+    }
+  }
+
+  // ── 9. Build final SpaLocationData[] ──────────────────────────────────────
+  const locations: SpaLocationData[] = ALL_LOC_IDS.map((id) => {
+    const meta = locMeta.get(id);
+    const slug = meta?.slug ?? "";
+    const display = SPA_LOCATION_META[slug] ?? { name: meta?.name ?? "", color: "#6B7280" };
+
+    const lapRev = lapisByLoc.get(id);
+    const t = curByLoc[id];
+    const revenue = lapRev !== undefined ? lapRev : t.revenue;
+    const costs = t.cogs + t.wages + t.advertising + t.rent + t.utilities + t.sga;
+
+    return {
+      id,
+      slug,
+      name:         display.name,
+      color:        display.color,
+      revenue:      Math.round(revenue),
+      cogs:         Math.round(t.cogs),
+      wages:        Math.round(t.wages),
+      advertising:  Math.round(t.advertising),
+      rent:         Math.round(t.rent),
+      utilities:    Math.round(t.utilities),
+      sga:          Math.round(t.sga),
+      ebitda:       Math.round(revenue - costs),
+      lastSyncedAt: meta?.lastSyncedAt ?? null,
+    };
+  }).sort((a, b) => b.revenue - a.revenue);
+
+  // ── 10. Missing months + auto-sync trigger ────────────────────────────────
+  // Detect missing months by checking which calendar months have ANY data
+  const presentMonthSet = new Set<string>();
+  for (const r of (curRows ?? [])) {
+    presentMonthSet.add(`${r.date.slice(0, 7)}-01`);
+  }
+  const missingMonths = allMonths.filter(m => !presentMonthSet.has(m));
+
   const syncMutation = useMutation({
     mutationFn: async ({ force = false }: { force?: boolean }) => {
       const res = await fetch("/api/etl/zoho-spa-transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date_from: toDateStr(dateFrom),  // actual selected date, not month start
-          date_to:   toDateStr(dateTo),    // actual selected date, not month end
-          force,
-        }),
+        body: JSON.stringify({ date_from: fromDateFull, date_to: toDateFull, force }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Sync failed");
       return json;
     },
     onSuccess: () => {
-      // The transactions route writes both spa_ebitda_monthly and hq_ebitda_monthly
-      // in one call, so invalidate both queries.
-      queryClient.invalidateQueries({ queryKey: ["spa-ebitda", fromStr, toStr] });
-      queryClient.invalidateQueries({ queryKey: ["hq-ebitda",  fromStr, toStr] });
+      queryClient.invalidateQueries({ queryKey: ["spa-ebitda-daily", fromDateFull, toDateFull] });
+      queryClient.invalidateQueries({ queryKey: ["hq-ebitda",        fromDateFull, toDateFull] });
     },
   });
 
-  // ── 4. Auto-trigger sync when missing months detected ─────────────────
-  // Guard: skip while initial fetch is in flight (rawRows undefined = all months appear missing)
   const missingKey = missingMonths.join(",");
   if (missingMonths.length > 0 && !isFetching && !syncMutation.isPending && missingKey !== lastFiredRef.current) {
     lastFiredRef.current = missingKey;
     setTimeout(() => syncMutation.mutate({ force: false }), 0);
   }
 
-  // ── 5. Aggregate Supabase rows per location ───────────────────────────
-  type Row = {
-    location_id: number;
-    month: string;
-    revenue: number;
-    cogs: number;
-    wages: number;
-    advertising: number;
-    rent: number;
-    utilities: number;
-    sga: number;
-    zoho_synced_at: string | null;
-    locations: { id: number; slug: string; name: string } | null;
-  };
-
-  const locMap = new Map<number, SpaLocationData>();
-
-  for (const row of (rawRows ?? []) as Row[]) {
-    const loc = row.locations;
-    if (!loc) continue;
-    const meta = SPA_LOCATION_META[loc.slug] ?? { name: loc.name, color: "#6B7280" };
-
-    if (!locMap.has(loc.id)) {
-      locMap.set(loc.id, {
-        id: loc.id, slug: loc.slug, name: meta.name, color: meta.color,
-        revenue: 0, cogs: 0, wages: 0, advertising: 0,
-        rent: 0, utilities: 0, sga: 0, ebitda: 0,
-        lastSyncedAt: null,
-      });
-    }
-    const agg = locMap.get(loc.id)!;
-    agg.revenue     += row.revenue     ?? 0;
-    agg.cogs        += row.cogs        ?? 0;
-    agg.wages       += row.wages       ?? 0;
-    agg.advertising += row.advertising ?? 0;
-    agg.rent        += row.rent        ?? 0;
-    agg.utilities   += row.utilities   ?? 0;
-    agg.sga         += row.sga         ?? 0;
-    if (row.zoho_synced_at && (!agg.lastSyncedAt || row.zoho_synced_at > agg.lastSyncedAt)) {
-      agg.lastSyncedAt = row.zoho_synced_at;
-    }
-  }
-
-  // Compute EBITDA and round all values
-  const locations: SpaLocationData[] = Array.from(locMap.values())
-    .map((loc) => {
-      // Use Lapis net revenue if available; fall back to Zoho revenue from spa_ebitda_monthly
-      const lapRev = lapisRevByLoc.get(loc.id);
-      const revenue = lapRev !== undefined ? lapRev : loc.revenue;
-      const costs = loc.cogs + loc.wages + loc.advertising + loc.rent + loc.utilities + loc.sga;
-      return {
-        ...loc,
-        revenue:     Math.round(revenue),
-        cogs:        Math.round(loc.cogs),
-        wages:       Math.round(loc.wages),
-        advertising: Math.round(loc.advertising),
-        rent:        Math.round(loc.rent),
-        utilities:   Math.round(loc.utilities),
-        sga:         Math.round(loc.sga),
-        ebitda:      Math.round(revenue - costs),
-      };
-    })
-    .sort((a, b) => b.revenue - a.revenue); // largest revenue first
-
   return {
     locations,
     isFetching,
-    isSyncing: syncMutation.isPending,
-    syncError: syncMutation.error ? (syncMutation.error as Error).message : null,
+    isSyncing:    syncMutation.isPending,
+    syncError:    syncMutation.error ? (syncMutation.error as Error).message : null,
     missingMonths,
-    triggerSync: (force = false) => syncMutation.mutate({ force }),
+    triggerSync:  (force = false) => syncMutation.mutate({ force }),
   };
 }
