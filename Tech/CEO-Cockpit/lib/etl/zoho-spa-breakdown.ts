@@ -31,9 +31,9 @@ export const SLUG_DISPLAY: Record<string, string> = {
   intercontinental: "InterContinental",
   hugos:            "Hugos",
   hyatt:            "Hyatt",
-  ramla:            "Ramla Bay",
+  ramla:            "Ramla",
   labranda:         "Labranda",
-  sunny_coast:      "Sunny Coast (Odycy)",
+  sunny_coast:      "Sunny Coast",
   excelsior:        "Excelsior",
   novotel:          "Novotel",
 };

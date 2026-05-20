@@ -14,15 +14,21 @@
  */
 
 var EBIDA_SPREADSHEET_ID = "1WWM7W6S5wtSC-5hdlcuJgW3zbYaO7YRgg4_-Bju4-5s";
-var EBIDA_TAB            = "EBIDA Layer";
+// IMPORTANT: writes to a DEDICATED tab owned by this script. The user-curated
+// "EBIDA Layer" tab is too complex (multi-year un-yeared date columns) for
+// safe automated merge — touching it caused data scatter on prior runs.
+// Keep this tab name canonical; the user can VLOOKUP/QUERY into it from
+// other tabs without us ever overwriting their P&L history.
+var EBIDA_TAB            = "Zoho Raw Layer";
 var COCKPIT_BASE         = "https://carisma-support-u2vb.vercel.app";
 
 var PROTECTED_COLOR = "#ffff00";   // exact-match yellow = "do not overwrite"
 var CHUNK_DAYS      = 5;           // each API call covers <= this many days
 var APPS_SCRIPT_BUDGET_MS = 5 * 60 * 1000;  // bail before hitting 6-min hard limit
 
-var META_COLS  = ["Brand", "Line Item", "Account Code", "EBITDA Category", "Venue"];
+var META_COLS  = ["Brand", "Line Item", "Account Code", "EBITDA Category", "Venue", "Allocation"];
 var META_COUNT = META_COLS.length;
+var ALLOC_COL_IDX = 5;   // 0-indexed — "tag" if Zoho line tag drove it, else the split rule name
 
 var BRAND_HEADER_BG = "#134a45";   // dark teal — matches existing "SPA" section row
 var BRAND_HEADER_FG = "#ffffff";
@@ -114,7 +120,8 @@ function pullAndWriteEbidaLayer(dateFrom, dateTo, org) {
     var chunkResult = _fetchChunk(c.from, c.to, orgParam);
     for (var r = 0; r < chunkResult.rows.length; r++) {
       var row = chunkResult.rows[r];
-      var key = row.brand + "|" + (row.account_code || row.account_name) + "|" + row.venue_slug;
+      var allocation = row.tag_source === "tagged" ? "tag" : (row.split_rule || "split");
+      var key = row.brand + "|" + (row.account_code || row.account_name) + "|" + row.venue_slug + "|" + allocation;
       if (!accRows[key]) {
         accRows[key] = {
           brand:           row.brand,
@@ -123,10 +130,11 @@ function pullAndWriteEbidaLayer(dateFrom, dateTo, org) {
           ebitda_category: _capitalize(row.ebitda_category),
           venue:           row.venue,
           venue_slug:      row.venue_slug,
+          allocation:      allocation,
           daily:           {},
         };
       }
-      // Multiple tag_source rows (tagged + split) for same (account, venue) accumulate
+      // Same (account, venue, allocation) tuples accumulate across chunks
       for (var d in row.daily) {
         accRows[key].daily[d] = (accRows[key].daily[d] || 0) + row.daily[d];
       }
@@ -154,8 +162,11 @@ function runPullNow() {
 }
 
 // Test wrapper: small 1-week window, SPA. Safe to clasp-run without args.
+// Logs the result so the Apps Script Execution log shows the summary.
 function runTestPullJan1to7() {
-  return pullAndWriteEbidaLayer("2025-01-01", "2025-01-07", "SPA");
+  var result = pullAndWriteEbidaLayer("2025-01-01", "2025-01-07", "SPA");
+  Logger.log(result);
+  return result;
 }
 
 // ── Chunking ─────────────────────────────────────────────────────────────────
@@ -250,11 +261,64 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo) {
     venueIdx = 4;
   }
 
-  // Parse existing date columns
-  var dateToCol = {};
+  // Parse existing date columns. If a header is undated (e.g. "Jan-1"),
+  // default its year to the pull window's "from" year — and rewrite the
+  // header in canonical "Mon-D YYYY" format so future pulls don't need to
+  // guess. Detect duplicates (multiple cols resolving to the same ISO date)
+  // and consolidate values into the leftmost, blanking the duplicate(s).
+  var refreshYear = parseInt(refreshFrom.slice(0, 4), 10);
+  var dateToCol   = {};
+  var headerRewrites = [];   // [{ col1based, value }]
+  var dupColsToBlank = [];   // 0-indexed col indexes whose values move into leftmost
   for (var c = META_COUNT; c < header.length; c++) {
-    var iso = _parseDateHeader(header[c]);
-    if (iso) dateToCol[iso] = c;
+    var rawHeader = header[c];
+    var iso = _parseDateHeader(rawHeader, refreshYear);
+    if (!iso) continue;
+    if (iso in dateToCol) {
+      // Duplicate — merge this col's values into the leftmost, then blank header
+      var leftCol = dateToCol[iso];
+      for (var rr = 1; rr < values.length; rr++) {
+        var dupVal = values[rr][c];
+        if (dupVal === "" || dupVal == null) continue;
+        // Preserve leftmost cell if it's protected OR already has a value
+        var leftVal = values[rr][leftCol];
+        var leftBg  = backgrounds[rr][leftCol] || "";
+        if (leftBg.toLowerCase() === PROTECTED_COLOR) continue;
+        if (leftVal === "" || leftVal == null) {
+          sheet.getRange(rr + 1, leftCol + 1).setValue(dupVal);
+          values[rr][leftCol] = dupVal;
+        }
+      }
+      dupColsToBlank.push(c);
+    } else {
+      dateToCol[iso] = c;
+      var canonical = _formatDateHeader(iso);
+      if (String(rawHeader).trim() !== canonical) {
+        headerRewrites.push({ col1based: c + 1, value: canonical });
+      }
+    }
+  }
+  // Apply header rewrites
+  for (var hi = 0; hi < headerRewrites.length; hi++) {
+    sheet.getRange(1, headerRewrites[hi].col1based).setValue(headerRewrites[hi].value);
+  }
+  // Delete duplicate columns (in reverse so indices stay valid)
+  if (dupColsToBlank.length > 0) {
+    dupColsToBlank.sort(function(a, b) { return b - a; });
+    for (var di = 0; di < dupColsToBlank.length; di++) {
+      sheet.deleteColumn(dupColsToBlank[di] + 1);
+    }
+    // Re-snapshot after deletions (col indices for surviving date cols shift)
+    lastCol     = sheet.getLastColumn();
+    values      = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+    backgrounds = sheet.getRange(1, 1, lastRow, lastCol).getBackgrounds();
+    header      = values[0].map(function(v) { return String(v).trim(); });
+    // Rebuild dateToCol from the post-deletion header
+    dateToCol = {};
+    for (var c = META_COUNT; c < header.length; c++) {
+      var iso2 = _parseDateHeader(header[c], refreshYear);
+      if (iso2) dateToCol[iso2] = c;
+    }
   }
 
   // Append missing date columns (chronological sort applied at end)
@@ -297,10 +361,11 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo) {
     var accCode   = String(values[r][2]).trim();
     var ebitdaCat = String(values[r][3]).trim();
     var venue     = String(values[r][venueIdx]).trim();
+    var alloc     = String(values[r][ALLOC_COL_IDX] || "").trim() || "split";
     if (!brand) continue;
     if (brand && !lineItem && !accCode && !ebitdaCat && !venue) continue;
     var venueSlug = _venueToSlug(venue);
-    var key = brand + "|" + (accCode || lineItem) + "|" + venueSlug;
+    var key = brand + "|" + (accCode || lineItem) + "|" + venueSlug + "|" + alloc;
     existingRowKey[key] = r;
   }
 
@@ -352,6 +417,7 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo) {
       rowData[2] = newRow.account_code;
       rowData[3] = newRow.ebitda_category;
       rowData[venueIdx] = newRow.venue;
+      rowData[ALLOC_COL_IDX] = newRow.allocation;
       for (var iso in newRow.daily) {
         var colIdx = dateToCol[iso];
         if (colIdx != null) rowData[colIdx] = newRow.daily[iso];
@@ -400,6 +466,7 @@ function _writeFreshSheet(sheet, accRows, allDates) {
     dataRow[2] = r.account_code;
     dataRow[3] = r.ebitda_category;
     dataRow[4] = r.venue;
+    dataRow[ALLOC_COL_IDX] = r.allocation;
     for (var iso in r.daily) {
       var idx = META_COUNT + allDates.indexOf(iso);
       if (idx >= META_COUNT) dataRow[idx] = r.daily[iso];
@@ -455,7 +522,7 @@ function _formatDateHeader(iso) {
   return mon + "-" + day + " " + m[1];
 }
 
-function _parseDateHeader(raw) {
+function _parseDateHeader(raw, yearHint) {
   if (raw == null) return null;
   if (raw instanceof Date && !isNaN(raw.getTime())) return _isoDate(raw);
   var s = String(raw).trim();
@@ -463,13 +530,13 @@ function _parseDateHeader(raw) {
   // Already ISO?
   var iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
   if (iso) return s;
-  // "Jan-1 2025" / "Jan 1 2025" / "Jan-1, 2025" / "January-5 2025"
+  // "Jan-1 2025" / "Jan 1 2025" / "Jan-1, 2025" / "January-5 2025" / undated "Jan-1"
   var m = /^([A-Za-z]+)[\s\-]+(\d{1,2})(?:[,\s]+(\d{4}))?$/.exec(s);
   if (m) {
     var monAbbr = m[1].slice(0, 3).toLowerCase();
     var monNum  = MONTH_LOOKUP[monAbbr];
     var day     = parseInt(m[2], 10);
-    var year    = m[3] ? parseInt(m[3], 10) : null;
+    var year    = m[3] ? parseInt(m[3], 10) : yearHint;
     if (!monNum || !day || !year) return null;
     return year + "-" + String(monNum).padStart(2, "0") + "-" + String(day).padStart(2, "0");
   }
@@ -485,11 +552,11 @@ function _inferVenueFromName(name) {
   if (low.indexOf("hyatt")     >= 0) return "Hyatt";
   if (low.indexOf("hugo")      >= 0) return "Hugos";
   if (low.indexOf("inter")     >= 0) return "InterContinental";
-  if (low.indexOf("ramla")     >= 0) return "Ramla Bay";
+  if (low.indexOf("ramla")     >= 0) return "Ramla";
   if (low.indexOf("labranda")  >= 0 || low.indexOf("riviera") >= 0) return "Labranda";
   if (low.indexOf("excelsior") >= 0) return "Excelsior";
   if (low.indexOf("novotel")   >= 0) return "Novotel";
-  if (low.indexOf("sunny")     >= 0 || low.indexOf("odycy") >= 0 || low.indexOf("seashell") >= 0 || low.indexOf("qawra") >= 0) return "Sunny Coast (Odycy)";
+  if (low.indexOf("sunny")     >= 0 || low.indexOf("odycy") >= 0 || low.indexOf("seashell") >= 0 || low.indexOf("qawra") >= 0) return "Sunny Coast";
   if (low.indexOf("aesthetic") >= 0 || low.indexOf("clinic") >= 0) return "Aesthetics";
   if (low.indexOf("slim")      >= 0) return "Slimming";
   return "";
