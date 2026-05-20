@@ -5,7 +5,18 @@ import { ZohoBooksClient } from "./zoho-client";
 // per-line reporting_tags. Used by the EBITDA ETLs to allocate amounts to
 // venues/brands via line tag (primary) with split-rule fallback.
 
-export type TxnSource = "invoice" | "bill" | "expense" | "creditnote" | "vendorcredit" | "journal";
+export type TxnSource =
+  | "invoice"
+  | "bill"
+  | "expense"
+  | "creditnote"
+  | "vendorcredit"
+  | "journal"
+  | "customerpayment"
+  | "vendorpayment"
+  | "salesreturn";
+
+const BASE_CURRENCY = "EUR";
 
 export type LineTag = { tag_option_id: string; tag_option_name: string };
 
@@ -97,21 +108,27 @@ type EndpointConfig = {
 };
 
 const ENDPOINTS: EndpointConfig[] = [
-  { source: "invoice",      listKey: "invoices",        detailKey: "invoice",       idField: "invoice_id",       dateField: "date",         lineKey: "line_items", contactField: ["customer_name"],                        signMultiplier:  1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
-  { source: "bill",         listKey: "bills",           detailKey: "bill",          idField: "bill_id",          dateField: "date",         lineKey: "line_items", contactField: ["vendor_name"],                          signMultiplier:  1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
-  { source: "expense",      listKey: "expenses",        detailKey: "expense",       idField: "expense_id",       dateField: "date",         lineKey: "line_items", contactField: ["vendor_name", "paid_through_account_name", "customer_name"], signMultiplier:  1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
-  { source: "creditnote",   listKey: "creditnotes",     detailKey: "creditnote",    idField: "creditnote_id",    dateField: "date",         lineKey: "line_items", contactField: ["customer_name"],                        signMultiplier: -1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
-  { source: "vendorcredit", listKey: "vendor_credits",  detailKey: "vendor_credit", idField: "vendor_credit_id", dateField: "date",         lineKey: "line_items", contactField: ["vendor_name"],                          signMultiplier: -1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
-  { source: "journal",      listKey: "journals",        detailKey: "journal",       idField: "journal_id",       dateField: "journal_date", lineKey: "line_items", contactField: [],                                       signMultiplier:  1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
+  { source: "invoice",         listKey: "invoices",         detailKey: "invoice",         idField: "invoice_id",       dateField: "date",         lineKey: "line_items",   contactField: ["customer_name"],                        signMultiplier:  1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
+  { source: "bill",            listKey: "bills",            detailKey: "bill",            idField: "bill_id",          dateField: "date",         lineKey: "line_items",   contactField: ["vendor_name"],                          signMultiplier:  1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
+  { source: "expense",         listKey: "expenses",         detailKey: "expense",         idField: "expense_id",       dateField: "date",         lineKey: "line_items",   contactField: ["vendor_name", "paid_through_account_name", "customer_name"], signMultiplier:  1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
+  { source: "creditnote",      listKey: "creditnotes",      detailKey: "creditnote",      idField: "creditnote_id",    dateField: "date",         lineKey: "line_items",   contactField: ["customer_name"],                        signMultiplier: -1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
+  { source: "vendorcredit",    listKey: "vendor_credits",   detailKey: "vendor_credit",   idField: "vendor_credit_id", dateField: "date",         lineKey: "line_items",   contactField: ["vendor_name"],                          signMultiplier: -1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
+  { source: "journal",         listKey: "journals",         detailKey: "journal",         idField: "journal_id",       dateField: "journal_date", lineKey: "line_items",   contactField: [],                                       signMultiplier:  1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
+  { source: "customerpayment", listKey: "customerpayments", detailKey: "payment",         idField: "payment_id",       dateField: "date",         lineKey: "bank_charges", contactField: ["customer_name"],                        signMultiplier:  1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
+  { source: "vendorpayment",   listKey: "vendorpayments",   detailKey: "vendorpayment",   idField: "payment_id",       dateField: "date",         lineKey: "bank_charges", contactField: ["vendor_name"],                          signMultiplier:  1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
+  { source: "salesreturn",     listKey: "salesreturns",     detailKey: "salesreturn",     idField: "salesreturn_id",   dateField: "date",         lineKey: "line_items",   contactField: ["customer_name"],                        signMultiplier: -1, dateStartParam: "date_start",         dateEndParam: "date_end"         },
 ];
 
 const ENDPOINT_PATH: Record<TxnSource, string> = {
-  invoice:      "invoices",
-  bill:         "bills",
-  expense:      "expenses",
-  creditnote:   "creditnotes",
-  vendorcredit: "vendorcredits",
-  journal:      "journals",
+  invoice:         "invoices",
+  bill:            "bills",
+  expense:         "expenses",
+  creditnote:      "creditnotes",
+  vendorcredit:    "vendorcredits",
+  journal:         "journals",
+  customerpayment: "customerpayments",
+  vendorpayment:   "vendorpayments",
+  salesreturn:     "salesreturns",
 };
 
 // ── List + detail pagination per endpoint ────────────────────────────────────
@@ -152,7 +169,9 @@ async function listAllPages(
 
 function pickAmount(line: Record<string, unknown>): number {
   // Order matches Zoho's per-line field availability across endpoint types.
-  for (const field of ["bcy_amount", "amount", "item_total", "bcy_total", "total"]) {
+  // bcy_* (base-currency) variants are PREFERRED over plain amount/item_total
+  // because Zoho gives the latter in the transaction's source currency.
+  for (const field of ["bcy_amount", "bcy_total", "amount", "item_total", "total"]) {
     const v = line[field];
     if (v != null) {
       const n = Number(v);
@@ -160,6 +179,51 @@ function pickAmount(line: Record<string, unknown>): number {
     }
   }
   return 0;
+}
+
+/**
+ * Returns true if the line already carries a base-currency (bcy_*) field
+ * with a finite numeric value. When true, FX conversion is a no-op because
+ * pickAmount/pickJournalAmount already returned the pre-converted figure.
+ */
+function lineHasBcyAmount(line: Record<string, unknown>): boolean {
+  for (const field of ["bcy_amount", "bcy_total"]) {
+    const v = line[field];
+    if (v != null) {
+      const n = Number(v);
+      if (!isNaN(n)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Convert a raw line amount (already in transaction currency) to base
+ * currency (EUR) using the parent entity's exchange_rate when needed.
+ * Returns null if conversion is impossible (missing/zero rate) so the
+ * caller can skip the line with a warning instead of producing bad data.
+ */
+function convertToBaseCurrency(
+  rawAmount:         number,
+  lineAlreadyInBcy:  boolean,
+  entityCurrency:    string,
+  entityExchangeRate: number,
+  txnSource:         TxnSource,
+  txnId:             string,
+  log:               string[],
+): number | null {
+  const ccy = entityCurrency.trim().toUpperCase();
+  if (!ccy || ccy === BASE_CURRENCY) return rawAmount;
+  // Foreign currency. If Zoho already gave us a bcy_* field on the line,
+  // it's already in EUR — return as-is.
+  if (lineAlreadyInBcy) return rawAmount;
+  if (!entityExchangeRate || !isFinite(entityExchangeRate) || entityExchangeRate <= 0) {
+    log.push(`  WARN skip ${txnSource}/${txnId}: ${ccy} line with missing/zero exchange_rate`);
+    return null;
+  }
+  const converted = rawAmount * entityExchangeRate;
+  // Round to 2 dp so downstream daily sums don't carry FX float noise.
+  return Math.round(converted * 100) / 100;
 }
 
 function pickJournalAmount(line: Record<string, unknown>, section: "income" | "expense" | "other"): number {
@@ -205,12 +269,33 @@ async function fetchDetails(
       `${path}/${id}`,
       log,
     );
-    const entity   = (detail[cfg.detailKey] as Record<string, unknown>) ?? {};
-    const lineArr  = (entity[cfg.lineKey] as Array<Record<string, unknown>>) ?? [];
+    // Some endpoints return a different detail wrapper key than expected
+    // (e.g. customer-payments has historically used "payment" or
+    // "customerpayment"). Fall back through a small candidate list before
+    // giving up so a single key change in the Zoho API doesn't break us.
+    const detailKeyCandidates =
+      cfg.source === "customerpayment" ? [cfg.detailKey, "payment", "customerpayment"]
+      : cfg.source === "vendorpayment"  ? [cfg.detailKey, "vendorpayment", "vendor_payment", "payment"]
+      : [cfg.detailKey];
+    let entity: Record<string, unknown> = {};
+    for (const k of detailKeyCandidates) {
+      const candidate = detail[k];
+      if (candidate && typeof candidate === "object") {
+        entity = candidate as Record<string, unknown>;
+        break;
+      }
+    }
 
     // Transaction date: prefer header field, fall back to summary
     const txnDate = String(entity[cfg.dateField] ?? s[cfg.dateField] ?? "").slice(0, 10);
     if (!txnDate) continue;
+
+    // FX context: every transaction header carries currency_code +
+    // exchange_rate (rate is base-per-foreign, e.g. 0.0274 EUR per TRY).
+    // When currency is non-EUR we must scale plain `amount` fields up by
+    // the rate, unless the line already exposes a bcy_* (base currency) value.
+    const entityCurrency      = String(entity.currency_code ?? s.currency_code ?? "EUR");
+    const entityExchangeRate  = Number(entity.exchange_rate ?? s.exchange_rate ?? 1);
 
     // Transaction-header tags act as a fallback when no line tag is present
     const headerTags = extractTags(entity);
@@ -223,6 +308,58 @@ async function fetchDetails(
       if (v && String(v).trim()) { contactName = String(v).trim(); break; }
     }
 
+    // ── Special branch: customer/vendor payments ──
+    // Payments don't carry line_items. They expose a single header-level
+    // `bank_charges` number that books to a configured bank-fees expense
+    // account (e.g. SPA org account 616780). We synthesise ONE TxnLine per
+    // payment when bank_charges > 0.
+    if (cfg.source === "customerpayment" || cfg.source === "vendorpayment") {
+      const bankCharges = Number(entity.bank_charges ?? 0);
+      if (!bankCharges || bankCharges <= 0) continue;
+      const accountId = String(
+        entity.bank_charges_account_id ??
+        entity.account_id ??
+        "",
+      );
+      if (!accountId) {
+        log.push(`  WARN ${cfg.source}/${id}: bank_charges=${bankCharges} but no bank_charges_account_id; skipping`);
+        continue;
+      }
+      const meta = accountMeta.get(accountId);
+      const section = meta?.section ?? "other";
+      if (section !== "expense") continue;  // sanity: bank fees must hit an expense account
+
+      // Convert bank_charges to base currency. Payment headers expose the
+      // amount in transaction currency; there is no bcy_* equivalent on the
+      // header, so we always apply the exchange rate when ccy ≠ EUR.
+      const converted = convertToBaseCurrency(
+        bankCharges,
+        /* lineAlreadyInBcy */ false,
+        entityCurrency,
+        entityExchangeRate,
+        cfg.source,
+        id,
+        log,
+      );
+      if (converted == null || converted === 0) continue;
+
+      lines.push({
+        date:         txnDate,
+        source:       cfg.source,
+        txn_id:       id,
+        account_id:   accountId,
+        account_code: meta?.code ?? "",
+        account_name: meta?.name ?? "Bank Charges",
+        section,
+        amount:       converted * cfg.signMultiplier,
+        tags:         headerTags,
+        contact_name: contactName,
+      });
+      continue;
+    }
+
+    const lineArr  = (entity[cfg.lineKey] as Array<Record<string, unknown>>) ?? [];
+
     for (const ln of lineArr) {
       const accountId = String(ln.account_id ?? "");
       if (!accountId) continue;
@@ -230,13 +367,24 @@ async function fetchDetails(
       const section = meta?.section ?? "other";
       if (section === "other") continue;  // skip balance-sheet movements
 
-      let amount: number;
+      let rawAmount: number;
       if (cfg.source === "journal") {
-        amount = pickJournalAmount(ln, section);
+        rawAmount = pickJournalAmount(ln, section);
       } else {
-        amount = pickAmount(ln) * cfg.signMultiplier;
+        rawAmount = pickAmount(ln) * cfg.signMultiplier;
       }
-      if (amount === 0) continue;
+      if (rawAmount === 0) continue;
+
+      const converted = convertToBaseCurrency(
+        rawAmount,
+        lineHasBcyAmount(ln),
+        entityCurrency,
+        entityExchangeRate,
+        cfg.source,
+        id,
+        log,
+      );
+      if (converted == null || converted === 0) continue;
 
       const tags = extractTags(ln);
       const effectiveTags = tags.length ? tags : headerTags;
@@ -249,7 +397,7 @@ async function fetchDetails(
         account_code: meta?.code ?? String(ln.account_code ?? "").trim(),
         account_name: meta?.name ?? String(ln.account_name ?? "").trim(),
         section,
-        amount,
+        amount:       converted,
         tags:         effectiveTags,
         contact_name: contactName,
       });
@@ -281,6 +429,7 @@ export async function fetchTransactionLines(
   const allLines: TxnLine[] = [];
   const perSourceCount: Record<TxnSource, number> = {
     invoice: 0, bill: 0, expense: 0, creditnote: 0, vendorcredit: 0, journal: 0,
+    customerpayment: 0, vendorpayment: 0, salesreturn: 0,
   };
 
   for (const cfg of ENDPOINTS) {
