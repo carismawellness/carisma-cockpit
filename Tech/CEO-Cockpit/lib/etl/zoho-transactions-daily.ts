@@ -443,14 +443,27 @@ async function buildSpaRows(
   }
   log.push(`SPA classified: ${classified.length} kept; dropped ${droppedUnmapped} unmapped, ${droppedExcluded} excluded`);
 
-  // 2. Ratio bases from UNTAGGED lines only (so tagged Hugo's revenue does
-  //    not double-count when allocating shared SG&A by sales_ratio).
+  // 2. Ratio bases for sales_ratio splits. Must include venue-tagged revenue —
+  //    in production most SPA revenue is tagged, so a base built only from
+  //    untagged lines collapses to zero and falls back to equal 1/8 share,
+  //    silently degrading every sales_ratio cell to an equal split. Mirrors
+  //    the canonical logic in zoho-spa-transactions-ebitda.ts.
   const revBySlug: Record<string, number> = Object.fromEntries(SPA_VENUE_SLUGS.map(s => [s, 0]));
   const salBySlug: Record<string, number> = Object.fromEntries(SPA_VENUE_SLUGS.map(s => [s, 0]));
   for (const c of classified) {
-    if (c.ebitda === "revenue" && !c.tagSlug) {
-      const loc = detectLocation(c.line.account_name);
-      if (loc && SPA_VENUE_SLUGS.includes(loc)) revBySlug[loc] += c.line.amount;
+    if (c.ebitda === "revenue") {
+      let slug: string | null = null;
+      if (c.tagSlug === "hq") {
+        // HQ is not a SPA venue — never contributes to the ratio.
+      } else if (c.tagSlug && SPA_VENUE_SLUGS.includes(c.tagSlug)) {
+        slug = c.tagSlug;
+      } else if (SPA_VENUE_SLUGS.includes(c.rule)) {
+        slug = c.rule;
+      } else {
+        const loc = detectLocation(c.line.account_name);
+        if (loc && SPA_VENUE_SLUGS.includes(loc)) slug = loc;
+      }
+      if (slug) revBySlug[slug] += c.line.amount;
     }
     if (c.line.account_code && SALARY_RATIO_CODES[c.line.account_code]) {
       const slug = SALARY_RATIO_CODES[c.line.account_code];
@@ -486,7 +499,7 @@ async function buildSpaRows(
     salPct = Object.fromEntries(SPA_VENUE_SLUGS.map(s => [s, salBySlug[s] / totalSal]));
   }
   const revPct = Object.fromEntries(SPA_VENUE_SLUGS.map(s => [s, revBySlug[s] / totalRev]));
-  log.push(`SPA revPct (untagged-only): ${SPA_VENUE_SLUGS.map(s => `${s}=${(revPct[s] * 100).toFixed(1)}%`).join(" ")}`);
+  log.push(`SPA revPct: ${SPA_VENUE_SLUGS.map(s => `${s}=${(revPct[s] * 100).toFixed(1)}%`).join(" ")}`);
   log.push(`SPA salPct: ${SPA_VENUE_SLUGS.map(s => `${s}=${(salPct[s] * 100).toFixed(1)}%`).join(" ")}`);
 
   // 3. Bucket per (account, venue, tag_source, contact) — daily values inside
@@ -662,14 +675,20 @@ async function buildAesthRows(
   }
   log.push(`AES/SLIM classified: ${classified.length} kept; dropped ${droppedUnmappedIncome} unmapped-income, ${droppedUnmappedExpense} unmapped-expense kept as SGA-equal, ${droppedExcluded} excluded`);
 
-  // 2. Revenue ratio base from untagged Zoho mapped income (best the sheet has;
-  //    dashboard uses sales_daily Supabase tables but the sheet stays Zoho-local).
+  // 2. Revenue ratio base. Include tagged revenue — excluding it makes the
+  //    base collapse when (as in production) most income is dept-tagged,
+  //    which silently degrades every sales_ratio cell to an equal 50/50 split.
   const revBySlug: Record<"aesthetics" | "slimming", number> = { aesthetics: 0, slimming: 0 };
   for (const c of classified) {
-    if (c.ebitda !== "revenue" || c.tagDept) continue;
-    const nameDept = detectAesthDept(c.line.account_name);
-    const eff = nameDept ?? (c.rule === "aesthetics" || c.rule === "slimming" ? c.rule : null);
-    if (eff) revBySlug[eff] += c.line.amount;
+    if (c.ebitda !== "revenue") continue;
+    let dept: "aesthetics" | "slimming" | null = null;
+    if (c.tagDept) {
+      dept = c.tagDept;
+    } else {
+      const nameDept = detectAesthDept(c.line.account_name);
+      dept = nameDept ?? (c.rule === "aesthetics" || c.rule === "slimming" ? c.rule : null);
+    }
+    if (dept) revBySlug[dept] += c.line.amount;
   }
   let totalRev = revBySlug.aesthetics + revBySlug.slimming;
   if (totalRev === 0) { revBySlug.aesthetics = 1; revBySlug.slimming = 1; totalRev = 2; }
@@ -677,7 +696,7 @@ async function buildAesthRows(
     aesthetics: revBySlug.aesthetics / totalRev,
     slimming:   revBySlug.slimming   / totalRev,
   };
-  log.push(`AES/SLIM revPct (untagged-only): aesthetics=${(revPct.aesthetics * 100).toFixed(1)}% slimming=${(revPct.slimming * 100).toFixed(1)}%`);
+  log.push(`AES/SLIM revPct: aesthetics=${(revPct.aesthetics * 100).toFixed(1)}% slimming=${(revPct.slimming * 100).toFixed(1)}%`);
 
   // 3. Bucket per (account, dept, tag_source, contact)
   type Bucket = {
