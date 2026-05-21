@@ -58,6 +58,9 @@ const LAUNDRY_ACCOUNTS = new Set(["611514", "611520"]);
 // format: account_code → [split_rule, ebitda_line]
 
 export const COA_MAP: Record<string, [string, string]> = {
+  // OTHER / NON-OPERATING INCOME (flow into revenue EBITDA line)
+  "000003": ["sales_ratio",      "revenue"],   // Dividends from Investments
+  "000004": ["sales_ratio",      "revenue"],   // Interest Income from Investments
   // COGS
   "651110": ["sales_ratio",      "cogs"],
   "651120": ["sales_ratio",      "cogs"],
@@ -173,7 +176,7 @@ export const COA_MAP: Record<string, [string, string]> = {
   "611120":  ["sales_ratio",      "sga"],
   "611130":  ["equal",            "sga"],
   "611141":  ["equal",            "sga"],
-  "611142":  ["equal",            "sga"],
+  "611142":  ["equal",            "sga"],   // Motor Vehicles - Repairs & Maintenance (also in Supabase as sga_maintenance)
   "611143":  ["equal",            "sga"],
   "611151":  ["salary_cost",      "sga"],
   "611152":  ["intercontinental", "sga"],

@@ -66,31 +66,62 @@ async function callWithRetry<T>(fn: () => Promise<T>, label: string, log: string
 
 export async function loadAccountMeta(client: ZohoBooksClient, log: string[]): Promise<Map<string, AccountMeta>> {
   const result = new Map<string, AccountMeta>();
-  let page = 1;
-  while (true) {
-    const data = await callWithRetry(
-      () => client.get("chartofaccounts", { page: String(page), per_page: "200" }) as Promise<Record<string, unknown>>,
-      `chartofaccounts page ${page}`,
-      log,
-    );
-    const accounts = (data.chartofaccounts ?? []) as Array<Record<string, unknown>>;
-    for (const a of accounts) {
-      const id = String(a.account_id ?? "");
-      if (!id) continue;
-      const type = String(a.account_type ?? "").toLowerCase();
-      let section: AccountMeta["section"] = "other";
-      if (type.includes("income") || type.includes("revenue")) section = "income";
-      else if (type.includes("expense") || type.includes("cost_of_goods") || type.includes("cogs")) section = "expense";
-      result.set(id, {
-        code:    String(a.account_code ?? "").trim(),
-        name:    String(a.account_name ?? "").trim(),
-        type,
-        section,
-      });
+
+  // Zoho's chartofaccounts list defaults to ACTIVE accounts only — inactive
+  // accounts are silently dropped. Historical postings on accounts that have
+  // since been deactivated (e.g. SPA 611142 "Motor Vehicles - Repairs &
+  // Maintenance", marked inactive but with €408.53 of activity in Jan-Feb
+  // 2025) would otherwise have no meta entry, causing every line on those
+  // accounts to be dropped by the journal_report supplementary pass
+  // (skippedNoMeta) and by every downstream consumer that keys off
+  // account_code. To prevent that drift, we do TWO passes: the default
+  // (active) list, then a second pass with filter_by=AccountType.Inactive
+  // to merge in deactivated accounts. We can't use filter_by=AccountType.All
+  // — that endpoint omits 80+ active expense/COGS accounts that the default
+  // view exposes (verified on SPA 2026-05-21: default=412, All=360, with
+  // Rent/Wages/Salary accounts missing).
+  async function loadPass(extra: Record<string, string>, label: string) {
+    let page = 1;
+    while (true) {
+      const data = await callWithRetry(
+        () => client.get("chartofaccounts", { page: String(page), per_page: "200", ...extra }) as Promise<Record<string, unknown>>,
+        `chartofaccounts ${label} page ${page}`,
+        log,
+      );
+      const accounts = (data.chartofaccounts ?? []) as Array<Record<string, unknown>>;
+      for (const a of accounts) {
+        const id = String(a.account_id ?? "");
+        if (!id) continue;
+        // Active pass wins ties — skip if we already saw this id (only
+        // matters when the same account appears in both passes, which it
+        // shouldn't, but be defensive).
+        if (result.has(id)) continue;
+        const type = String(a.account_type ?? "").toLowerCase();
+        let section: AccountMeta["section"] = "other";
+        if (type.includes("income") || type.includes("revenue")) section = "income";
+        else if (type.includes("expense") || type.includes("cost_of_goods") || type.includes("cogs")) section = "expense";
+        result.set(id, {
+          code:    String(a.account_code ?? "").trim(),
+          name:    String(a.account_name ?? "").trim(),
+          type,
+          section,
+        });
+      }
+      const ctx = data.page_context as Record<string, unknown> | undefined;
+      if (!ctx?.has_more_page) break;
+      page++;
     }
-    const ctx = data.page_context as Record<string, unknown> | undefined;
-    if (!ctx?.has_more_page) break;
-    page++;
+  }
+
+  await loadPass({}, "active");
+  const afterActive = result.size;
+  try {
+    await loadPass({ filter_by: "AccountType.Inactive" }, "inactive");
+    log.push(`loadAccountMeta: active=${afterActive} +inactive=${result.size - afterActive} total=${result.size}`);
+  } catch (e) {
+    // Don't fail the whole pull if the inactive-filter endpoint changes —
+    // we still have all active accounts.
+    log.push(`  WARN inactive-account pass failed: ${e}; continuing with ${afterActive} active accounts`);
   }
   return result;
 }
@@ -297,6 +328,23 @@ async function fetchDetails(
     const txnDate = String(entity[cfg.dateField] ?? s[cfg.dateField] ?? "").slice(0, 10);
     if (!txnDate) continue;
 
+    // Skip unpublished journals. Zoho's P&L and reports/journal both ignore
+    // draft journals; if we emit them here we'd over-count vs the P&L. The
+    // `journals` LIST endpoint returns drafts alongside published entries
+    // (verified 2026-05-21 on SPA Jan-Feb 2025: 148 total, 2 of which were
+    // `status="draft"`). Filter at the detail stage where `status` is
+    // reliable. Skipping unpublished journals on the entity pass also
+    // keeps the journal-report supplementary pass safe — the `covered`
+    // (txn_id, account_id) Set would otherwise mask the corresponding
+    // report row even though Zoho's P&L never posted it.
+    if (cfg.source === "journal") {
+      const journalStatus = String(entity.status ?? s.status ?? "").toLowerCase();
+      if (journalStatus && journalStatus !== "published") {
+        log.push(`  skip journal/${id}: status="${journalStatus}" (not published)`);
+        continue;
+      }
+    }
+
     // FX context: every transaction header carries currency_code +
     // exchange_rate (rate is base-per-foreign, e.g. 0.0274 EUR per TRY).
     // When currency is non-EUR we must scale plain `amount` fields up by
@@ -469,9 +517,19 @@ async function fetchJournalReportLines(
   accountMeta: Map<string, AccountMeta>,
   covered:     Set<string>,
   log:         string[],
-): Promise<{ lines: TxnLine[]; rawCount: number; addedCount: number; skippedCovered: number; skippedSection: number; skippedZero: number; skippedNoMeta: number }> {
+): Promise<{ lines: TxnLine[]; rawCount: number; addedCount: number; skippedCovered: number; skippedSection: number; skippedZero: number; skippedNoMeta: number; skippedDupe: number }> {
   const lines: TxnLine[] = [];
-  let rawCount = 0, addedCount = 0, skippedCovered = 0, skippedSection = 0, skippedZero = 0, skippedNoMeta = 0;
+  let rawCount = 0, addedCount = 0, skippedCovered = 0, skippedSection = 0, skippedZero = 0, skippedNoMeta = 0, skippedDupe = 0;
+  // Defensive within-pull dedupe set keyed by (transaction_id, account_id).
+  // The prior `covered` Set only contains keys from the 9 entity-endpoint
+  // passes, so it CANNOT mask non-entity report sources like
+  // `sales_without_invoices` and `deposit` (verified 2026-05-21 on SPA
+  // Jan-Feb 2025: 000003 + 000004 are `deposit`-type, only surfaced via
+  // reports/journal). If a future page-context bug causes Zoho to return
+  // the same account_transactions row on two adjacent pages, this Set
+  // prevents double-counting. Keyed by transaction_id (the per-line PK in
+  // the journal report) — entity_id can legitimately repeat across rows.
+  const emitted = new Set<string>();
   let page = 1;
   let pageCount = 0;
   while (true) {
@@ -530,6 +588,15 @@ async function fetchJournalReportLines(
         const amount = pickJournalReportAmount(at, meta.section);
         if (!amount) { skippedZero++; continue; }
 
+        // Pagination dedupe — see `emitted` declaration above. Keyed by
+        // transaction_id (not entity_id) because Zoho's report uses
+        // transaction_id as the per-line PK within the report; the same
+        // entity_id can legitimately appear under multiple transaction_ids
+        // (e.g. a bill and its auto-posted COGS counterpart).
+        const dedupeKey = `${String(j.transaction_id ?? txnId)}::${accountId}`;
+        if (emitted.has(dedupeKey)) { skippedDupe++; continue; }
+        emitted.add(dedupeKey);
+
         lines.push({
           date:         isoDate,
           source:       "journal_report",
@@ -549,7 +616,7 @@ async function fetchJournalReportLines(
     if (!ctx?.has_more_page) break;
     page++;
   }
-  return { lines, rawCount, addedCount, skippedCovered, skippedSection, skippedZero, skippedNoMeta };
+  return { lines, rawCount, addedCount, skippedCovered, skippedSection, skippedZero, skippedNoMeta, skippedDupe };
 }
 
 // ── Public entry point ───────────────────────────────────────────────────────
@@ -616,7 +683,8 @@ export async function fetchTransactionLines(
     log.push(
       `[journal_report] raw=${jr.rawCount} added=${jr.addedCount} ` +
       `skipped_covered=${jr.skippedCovered} skipped_section=${jr.skippedSection} ` +
-      `skipped_zero=${jr.skippedZero} skipped_no_meta=${jr.skippedNoMeta}`,
+      `skipped_zero=${jr.skippedZero} skipped_no_meta=${jr.skippedNoMeta} ` +
+      `skipped_dupe=${jr.skippedDupe}`,
     );
   } catch (e) {
     log.push(`  WARN journal_report pull failed: ${e}; continuing without supplementary lines`);
