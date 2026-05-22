@@ -203,7 +203,28 @@ export async function loadSpaCockpitRevenue(
   fromDate: string,
   toDate:   string,
 ): Promise<Array<{ date: string; venue_slug: string; amount: number }>> {
-  const lapis: Map<string, number> = new Map(); // key = `${date}::${slug}`
+  // We need TWO views of Lapis revenue:
+  //  • lapis      — per (date, venue) rows INSIDE the requested window (output)
+  //  • monthTotal — per calendar-month TOTAL across the WHOLE month, even days
+  //                 outside the window. This is the denominator for spreading
+  //                 the Zoho adjustment: a sub-month window must receive only
+  //                 its proportional slice of the month's adjustment, otherwise
+  //                 summing N weekly windows applies the adjustment N times.
+  const lapis: Map<string, number> = new Map();        // key = `${date}::${slug}` (in-window)
+  const lapisMonthTotal: Record<string, number> = {};  // "YYYY-MM" → full-month Lapis revenue
+
+  // The full calendar months the window touches — used to widen the month-total
+  // scan beyond the window boundaries.
+  const monthsTouched = new Set<string>();
+  {
+    const start = new Date(`${fromDate}T00:00:00Z`);
+    const end   = new Date(`${toDate}T00:00:00Z`);
+    const cur   = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+    while (cur <= end) {
+      monthsTouched.add(`${cur.getUTCFullYear()}-${String(cur.getUTCMonth() + 1).padStart(2, "0")}`);
+      cur.setUTCMonth(cur.getUTCMonth() + 1);
+    }
+  }
 
   // Services CSV: "Service Date", "Sales Point", "Unit Price" (inc-VAT),
   // "Status" — only Given / Unplanned count.
@@ -212,7 +233,9 @@ export async function loadSpaCockpitRevenue(
     const status = stripCol(row, "Status");
     if (status !== "Given" && status !== "Unplanned") continue;
     const iso = parseLapisDateIso(stripCol(row, "Service Date"));
-    if (!iso || !withinWindow(iso, fromDate, toDate)) continue;
+    if (!iso) continue;
+    const ym = iso.slice(0, 7);
+    if (!monthsTouched.has(ym)) continue;
     const slug = LAPIS_VENUE_TO_SLUG[stripCol(row, "Sales Point")];
     if (!slug) continue;
     const unitPrice = safeFloat(stripCol(row, "Unit Price"));
@@ -220,15 +243,20 @@ export async function loadSpaCockpitRevenue(
     // Path A parity: each service line is rounded to 2dp ex-VAT before summing
     // (lapis-revenue.ts: `+(unitPrice / (1 + VAT_RATE)).toFixed(2)`).
     const amountEx = Math.round((unitPrice / (1 + LAPIS_VAT_RATE)) * 100) / 100;
-    const key = `${iso}::${slug}`;
-    lapis.set(key, (lapis.get(key) ?? 0) + amountEx);
+    lapisMonthTotal[ym] = (lapisMonthTotal[ym] ?? 0) + amountEx;
+    if (withinWindow(iso, fromDate, toDate)) {
+      const key = `${iso}::${slug}`;
+      lapis.set(key, (lapis.get(key) ?? 0) + amountEx);
+    }
   }
 
   // Products CSV: "Date", "Point of Sales", "VAT Exclusive Amount".
   const prodRows = await fetchLapisCsv(LAPIS_PRODUCT_GID);
   for (const row of prodRows) {
     const iso = parseLapisDateIso(stripCol(row, "Date"));
-    if (!iso || !withinWindow(iso, fromDate, toDate)) continue;
+    if (!iso) continue;
+    const ym = iso.slice(0, 7);
+    if (!monthsTouched.has(ym)) continue;
     const spaName = stripCol(row, "Point of Sales") || stripCol(row, "Point of Sales ");
     const slug = LAPIS_VENUE_TO_SLUG[spaName];
     if (!slug) continue;
@@ -236,16 +264,11 @@ export async function loadSpaCockpitRevenue(
       stripCol(row, "VAT Exclusive Amount") || stripCol(row, "VAT Exclusive Amount "),
     );
     if (amount <= 0) continue;
-    const key = `${iso}::${slug}`;
-    lapis.set(key, (lapis.get(key) ?? 0) + amount);
-  }
-
-  // Per-calendar-month Lapis total — the denominator for distributing the
-  // Zoho adjustment proportionally.
-  const lapisMonthTotal: Record<string, number> = {};
-  for (const [key, v] of lapis.entries()) {
-    const ym = key.slice(0, 7);
-    lapisMonthTotal[ym] = (lapisMonthTotal[ym] ?? 0) + v;
+    lapisMonthTotal[ym] = (lapisMonthTotal[ym] ?? 0) + amount;
+    if (withinWindow(iso, fromDate, toDate)) {
+      const key = `${iso}::${slug}`;
+      lapis.set(key, (lapis.get(key) ?? 0) + amount);
+    }
   }
 
   // Pull the Zoho wholesale/discount/refund NET adjustment per month. Any
@@ -253,7 +276,7 @@ export async function loadSpaCockpitRevenue(
   // fall back to Lapis-only (services + products) and log via the caller.
   let zohoAdj: Record<string, number> = {};
   try {
-    zohoAdj = await fetchSpaZohoMonthlyAdjustment(Object.keys(lapisMonthTotal));
+    zohoAdj = await fetchSpaZohoMonthlyAdjustment([...monthsTouched]);
   } catch (e) {
     console.warn(`[loadSpaCockpitRevenue] Zoho adjustment fetch failed: ${e}`);
     zohoAdj = {};
@@ -266,7 +289,9 @@ export async function loadSpaCockpitRevenue(
     const monthSum = lapisMonthTotal[ym] ?? 0;
     const adj      = zohoAdj[ym] ?? 0;
     // Distribute the month's net Zoho adjustment in proportion to this
-    // (date, venue) row's share of the month's Lapis revenue.
+    // (date, venue) row's share of the WHOLE month's Lapis revenue. A
+    // sub-month window therefore receives only its slice — summing all
+    // windows of a month reproduces Path A's monthly net exactly.
     const share  = monthSum > 0 ? lapisAmount / monthSum : 0;
     const amount = lapisAmount + adj * share;
     const rounded = Math.round(amount * 100) / 100;
