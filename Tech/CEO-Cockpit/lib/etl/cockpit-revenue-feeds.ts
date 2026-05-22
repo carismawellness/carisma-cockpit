@@ -8,12 +8,22 @@
 // rolls Lapis up to MONTHLY granularity for spa_revenue_monthly). Here we
 // keep daily granularity and group by (date, venue).
 
+import { ZohoBooksClient } from "./zoho-client";
+
 // ── Lapis CSV (public Google Sheet, no auth) ────────────────────────────────
 
 const LAPIS_SHEET_ID = "195RvbNuZd-oNL-rziKC3Wz6ndy0cDA_a";
 const LAPIS_SERVICE_GID = "683143306";
 const LAPIS_PRODUCT_GID = "1271322967";
 const LAPIS_VAT_RATE = 0.18;
+
+// Zoho CoA accounts that lapis-revenue.ts (Path A → spa_revenue_monthly, the
+// AUTHORITATIVE Cockpit dashboard source) folds into SPA net revenue alongside
+// the Lapis service+product figures. Mirrors WHOLESALE/DISCOUNT/REFUND_ACCOUNTS
+// in lapis-revenue.ts exactly — keep in sync.
+const LAPIS_WHOLESALE_ACCOUNTS = new Set(["506000", "506200", "506300"]);
+const LAPIS_DISCOUNT_ACCOUNTS  = new Set(["20000"]);
+const LAPIS_REFUND_ACCOUNTS    = new Set(["SALREF"]);
 
 // Maps Lapis "Sales Point" / "Point of Sales" labels → Cockpit venue slug.
 // (This is the inverse of LAPIS_SPA_MAP in lapis-revenue.ts, but keyed by
@@ -107,18 +117,93 @@ function withinWindow(iso: string, fromDate: string, toDate: string): boolean {
   return iso >= fromDate && iso <= toDate;
 }
 
+// ── Zoho P&L walk (mirrors lapis-revenue.ts fetchZohoRevenueAccounts) ────────
+
+// Recursively collects `total` for any node whose account_code is in
+// `targetCodes`. Identical traversal to lapis-revenue.ts walkPl().
+function walkPl(obj: unknown, targetCodes: Set<string>, result: Record<string, number>): void {
+  if (Array.isArray(obj)) { for (const item of obj) walkPl(item, targetCodes, result); return; }
+  if (!obj || typeof obj !== "object") return;
+  const o = obj as Record<string, unknown>;
+  const code = String(o.account_code ?? "").trim();
+  if (code && targetCodes.has(code)) {
+    result[code] = (result[code] ?? 0) + (parseFloat(String(o.total ?? 0)) || 0);
+  }
+  for (const v of Object.values(o)) { if (typeof v === "object") walkPl(v, targetCodes, result); }
+}
+
+function daysInMonth(year: number, month: number): number {
+  return new Date(year, month, 0).getDate();
+}
+
+// Pulls the per-calendar-month NET Zoho adjustment that lapis-revenue.ts adds
+// to SPA net revenue: + wholesale (506000/506200/506300) − discount (20000)
+// − refund (SALREF). Path A always evaluates these over the FULL calendar
+// month, so we do the same here regardless of the (possibly sub-month) window.
+// Returns a map "YYYY-MM" → net adjustment (€, ex-VAT, can be negative).
+async function fetchSpaZohoMonthlyAdjustment(
+  months: string[],
+): Promise<Record<string, number>> {
+  const adj: Record<string, number> = {};
+  const targetCodes = new Set([
+    ...LAPIS_WHOLESALE_ACCOUNTS,
+    ...LAPIS_DISCOUNT_ACCOUNTS,
+    ...LAPIS_REFUND_ACCOUNTS,
+  ]);
+  const client = new ZohoBooksClient("spa");
+
+  for (const ym of months) {
+    const [yStr, mStr] = ym.split("-");
+    const year  = Number(yStr);
+    const month = Number(mStr);
+    const lastD = daysInMonth(year, month);
+    const data  = await client.get("reports/profitandloss", {
+      from_date:        `${ym}-01`,
+      to_date:          `${ym}-${String(lastD).padStart(2, "0")}`,
+      cash_based:       "false",
+      comparison_value: "0",
+    });
+    const totals: Record<string, number> = {};
+    walkPl(data, targetCodes, totals);
+
+    // Same sign convention as lapis-revenue.ts runMonth(): wholesale added,
+    // discount + refund subtracted, all via Math.abs of the P&L total.
+    const wholesale = [...LAPIS_WHOLESALE_ACCOUNTS].reduce((s, c) => s + Math.abs(totals[c] ?? 0), 0);
+    const discount  = Math.abs(totals["20000"]  ?? 0);
+    const refund    = Math.abs(totals["SALREF"] ?? 0);
+    adj[ym] = wholesale - discount - refund;
+  }
+  return adj;
+}
+
 // ── SPA (Lapis) daily revenue per venue ─────────────────────────────────────
 
-// Returns one row per (date, venue_slug) with the ex-VAT net revenue from
-// Lapis. Net revenue = services + products (both ex-VAT). Discounts and
-// refunds are NOT subtracted here — those live on Zoho CoA accounts and are
-// already pulled by the zoho-line-extractor path in zoho-transactions-daily.
-// Subtracting them here would double-count.
+// Returns one row per (date, venue_slug) whose ex-VAT amounts SUM to the
+// AUTHORITATIVE Cockpit dashboard figure (spa_revenue_monthly.net_revenue,
+// built by lib/etl/lapis-revenue.ts — Path A).
+//
+// Path A's monthly net revenue is:
+//     services + product_phytomer + product_purest + product_other   (Lapis)
+//   + wholesale (Zoho 506000/506200/506300)
+//   − sales_discount (Zoho 20000) − sales_refund (Zoho SALREF)
+//
+// We reproduce it identically, just kept at daily granularity:
+//   1. Lapis service+product ex-VAT per (date, venue) — per-row service
+//      rounding (`.toFixed(2)`) matches Path A exactly.
+//   2. The Zoho wholesale/discount/refund NET adjustment is pulled per
+//      calendar month (Path A's basis) and distributed across that month's
+//      (date, venue) rows in proportion to each row's Lapis revenue, so the
+//      per-day rows sum back to Path A's monthly net.
+//
+// Note: the Zoho wholesale/discount/refund CoA accounts are SPA-revenue CoA
+// codes; they are NOT among the codes the zoho-line-extractor path treats as
+// revenue for the EBIDA Layer (those flow through real invoice/creditnote
+// lines), so folding them into LAPIS_REV here does not double-count.
 export async function loadSpaCockpitRevenue(
   fromDate: string,
   toDate:   string,
 ): Promise<Array<{ date: string; venue_slug: string; amount: number }>> {
-  const acc: Map<string, number> = new Map(); // key = `${date}::${slug}`
+  const lapis: Map<string, number> = new Map(); // key = `${date}::${slug}`
 
   // Services CSV: "Service Date", "Sales Point", "Unit Price" (inc-VAT),
   // "Status" — only Given / Unplanned count.
@@ -132,9 +217,11 @@ export async function loadSpaCockpitRevenue(
     if (!slug) continue;
     const unitPrice = safeFloat(stripCol(row, "Unit Price"));
     if (unitPrice === 0) continue;
-    const amountEx = unitPrice / (1 + LAPIS_VAT_RATE);
+    // Path A parity: each service line is rounded to 2dp ex-VAT before summing
+    // (lapis-revenue.ts: `+(unitPrice / (1 + VAT_RATE)).toFixed(2)`).
+    const amountEx = Math.round((unitPrice / (1 + LAPIS_VAT_RATE)) * 100) / 100;
     const key = `${iso}::${slug}`;
-    acc.set(key, (acc.get(key) ?? 0) + amountEx);
+    lapis.set(key, (lapis.get(key) ?? 0) + amountEx);
   }
 
   // Products CSV: "Date", "Point of Sales", "VAT Exclusive Amount".
@@ -150,12 +237,38 @@ export async function loadSpaCockpitRevenue(
     );
     if (amount <= 0) continue;
     const key = `${iso}::${slug}`;
-    acc.set(key, (acc.get(key) ?? 0) + amount);
+    lapis.set(key, (lapis.get(key) ?? 0) + amount);
+  }
+
+  // Per-calendar-month Lapis total — the denominator for distributing the
+  // Zoho adjustment proportionally.
+  const lapisMonthTotal: Record<string, number> = {};
+  for (const [key, v] of lapis.entries()) {
+    const ym = key.slice(0, 7);
+    lapisMonthTotal[ym] = (lapisMonthTotal[ym] ?? 0) + v;
+  }
+
+  // Pull the Zoho wholesale/discount/refund NET adjustment per month. Any
+  // failure here (rate limit, auth) must NOT break the EBIDA Layer feed —
+  // fall back to Lapis-only (services + products) and log via the caller.
+  let zohoAdj: Record<string, number> = {};
+  try {
+    zohoAdj = await fetchSpaZohoMonthlyAdjustment(Object.keys(lapisMonthTotal));
+  } catch (e) {
+    console.warn(`[loadSpaCockpitRevenue] Zoho adjustment fetch failed: ${e}`);
+    zohoAdj = {};
   }
 
   const out: Array<{ date: string; venue_slug: string; amount: number }> = [];
-  for (const [key, amount] of acc.entries()) {
+  for (const [key, lapisAmount] of lapis.entries()) {
     const [date, venue_slug] = key.split("::");
+    const ym       = key.slice(0, 7);
+    const monthSum = lapisMonthTotal[ym] ?? 0;
+    const adj      = zohoAdj[ym] ?? 0;
+    // Distribute the month's net Zoho adjustment in proportion to this
+    // (date, venue) row's share of the month's Lapis revenue.
+    const share  = monthSum > 0 ? lapisAmount / monthSum : 0;
+    const amount = lapisAmount + adj * share;
     const rounded = Math.round(amount * 100) / 100;
     if (rounded === 0) continue;
     out.push({ date, venue_slug, amount: rounded });
