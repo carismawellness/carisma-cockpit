@@ -236,6 +236,35 @@ function runTestPullJan1to7() {
   return result;
 }
 
+// ── Web App entry point (for automated/remote backfill) ─────────────────────
+// Deployed as a web app so a pull can be triggered over HTTP, one window at a
+// time, without a human clicking the in-sheet button. Shared-secret token
+// gates access. Non-destructive — same merge path as the button (yellow/red
+// protection, scoped overwrite). URL form:
+//   <web-app-url>/exec?token=<TOKEN>&from=2025-03-01&to=2025-03-07&org=SPA
+var WEBAPP_TOKEN = "cbk-ebida-a7f3e91c2d";
+
+function doGet(e) {
+  var p = (e && e.parameter) || {};
+  if (p.token !== WEBAPP_TOKEN) {
+    return ContentService.createTextOutput("ERROR: invalid or missing token")
+      .setMimeType(ContentService.MimeType.TEXT);
+  }
+  var from = p.from, to = p.to, org = p.org || "SPA";
+  if (!from || !to) {
+    return ContentService.createTextOutput("ERROR: from and to params required (YYYY-MM-DD)")
+      .setMimeType(ContentService.MimeType.TEXT);
+  }
+  try {
+    var result = pullAndWriteEbidaLayer(from, to, org);
+    return ContentService.createTextOutput("OK\n" + result)
+      .setMimeType(ContentService.MimeType.TEXT);
+  } catch (err) {
+    return ContentService.createTextOutput("ERROR: " + (err && err.message ? err.message : err))
+      .setMimeType(ContentService.MimeType.TEXT);
+  }
+}
+
 // One-click reset: clears the existing Zoho Raw Layer tab content (but
 // preserves the tab itself and any drawings/buttons on it) and runs the
 // 1-week test pull. Use this after a layout change to rebuild content
