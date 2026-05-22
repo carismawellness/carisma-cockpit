@@ -40,7 +40,7 @@ const EBITDA_LINES = [
   { value: "revenue",              label: "Revenue" },
   { value: "cogs",                 label: "COGS" },
   { value: "wages",                label: "Wages & Salaries" },
-  { value: "advertising",          label: "Advertising & Marketing" },
+  { value: "advertising",          label: "Advertising" },
   { value: "rent",                 label: "Rent" },
   { value: "utilities",            label: "Utilities" },
   { value: "sga_prof_services",    label: "SG&A - Prof services" },
