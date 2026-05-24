@@ -518,6 +518,22 @@ function doGet(e) {
     return ContentService.createTextOutput("ERROR: invalid or missing token")
       .setMimeType(ContentService.MimeType.TEXT);
   }
+
+  // New: audit-export endpoint. Returns per-(account_code, account_name)
+  // monthly totals from the Zoho Raw Layer tab as JSON. URL form:
+  //   <web-app-url>/exec?token=<TOKEN>&action=export&org=SPA&month=2025-01
+  if (p.action === "export") {
+    try {
+      var exportResult = exportSheetMonthlyTotals(p.org, p.month);
+      return ContentService.createTextOutput(JSON.stringify(exportResult))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService.createTextOutput(JSON.stringify({
+        error: (err && err.message ? err.message : String(err))
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
   var from = p.from, to = p.to, org = p.org || "SPA";
   if (!from || !to) {
     return ContentService.createTextOutput("ERROR: from and to params required (YYYY-MM-DD)")
@@ -531,6 +547,114 @@ function doGet(e) {
     return ContentService.createTextOutput("ERROR: " + (err && err.message ? err.message : err))
       .setMimeType(ContentService.MimeType.TEXT);
   }
+}
+
+// Per-(account_code, account_name) monthly totals from the Zoho Raw Layer tab
+// for a given org + YYYY-MM. Audit endpoint — pure read, no merge/write.
+//
+//  org           "SPA" or "Aesthetics" (case-insensitive vs Brand column)
+//  ym            "YYYY-MM" — month to aggregate
+//
+// Aggregation key:
+//   account_code (col C). If empty, fall back to line_item (col B).
+//
+// Value rule:
+//   sum numeric values across every date column whose header parses (via
+//   _parseDateHeader, same helper the merge uses) to a date in
+//   [ym-01 .. ym-last-day]. Non-numeric / null / empty cells are skipped.
+//   Signed sum first (matches the API/parser convention which sums signed
+//   then takes abs downstream).
+//
+// Return shape:
+//   { org, ym, accounts: [{code, name, total}, ...],
+//     total_rows_read, total_data_cells }
+function exportSheetMonthlyTotals(org, ym) {
+  if (!org)                      throw new Error("org param required (SPA or Aesthetics).");
+  if (!ym || !/^\d{4}-\d{2}$/.test(ym)) {
+    throw new Error("month param required in YYYY-MM format.");
+  }
+
+  var orgLower  = String(org).trim().toLowerCase();
+  var year      = parseInt(ym.slice(0, 4), 10);
+  var monthOne  = parseInt(ym.slice(5, 7), 10);   // 1-indexed
+  // JS Date: month index is 0-based; passing day=0 of next month yields
+  // the last day of the requested month. (new Date(year, monthOne, 0))
+  var lastDay   = new Date(year, monthOne, 0).getDate();
+  var fromIso   = ym + "-01";
+  var toIso     = ym + "-" + String(lastDay).padStart(2, "0");
+
+  var ss    = SpreadsheetApp.openById(EBIDA_SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(EBIDA_TAB);
+  if (!sheet) throw new Error("Tab '" + EBIDA_TAB + "' not found.");
+
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < FIRST_DATA_ROW || lastCol <= META_COUNT) {
+    return { org: org, ym: ym, accounts: [], total_rows_read: 0, total_data_cells: 0 };
+  }
+
+  var values     = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  var headerVals = values[HEADER_ROW - 1];
+
+  // Identify date columns falling inside the month window.
+  var monthCols = [];   // 0-indexed
+  for (var c = META_COUNT; c < lastCol; c++) {
+    var iso = _parseDateHeader(headerVals[c], year);
+    if (!iso) continue;
+    if (iso < fromIso || iso > toIso) continue;
+    monthCols.push(c);
+  }
+
+  // Aggregate by (account_code || line_item).
+  var byKey       = {};   // key -> { code, name, total }
+  var rowsRead    = 0;
+  var dataCells   = 0;
+
+  for (var r = FIRST_DATA_ROW - 1; r < values.length; r++) {
+    var row   = values[r];
+    var brand = String(row[0] || "").trim();
+    if (!brand) continue;
+    if (brand.toLowerCase() !== orgLower) continue;
+
+    var lineItem = String(row[1] || "").trim();
+    var accCode  = String(row[2] || "").trim();
+    // Skip section header / fully empty rows (brand-only rows have no line_item/code).
+    if (!lineItem && !accCode) continue;
+
+    rowsRead++;
+    var key  = accCode || lineItem;
+    var name = lineItem;
+
+    if (!byKey[key]) {
+      byKey[key] = { code: accCode, name: name, total: 0 };
+    } else if (!byKey[key].name && name) {
+      byKey[key].name = name;
+    }
+
+    for (var mi = 0; mi < monthCols.length; mi++) {
+      var v = row[monthCols[mi]];
+      if (v === "" || v == null) continue;
+      var n = (typeof v === "number") ? v : parseFloat(v);
+      if (!isFinite(n)) continue;
+      byKey[key].total += n;
+      dataCells++;
+    }
+  }
+
+  var accounts = [];
+  for (var k in byKey) accounts.push(byKey[k]);
+  accounts.sort(function(a, b) {
+    if (a.code !== b.code) return String(a.code).localeCompare(String(b.code));
+    return String(a.name).localeCompare(String(b.name));
+  });
+
+  return {
+    org:              org,
+    ym:               ym,
+    accounts:         accounts,
+    total_rows_read:  rowsRead,
+    total_data_cells: dataCells,
+  };
 }
 
 // DEV-ONLY one-click reset: clears the existing Zoho Raw Layer tab content
