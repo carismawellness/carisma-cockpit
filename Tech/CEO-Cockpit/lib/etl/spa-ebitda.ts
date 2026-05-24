@@ -342,39 +342,43 @@ function ruleFromDb(ruleType: string, config: Record<string, number> | null): st
   return "equal";
 }
 
+// Loads the SPA CoA mapping from Supabase. Returns the mapping on success;
+// returns null only for the LEGITIMATE empty case (no rows match the filter).
+// Throws on any fetch / network / Supabase failure so the ETL caller can
+// retry instead of silently falling back to the hardcoded COA_MAP — a Supabase
+// outage masquerading as "no special mapping" would cause CoA splits to use
+// stale defaults instead of the user's configured rules.
 export async function loadSpaCoaFromSupabase(): Promise<Record<string, [string, string]> | null> {
-  try {
-    const base = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const key  = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-    const qs   = new URLSearchParams({
-      select:       "account_code,ebitda_line,coa_split_rules(rule_type,config)",
-      zoho_org:     "eq.spa",
-      ebitda_line:  "not.is.null",
-      split_rule_id: "not.is.null",
-    });
-    const resp = await fetch(`${base}/rest/v1/zoho_coa_mapping?${qs}`, {
-      headers: { apikey: key, Authorization: `Bearer ${key}` },
-    });
-    if (!resp.ok) return null;
-    const data = await resp.json() as Record<string, unknown>[];
-    if (!data.length) return null;
-
-    const result: Record<string, [string, string]> = {};
-    for (const row of data) {
-      const code = String(row.account_code ?? "").trim();
-      const line = row.ebitda_line as string;
-      if (line === "excluded") continue;
-      const ruleObj = (row.coa_split_rules ?? {}) as Record<string, unknown>;
-      const ruleStr = ruleFromDb(
-        String(ruleObj.rule_type ?? "equal"),
-        (ruleObj.config as Record<string, number>) ?? null,
-      );
-      result[code] = [ruleStr, line];
-    }
-    return Object.keys(result).length ? result : null;
-  } catch {
-    return null;
+  const base = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key  = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const qs   = new URLSearchParams({
+    select:       "account_code,ebitda_line,coa_split_rules(rule_type,config)",
+    zoho_org:     "eq.spa",
+    ebitda_line:  "not.is.null",
+    split_rule_id: "not.is.null",
+  });
+  const resp = await fetch(`${base}/rest/v1/zoho_coa_mapping?${qs}`, {
+    headers: { apikey: key, Authorization: `Bearer ${key}` },
+  });
+  if (!resp.ok) {
+    throw new Error(`loadSpaCoaFromSupabase: HTTP ${resp.status} ${await resp.text()}`);
   }
+  const data = await resp.json() as Record<string, unknown>[];
+  if (!data.length) return null;
+
+  const result: Record<string, [string, string]> = {};
+  for (const row of data) {
+    const code = String(row.account_code ?? "").trim();
+    const line = row.ebitda_line as string;
+    if (line === "excluded") continue;
+    const ruleObj = (row.coa_split_rules ?? {}) as Record<string, unknown>;
+    const ruleStr = ruleFromDb(
+      String(ruleObj.rule_type ?? "equal"),
+      (ruleObj.config as Record<string, number>) ?? null,
+    );
+    result[code] = [ruleStr, line];
+  }
+  return Object.keys(result).length ? result : null;
 }
 
 // ── Name-based helpers ────────────────────────────────────────────────────────

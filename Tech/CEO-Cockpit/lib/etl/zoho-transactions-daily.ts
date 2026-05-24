@@ -415,19 +415,17 @@ async function buildSpaRows(
   toDate:   string,
 ): Promise<DailyResult> {
   log.push("Loading SPA CoA mapping + advertising contact mapping + Lapis POS revenue…");
-  const [coaMapMaybe, adContactMap, lapisRowsOrErr] = await Promise.all([
+  // Do NOT swallow Lapis fetch failures: a silent fallback to [] would emit
+  // gross-of-adjustments revenue and diverge from spa_revenue_monthly. The
+  // chunk runner already retries on failure, so propagating the error is
+  // safer than silently writing wrong totals to the EBIDA Layer.
+  const [coaMapMaybe, adContactMap, lapisRows] = await Promise.all([
     loadSpaCoaFromSupabase(),
     loadAdvertisingContactMapping(),
-    loadSpaCockpitRevenue(fromDate, toDate).catch((e: unknown) => e as Error),
+    loadSpaCockpitRevenue(fromDate, toDate),
   ]);
   const coaMap = coaMapMaybe ?? COA_MAP;
-  const lapisRows: Array<{ date: string; venue_slug: string; amount: number }> =
-    Array.isArray(lapisRowsOrErr) ? lapisRowsOrErr : [];
-  if (!Array.isArray(lapisRowsOrErr)) {
-    log.push(`  WARN Lapis load failed: ${lapisRowsOrErr}; sales_ratio will fall back to Zoho-tagged revenue`);
-  } else {
-    log.push(`  Lapis rows fetched: ${lapisRows.length}`);
-  }
+  log.push(`  Lapis rows fetched: ${lapisRows.length}`);
   log.push(`  advertising contact patterns loaded: ${adContactMap.length}`);
 
   // Per-day per-venue revenue from Lapis — the authoritative sales_ratio base.
@@ -667,23 +665,22 @@ async function buildAesthRows(
   toDate:   string,
 ): Promise<DailyResult> {
   log.push("Loading Aesthetics CoA mapping + advertising contact mapping + Cockpit POS revenue…");
-  let coaMap: Record<string, [string, string]> = {};
-  let adContactMap: AdContactMappingEntry[] = [];
-  let aesRows: Array<{ date: string; amount: number }> = [];
-  let slimRows: Array<{ date: string; amount: number }> = [];
-  try {
-    const aesRowsP  = loadAesthCockpitRevenue(fromDate, toDate).catch((e: unknown) => { log.push(`  WARN AES Cockpit revenue load failed: ${e}`); return [] as Array<{ date: string; amount: number }>; });
-    const slimRowsP = loadSlimCockpitRevenue(fromDate, toDate).catch((e: unknown) => { log.push(`  WARN SLIM Cockpit revenue load failed: ${e}`); return [] as Array<{ date: string; amount: number }>; });
-    [coaMap, adContactMap, aesRows, slimRows] = await Promise.all([
-      loadAestheticsCoaMap(),
-      loadAdvertisingContactMapping(),
-      aesRowsP,
-      slimRowsP,
-    ]);
-  } catch (e) {
-    log.push(`  failed to load Aesthetics CoA: ${e}`);
-    return { rows: [], dates, period, log };
-  }
+  // Do NOT swallow Cockpit POS fetch failures: a silent fallback to [] would
+  // emit zero AES / SLIM revenue, write wrong totals to the EBIDA Layer, and
+  // bias every shared-cost split (sales_ratio uses AES+SLIM as denominator).
+  // The chunk runner retries on failure, so propagating is safer than silent
+  // zeros.
+  const [coaMap, adContactMap, aesRows, slimRows]: [
+    Record<string, [string, string]>,
+    AdContactMappingEntry[],
+    Array<{ date: string; amount: number }>,
+    Array<{ date: string; amount: number }>,
+  ] = await Promise.all([
+    loadAestheticsCoaMap(),
+    loadAdvertisingContactMapping(),
+    loadAesthCockpitRevenue(fromDate, toDate),
+    loadSlimCockpitRevenue(fromDate, toDate),
+  ]);
   log.push(`  advertising contact patterns loaded: ${adContactMap.length}`);
   log.push(`  Cockpit POS rows fetched: AES=${aesRows.length} SLIM=${slimRows.length}`);
 
