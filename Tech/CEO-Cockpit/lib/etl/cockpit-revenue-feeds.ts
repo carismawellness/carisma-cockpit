@@ -136,6 +136,30 @@ function daysInMonth(year: number, month: number): number {
   return new Date(year, month, 0).getDate();
 }
 
+// Retries a Zoho call on rate-limit failures with linear back-off. Zoho returns
+// HTTP 429 with messages like "too many requests continuously" when the daily
+// request budget is hit or parallel calls saturate the org limit. Without this
+// the EBIDA Layer would silently emit gross Lapis revenue (no wholesale/discount/
+// refund applied) and diverge from spa_revenue_monthly.
+async function withZohoRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  const delays = [30_000, 60_000, 120_000];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const msg = String(e ?? "");
+      const rateLimited =
+        msg.includes("429") ||
+        msg.toLowerCase().includes("too many requests") ||
+        msg.toLowerCase().includes("rate limit");
+      if (!rateLimited || attempt >= delays.length) throw e;
+      const wait = delays[attempt];
+      console.warn(`[${label}] Zoho rate-limited (attempt ${attempt + 1}/${delays.length + 1}), backing off ${wait / 1000}s…`);
+      await new Promise(r => setTimeout(r, wait));
+    }
+  }
+}
+
 // Pulls the per-calendar-month NET Zoho adjustment that lapis-revenue.ts adds
 // to SPA net revenue: + wholesale (506000/506200/506300) − discount (20000)
 // − refund (SALREF). Path A always evaluates these over the FULL calendar
@@ -157,12 +181,12 @@ async function fetchSpaZohoMonthlyAdjustment(
     const year  = Number(yStr);
     const month = Number(mStr);
     const lastD = daysInMonth(year, month);
-    const data  = await client.get("reports/profitandloss", {
+    const data  = await withZohoRetry(`spa-pl-${ym}`, () => client.get("reports/profitandloss", {
       from_date:        `${ym}-01`,
       to_date:          `${ym}-${String(lastD).padStart(2, "0")}`,
       cash_based:       "false",
       comparison_value: "0",
-    });
+    }));
     const totals: Record<string, number> = {};
     walkPl(data, targetCodes, totals);
 
@@ -271,16 +295,12 @@ export async function loadSpaCockpitRevenue(
     }
   }
 
-  // Pull the Zoho wholesale/discount/refund NET adjustment per month. Any
-  // failure here (rate limit, auth) must NOT break the EBIDA Layer feed —
-  // fall back to Lapis-only (services + products) and log via the caller.
-  let zohoAdj: Record<string, number> = {};
-  try {
-    zohoAdj = await fetchSpaZohoMonthlyAdjustment([...monthsTouched]);
-  } catch (e) {
-    console.warn(`[loadSpaCockpitRevenue] Zoho adjustment fetch failed: ${e}`);
-    zohoAdj = {};
-  }
+  // Pull the Zoho wholesale/discount/refund NET adjustment per month. The
+  // call has its own rate-limit retry (withZohoRetry); we deliberately do NOT
+  // swallow exceptions here. Silently falling back to Lapis-only emits gross
+  // revenue and diverges from spa_revenue_monthly — better to surface the
+  // failure so the chunk runner retries the whole window.
+  const zohoAdj: Record<string, number> = await fetchSpaZohoMonthlyAdjustment([...monthsTouched]);
 
   const out: Array<{ date: string; venue_slug: string; amount: number }> = [];
   for (const [key, lapisAmount] of lapis.entries()) {
