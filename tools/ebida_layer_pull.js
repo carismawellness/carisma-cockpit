@@ -59,9 +59,8 @@ function onOpenEbidaLayerMenu() {
     .createMenu("EBIDA Layer")
     .addItem("Pull Daily Granular from Zoho…", "showEbidaLayerDialog")
     .addSeparator()
-    .addItem("Lock verified columns…",         "showLockVerifiedDialog")
-    .addItem("Edit verified data (unlock)…",   "showUnlockVerifiedDialog")
-    .addItem("Show locked ranges",             "showLockedRangesDialog")
+    .addItem("Lock verified columns…",   "showLockVerifiedDialog")
+    .addItem("Unlock verified columns…", "showUnlockVerifiedDialog")
     .addToUi();
 }
 
@@ -74,219 +73,259 @@ function onOpenEbidaLayerMenu() {
 var LOCKED_BG_COLOR        = "#fff9c4";
 var LOCKED_DESC_PREFIX     = "Locked: verified";
 
-// (Lock / Unlock dialog HTML + implementations live further down in their
-// own section labelled "── Lock / Unlock verified columns ──".)
+// ── Lock / Unlock verified columns ───────────────────────────────────────────
+// Once a month's data is reconciled to Zoho P&L + POS, lockVerifiedColumns
+// is used to HARD-protect every date column in [from..to] inclusive so the
+// next merge pass cannot overwrite verified figures. Unlock is the inverse,
+// gated behind a YES/NO confirmation since it's the destructive direction.
 
-// __DUPLICATE_BLOCK_DELETED__: dialog builder + alt show* functions removed.
+var LOCK_DIALOG_CSS = '<style>' +
+  'body{font-family:Google Sans,Arial,sans-serif;padding:20px;margin:0;font-size:13px;color:#202124}' +
+  'h3{margin:0 0 6px;font-size:15px;color:#1a73e8}' +
+  'p{margin:0 0 14px;color:#5f6368;font-size:12px;line-height:1.5}' +
+  'label{display:block;font-weight:600;margin-bottom:4px;font-size:12px}' +
+  'input[type=date],input[type=email]{width:100%;padding:7px 9px;border:1px solid #dadce0;border-radius:4px;font-size:13px;margin-bottom:14px;box-sizing:border-box;outline:none;background:#fff}' +
+  'input[type=date]:focus,input[type=email]:focus{border-color:#1a73e8}' +
+  'button{width:100%;background:#1a73e8;color:#fff;border:none;padding:9px 16px;border-radius:4px;font-size:13px;font-weight:600;cursor:pointer;transition:background 0.15s}' +
+  'button:hover{background:#1557b0}' +
+  'button:disabled{opacity:0.55;cursor:not-allowed}' +
+  'button.danger{background:#c5221f}' +
+  'button.danger:hover{background:#a50e0e}' +
+  '#status{margin-top:12px;padding:8px 10px;border-radius:4px;font-size:12px;display:none;white-space:pre-wrap}' +
+  '.info{background:#e8f0fe;color:#1967d2}' +
+  '.ok{background:#e6f4ea;color:#137333}' +
+  '.warn{background:#fef7e0;color:#b06000}' +
+  '.err{background:#fce8e6;color:#c5221f}' +
+  '.note{font-size:11px;color:#5f6368;margin-top:-10px;margin-bottom:14px;line-height:1.4}' +
+  '</style>';
 
-// Lock: add a RANGE protection covering rows FIRST_DATA_ROW..lastRow on every
-// date column whose header parses to a date in [from..to]. Each locked column
-// gets its own protection so the user can spot-unlock single days later.
-function lockVerifiedColumns(dateFrom, dateTo) {
-  if (!dateFrom || !dateTo) throw new Error("Both From and To dates are required.");
-  if (dateFrom > dateTo) throw new Error("From must be on or before To.");
+var LOCK_DIALOG_HTML = '<!DOCTYPE html><html><head><base target="_top">' + LOCK_DIALOG_CSS + '</head><body>' +
+  '<h3>Lock verified columns</h3>' +
+  '<p>Hard-locks every date column whose header falls within [From, To] inclusive so the next Zoho merge cannot overwrite it. Light-yellow (#fff9c4) background marks locked cells.</p>' +
+  '<label>From</label><input type="date" id="df"/>' +
+  '<label>To</label><input type="date" id="dt"/>' +
+  '<label>Editor email (optional)</label><input type="email" id="ed" placeholder="leave blank for active user"/>' +
+  '<div class="note">Only this email retains edit rights on locked ranges.</div>' +
+  '<button id="btn" onclick="go()">Lock columns</button>' +
+  '<div id="status"></div>' +
+  '<script>' +
+  'function go(){' +
+  '  var df=document.getElementById("df").value,dt=document.getElementById("dt").value,ed=document.getElementById("ed").value;' +
+  '  if(!df||!dt){show("Please select both dates.","err");return;}' +
+  '  document.getElementById("btn").disabled=true;' +
+  '  show("Locking columns…","info");' +
+  '  google.script.run' +
+  '    .withSuccessHandler(function(r){show(r,"ok");document.getElementById("btn").disabled=false;})' +
+  '    .withFailureHandler(function(e){show("Error: "+e.message,"err");document.getElementById("btn").disabled=false;})' +
+  '    .lockVerifiedColumns(df,dt,ed);' +
+  '}' +
+  'function show(msg,cls){var el=document.getElementById("status");el.textContent=msg;el.className=cls;el.style.display="block";}' +
+  '<\/script></body></html>';
+
+var UNLOCK_DIALOG_HTML = '<!DOCTYPE html><html><head><base target="_top">' + LOCK_DIALOG_CSS + '</head><body>' +
+  '<h3>Unlock verified columns</h3>' +
+  '<p>Removes the hard-lock + light-yellow background from every column in [From, To] whose protection description starts with "' + LOCKED_DESC_PREFIX + '". You will be asked to confirm before any change is applied.</p>' +
+  '<label>From</label><input type="date" id="df"/>' +
+  '<label>To</label><input type="date" id="dt"/>' +
+  '<button id="btn" class="danger" onclick="go()">Unlock columns</button>' +
+  '<div id="status"></div>' +
+  '<script>' +
+  'function go(){' +
+  '  var df=document.getElementById("df").value,dt=document.getElementById("dt").value;' +
+  '  if(!df||!dt){show("Please select both dates.","err");return;}' +
+  '  document.getElementById("btn").disabled=true;' +
+  '  show("Unlocking…","info");' +
+  '  google.script.run' +
+  '    .withSuccessHandler(function(r){show(r,"ok");document.getElementById("btn").disabled=false;})' +
+  '    .withFailureHandler(function(e){show("Error: "+e.message,"err");document.getElementById("btn").disabled=false;})' +
+  '    .unlockVerifiedColumns(df,dt);' +
+  '}' +
+  'function show(msg,cls){var el=document.getElementById("status");el.textContent=msg;el.className=cls;el.style.display="block";}' +
+  '<\/script></body></html>';
+
+function showLockVerifiedDialog() {
+  var html = HtmlService.createHtmlOutput(LOCK_DIALOG_HTML).setWidth(380).setHeight(460);
+  SpreadsheetApp.getUi().showModalDialog(html, "Lock verified columns");
+}
+
+function showUnlockVerifiedDialog() {
+  var html = HtmlService.createHtmlOutput(UNLOCK_DIALOG_HTML).setWidth(380).setHeight(380);
+  SpreadsheetApp.getUi().showModalDialog(html, "Unlock verified columns");
+}
+
+// Locks every date column on the Zoho Raw Layer tab whose HEADER_ROW date
+// header parses (via _parseDateHeader, same helper used by the merge) to a
+// date in [fromDateIso, toDateIso] inclusive. Each matched column has its
+// data range (FIRST_DATA_ROW … last row) protected so only `editorEmail`
+// (or the active user) can edit it, and gets a light-yellow (#fff9c4)
+// background as a visual cue. Hard lock — warningOnly = false.
+function lockVerifiedColumns(fromDateIso, toDateIso, editorEmail) {
+  if (!fromDateIso || !toDateIso) throw new Error("From and To dates are required.");
+  if (fromDateIso > toDateIso)    throw new Error("From date must be on or before To date.");
 
   var ss    = SpreadsheetApp.openById(EBIDA_SPREADSHEET_ID);
   var sheet = ss.getSheetByName(EBIDA_TAB);
-  if (!sheet) throw new Error("Tab '" + EBIDA_TAB + "' does not exist yet — pull data first.");
+  if (!sheet) throw new Error("Tab '" + EBIDA_TAB + "' not found.");
+
+  var ownerEmail = (editorEmail && String(editorEmail).trim()) ||
+                   (Session.getActiveUser() && Session.getActiveUser().getEmail()) ||
+                   "";
+  if (!ownerEmail) {
+    try { ownerEmail = ss.getOwner() && ss.getOwner().getEmail(); } catch (_) { /* ignore */ }
+  }
+  if (!ownerEmail) throw new Error("Could not determine an editor email to keep on the locked range.");
 
   var lastRow = sheet.getLastRow();
   var lastCol = sheet.getLastColumn();
-  if (lastRow < FIRST_DATA_ROW) throw new Error("No data rows to lock.");
+  if (lastRow < FIRST_DATA_ROW) throw new Error("Sheet has no data rows yet — nothing to lock.");
+  if (lastCol <= META_COUNT)    throw new Error("Sheet has no date columns yet — nothing to lock.");
 
-  var headerRow = sheet.getRange(HEADER_ROW, 1, 1, lastCol).getValues()[0];
-  var yearHint  = parseInt(dateFrom.slice(0, 4), 10);
+  var headerVals = sheet.getRange(HEADER_ROW, 1, 1, lastCol).getValues()[0];
+  var refreshYear = parseInt(fromDateIso.slice(0, 4), 10);
 
-  var me = Session.getEffectiveUser();
-  var lockedCols = 0;
-  var skippedAlreadyLocked = 0;
-
-  // Index existing lock protections by 1-based column → to avoid re-locking
-  var existing = sheet.getProtections(SpreadsheetApp.ProtectionType.RANGE);
-  var alreadyLockedCols = {};
-  for (var ei = 0; ei < existing.length; ei++) {
-    var p = existing[ei];
-    if (String(p.getDescription() || "").indexOf(LOCKED_DESC_PREFIX) !== 0) continue;
-    var r = p.getRange();
-    if (r.getNumColumns() === 1) alreadyLockedCols[r.getColumn()] = true;
-  }
-
-  for (var c = META_COUNT; c < lastCol; c++) {
-    var iso = _parseDateHeader(headerRow[c], yearHint);
+  var matchedCols = [];   // 1-indexed column numbers
+  var matchedIsos = [];
+  for (var c = META_COUNT; c < headerVals.length; c++) {
+    var iso = _parseDateHeader(headerVals[c], refreshYear);
     if (!iso) continue;
-    if (iso < dateFrom || iso > dateTo) continue;
-    var col1based = c + 1;
-    if (alreadyLockedCols[col1based]) { skippedAlreadyLocked++; continue; }
+    if (iso < fromDateIso || iso > toDateIso) continue;
+    matchedCols.push(c + 1);
+    matchedIsos.push(iso);
+  }
 
-    var range = sheet.getRange(FIRST_DATA_ROW, col1based, lastRow - FIRST_DATA_ROW + 1, 1);
-    var protection = range.protect();
-    protection.setDescription(LOCKED_DESC_PREFIX + " " + iso);
-    // Only the script's effective user can edit the protected cells; everyone
-    // else (including the sheet owner if they're separate) sees the lock.
-    // We still want the script itself to be able to write — script edits do
-    // not go through normal protection checks (the script runs as the script
-    // owner), but the merge logic in _mergeIntoSheet ALSO checks bg color so
-    // protected cells are double-fenced.
-    protection.removeEditors(protection.getEditors());
-    if (protection.canDomainEdit && typeof protection.setDomainEdit === "function") {
-      try { protection.setDomainEdit(false); } catch (_) { /* not in this domain */ }
+  if (matchedCols.length === 0) {
+    return "No date columns found in window " + fromDateIso + " → " + toDateIso + ". Nothing locked.";
+  }
+
+  var numRows = lastRow - FIRST_DATA_ROW + 1;
+  var lockedCount = 0;
+  for (var i = 0; i < matchedCols.length; i++) {
+    var col   = matchedCols[i];
+    var range = sheet.getRange(FIRST_DATA_ROW, col, numRows, 1);
+    var protection = range.protect()
+      .setDescription(LOCKED_DESC_PREFIX + " " + fromDateIso + " → " + toDateIso)
+      .setWarningOnly(false);
+    // removeEditors(everyone except the owner). Apps Script forbids removing
+    // the sheet owner, so we enumerate and remove non-owner editors only.
+    var editors = protection.getEditors();
+    var toRemove = [];
+    for (var ei = 0; ei < editors.length; ei++) {
+      var emailE = editors[ei].getEmail();
+      if (emailE && emailE.toLowerCase() !== ownerEmail.toLowerCase()) {
+        toRemove.push(emailE);
+      }
     }
-    protection.addEditor(me);
-
-    // Visual marker: pastel yellow background so locked cells are obvious.
+    if (toRemove.length > 0) {
+      try { protection.removeEditors(toRemove); } catch (e) { /* owner cannot be removed; ignore */ }
+    }
+    try { protection.addEditor(ownerEmail); } catch (e) { /* already an editor or invalid; ignore */ }
+    if (protection.canDomainEdit && protection.canDomainEdit()) {
+      try { protection.setDomainEdit(false); } catch (e) { /* not a domain doc; ignore */ }
+    }
     range.setBackground(LOCKED_BG_COLOR);
-    lockedCols++;
+    lockedCount++;
   }
+  SpreadsheetApp.flush();
 
-  if (lockedCols === 0 && skippedAlreadyLocked === 0) {
-    return "No date columns in the sheet fall within " + dateFrom + " → " + dateTo + ".";
-  }
-  return "Locked " + lockedCols + " column(s)" +
-    (skippedAlreadyLocked > 0 ? " (" + skippedAlreadyLocked + " already locked, skipped)" : "") +
-    " between " + dateFrom + " and " + dateTo + ".";
+  Logger.log("lockVerifiedColumns: locked " + lockedCount + " column(s) for " +
+             fromDateIso + " → " + toDateIso + " (editor=" + ownerEmail + ")");
+
+  return "✓ Locked " + lockedCount + " column(s) for " + fromDateIso + " → " + toDateIso +
+         "\n   editor: " + ownerEmail +
+         "\n   columns: " + matchedIsos.join(", ");
 }
 
-// Unlock: walk existing RANGE protections whose description starts with
-// LOCKED_DESC_PREFIX and whose date (parsed from desc suffix) lies in
-// [from..to]. Remove protection + clear locked-state background.
-//
-// IMPORTANT (two-step UX): the HTML dialog hits this function directly; the
-// FIRST confirmation alert is invoked here (server-side) via getUi().alert
-// before any destructive work. If the user clicks NO the function returns
-// early with a "Cancelled." message — the dialog displays it as the result.
-function unlockVerifiedColumns(dateFrom, dateTo) {
-  if (!dateFrom || !dateTo) throw new Error("Both From and To dates are required.");
-  if (dateFrom > dateTo) throw new Error("From must be on or before To.");
+// Walks every RANGE protection on the Zoho Raw Layer tab; if the
+// description starts with LOCKED_DESC_PREFIX and the protected range
+// overlaps any column in [from..to], removes the protection and clears
+// the light-yellow background. Confirms via YES/NO before doing anything.
+function unlockVerifiedColumns(fromDateIso, toDateIso) {
+  if (!fromDateIso || !toDateIso) throw new Error("From and To dates are required.");
+  if (fromDateIso > toDateIso)    throw new Error("From date must be on or before To date.");
 
-  var ui = SpreadsheetApp.getUi();
+  var ui   = SpreadsheetApp.getUi();
   var resp = ui.alert(
-    "Edit verified data — confirm",
-    "This will REMOVE the lock so cells become editable again. You can re-lock with " +
-    "'Lock verified columns' after edits.\n\n" +
-    "Range: " + dateFrom + " → " + dateTo + "\n\n" +
-    "Continue?",
+    "Unlock verified columns?",
+    "This will REMOVE the hard-lock on every column in '" + EBIDA_TAB +
+    "' whose protection covers a date in " + fromDateIso + " → " + toDateIso +
+    ".\n\nLocked cells will revert to editable state and lose their light-yellow background. " +
+    "Subsequent Zoho merges will be free to overwrite them.\n\nContinue?",
     ui.ButtonSet.YES_NO);
-  if (resp !== ui.Button.YES) return "Cancelled.";
+  if (resp !== ui.Button.YES) {
+    return "Cancelled — no protections removed.";
+  }
 
   var ss    = SpreadsheetApp.openById(EBIDA_SPREADSHEET_ID);
   var sheet = ss.getSheetByName(EBIDA_TAB);
-  if (!sheet) throw new Error("Tab '" + EBIDA_TAB + "' does not exist.");
+  if (!sheet) throw new Error("Tab '" + EBIDA_TAB + "' not found.");
 
-  var protections = sheet.getProtections(SpreadsheetApp.ProtectionType.RANGE);
-  var removed = 0;
-  for (var i = 0; i < protections.length; i++) {
-    var p = protections[i];
-    var desc = String(p.getDescription() || "");
-    if (desc.indexOf(LOCKED_DESC_PREFIX) !== 0) continue;
-    // Extract ISO date from description suffix "Locked: verified YYYY-MM-DD"
-    var m = /(\d{4}-\d{2}-\d{2})/.exec(desc);
-    if (!m) continue;
-    var iso = m[1];
-    if (iso < dateFrom || iso > dateTo) continue;
-    // Clear the locked-state background BEFORE removing protection so the
-    // clearing write itself isn't blocked.
-    var r = p.getRange();
-    r.setBackground(null);
-    p.remove();
-    removed++;
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < FIRST_DATA_ROW || lastCol <= META_COUNT) {
+    return "Sheet is empty — nothing to unlock.";
   }
 
-  // Follow-up alert as required by the UX spec — runs only after success.
-  ui.alert(
-    "Unlock complete",
-    "Lock removed for " + removed + " column(s). Edit the data, then run " +
-    "'Lock verified columns' again when done.",
-    ui.ButtonSet.OK);
-
-  return "Unlocked " + removed + " column(s) between " + dateFrom + " and " + dateTo + ".";
-}
-
-// Show locked ranges: modeless dialog listing every active RANGE protection
-// on the Zoho Raw Layer tab whose description starts with LOCKED_DESC_PREFIX.
-// Renders as a simple HTML table with the locked background swatch + the
-// extracted date + the column letter for quick visual scanning.
-function showLockedRangesDialog() {
-  var ss    = SpreadsheetApp.openById(EBIDA_SPREADSHEET_ID);
-  var sheet = ss.getSheetByName(EBIDA_TAB);
-  var ui    = SpreadsheetApp.getUi();
-  if (!sheet) {
-    ui.alert("No verified ranges are locked.");
-    return;
+  var headerVals = sheet.getRange(HEADER_ROW, 1, 1, lastCol).getValues()[0];
+  var refreshYear = parseInt(fromDateIso.slice(0, 4), 10);
+  // Map column number (1-indexed) → iso, for columns whose header falls in window
+  var colIso = {};
+  for (var c = META_COUNT; c < headerVals.length; c++) {
+    var iso = _parseDateHeader(headerVals[c], refreshYear);
+    if (!iso) continue;
+    if (iso < fromDateIso || iso > toDateIso) continue;
+    colIso[c + 1] = iso;
   }
 
   var protections = sheet.getProtections(SpreadsheetApp.ProtectionType.RANGE);
-  var locked = [];
-  for (var i = 0; i < protections.length; i++) {
-    var p = protections[i];
-    var desc = String(p.getDescription() || "");
+  var removedCount   = 0;
+  var clearedColsSet = {};
+
+  for (var pi = 0; pi < protections.length; pi++) {
+    var prot = protections[pi];
+    var desc = String(prot.getDescription() || "");
     if (desc.indexOf(LOCKED_DESC_PREFIX) !== 0) continue;
-    var r = p.getRange();
-    var colNum = r.getColumn();
-    var colLetter = _colNumToLetter(colNum);
-    var isoMatch = /(\d{4}-\d{2}-\d{2})/.exec(desc);
-    locked.push({
-      desc:       desc,
-      iso:        isoMatch ? isoMatch[1] : "",
-      colLetter:  colLetter,
-      colNum:     colNum,
-      a1:         r.getA1Notation(),
-    });
-  }
-  if (locked.length === 0) {
-    ui.alert("No verified ranges are locked.");
-    return;
-  }
-  // Stable sort by date ascending (col fallback)
-  locked.sort(function(a, b) {
-    if (a.iso !== b.iso) return a.iso < b.iso ? -1 : 1;
-    return a.colNum - b.colNum;
-  });
-
-  var rowsHtml = "";
-  for (var li = 0; li < locked.length; li++) {
-    var row = locked[li];
-    rowsHtml +=
-      '<tr>' +
-      '<td><span class="swatch"></span></td>' +
-      '<td><strong>' + (row.iso || "(no date)") + '</strong></td>' +
-      '<td>' + row.colLetter + '</td>' +
-      '<td>' + row.a1 + '</td>' +
-      '<td class="desc">' + row.desc + '</td>' +
-      '</tr>';
+    var pr = prot.getRange();
+    var pStartCol = pr.getColumn();
+    var pNumCols  = pr.getNumColumns();
+    var overlaps = false;
+    for (var k = 0; k < pNumCols; k++) {
+      if ((pStartCol + k) in colIso) { overlaps = true; break; }
+    }
+    if (!overlaps) continue;
+    for (var k2 = 0; k2 < pNumCols; k2++) {
+      var colN = pStartCol + k2;
+      if (colN in colIso) clearedColsSet[colN] = true;
+    }
+    prot.remove();
+    removedCount++;
   }
 
-  var html =
-    '<!DOCTYPE html><html><head><base target="_top"><style>' +
-    'body{font-family:Google Sans,Arial,sans-serif;padding:18px;margin:0;font-size:13px;color:#202124}' +
-    'h3{margin:0 0 6px;font-size:15px;color:#1a73e8}' +
-    'p{margin:0 0 12px;color:#5f6368;font-size:12px;line-height:1.4}' +
-    'table{width:100%;border-collapse:collapse;font-size:12px}' +
-    'th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #e8eaed;vertical-align:middle}' +
-    'th{background:#e8f0fe;color:#1967d2;font-weight:600;position:sticky;top:0}' +
-    'tr:hover{background:#f8f9fa}' +
-    '.desc{color:#5f6368;font-size:11px}' +
-    '.swatch{display:inline-block;width:14px;height:14px;border:1px solid #c0c4c9;background:' + LOCKED_BG_COLOR + ';vertical-align:middle;border-radius:2px}' +
-    '.summary{background:#e6f4ea;color:#137333;padding:6px 10px;border-radius:4px;margin-bottom:12px;font-size:12px;font-weight:600}' +
-    '</style></head><body>' +
-    '<h3>Locked ranges — Zoho Raw Layer</h3>' +
-    '<p>Every active RANGE protection on this tab whose description starts with "' + LOCKED_DESC_PREFIX + '". Locked cells are filled with <span class="swatch"></span> ' + LOCKED_BG_COLOR + '.</p>' +
-    '<div class="summary">' + locked.length + ' column(s) locked</div>' +
-    '<table><thead><tr><th></th><th>Date</th><th>Col</th><th>Range</th><th>Description</th></tr></thead>' +
-    '<tbody>' + rowsHtml + '</tbody></table>' +
-    '</body></html>';
-
-  var output = HtmlService.createHtmlOutput(html).setWidth(560).setHeight(440);
-  ui.showModelessDialog(output, "Locked ranges");
-}
-
-function _colNumToLetter(n) {
-  var s = "";
-  while (n > 0) {
-    var r = (n - 1) % 26;
-    s = String.fromCharCode(65 + r) + s;
-    n = Math.floor((n - 1) / 26);
+  // Clear the light-yellow background on every column that was unlocked.
+  var numRows = lastRow - FIRST_DATA_ROW + 1;
+  var clearedCols = Object.keys(clearedColsSet).map(function(s) { return parseInt(s, 10); });
+  clearedCols.sort(function(a, b) { return a - b; });
+  for (var ci = 0; ci < clearedCols.length; ci++) {
+    var rng = sheet.getRange(FIRST_DATA_ROW, clearedCols[ci], numRows, 1);
+    var bgs = rng.getBackgrounds();
+    var changed = false;
+    for (var rr = 0; rr < bgs.length; rr++) {
+      if (String(bgs[rr][0]).toLowerCase() === LOCKED_BG_COLOR) {
+        bgs[rr][0] = "#ffffff";   // reset to white
+        changed = true;
+      }
+    }
+    if (changed) rng.setBackgrounds(bgs);
   }
-  return s;
+  SpreadsheetApp.flush();
+
+  Logger.log("unlockVerifiedColumns: removed " + removedCount + " protection(s); cleared " +
+             clearedCols.length + " column background(s) for " + fromDateIso + " → " + toDateIso);
+
+  if (removedCount === 0) {
+    return "No matching protections found in " + fromDateIso + " → " + toDateIso + ".";
+  }
+  return "✓ Removed " + removedCount + " protection(s) and cleared " + clearedCols.length +
+         " column background(s) for " + fromDateIso + " → " + toDateIso + ".";
 }
 
 var EBIDA_DIALOG_HTML = '<!DOCTYPE html><html><head><base target="_top">' +
@@ -430,8 +469,9 @@ function pullAndWriteEbidaLayer(dateFrom, dateTo, org) {
 function _isProtected(bgColor, fontColor) {
   var bg = String(bgColor || "").toLowerCase();
   var fg = String(fontColor || "").toLowerCase();
-  if (bg === PROTECTED_BG_COLOR) return true;
-  if (fg === PROTECTED_FONT_COLOR) return true;
+  if (bg === PROTECTED_BG_COLOR) return true;   // #ffff00 manual-edit yellow
+  if (bg === LOCKED_BG_COLOR)    return true;   // #fff9c4 verified-data lock
+  if (fg === PROTECTED_FONT_COLOR) return true; // #ff0000 manual-edit red font
   return false;
 }
 
