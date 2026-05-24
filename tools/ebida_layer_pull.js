@@ -43,6 +43,11 @@ var CTRL_FROM_COL    = 2;   // B1: from-date
 var CTRL_TO_COL      = 4;   // D1: to-date
 var CTRL_ORG_COL     = 6;   // F1: org (SPA / Aesthetics)
 var CTRL_STATUS_COL  = 8;   // H1: last pulled / status
+// On-sheet lock/unlock checkbox "buttons" (Option B — wired via installable onEdit)
+var CTRL_LOCK_LABEL_COL    = 9;   // I1: "🔒 Lock data" label
+var CTRL_LOCK_CHECKBOX_COL = 10;  // J1: checkbox — checking triggers lock
+var CTRL_EDIT_LABEL_COL    = 11;  // K1: "🔓 Edit data" label
+var CTRL_EDIT_CHECKBOX_COL = 12;  // L1: checkbox — checking triggers unlock
 
 var BRAND_HEADER_BG = "#134a45";   // dark teal — matches existing "SPA" section row
 var BRAND_HEADER_FG = "#ffffff";
@@ -61,6 +66,8 @@ function onOpenEbidaLayerMenu() {
     .addSeparator()
     .addItem("Lock verified columns…",   "showLockVerifiedDialog")
     .addItem("Unlock verified columns…", "showUnlockVerifiedDialog")
+    .addSeparator()
+    .addItem("Install on-sheet lock buttons (one-time)", "installLockButtonsTrigger")
     .addToUi();
 }
 
@@ -326,6 +333,214 @@ function unlockVerifiedColumns(fromDateIso, toDateIso) {
   }
   return "✓ Removed " + removedCount + " protection(s) and cleared " + clearedCols.length +
          " column background(s) for " + fromDateIso + " → " + toDateIso + ".";
+}
+
+// Silent twin of unlockVerifiedColumns — same logic, but no ui.alert confirm
+// prompt. Used by the on-sheet checkbox trigger (where the act of checking
+// the box IS the user's confirmation, and an installable onEdit cannot
+// reliably open a dialog without raising an authorization scope). Mirrors
+// unlockVerifiedColumns exactly aside from the missing prompt — keep them
+// in sync if you change one.
+function unlockVerifiedColumnsSilent(fromDateIso, toDateIso) {
+  if (!fromDateIso || !toDateIso) throw new Error("From and To dates are required.");
+  if (fromDateIso > toDateIso)    throw new Error("From date must be on or before To date.");
+
+  var ss    = SpreadsheetApp.openById(EBIDA_SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(EBIDA_TAB);
+  if (!sheet) throw new Error("Tab '" + EBIDA_TAB + "' not found.");
+
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < FIRST_DATA_ROW || lastCol <= META_COUNT) {
+    return "Sheet is empty — nothing to unlock.";
+  }
+
+  var headerVals = sheet.getRange(HEADER_ROW, 1, 1, lastCol).getValues()[0];
+  var refreshYear = parseInt(fromDateIso.slice(0, 4), 10);
+  var colIso = {};
+  for (var c = META_COUNT; c < headerVals.length; c++) {
+    var iso = _parseDateHeader(headerVals[c], refreshYear);
+    if (!iso) continue;
+    if (iso < fromDateIso || iso > toDateIso) continue;
+    colIso[c + 1] = iso;
+  }
+
+  var protections = sheet.getProtections(SpreadsheetApp.ProtectionType.RANGE);
+  var removedCount   = 0;
+  var clearedColsSet = {};
+
+  for (var pi = 0; pi < protections.length; pi++) {
+    var prot = protections[pi];
+    var desc = String(prot.getDescription() || "");
+    if (desc.indexOf(LOCKED_DESC_PREFIX) !== 0) continue;
+    var pr = prot.getRange();
+    var pStartCol = pr.getColumn();
+    var pNumCols  = pr.getNumColumns();
+    var overlaps = false;
+    for (var k = 0; k < pNumCols; k++) {
+      if ((pStartCol + k) in colIso) { overlaps = true; break; }
+    }
+    if (!overlaps) continue;
+    for (var k2 = 0; k2 < pNumCols; k2++) {
+      var colN = pStartCol + k2;
+      if (colN in colIso) clearedColsSet[colN] = true;
+    }
+    prot.remove();
+    removedCount++;
+  }
+
+  var numRows = lastRow - FIRST_DATA_ROW + 1;
+  var clearedCols = Object.keys(clearedColsSet).map(function(s) { return parseInt(s, 10); });
+  clearedCols.sort(function(a, b) { return a - b; });
+  for (var ci = 0; ci < clearedCols.length; ci++) {
+    var rng = sheet.getRange(FIRST_DATA_ROW, clearedCols[ci], numRows, 1);
+    var bgs = rng.getBackgrounds();
+    var changed = false;
+    for (var rr = 0; rr < bgs.length; rr++) {
+      if (String(bgs[rr][0]).toLowerCase() === LOCKED_BG_COLOR) {
+        bgs[rr][0] = "#ffffff";
+        changed = true;
+      }
+    }
+    if (changed) rng.setBackgrounds(bgs);
+  }
+  SpreadsheetApp.flush();
+
+  Logger.log("unlockVerifiedColumnsSilent: removed " + removedCount + " protection(s); cleared " +
+             clearedCols.length + " column background(s) for " + fromDateIso + " → " + toDateIso);
+
+  if (removedCount === 0) {
+    return "No matching protections found in " + fromDateIso + " → " + toDateIso + ".";
+  }
+  return "✓ Removed " + removedCount + " protection(s) and cleared " + clearedCols.length +
+         " column background(s) for " + fromDateIso + " → " + toDateIso + ".";
+}
+
+// ── On-sheet lock/unlock checkbox "buttons" ──────────────────────────────────
+// Adds two checkboxes to row 1 of the Zoho Raw Layer tab so the user can
+// lock/unlock the [B1, D1] window without opening a dialog. Wired via an
+// installable onEdit trigger (`onEditLockButtons`) installed by
+// `installLockButtonsTrigger`. The checkbox auto-resets to FALSE after the
+// action runs — it behaves as a button, not a persistent state.
+
+// Idempotent: writes the I1/K1 labels and J1/L1 checkboxes only if I1 is
+// not already populated with the lock label. Safe to call from both
+// `_writeFreshSheet` (brand-new tab) and `pullFromSheetControls` (existing
+// tab gets the buttons retroactively on its next pull).
+function _ensureLockButtonCells(sheet) {
+  if (!sheet) return;
+  try {
+    var existing = String(sheet.getRange(CONTROL_ROW, CTRL_LOCK_LABEL_COL).getValue() || "").trim();
+    if (existing.indexOf("Lock data") !== -1) return;  // already installed
+
+    sheet.getRange(CONTROL_ROW, CTRL_LOCK_LABEL_COL)
+      .setValue("🔒 Lock data")
+      .setBackground(HEADER_BG)
+      .setFontColor(HEADER_FG)
+      .setFontWeight("bold")
+      .setHorizontalAlignment("center");
+
+    var checkboxRule = SpreadsheetApp.newDataValidation().requireCheckbox().build();
+    sheet.getRange(CONTROL_ROW, CTRL_LOCK_CHECKBOX_COL)
+      .setDataValidation(checkboxRule)
+      .setValue(false)
+      .setHorizontalAlignment("center");
+
+    sheet.getRange(CONTROL_ROW, CTRL_EDIT_LABEL_COL)
+      .setValue("🔓 Edit data")
+      .setBackground(HEADER_BG)
+      .setFontColor(HEADER_FG)
+      .setFontWeight("bold")
+      .setHorizontalAlignment("center");
+
+    sheet.getRange(CONTROL_ROW, CTRL_EDIT_CHECKBOX_COL)
+      .setDataValidation(checkboxRule)
+      .setValue(false)
+      .setHorizontalAlignment("center");
+  } catch (e) {
+    Logger.log("_ensureLockButtonCells: " + e.message);
+  }
+}
+
+// Installable onEdit trigger handler. Bails on every edit that isn't on
+// the Zoho Raw Layer tab + row 1 + J1/L1. On a J1 check, runs
+// lockVerifiedColumns over the B1..D1 window. On an L1 check, runs the
+// silent unlock twin. In both cases the checkbox is reset to false so it
+// acts like a momentary button.
+function onEditLockButtons(e) {
+  if (!e || !e.range) return;
+  var sheet;
+  try { sheet = e.range.getSheet(); } catch (_) { return; }
+  if (!sheet || sheet.getName() !== EBIDA_TAB) return;
+  if (e.range.getRow() !== CONTROL_ROW) return;
+
+  var col = e.range.getColumn();
+  if (col !== CTRL_LOCK_CHECKBOX_COL && col !== CTRL_EDIT_CHECKBOX_COL) return;
+
+  var newVal = e.value;
+  // Apps Script delivers e.value as the string "TRUE"/"FALSE" for checkboxes.
+  var isTrue = (newVal === true) || (String(newVal).toUpperCase() === "TRUE");
+  if (!isTrue) return;  // ignore the auto-reset → false echo
+
+  // Reset the checkbox immediately so the user sees it pop back to unchecked.
+  sheet.getRange(CONTROL_ROW, col).setValue(false);
+  SpreadsheetApp.flush();
+
+  var fromVal = sheet.getRange(CONTROL_ROW, CTRL_FROM_COL).getValue();
+  var toVal   = sheet.getRange(CONTROL_ROW, CTRL_TO_COL).getValue();
+  var fromIso = _coerceDateToIso(fromVal);
+  var toIso   = _coerceDateToIso(toVal);
+
+  if (!fromIso || !toIso) {
+    _setStatus("ERR: set From and To dates first (B1 and D1).");
+    return;
+  }
+
+  try {
+    var result;
+    if (col === CTRL_LOCK_CHECKBOX_COL) {
+      result = lockVerifiedColumns(fromIso, toIso, "");
+    } else {
+      result = unlockVerifiedColumnsSilent(fromIso, toIso);
+    }
+    // lock/unlock return multi-line strings — squash to one line for the
+    // status cell (which is single-row, 32px high).
+    _setStatus(String(result).replace(/\s+/g, " ").trim());
+  } catch (err) {
+    _setStatus("ERR: " + (err && err.message ? err.message : err));
+  }
+}
+
+// One-time setup: installs the onEditLockButtons trigger and ensures the
+// I1/J1/K1/L1 cells exist. Run this once per spreadsheet (re-running is
+// safe; it removes the existing trigger before re-installing).
+function installLockButtonsTrigger() {
+  var ui = SpreadsheetApp.getUi();
+  // Remove any prior copy of this trigger so we don't double-fire.
+  var triggers = ScriptApp.getProjectTriggers();
+  var removed = 0;
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === "onEditLockButtons") {
+      ScriptApp.deleteTrigger(triggers[i]);
+      removed++;
+    }
+  }
+  ScriptApp.newTrigger("onEditLockButtons")
+    .forSpreadsheet(EBIDA_SPREADSHEET_ID)
+    .onEdit()
+    .create();
+
+  var ss    = SpreadsheetApp.openById(EBIDA_SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(EBIDA_TAB);
+  if (sheet) {
+    _ensureLockButtonCells(sheet);
+  }
+
+  ui.alert(
+    "On-sheet lock buttons installed",
+    "On-sheet lock buttons are now active. Set From and To dates in B1/D1, then check J1 to lock or L1 to unlock.\n\n" +
+    (removed > 0 ? "(Replaced " + removed + " existing trigger" + (removed === 1 ? "" : "s") + ".)" : ""),
+    ui.ButtonSet.OK);
 }
 
 var EBIDA_DIALOG_HTML = '<!DOCTYPE html><html><head><base target="_top">' +
@@ -709,6 +924,9 @@ function pullFromSheetControls() {
       "(or run runTestPullJan1to7) — that creates the tab with the control row.");
     return;
   }
+  // Ensure the on-sheet lock buttons exist on the next pull so older tabs
+  // (which pre-date the I1/J1/K1/L1 cells) get them retroactively.
+  _ensureLockButtonCells(sheet);
   var fromVal = sheet.getRange(CONTROL_ROW, CTRL_FROM_COL).getValue();
   var toVal   = sheet.getRange(CONTROL_ROW, CTRL_TO_COL).getValue();
   var orgVal  = sheet.getRange(CONTROL_ROW, CTRL_ORG_COL).getValue();
@@ -1177,6 +1395,9 @@ function _writeFreshSheet(sheet, accRows, allDates, refreshFrom, refreshTo, org)
   sheet.setColumnWidth(4, 140);
   sheet.setColumnWidth(5, 140);
   sheet.setColumnWidth(6, 110);
+
+  // Add the on-sheet lock/unlock checkbox buttons (I1/J1/K1/L1)
+  _ensureLockButtonCells(sheet);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
