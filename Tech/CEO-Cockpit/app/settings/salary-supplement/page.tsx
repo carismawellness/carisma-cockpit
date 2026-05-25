@@ -39,12 +39,12 @@ const SPA_LABEL: Record<string, string> = Object.fromEntries(
   SPA_OPTIONS.map((s) => [s.slug, s.label])
 );
 
-// Generate list of months from Oct 2025 to current month + 2 ahead
+// Generate list of months from Jan 2025 to current month + 2 ahead
 function availableMonths(): { value: string; label: string }[] {
   const months = [];
   const now = new Date();
   const end = new Date(now.getFullYear(), now.getMonth() + 2, 1);
-  const start = new Date(2025, 9, 1); // Oct 2025
+  const start = new Date(2025, 0, 1); // Jan 2025
   const d = new Date(start);
   while (d <= end) {
     const y = d.getFullYear();
