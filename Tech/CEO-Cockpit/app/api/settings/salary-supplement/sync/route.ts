@@ -38,17 +38,19 @@ function spaNameToSlug(raw: string): string | null | undefined {
 }
 
 // Build the Google Sheet tab name for a given month
-// Pattern: "Mar 26 (C)", "Feb 26 (C)", "April 25 (C)", "July 25 (C)"
+// 2025 tabs use the full month name ("January 25 (C)"); 2026+ tabs use the
+// abbreviation ("Mar 26 (C)"). gviz silently returns a wrong tab when the
+// name doesn't match exactly, so order matters per year.
 function tabNamesForMonth(year: number, month: number): string[] {
   const abbrevs = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const fulls   = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   const yy = String(year).slice(2);
   const abbr = abbrevs[month - 1];
   const full = fulls[month - 1];
-  return [
-    `${abbr} ${yy} (C)`,
-    `${full} ${yy} (C)`,
-  ];
+  if (year <= 2025) {
+    return [`${full} ${yy} (C)`, `${abbr} ${yy} (C)`];
+  }
+  return [`${abbr} ${yy} (C)`, `${full} ${yy} (C)`];
 }
 
 async function fetchSheetCsv(tabName: string): Promise<string | null> {
@@ -97,38 +99,44 @@ export async function POST(req: NextRequest) {
   const [year, mo] = month.split("-").map(Number);
   const tabNames = tabNamesForMonth(year, mo);
 
-  let csv: string | null = null;
-  let usedTab = "";
-  for (const tab of tabNames) {
-    csv = await fetchSheetCsv(tab);
-    if (csv) { usedTab = tab; break; }
-  }
-
-  if (!csv) {
-    return NextResponse.json(
-      { error: `No sheet tab found for ${month}. Tried: ${tabNames.join(", ")}` },
-      { status: 404 }
-    );
-  }
-
-  const lines = csv.split("\n").filter(Boolean);
-  // Find the header row — locate "Active employee" in cols 2-6 and record its exact index
-  // so data rows use the same column (sheet may have Cash/Gross or other columns before it).
+  // Try each candidate tab name. gviz silently returns the wrong tab on a name
+  // miss, so we treat "no Active employee header" as a miss and try the next.
+  let lines: string[] = [];
   let dataStartIdx = -1;
-  let statusCol = 3; // fallback; overwritten when header is found
-  for (let i = 0; i < Math.min(lines.length, 30); i++) {
-    const cols = parseCsvLine(lines[i]);
-    const idx = cols.findIndex((c, ci) => ci >= 2 && ci <= 6 && c?.trim().toLowerCase() === "active employee");
-    if (idx !== -1) { dataStartIdx = i + 1; statusCol = idx; break; }
+  let statusCol = 3;
+  let usedTab = "";
+  const triedPreviews: string[] = [];
+
+  for (const tab of tabNames) {
+    const csv = await fetchSheetCsv(tab);
+    if (!csv) continue;
+    const candidateLines = csv.split("\n").filter(Boolean);
+    for (let i = 0; i < Math.min(candidateLines.length, 30); i++) {
+      const cols = parseCsvLine(candidateLines[i]);
+      const idx = cols.findIndex((c, ci) => ci >= 2 && ci <= 6 && c?.trim().toLowerCase() === "active employee");
+      if (idx !== -1) {
+        dataStartIdx = i + 1;
+        statusCol = idx;
+        lines = candidateLines;
+        usedTab = tab;
+        break;
+      }
+    }
+    if (dataStartIdx !== -1) break;
+    triedPreviews.push(`[${tab}] row0: ${candidateLines[0]?.slice(0, 80) ?? "(empty)"}`);
   }
+
   if (dataStartIdx === -1) {
-    // Return first 5 rows to help diagnose the sheet layout
-    const preview = lines.slice(0, 5).map((l, i) => `row${i}: ${l.slice(0, 120)}`).join(" | ");
     return NextResponse.json(
-      { error: `Could not locate employee header row in sheet (tab: ${usedTab}). Preview: ${preview}` },
+      { error: `Could not locate employee header row. Tried tabs: ${triedPreviews.join(" | ")}` },
       { status: 422 }
     );
   }
+
+  // Amount column varies by sheet layout:
+  //  - 2025 tabs: status at col D (3), cash at col X (23)
+  //  - 2026 tabs: status at col E (4), cash at col AC (28)
+  const amountCol = statusCol === 3 ? 23 : 28;
 
   const employees: {
     employee_name: string;
@@ -146,7 +154,7 @@ export async function POST(req: NextRequest) {
     const name   = cols[1]?.trim() ?? "";            // B
     const spaRaw = cols[2]?.trim() ?? "";            // C — location
     const status = cols[statusCol]?.trim() ?? "";    // Active employee (dynamic col)
-    const amtRaw = cols[28]?.trim() ?? "";           // AC — cash salary
+    const amtRaw = cols[amountCol]?.trim() ?? "";    // 2025: X(23), 2026: AC(28)
 
     if (!name || status.toLowerCase() !== "active") continue;
 
