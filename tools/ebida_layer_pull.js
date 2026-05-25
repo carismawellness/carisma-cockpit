@@ -627,7 +627,12 @@ function pullAndWriteEbidaLayer(dateFrom, dateTo, org) {
       var row = chunkResult.rows[r];
       var allocation = row.tag_source === "tagged" ? "tag" : (row.split_rule || "split");
       var contact    = String(row.contact || "");
-      var key = row.brand + "|" + (row.account_code || row.account_name) + "|" + row.venue_slug + "|" + contact + "|" + allocation;
+      // Normalize account_code so the key matches existing sheet rows whose
+      // codes were stripped of leading zeros by Google Sheets. Without this
+      // the merge would append duplicate rows on every pull. See
+      // _normalizeAccountCode for rationale.
+      var keyAccCode = _normalizeAccountCode(row.account_code) || row.account_name;
+      var key = row.brand + "|" + keyAccCode + "|" + row.venue_slug + "|" + contact + "|" + allocation;
       if (!accRows[key]) {
         accRows[key] = {
           brand:           row.brand,
@@ -681,6 +686,26 @@ function pullAndWriteEbidaLayer(dateFrom, dateTo, org) {
 // Returns true if a cell should be treated as a manual edit and skipped
 // during overwrite. Two protection signals: yellow background OR red font.
 // Either alone is sufficient — user uses both as ad-hoc edit markers.
+// Normalizes an account_code so leading-zero variants ("000003" vs "3", "" vs
+// "000") resolve to the same row key. Without this, every pull's
+// `_mergeIntoSheet` failed to match existing rows (where Google Sheets had
+// auto-stripped the leading zeros on write) against the parser's preserved
+// string codes, silently APPENDING duplicate rows on every backfill. The
+// SPA "Dividends from Investments" account accumulated 163 rows over many
+// pulls before this normalization landed.
+//
+// Convention: digits-only codes lose leading zeros; "000" → "0" (not ""); a
+// non-digit code passes through unchanged (preserves LAPIS_REV, SALREF, etc).
+function _normalizeAccountCode(raw) {
+  var s = String(raw == null ? "" : raw).trim();
+  if (s === "") return "";
+  if (/^\d+$/.test(s)) {
+    var stripped = s.replace(/^0+/, "");
+    return stripped === "" ? "0" : stripped;
+  }
+  return s;
+}
+
 function _isProtected(bgColor, fontColor) {
   var bg = String(bgColor || "").toLowerCase();
   var fg = String(fontColor || "").toLowerCase();
@@ -741,6 +766,22 @@ function doGet(e) {
     try {
       var exportResult = exportSheetMonthlyTotals(p.org, p.month);
       return ContentService.createTextOutput(JSON.stringify(exportResult))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService.createTextOutput(JSON.stringify({
+        error: (err && err.message ? err.message : String(err))
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
+  // Diagnostic: dump every row matching a brand + account_code substring, with
+  // per-date values, so we can see if multiple sheet rows aggregate to the
+  // same account_code (a clue for duplicate-key bugs in the merge).
+  //   <web-app-url>/exec?token=<TOKEN>&action=dump&org=SPA&code=3&month=2025-01
+  if (p.action === "dump") {
+    try {
+      var dumpResult = dumpSheetRows(p.org, p.code, p.month);
+      return ContentService.createTextOutput(JSON.stringify(dumpResult))
         .setMimeType(ContentService.MimeType.JSON);
     } catch (err) {
       return ContentService.createTextOutput(JSON.stringify({
@@ -870,6 +911,89 @@ function exportSheetMonthlyTotals(org, ym) {
     total_rows_read:  rowsRead,
     total_data_cells: dataCells,
   };
+}
+
+// Diagnostic: returns every sheet row that matches a brand + account_code
+// (exact-match or "stripped leading zeros" match), with per-date values
+// for a given YYYY-MM. Used to investigate suspected duplicate-key rows.
+//
+// URL form:
+//   <web-app-url>/exec?token=<TOKEN>&action=dump&org=SPA&code=3&month=2025-01
+function dumpSheetRows(org, code, ym) {
+  if (!org)  throw new Error("org param required (SPA or Aesthetics).");
+  if (!code && code !== "0" && code !== "") throw new Error("code param required (account_code to match).");
+  if (!ym || !/^\d{4}-\d{2}$/.test(ym)) {
+    throw new Error("month param required in YYYY-MM format.");
+  }
+
+  var orgLower = String(org).trim().toLowerCase();
+  // Normalize the search code: if numeric, also match leading-zero variants.
+  var searchCode = String(code).trim();
+  var stripped   = /^\d+$/.test(searchCode) ? searchCode.replace(/^0+/, "") : searchCode;
+  if (stripped === "" && /^\d+$/.test(searchCode)) stripped = "0";
+
+  var year     = parseInt(ym.slice(0, 4), 10);
+  var monthOne = parseInt(ym.slice(5, 7), 10);
+  var lastDay  = new Date(year, monthOne, 0).getDate();
+  var fromIso  = ym + "-01";
+  var toIso    = ym + "-" + String(lastDay).padStart(2, "0");
+
+  var ss    = SpreadsheetApp.openById(EBIDA_SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(EBIDA_TAB);
+  if (!sheet) throw new Error("Tab '" + EBIDA_TAB + "' not found.");
+
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  var values     = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  var headerVals = values[HEADER_ROW - 1];
+
+  var monthCols = []; // [{c, iso}]
+  for (var c = META_COUNT; c < lastCol; c++) {
+    var iso = _parseDateHeader(headerVals[c], year);
+    if (!iso) continue;
+    if (iso < fromIso || iso > toIso) continue;
+    monthCols.push({ c: c, iso: iso });
+  }
+
+  var rows = [];
+  for (var r = FIRST_DATA_ROW - 1; r < values.length; r++) {
+    var row   = values[r];
+    var brand = String(row[0] || "").trim();
+    if (!brand) continue;
+    if (brand.toLowerCase() !== orgLower) continue;
+
+    var rowCode = String(row[2] || "").trim();
+    var rowCodeStripped = /^\d+$/.test(rowCode) ? rowCode.replace(/^0+/, "") : rowCode;
+    if (rowCodeStripped === "" && /^\d+$/.test(rowCode)) rowCodeStripped = "0";
+    if (rowCode !== searchCode && rowCodeStripped !== stripped) continue;
+
+    var lineItem = String(row[1] || "").trim();
+    var venue    = String(row[4] || "").trim();
+    var contact  = String(row[5] || "").trim();
+    var alloc    = String(row[6] || "").trim();
+    var daily    = {};
+    var total    = 0;
+    for (var mi = 0; mi < monthCols.length; mi++) {
+      var v = row[monthCols[mi].c];
+      if (v === "" || v == null) continue;
+      var n = (typeof v === "number") ? v : parseFloat(v);
+      if (!isFinite(n) || n === 0) continue;
+      daily[monthCols[mi].iso] = n;
+      total += n;
+    }
+    rows.push({
+      sheet_row: r + 1,        // 1-indexed for human readability
+      brand: brand,
+      line_item: lineItem,
+      account_code: rowCode,
+      venue: venue,
+      contact: contact,
+      allocation: alloc,
+      total: total,
+      daily: daily,
+    });
+  }
+  return { org: org, code: code, ym: ym, matched_rows: rows.length, rows: rows };
 }
 
 // DEV-ONLY one-click reset: clears the existing Zoho Raw Layer tab content
@@ -1025,6 +1149,14 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo, org) {
   var ss    = SpreadsheetApp.openById(EBIDA_SPREADSHEET_ID);
   var sheet = ss.getSheetByName(EBIDA_TAB) || ss.insertSheet(EBIDA_TAB);
   var stats = { appended: 0, updated: 0, protected: 0 };
+  // Ensure column C (account_code) is text-formatted across all existing
+  // rows. Idempotent — Sheets accepts the format reapplication cheaply.
+  // Without this, cells written before the fix may still hold numeric
+  // values (e.g., the integer 3) and re-pulls won't normalize them.
+  var lastRowSoFar = sheet.getLastRow();
+  if (lastRowSoFar >= FIRST_DATA_ROW) {
+    sheet.getRange(FIRST_DATA_ROW, 3, lastRowSoFar - FIRST_DATA_ROW + 1, 1).setNumberFormat("@");
+  }
 
   // Empty / brand-new sheet OR no header at HEADER_ROW → write fresh (control row + header + data)
   if (sheet.getLastRow() < HEADER_ROW || String(sheet.getRange(HEADER_ROW, 1).getValue()).trim() !== "Brand") {
@@ -1185,7 +1317,14 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo, org) {
     if (allDates[i] >= refreshFrom && allDates[i] <= refreshTo) refreshDates[allDates[i]] = true;
   }
 
-  // Index existing rows by identity (start from first data row; skip section + blank rows)
+  // Index existing rows by identity (start from first data row; skip section + blank rows).
+  // existingRowKey: key → array of row indices. We use an array because the
+  // sheet may contain MULTIPLE rows that resolve to the same normalized key
+  // (legacy duplication from the leading-zero key-mismatch bug). On a key
+  // hit we update the FIRST row and clear the rest in the refresh window so
+  // the export aggregates correctly. The "primary" row is the lowest index;
+  // all extras get their refresh-window cells cleared like any other
+  // out-of-pull row.
   var existingRowKey = {};
   for (var r = HEADER_ROW; r < values.length; r++) {
     var brand     = String(values[r][0]).trim();
@@ -1198,18 +1337,28 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo, org) {
     if (!brand) continue;
     if (brand && !lineItem && !accCode && !ebitdaCat && !venue) continue;
     var venueSlug = _venueToSlug(venue);
-    var key = brand + "|" + (accCode || lineItem) + "|" + venueSlug + "|" + contact + "|" + alloc;
-    existingRowKey[key] = r;
+    // Normalize the existing row's account_code so it matches the new pull's
+    // normalized key — see _normalizeAccountCode. Without this, sheet rows
+    // whose code was stripped to "3" wouldn't match the parser's "000003"
+    // and we'd keep appending duplicates instead of updating.
+    var keyAccCode = _normalizeAccountCode(accCode) || lineItem;
+    var key = brand + "|" + keyAccCode + "|" + venueSlug + "|" + contact + "|" + alloc;
+    if (!existingRowKey[key]) existingRowKey[key] = [];
+    existingRowKey[key].push(r);
   }
 
   // ── DIAGNOSTIC LOGGING ──────────────────────────────────────────────────
   Logger.log("=== MERGE DEBUG ===");
   Logger.log("Pull window: " + refreshFrom + " → " + refreshTo + " (org=" + org + ")");
   Logger.log("");
-  Logger.log("Existing row keys in sheet (" + Object.keys(existingRowKey).length + "):");
+  Logger.log("Existing row keys in sheet (" + Object.keys(existingRowKey).length + " unique, " +
+             Object.keys(existingRowKey).reduce(function(s, k){ return s + existingRowKey[k].length; }, 0) +
+             " rows):");
   var existKeysSorted = Object.keys(existingRowKey).sort();
   for (var ei = 0; ei < existKeysSorted.length; ei++) {
-    Logger.log("  EXIST  row " + (existingRowKey[existKeysSorted[ei]] + 1) + "  key=[" + existKeysSorted[ei] + "]");
+    var rowList = existingRowKey[existKeysSorted[ei]].map(function(r){ return r + 1; }).join(",");
+    var dupTag  = existingRowKey[existKeysSorted[ei]].length > 1 ? " ⚠DUP" : "";
+    Logger.log("  EXIST  rows " + rowList + dupTag + "  key=[" + existKeysSorted[ei] + "]");
   }
   Logger.log("");
   Logger.log("New pull keys (" + Object.keys(accRows).length + "):");
@@ -1220,21 +1369,38 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo, org) {
   }
   Logger.log("=== END DEBUG ===");
 
-  // Apply per-row updates
+  // Apply per-row updates. When duplicate rows share a key (legacy
+  // leading-zero bug), update the FIRST row with new values and CLEAR the
+  // extras' refresh-window cells so the export aggregates correctly.
   for (var key in accRows) {
     var newRow = accRows[key];
-    var existingIdx = existingRowKey[key];
-    if (existingIdx == null) continue;  // handled in append pass below
+    var existingIdxList = existingRowKey[key];
+    if (!existingIdxList || existingIdxList.length === 0) continue;
+    var primaryIdx = existingIdxList[0];
     for (var iso in refreshDates) {
       var colIdx = dateToCol[iso];
       if (colIdx == null) continue;
-      if (_isProtected(backgrounds[existingIdx][colIdx], fontColors[existingIdx][colIdx])) {
+      // Primary row: write the new value (unless protected).
+      if (_isProtected(backgrounds[primaryIdx][colIdx], fontColors[primaryIdx][colIdx])) {
         stats.protected++;
-        continue;
+      } else {
+        var newVal = newRow.daily[iso];
+        sheet.getRange(primaryIdx + 1, colIdx + 1).setValue(newVal != null ? newVal : "");
+        stats.updated++;
       }
-      var newVal = newRow.daily[iso];
-      sheet.getRange(existingIdx + 1, colIdx + 1).setValue(newVal != null ? newVal : "");
-      stats.updated++;
+      // Duplicate rows under the same normalized key: clear their cells in
+      // the refresh window so they don't double-count in the export.
+      for (var di = 1; di < existingIdxList.length; di++) {
+        var dupIdx = existingIdxList[di];
+        if (_isProtected(backgrounds[dupIdx][colIdx], fontColors[dupIdx][colIdx])) {
+          stats.protected++;
+          continue;
+        }
+        var existing = values[dupIdx][colIdx];
+        if (existing === "" || existing == null) continue;
+        sheet.getRange(dupIdx + 1, colIdx + 1).setValue("");
+        stats.updated++;
+      }
     }
   }
 
@@ -1253,18 +1419,23 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo, org) {
     if (key in accRows) continue;
     var keyBrand = key.split("|", 1)[0].toLowerCase();
     if (keyBrand !== orgKeyPrefix) continue;  // never clear rows from another org
-    var rowIdx = existingRowKey[key];
-    for (var iso in refreshDates) {
-      var colIdx = dateToCol[iso];
-      if (colIdx == null) continue;
-      var v = values[rowIdx][colIdx];
-      if (v === "" || v == null) continue;
-      if (_isProtected(backgrounds[rowIdx][colIdx], fontColors[rowIdx][colIdx])) {
-        stats.protected++;
-        continue;
+    // Clear ALL row indices that resolve to this key (handles legacy
+    // duplicates from the leading-zero bug).
+    var idxList = existingRowKey[key];
+    for (var li = 0; li < idxList.length; li++) {
+      var rowIdx = idxList[li];
+      for (var iso in refreshDates) {
+        var colIdx = dateToCol[iso];
+        if (colIdx == null) continue;
+        var v = values[rowIdx][colIdx];
+        if (v === "" || v == null) continue;
+        if (_isProtected(backgrounds[rowIdx][colIdx], fontColors[rowIdx][colIdx])) {
+          stats.protected++;
+          continue;
+        }
+        sheet.getRange(rowIdx + 1, colIdx + 1).setValue("");
+        stats.updated++;
       }
-      sheet.getRange(rowIdx + 1, colIdx + 1).setValue("");
-      stats.updated++;
     }
   }
 
@@ -1281,7 +1452,11 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo, org) {
       var rowData = new Array(header.length).fill("");
       rowData[0] = newRow.brand;
       rowData[1] = newRow.line_item;
-      rowData[2] = newRow.account_code;
+      // Note: account_code is written as a plain string; the setNumberFormat("@")
+      // call below the loop forces text storage in column C so leading zeros
+      // (e.g. "000003") survive. Without that format, Sheets would auto-convert
+      // and the merge would fail to match existing rows on subsequent pulls.
+      rowData[2] = newRow.account_code || "";
       rowData[3] = newRow.ebitda_category;
       rowData[venueIdx] = newRow.venue;
       rowData[CONTACT_COL_IDX] = newRow.contact || "";
@@ -1293,6 +1468,9 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo, org) {
       rowsToAppend.push(rowData);
     }
     var startRow = sheet.getLastRow() + 1;
+    // Force column C (account_code) to text format before writing so future
+    // edits to those cells also preserve leading zeros.
+    sheet.getRange(startRow, 3, rowsToAppend.length, 1).setNumberFormat("@");
     sheet.getRange(startRow, 1, rowsToAppend.length, header.length).setValues(rowsToAppend);
     if (header.length > META_COUNT) {
       sheet.getRange(startRow, META_COUNT + 1, rowsToAppend.length, header.length - META_COUNT)
@@ -1334,7 +1512,10 @@ function _writeFreshSheet(sheet, accRows, allDates, refreshFrom, refreshTo, org)
     var dataRow = new Array(totalCols).fill("");
     dataRow[0] = r.brand;
     dataRow[1] = r.line_item;
-    dataRow[2] = r.account_code;
+    // Plain string — the setNumberFormat("@") on column C (applied before the
+    // setValues call below) forces Sheets to store the value as text so
+    // leading zeros survive. Critical for row-key matching across pulls.
+    dataRow[2] = r.account_code || "";
     dataRow[3] = r.ebitda_category;
     dataRow[4] = r.venue;
     dataRow[CONTACT_COL_IDX] = r.contact || "";
@@ -1373,6 +1554,13 @@ function _writeFreshSheet(sheet, accRows, allDates, refreshFrom, refreshTo, org)
   // "Jan-1 2025" → Date object (which then defeats dup-column detection).
   if (allDates.length > 0) {
     sheet.getRange(HEADER_ROW, META_COUNT + 1, 1, allDates.length).setNumberFormat("@");
+  }
+  // Also force text format on column C (account_code) — without this, Sheets
+  // auto-strips leading zeros from codes like "000003" and the merge then
+  // can't match existing rows on subsequent pulls. The single-quote prefix
+  // we apply per-cell is a belt-and-suspenders fallback; this is the belt.
+  if (data.length > 0) {
+    sheet.getRange(HEADER_ROW, 3, data.length, 1).setNumberFormat("@");
   }
   sheet.getRange(HEADER_ROW, 1, data.length, totalCols).setValues(data);
   sheet.getRange(HEADER_ROW, 1, 1, totalCols).setBackground(HEADER_BG).setFontColor(HEADER_FG).setFontWeight("bold");
