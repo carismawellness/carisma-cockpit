@@ -1710,14 +1710,12 @@ function exportAggregatedDataForPeriod(org, fromIso, toIso) {
     var alloc   = String(row[ALLOC_COL_IDX]   || "").trim();
 
     var daily = {};
-    var anyValue = false;
     for (var mi = 0; mi < matchedCols.length; mi++) {
       var v = row[matchedCols[mi].col];
       if (v === "" || v == null) continue;
       var n = (typeof v === "number") ? v : parseFloat(v);
       if (!isFinite(n) || n === 0) continue;
       daily[matchedCols[mi].iso] = n;
-      anyValue = true;
     }
     // Always include rows even if they have no values in window — the
     // Cockpit route uses fallback rules to fill them in for partial periods.
@@ -1731,8 +1729,6 @@ function exportAggregatedDataForPeriod(org, fromIso, toIso) {
       allocation:      alloc,
       daily:           daily,
     });
-    // Silence unused-var lint
-    if (anyValue && false) { /* no-op */ }
   }
 
   return {
