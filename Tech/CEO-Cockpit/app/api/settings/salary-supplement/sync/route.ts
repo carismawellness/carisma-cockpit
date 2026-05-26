@@ -133,11 +133,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Amount column varies by sheet era. "Cash or gross" column was inserted at
-  // col D mid-2025, shifting Active employee from D→E. Sep-Dec 2025 sheets are
-  // transitional — cash sits at col W (22). 2026+ sheets stabilized cash at col
-  // AC (28). No reliable "Cash" header label exists in row 7 of any era.
+  // Amount column detection. Prefer a column whose header is exactly "Cash" —
+  // this makes the parser layout-independent so the user can shield against
+  // future column shifts by labeling the right column "Cash" in any sheet.
+  // Fall back to per-era hardcoded positions for legacy sheets that don't
+  // have the label yet.
+  const headerCols = parseCsvLine(lines[dataStartIdx - 1]);
+  const labelIdx = headerCols.findIndex(c => c?.trim().toLowerCase() === "cash");
   const amountCol =
+    labelIdx !== -1 ? labelIdx :                    // Header literally says "Cash"
     statusCol === 3 ? 23 :                          // Jan-Aug 2025: col X
     statusCol === 4 && year === 2025 ? 22 :         // Sep-Dec 2025: col W
     28;                                              // 2026+: col AC
