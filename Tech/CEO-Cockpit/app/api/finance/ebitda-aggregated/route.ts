@@ -82,6 +82,25 @@ interface FallbackApplied {
   method_detail: string;
 }
 
+// One row in the detailed breakdown — every account that contributed to a
+// brand × category total, with the literal Zoho sum and the post-fallback
+// period value. Consumed by the export tab to render an audit trail.
+interface LineItem {
+  brand:           Brand;          // post-HQ-venue override
+  zoho_org:        ZohoOrg;        // source spreadsheet (spa | aesthetics)
+  account_code:    string;
+  account_name:    string;
+  ebitda_category: string;
+  venue:           string;
+  contact:         string;
+  allocation:      string;
+  literal_sum:     number;
+  period_value:    number;          // value used in totals (after fallback)
+  used_fallback:   boolean;
+  rule_type:       RuleType | null;
+  method_detail:   string | null;
+}
+
 export interface EbitdaAggregatedResponse {
   date_from:        string;
   date_to:          string;
@@ -95,6 +114,8 @@ export interface EbitdaAggregatedResponse {
   // single row if they want a dept-level view.
   venue_totals:     Record<Brand, Record<string, Record<string, CellTotal>>>;
   fallback_applied: FallbackApplied[];
+  // Full per-account detail — every row that flowed into totals.
+  line_items:       LineItem[];
   warnings:         string[];
 }
 
@@ -440,6 +461,9 @@ export async function GET(req: NextRequest) {
     SPA: {}, AES: {}, SLIM: {}, HQ: {},
   };
   const fallbackApplied: FallbackApplied[] = [];
+  // Audit-trail: every row that fed into totals. Used to render the
+  // "Detailed Line Items" section of the EBITDA Export tab.
+  const lineItems: LineItem[] = [];
   const seenCategories = new Set<string>();
   const seenBrands = new Set<Brand>();
 
@@ -494,6 +518,8 @@ export async function GET(req: NextRequest) {
 
       let periodValue = literalSum;
       let usedFallback = false;
+      let appliedRuleType: RuleType | null = null;
+      let appliedMethodDetail: string | null = null;
 
       // Fallback rules only apply on partial periods. On a full
       // calendar-months range, the literal sum is the ground truth and we
@@ -504,13 +530,15 @@ export async function GET(req: NextRequest) {
           if (typeof annual === "number" && Number.isFinite(annual)) {
             periodValue = annual * (daysInPeriod / 365);
             usedFallback = true;
+            appliedRuleType = "manual_annual";
+            appliedMethodDetail = `Manual annual €${annual.toFixed(2)} × ${daysInPeriod}/365`;
             fallbackApplied.push({
               brand,
               account_code:  row.account_code,
               account_name:  row.line_item,
               rule_type:     "manual_annual",
               period_value:  periodValue,
-              method_detail: `Manual annual €${annual.toFixed(2)} × ${daysInPeriod}/365`,
+              method_detail: appliedMethodDetail,
             });
           } else {
             // Rule says manual_annual but no amount — keep literal, flag warning.
@@ -530,15 +558,17 @@ export async function GET(req: NextRequest) {
                 : 0;
               periodValue = annualEstimate * (daysInPeriod / 365);
               usedFallback = true;
+              appliedRuleType = "ttm_spread";
+              appliedMethodDetail =
+                `TTM €${total.toFixed(2)} over ${monthsTouched} mo` +
+                ` → annualized €${annualEstimate.toFixed(2)} × ${daysInPeriod}/365`;
               fallbackApplied.push({
                 brand,
                 account_code:  row.account_code,
                 account_name:  row.line_item,
                 rule_type:     "ttm_spread",
                 period_value:  periodValue,
-                method_detail:
-                  `TTM €${total.toFixed(2)} over ${monthsTouched} mo` +
-                  ` → annualized €${annualEstimate.toFixed(2)} × ${daysInPeriod}/365`,
+                method_detail: appliedMethodDetail,
               });
             }
             // No TTM history for this row key → keep literal, no fallback flag.
@@ -553,15 +583,17 @@ export async function GET(req: NextRequest) {
               const pmSum = sumDailyInRange(ttmDaily, pm.from, pm.to);
               periodValue = pmSum * (daysInPeriod / pm.days);
               usedFallback = true;
+              appliedRuleType = "previous_month";
+              appliedMethodDetail =
+                `Prev-month (${pm.from}…${pm.to}) €${pmSum.toFixed(2)}` +
+                ` × ${daysInPeriod}/${pm.days}`;
               fallbackApplied.push({
                 brand,
                 account_code:  row.account_code,
                 account_name:  row.line_item,
                 rule_type:     "previous_month",
                 period_value:  periodValue,
-                method_detail:
-                  `Prev-month (${pm.from}…${pm.to}) €${pmSum.toFixed(2)}` +
-                  ` × ${daysInPeriod}/${pm.days}`,
+                method_detail: appliedMethodDetail,
               });
             }
           }
@@ -576,15 +608,17 @@ export async function GET(req: NextRequest) {
               // day count of those 3 months (88-92) so leap months don't bias.
               periodValue = qSum / q.days * daysInPeriod;
               usedFallback = true;
+              appliedRuleType = "quarterly_average";
+              appliedMethodDetail =
+                `Last 3 mo (${q.from}…${q.to}) €${qSum.toFixed(2)}` +
+                ` / ${q.days} × ${daysInPeriod}`;
               fallbackApplied.push({
                 brand,
                 account_code:  row.account_code,
                 account_name:  row.line_item,
                 rule_type:     "quarterly_average",
                 period_value:  periodValue,
-                method_detail:
-                  `Last 3 mo (${q.from}…${q.to}) €${qSum.toFixed(2)}` +
-                  ` / ${q.days} × ${daysInPeriod}`,
+                method_detail: appliedMethodDetail,
               });
             }
           }
@@ -623,6 +657,27 @@ export async function GET(req: NextRequest) {
       }
       venueBucket[category] = venueCell;
       venueTotals[brand][venueKey] = venueBucket;
+
+      // Audit-trail entry. Skip rows that contributed exactly zero on
+      // BOTH the literal and post-fallback sides; they only clutter the
+      // export tab.
+      if (literalSum !== 0 || periodValue !== 0) {
+        lineItems.push({
+          brand,
+          zoho_org:        zohoOrg,
+          account_code:    row.account_code,
+          account_name:    row.line_item,
+          ebitda_category: category,
+          venue:           row.venue || "",
+          contact:         row.contact || "",
+          allocation:      row.allocation || "",
+          literal_sum:     literalSum,
+          period_value:    periodValue,
+          used_fallback:   usedFallback,
+          rule_type:       appliedRuleType,
+          method_detail:   appliedMethodDetail,
+        });
+      }
     }
 
     // Reference orgParam so TS doesn't flag it as unused even when we don't
@@ -643,6 +698,7 @@ export async function GET(req: NextRequest) {
     totals,
     venue_totals:     venueTotals,
     fallback_applied: fallbackApplied,
+    line_items:       lineItems,
     warnings,
   };
   return NextResponse.json(response);

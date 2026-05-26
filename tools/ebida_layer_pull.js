@@ -2676,6 +2676,7 @@ function writeEbitdaExportTab(payload) {
   var fbAppliedStart = totalRowIdx + 3;
   var fbApplied = Array.isArray(payload.fallback_applied) ? payload.fallback_applied : [];
   tab.getRange(fbAppliedStart, 1).setValue("Fallback-applied accounts").setFontWeight("bold").setFontSize(12);
+  var fbSectionEnd = fbAppliedStart + 1;
   if (fbApplied.length === 0) {
     tab.getRange(fbAppliedStart + 1, 1).setValue("(No fallback rules fired for this period — all values are literal sums.)")
        .setFontStyle("italic").setFontColor("#5f6368");
@@ -2696,6 +2697,75 @@ function writeEbitdaExportTab(payload) {
     tab.getRange(fbAppliedStart + 2, 1, fbRows.length, fbHeader.length).setValues(fbRows);
     tab.getRange(fbAppliedStart + 2, 5, fbRows.length, 1)
        .setNumberFormat("#,##0.00;(#,##0.00);-").setBackground(EBITDA_EXPORT_FALLBACK_BG);
+    fbSectionEnd = fbAppliedStart + 1 + fbRows.length;
+  }
+
+  // ── Detailed line items section (audit trail) ───────────────────────────
+  // Every account that contributed to the totals above. Use Data → Filter
+  // in Sheets to drill by Brand / Category. Period € matches what the
+  // summary uses; Literal € shows what Zoho actually booked in-window.
+  var liStart = fbSectionEnd + 3;
+  var lineItems = Array.isArray(payload.line_items) ? payload.line_items : [];
+  tab.getRange(liStart, 1).setValue("Detailed line items (audit trail)").setFontWeight("bold").setFontSize(12);
+  tab.getRange(liStart + 1, 1)
+     .setValue("One row per account that flowed into the summary. " +
+               "Light-blue rows are fallback-computed (only applies on partial periods).")
+     .setFontStyle("italic").setFontColor("#5f6368");
+  if (lineItems.length === 0) {
+    tab.getRange(liStart + 2, 1).setValue("(No line items in this period.)")
+       .setFontStyle("italic").setFontColor("#5f6368");
+  } else {
+    // Sort: brand, then category, then account_code
+    var brandOrder = { SPA: 1, AES: 2, SLIM: 3, HQ: 4 };
+    lineItems.sort(function(a, b) {
+      var ba = brandOrder[a.brand] || 99, bb = brandOrder[b.brand] || 99;
+      if (ba !== bb) return ba - bb;
+      if (a.ebitda_category !== b.ebitda_category) return a.ebitda_category < b.ebitda_category ? -1 : 1;
+      if (a.account_code !== b.account_code)       return a.account_code < b.account_code ? -1 : 1;
+      return 0;
+    });
+
+    var liHeader = [
+      "Brand", "Category", "Acct #", "Account Name",
+      "Venue", "Org", "Literal €", "Period €",
+      "Fallback?", "Rule", "Method",
+    ];
+    tab.getRange(liStart + 2, 1, 1, liHeader.length).setValues([liHeader])
+       .setFontWeight("bold").setBackground("#e8f0fe").setFontColor("#1967d2");
+    var liRows = lineItems.map(function(li) {
+      return [
+        li.brand || "",
+        li.ebitda_category || "",
+        li.account_code || "",
+        li.account_name || "",
+        li.venue || "",
+        li.zoho_org || "",
+        Number(li.literal_sum)  || 0,
+        Number(li.period_value) || 0,
+        li.used_fallback ? "yes" : "no",
+        li.rule_type     || "",
+        li.method_detail || (li.used_fallback ? "" : "literal sum"),
+      ];
+    });
+    var liBodyTopRow = liStart + 3;
+    tab.getRange(liBodyTopRow, 1, liRows.length, liHeader.length).setValues(liRows);
+    // Number format on Literal € + Period €
+    tab.getRange(liBodyTopRow, 7, liRows.length, 2)
+       .setNumberFormat("#,##0.00;(#,##0.00);-");
+    // Light-blue background on fallback rows (whole row across all columns)
+    var fbA1 = [];
+    for (var li2 = 0; li2 < liRows.length; li2++) {
+      if (lineItems[li2].used_fallback) {
+        var r = liBodyTopRow + li2;
+        fbA1.push("A" + r + ":" + columnToLetter_(liHeader.length) + r);
+      }
+    }
+    if (fbA1.length > 0) {
+      tab.getRangeList(fbA1).setBackground(EBITDA_EXPORT_FALLBACK_BG);
+    }
+    // Enable filter on the header row of the line-items table.
+    var liFilterRange = tab.getRange(liStart + 2, 1, liRows.length + 1, liHeader.length);
+    try { liFilterRange.createFilter(); } catch (_e) { /* ignore if a filter already exists */ }
   }
 
   // Cosmetic touches
@@ -2705,4 +2775,16 @@ function writeEbitdaExportTab(payload) {
 
   SpreadsheetApp.flush();
   return ss.getUrl() + "#gid=" + tab.getSheetId();
+}
+
+// Small helper so we can refer to columns by letter even if there are
+// more than 26 in the future. Used by the line-items fallback-painting.
+function columnToLetter_(col) {
+  var s = "";
+  while (col > 0) {
+    var rem = (col - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    col = Math.floor((col - 1) / 26);
+  }
+  return s;
 }

@@ -61,6 +61,7 @@ async function handle(req: NextRequest) {
     categories:       aggJson.categories ?? [],
     totals:           aggJson.totals     ?? {},
     fallback_applied: aggJson.fallback_applied ?? [],
+    line_items:       aggJson.line_items ?? [],
   };
 
   // 3) Base64-encode (URL-safe is unnecessary; Apps Script base64Decode handles
