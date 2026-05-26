@@ -337,6 +337,50 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
     return [agg, ...rest];
   }, [venueRows, spaExpanded]);
 
+  /* ── SG&A real per-account breakdown (from aggregated line_items) ── */
+  // Replaces the previous hardcoded SGA_CATEGORIES proportional split.
+  // For each unique SG&A account name, sum period_value bucketed by the
+  // P&L table's column structure: per-SPA-venue, AES (collapsed),
+  // SLIM (collapsed), HQ (collapsed). Returns one entry per account.
+  type SgaSubrow = {
+    accountName: string;
+    perVenue:    Record<string, number>; // keyed by venueRow.id
+    hq:          number;
+    total:       number;
+  };
+  const sgaSubrows: SgaSubrow[] = useMemo(() => {
+    const byAccount = new Map<string, SgaSubrow>();
+    for (const li of agg.lineItems) {
+      if (li.ebitda_category !== "sga") continue;
+      const v = li.period_value;
+      if (v === 0) continue;
+      const key = li.account_name || li.account_code || "(unnamed)";
+      const row = byAccount.get(key) ?? {
+        accountName: key,
+        perVenue:    {},
+        hq:          0,
+        total:       0,
+      };
+
+      if (li.brand === "HQ") {
+        row.hq += v;
+      } else if (li.brand === "SPA") {
+        // Match the venue display name to the venueRow.id used in the
+        // table header — SPA_LOCATION_META display name → slug.
+        const slug = spaVenueDisplayMeta[li.venue.toLowerCase()]?.slug
+                  ?? (li.venue || "spa-other");
+        row.perVenue[slug] = (row.perVenue[slug] ?? 0) + v;
+      } else if (li.brand === "AES") {
+        row.perVenue["aesthetics"] = (row.perVenue["aesthetics"] ?? 0) + v;
+      } else if (li.brand === "SLIM") {
+        row.perVenue["slimming"] = (row.perVenue["slimming"] ?? 0) + v;
+      }
+      row.total += v;
+      byAccount.set(key, row);
+    }
+    return Array.from(byAccount.values()).sort((a, b) => b.total - a.total);
+  }, [agg.lineItems, spaVenueDisplayMeta]);
+
   /* ── Waterfall & brand cards ─────────────────────────────────────── */
   const waterfallData = useMemo(() => buildWaterfall(venueRows, CORPORATE.ebitda), [venueRows, CORPORATE.ebitda]);
 
@@ -685,31 +729,36 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
                   <span className="text-muted-foreground/80 font-normal">· {fmtPct(pctOf(venueTotals.sga + CORPORATE.sga, venueTotals.revenue))}</span>
                 </td>
               </tr>
-              {sgaExpanded && SGA_CATEGORIES.map(({ label, weight }) => (
-                <tr key={label} className="group hover:bg-muted/30 transition-colors">
-                  <td className="py-1 px-2 text-muted-foreground sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-b border-border/40 transition-colors">
-                    <span className="inline-flex items-center gap-1.5 pl-5 border-l border-border/60 ml-1">
-                      <span>{label}</span>
-                      <span className="inline-flex items-center rounded-sm border border-border/60 px-1 py-px text-[9px] font-medium text-muted-foreground/70">allocated</span>
-                    </span>
-                  </td>
-                  {displayedVenues.map(v => {
-                    const part = sgaShare(v.sga, weight);
-                    return (
-                      <td key={v.id} className="py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40">
-                        {fmtCurrencyShort(part)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(part, v.revenue))}</span>
-                      </td>
-                    );
-                  })}
-                  <td className="py-1 px-2 text-right text-muted-foreground bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40">&mdash;</td>
-                  <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40">
-                    {(() => {
-                      const part = sgaShare(venueTotals.sga, weight);
-                      return <>{fmtCurrencyShort(part)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(part, venueTotals.revenue))}</span></>;
-                    })()}
-                  </td>
-                </tr>
-              ))}
+              {sgaExpanded && sgaSubrows.map((sub) => {
+                const groupTotal = sub.total;
+                return (
+                  <tr key={sub.accountName} className="group hover:bg-muted/30 transition-colors">
+                    <td className="py-1 px-2 text-muted-foreground sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-b border-border/40 transition-colors">
+                      <span className="inline-flex items-center gap-1.5 pl-5 border-l border-border/60 ml-1" title={sub.accountName}>
+                        <span className="truncate max-w-[260px]">{sub.accountName}</span>
+                      </span>
+                    </td>
+                    {displayedVenues.map(v => {
+                      const part = sub.perVenue[v.id] ?? 0;
+                      return (
+                        <td key={v.id} className="py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40">
+                          {part === 0
+                            ? <span className="text-muted-foreground/40">&mdash;</span>
+                            : <>{fmtCurrencyShort(part)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(part, v.revenue))}</span></>}
+                        </td>
+                      );
+                    })}
+                    <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40">
+                      {sub.hq === 0
+                        ? <span className="text-muted-foreground/40">&mdash;</span>
+                        : fmtCurrencyShort(sub.hq)}
+                    </td>
+                    <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40">
+                      {fmtCurrencyShort(groupTotal)}
+                    </td>
+                  </tr>
+                );
+              })}
 
               {/* COGS */}
               <tr className="group hover:bg-muted/30 transition-colors">

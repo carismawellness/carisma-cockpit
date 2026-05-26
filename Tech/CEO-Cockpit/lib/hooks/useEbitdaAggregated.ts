@@ -11,6 +11,22 @@ export interface CategoryCell {
   fallback_account_count: number;
 }
 
+export interface LineItem {
+  brand:           Brand;
+  zoho_org:        "spa" | "aesthetics";
+  account_code:    string;
+  account_name:    string;
+  ebitda_category: string;
+  venue:           string;
+  contact:         string;
+  allocation:      string;
+  literal_sum:     number;
+  period_value:    number;
+  used_fallback:   boolean;
+  rule_type:       string | null;
+  method_detail:   string | null;
+}
+
 export interface EbitdaAggregatedResponse {
   date_from:        string;
   date_to:          string;
@@ -27,6 +43,7 @@ export interface EbitdaAggregatedResponse {
     period_value:  number;
     method_detail: string;
   }>;
+  line_items:       LineItem[];
   warnings: string[];
 }
 
@@ -157,6 +174,9 @@ export interface UseEbitdaAggregatedResult {
   aesRow:      VenueAggregatedSummary;
   slimRow:     VenueAggregatedSummary;
   hqRow:       VenueAggregatedSummary;
+  // Raw audit-trail rows — every account that contributed to totals.
+  // Drives the real (non-allocated) breakdown rows under SG&A etc.
+  lineItems:   LineItem[];
   anyFallback: boolean;
   warnings:    string[];
 }
@@ -203,6 +223,7 @@ export function useEbitdaAggregated(dateFrom: Date, dateTo: Date): UseEbitdaAggr
     aesRow:      venueSummariesForBrand(venueTotals, "AES",  true)[0]  ?? EMPTY_VENUE_ROW,
     slimRow:     venueSummariesForBrand(venueTotals, "SLIM", true)[0]  ?? EMPTY_VENUE_ROW,
     hqRow:       venueSummariesForBrand(venueTotals, "HQ",   true)[0]  ?? EMPTY_VENUE_ROW,
+    lineItems:   q.data?.line_items ?? [],
     anyFallback: q.data
       ? q.data.brands.some(b => brandHasFallback(totals?.[b]))
       : false,
