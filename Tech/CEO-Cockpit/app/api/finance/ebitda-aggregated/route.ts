@@ -425,6 +425,16 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  // Determine whether this is a "whole calendar months" period. If both
+  // endpoints align to month boundaries, every line item already has its
+  // real booked total inside the window — fallback smoothing would
+  // OVERWRITE that with TTM / previous-month estimates (which can be zero
+  // when there's no prior history, e.g. running 2025 with no 2024 in the
+  // data). For full-period runs we want the literal sum; fallback rules
+  // only fire on partial periods, matching the original product intent.
+  const periodIsFullCalendarMonths =
+    dateFrom === startOfMonth(dateFrom) && dateTo === endOfMonth(dateTo);
+
   // 3) Aggregate per (brand, ebitda_category) with fallback rules applied.
   const totals: Record<Brand, Record<string, CellTotal>> = {
     SPA: {}, AES: {}, SLIM: {}, HQ: {},
@@ -476,7 +486,10 @@ export async function GET(req: NextRequest) {
       let periodValue = literalSum;
       let usedFallback = false;
 
-      if (rule && rule.active && rule.rule_type !== "disabled") {
+      // Fallback rules only apply on partial periods. On a full
+      // calendar-months range, the literal sum is the ground truth and we
+      // must not overwrite it with an estimate.
+      if (!periodIsFullCalendarMonths && rule && rule.active && rule.rule_type !== "disabled") {
         if (rule.rule_type === "manual_annual") {
           const annual = rule.params?.annual_amount;
           if (typeof annual === "number" && Number.isFinite(annual)) {
