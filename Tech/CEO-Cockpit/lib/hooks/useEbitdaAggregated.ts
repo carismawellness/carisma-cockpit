@@ -127,8 +127,17 @@ export function venueSummariesForBrand(
                   || v.utilities !== 0 || v.sga !== 0 || v.advertising !== 0);
 }
 
+// Format a Date as YYYY-MM-DD using LOCAL components, not UTC.
+// `Date.toISOString()` would convert to UTC, which for users east of GMT
+// pushes midnight-local back to the previous day's UTC date (e.g. Malta
+// UTC+1: Jan 1 00:00 local → Dec 31 23:00 UTC → "2024-12-31"). The API's
+// partial-period guard then sees a non-month-aligned range and applies
+// fallback smoothing that zeroes real wages/advertising totals.
 function toIso(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 export interface UseEbitdaAggregatedResult {

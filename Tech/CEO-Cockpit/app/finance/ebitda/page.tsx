@@ -159,8 +159,18 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
     setExporting(true);
     setExportMsg(null);
     try {
-      const df = dateFrom.toISOString().slice(0, 10);
-      const dt = dateTo.toISOString().slice(0, 10);
+      // Local-date ISO (not UTC) — see the same fix in useEbitdaAggregated.
+      // toISOString() would shift midnight-local to the previous UTC day
+      // for users east of GMT, breaking partial-period detection in the
+      // aggregated route.
+      const isoLocal = (d: Date) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      };
+      const df = isoLocal(dateFrom);
+      const dt = isoLocal(dateTo);
       const res = await fetch(
         `/api/finance/ebitda-export?date_from=${df}&date_to=${dt}`,
         { method: "POST" },
