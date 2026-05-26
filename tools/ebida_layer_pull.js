@@ -559,13 +559,15 @@ function lockVerifiedColumns(fromDateIso, toDateIso, editorEmail) {
     existingProtCols[pRng.getColumn()] = true;
   }
 
-  // OPT 2 — batch-paint backgrounds for matched columns not already
-  // painted. Uses the top-level _ebidaColNumToA1 helper (defined below
-  // outside any function) so hoisting/caching can't break it.
+  // OPT 2 — batch-paint backgrounds for ALL matched columns.
+  // Important: do NOT skip columns in existingProtCols. A previous run can
+  // leave a column with a protection record but NO yellow background if it
+  // crashed mid-flight (this is exactly the DJ-column orphan we saw in v15).
+  // Paint is cheap, idempotent, and batched, so we always re-paint to make
+  // sure the visual state matches the protection state.
   var paintRanges = [];
   for (var pj = 0; pj < matchedCols.length; pj++) {
     var c1 = matchedCols[pj];
-    if (existingProtCols[c1]) continue;
     var letter = _ebidaColNumToA1(c1);
     var a1 = letter + FIRST_DATA_ROW + ":" + letter + lastRow;
     paintRanges.push(a1);
@@ -1424,6 +1426,14 @@ function runTestPullJan1to7() {
 // protection, scoped overwrite). URL form:
 //   <web-app-url>/exec?token=<TOKEN>&from=2025-03-01&to=2025-03-07&org=SPA
 var WEBAPP_TOKEN = "cbk-ebida-a7f3e91c2d";
+
+// POST mirror of doGet. We accept POSTs for the same actions, mostly so
+// callers can send larger payloads (e.g. ebitda_export) in the request body
+// rather than the URL. e.parameter contains form-urlencoded fields exactly
+// like a GET, so routing is identical.
+function doPost(e) {
+  return doGet(e);
+}
 
 function doGet(e) {
   var p = (e && e.parameter) || {};

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import {
   ChevronDown, ChevronRight, ArrowUpRight,
-  TrendingUp, TrendingDown, Minus, RefreshCw,
+  TrendingUp, TrendingDown, Minus, RefreshCw, FileSpreadsheet,
 } from "lucide-react";
 import { CIChat } from "@/components/ci/CIChat";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
@@ -138,6 +138,36 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
   const spa = useSpaEbitda(dateFrom, dateTo);
   const aes = useAestheticsEbitda(dateFrom, dateTo);
   const hq  = useHqEbitda(dateFrom, dateTo);
+
+  /* ── EBITDA Export ───────────────────────────────────────────────── */
+  // Calls /api/finance/ebitda-export which talks to Apps Script and writes
+  // a timestamped tab to the Accounting Master sheet. We only show
+  // ok/err + the new tab name; the user opens the sheet to see it.
+  const [exporting, setExporting] = useState(false);
+  const [exportMsg, setExportMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  async function runEbitdaExport() {
+    if (exporting) return;
+    setExporting(true);
+    setExportMsg(null);
+    try {
+      const df = dateFrom.toISOString().slice(0, 10);
+      const dt = dateTo.toISOString().slice(0, 10);
+      const res = await fetch(
+        `/api/finance/ebitda-export?date_from=${df}&date_to=${dt}`,
+        { method: "POST" },
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.ok === false) {
+        throw new Error(json.error ?? `HTTP ${res.status}`);
+      }
+      setExportMsg({ ok: true, text: `Tab ${json.tab ?? "exported"}` });
+    } catch (e) {
+      setExportMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setExporting(false);
+      setTimeout(() => setExportMsg(null), 6000);
+    }
+  }
 
   const isFetching    = spa.isFetching || aes.isFetching || hq.isFetching;
   const isSyncing     = spa.isSyncing  || aes.isSyncing  || hq.isSyncing;
@@ -295,6 +325,24 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
           >
             <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin" : ""}`} />
             {isSyncing ? "Syncing…" : isFetching ? "Loading…" : "Sync"}
+          </button>
+          {exportMsg && (
+            <span
+              className={`text-xs max-w-[220px] truncate ${exportMsg.ok ? "text-emerald-600" : "text-red-500"}`}
+              title={exportMsg.text}
+            >
+              {exportMsg.text}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={runEbitdaExport}
+            disabled={exporting}
+            title="Write a timestamped EBITDA tab to the Accounting Master sheet"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <FileSpreadsheet className={`h-3.5 w-3.5 ${exporting ? "animate-pulse" : ""}`} />
+            {exporting ? "Exporting…" : "EBITDA Export"}
           </button>
         </div>
       </div>
