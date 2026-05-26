@@ -1528,10 +1528,10 @@ function _writeFreshSheet(sheet, accRows, allDates, refreshFrom, refreshTo, org)
   }
 
   // ── Control row at row 1 ─────────────────────────────────────────────────
-  // Layout: A1 "Pull:" | B1 from-date | C1 "to" | D1 to-date | E1 "Org:" | F1 org | G1 (button placeholder) | H1 status
+  // Layout: A1 "Pull from Zoho + Sales sheets…" | B1 from-date | C1 "to" | D1 to-date | E1 "Org:" | F1 org | G1 (button placeholder) | H1 status
   var controlWidth = Math.max(totalCols, CTRL_STATUS_COL);
   sheet.getRange(CONTROL_ROW, 1, 1, controlWidth).clearContent();
-  sheet.getRange(CONTROL_ROW, 1).setValue("Pull:").setFontWeight("bold");
+  sheet.getRange(CONTROL_ROW, 1).setValue("Pull from Zoho + Sales sheets (Supplement Salary excluded)").setFontWeight("bold");
   sheet.getRange(CONTROL_ROW, CTRL_FROM_COL).setValue(refreshFrom).setNumberFormat("yyyy-mm-dd").setBackground("#fff2cc");
   sheet.getRange(CONTROL_ROW, CTRL_FROM_COL + 1).setValue("to").setHorizontalAlignment("center");
   sheet.getRange(CONTROL_ROW, CTRL_TO_COL).setValue(refreshTo).setNumberFormat("yyyy-mm-dd").setBackground("#fff2cc");
