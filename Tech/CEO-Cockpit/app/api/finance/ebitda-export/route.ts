@@ -97,13 +97,11 @@ async function handle(req: NextRequest) {
     );
   }
 
-  // Pull a friendlier tab label out of the URL fragment so the UI can show
-  // something other than the full URL.
+  // Single canonical tab — the Apps Script always overwrites "EBITDA
+  // Export". Show the period in the toast so the user knows which window
+  // they just snapshotted.
   const tabUrl = gsJson.tab_url ?? "";
-  const gidMatch = tabUrl.match(/gid=(\d+)/);
-  const tab = gidMatch
-    ? `${payload.date_from} → ${payload.date_to}`
-    : tabUrl;
+  const tab = `EBITDA Export · ${payload.date_from} → ${payload.date_to}`;
 
   return NextResponse.json({ ok: true, tab, tab_url: tabUrl });
 }

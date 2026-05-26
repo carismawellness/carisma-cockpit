@@ -10,7 +10,7 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
 import { chartColors, formatCurrency } from "@/lib/charts/config";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
-import { useSpaEbitda } from "@/lib/hooks/useSpaEbitda";
+import { useSpaEbitda, SPA_LOCATION_META } from "@/lib/hooks/useSpaEbitda";
 import { useAestheticsEbitda } from "@/lib/hooks/useAestheticsEbitda";
 import { useHqEbitda } from "@/lib/hooks/useHqEbitda";
 import { useEbitdaAggregated } from "@/lib/hooks/useEbitdaAggregated";
@@ -180,11 +180,14 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
   const isSyncing     = spa.isSyncing  || aes.isSyncing  || hq.isSyncing;
   const syncError     = spa.syncError  || aes.syncError  || hq.syncError || (agg.error ? agg.error.message : null);
   const missingMonths = [...spa.missingMonths, ...aes.missingMonths, ...hq.missingMonths];
-  const CORPORATE     = hq.data;
+  // CORPORATE (= HQ) used to come from the old useHqEbitda hook. It now
+  // comes from the aggregated API so partial periods get fallback
+  // smoothing too. Field shape is identical (revenue/wages/.../ebitda).
+  const CORPORATE     = agg.hqRow;
 
-  /* ── Dept splits from aesthetics hook ───────────────────────────── */
-  const aesData  = aes.depts.find(d => d.dept === "aesthetics");
-  const slimData = aes.depts.find(d => d.dept === "slimming");
+  /* ── Dept splits (now from aggregated API) ─────────────────────── */
+  const aesData  = agg.aesRow;
+  const slimData = agg.slimRow;
 
   /* ── Brand aggregates (sourced from aggregated API) ─────────────── */
   // These now reflect TTM-spread / manual-annual / previous-month /
@@ -223,29 +226,64 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
   /* ── KPI status ──────────────────────────────────────────────────── */
   const ebitdaStatus: Status = getStatus(groupMargin, 30, 15);
 
-  /* ── Venue rows for P&L table ────────────────────────────────────── */
-  const venueRows = useMemo((): VenueRow[] => [
-    ...spa.locations.map(l => ({
-      id: l.slug, name: l.name, brand: "Spa" as Brand, brandColor: l.color,
-      wages: l.wages, advertising: l.advertising, rent: l.rent,
-      utilities: l.utilities, cogs: l.cogs, sga: l.sga,
-      ebitda: l.ebitda, revenue: l.revenue,
-    })),
-    ...(aesData && aesData.revenue > 0 ? [{
+  /* ── Venue rows for P&L table (from aggregated API) ─────────────── */
+  // SPA venues come from the aggregated API's column-E values. Reverse
+  // SPA_LOCATION_META once so we keep the existing brand colours and slug
+  // ids for venues we recognise. Unknown venue names still render with
+  // a sensible default colour.
+  const spaVenueDisplayMeta = useMemo(() => {
+    const m: Record<string, { slug: string; color: string }> = {};
+    for (const slug in SPA_LOCATION_META) {
+      const meta = SPA_LOCATION_META[slug];
+      m[meta.name.toLowerCase()] = { slug, color: meta.color };
+    }
+    return m;
+  }, []);
+
+  const venueRows = useMemo((): VenueRow[] => {
+    const spaRows: VenueRow[] = agg.spaVenues.map(v => {
+      const meta = spaVenueDisplayMeta[v.venueKey.toLowerCase()] ?? {
+        slug:  v.venueKey || "spa-other",
+        color: chartColors.spa,
+      };
+      return {
+        id:         meta.slug,
+        name:       v.venueKey || "Spa (unmapped)",
+        brand:      "Spa" as Brand,
+        brandColor: meta.color,
+        wages:       v.wages,
+        advertising: v.advertising,
+        rent:        v.rent,
+        utilities:   v.utilities,
+        cogs:        v.cogs,
+        sga:         v.sga,
+        ebitda:      v.ebitda,
+        revenue:     v.revenue,
+      };
+    });
+
+    const aesRow: VenueRow | null = aesData.revenue > 0 ? {
       id: "aesthetics", name: "Aesthetics", brand: "Aesthetics" as Brand,
       brandColor: chartColors.aesthetics,
       wages: aesData.wages, advertising: aesData.advertising, rent: aesData.rent,
       utilities: aesData.utilities, cogs: aesData.cogs, sga: aesData.sga,
       ebitda: aesData.ebitda, revenue: aesData.revenue,
-    }] : []),
-    ...(slimData && slimData.revenue > 0 ? [{
+    } : null;
+
+    const slimRow: VenueRow | null = slimData.revenue > 0 ? {
       id: "slimming", name: "Slimming", brand: "Slimming" as Brand,
       brandColor: chartColors.slimming,
       wages: slimData.wages, advertising: slimData.advertising, rent: slimData.rent,
       utilities: slimData.utilities, cogs: slimData.cogs, sga: slimData.sga,
       ebitda: slimData.ebitda, revenue: slimData.revenue,
-    }] : []),
-  ].filter(v => v.revenue > 0), [spa.locations, aesData, slimData]);
+    } : null;
+
+    return [
+      ...spaRows,
+      ...(aesRow  ? [aesRow]  : []),
+      ...(slimRow ? [slimRow] : []),
+    ].filter(v => v.revenue > 0);
+  }, [agg.spaVenues, aesData, slimData, spaVenueDisplayMeta]);
 
   const venueTotals = useMemo(() => venueRows.reduce(
     (acc, v) => ({

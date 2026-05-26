@@ -89,6 +89,11 @@ export interface EbitdaAggregatedResponse {
   brands:           Brand[];
   categories:       string[];
   totals:           Record<Brand, Record<string, CellTotal>>;
+  // Per-venue breakdown keyed by brand → venue display name (column E) →
+  // category. AES/SLIM rows usually carry an empty / dept-specific venue
+  // value; consumers can collapse all venues under those brands into a
+  // single row if they want a dept-level view.
+  venue_totals:     Record<Brand, Record<string, Record<string, CellTotal>>>;
   fallback_applied: FallbackApplied[];
   warnings:         string[];
 }
@@ -424,6 +429,10 @@ export async function GET(req: NextRequest) {
   const totals: Record<Brand, Record<string, CellTotal>> = {
     SPA: {}, AES: {}, SLIM: {}, HQ: {},
   };
+  // Per-venue accumulator: brand → venue display name → category → cell.
+  const venueTotals: Record<Brand, Record<string, Record<string, CellTotal>>> = {
+    SPA: {}, AES: {}, SLIM: {}, HQ: {},
+  };
   const fallbackApplied: FallbackApplied[] = [];
   const seenCategories = new Set<string>();
   const seenBrands = new Set<Brand>();
@@ -574,6 +583,24 @@ export async function GET(req: NextRequest) {
         cell.fallback_account_count += 1;
       }
       totals[brand][category] = cell;
+
+      // Also accumulate into venueTotals[brand][venue][category]. Empty
+      // venue strings are bucketed under "" so consumers can detect rows
+      // that lack a venue tag without inventing a sentinel string.
+      const venueKey = (row.venue || "").trim();
+      const venueBucket = venueTotals[brand][venueKey] ?? {};
+      const venueCell = venueBucket[category] ?? {
+        value:                  0,
+        has_fallback:           false,
+        fallback_account_count: 0,
+      };
+      venueCell.value += periodValue;
+      if (usedFallback) {
+        venueCell.has_fallback = true;
+        venueCell.fallback_account_count += 1;
+      }
+      venueBucket[category] = venueCell;
+      venueTotals[brand][venueKey] = venueBucket;
     }
 
     // Reference orgParam so TS doesn't flag it as unused even when we don't
@@ -592,6 +619,7 @@ export async function GET(req: NextRequest) {
     brands:           responseBrands,
     categories:       responseCategories,
     totals,
+    venue_totals:     venueTotals,
     fallback_applied: fallbackApplied,
     warnings,
   };

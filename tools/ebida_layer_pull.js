@@ -216,6 +216,7 @@ function _refreshAggregatedDataImpl(fromIso, toIso) {
 
   var updates = 0, preserved = 0;
   for (var r = 0; r < srcLastRow; r++) {
+    if (r === CONTROL_ROW - 1) continue;   // never overwrite Aggregated Data's own row-1 controls from source
     for (var c3 in refreshCols) {
       var cIdx = parseInt(c3, 10);
       var dstBg = String(dstBgs[r][cIdx] || "").toLowerCase();
@@ -249,6 +250,20 @@ function _ensureAggregatedControlCells(sheet) {
   var labelB = sheet.getRange(CONTROL_ROW, 1).getValue();
   if (!labelB || String(labelB).indexOf("Aggregated Data") === -1) {
     sheet.getRange(CONTROL_ROW, 1).setValue("Aggregated Data — overrides = orange").setFontWeight("bold");
+  }
+  // Strip Zoho Raw Layer-only controls that the firstTime clone inherits but
+  // that have no effect on this tab: E1/F1 ("Org: SPA") and K1/L1 ("🔓 Edit
+  // data" + checkbox). Org is irrelevant — this tab always reads from the
+  // local Zoho Raw Layer tab. The lock checkboxes only fire on Zoho Raw
+  // Layer (onEditLockButtons bails on every other tab name).
+  var inheritedJunkCols = [5, 6, 11, 12];   // E1, F1, K1, L1
+  for (var ij = 0; ij < inheritedJunkCols.length; ij++) {
+    var jc = sheet.getRange(CONTROL_ROW, inheritedJunkCols[ij]);
+    jc.clearContent();
+    jc.clearDataValidations();
+    jc.setBackground(null);
+    jc.setFontColor(null);
+    jc.setFontWeight("normal");
   }
   // From / To labels + cells
   if (!sheet.getRange(CONTROL_ROW, AGG_CTRL_FROM_COL - 1).getValue()) {
@@ -2566,23 +2581,12 @@ function writeEbitdaExportTab(payload) {
 
   var ss = SpreadsheetApp.openById(EBIDA_SPREADSHEET_ID);
 
-  // Timestamped tab name. Sheets disallows some chars in tab names; safe
-  // format: "EBITDA Export YYYY-MM-DD HH-mm" (no colons).
-  var tz = ss.getSpreadsheetTimeZone();
-  var stamp = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd HH-mm");
-  var tabName = "EBITDA Export " + payload.date_from + " to " + payload.date_to + " (" + stamp + ")";
-  // Cap at 100 chars (Sheets limit ~100); truncate from the END so the
-  // human-readable prefix is preserved.
-  if (tabName.length > 99) tabName = tabName.substring(0, 99);
-
-  // If a tab with this exact name exists (unlikely with the stamp), append a counter.
-  var attempts = 0;
-  var finalName = tabName;
-  while (ss.getSheetByName(finalName) && attempts < 10) {
-    attempts++;
-    finalName = tabName + " #" + (attempts + 1);
-    if (finalName.length > 99) finalName = finalName.substring(0, 99);
-  }
+  // Single canonical tab — every export overwrites the previous one. The
+  // header row inside the tab still shows the period + generated-at stamp
+  // so users can see what's currently in it.
+  var finalName = "EBITDA Export";
+  var existing = ss.getSheetByName(finalName);
+  if (existing) ss.deleteSheet(existing);
   var tab = ss.insertSheet(finalName);
 
   // ── Header block (rows 1-5) ─────────────────────────────────────────────

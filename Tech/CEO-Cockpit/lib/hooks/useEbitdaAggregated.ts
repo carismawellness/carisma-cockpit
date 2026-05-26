@@ -18,6 +18,7 @@ export interface EbitdaAggregatedResponse {
   brands:           Brand[];
   categories:       string[];
   totals:           Record<Brand, Record<string, CategoryCell>>;
+  venue_totals:     Record<Brand, Record<string, Record<string, CategoryCell>>>;
   fallback_applied: Array<{
     brand:         Brand;
     account_code:  string;
@@ -27,6 +28,10 @@ export interface EbitdaAggregatedResponse {
     method_detail: string;
   }>;
   warnings: string[];
+}
+
+export interface VenueAggregatedSummary extends BrandAggregatedSummary {
+  venueKey: string;     // raw column-E value as keyed by the API ("" allowed)
 }
 
 // Per-brand summary derived from the API. All values in EUR.
@@ -59,7 +64,15 @@ export function brandSummaryFromTotals(
   totals: EbitdaAggregatedResponse["totals"] | undefined,
   brand: Brand,
 ): BrandAggregatedSummary {
-  const b           = totals?.[brand];
+  return categorySummaryFromCells(totals?.[brand]);
+}
+
+// Build a {revenue, ebitda, …} summary from an arbitrary category-cell map.
+// Shared by per-brand and per-venue derivation so the sign and EBITDA
+// arithmetic only lives in one place.
+function categorySummaryFromCells(
+  b: Record<string, CategoryCell> | undefined,
+): BrandAggregatedSummary {
   const revenue     = pick(b, "revenue");
   const cogs        = pick(b, "cogs");
   const wages       = pick(b, "wages");
@@ -73,6 +86,45 @@ export function brandSummaryFromTotals(
     ebitdaPct:   revenue > 0 ? Math.round((ebitda / revenue) * 100) : 0,
     hasFallback: brandHasFallback(b),
   };
+}
+
+/**
+ * Per-venue summaries under a brand. SPA returns one entry per venue.
+ * AES/SLIM/HQ collapse every venue into a single summary keyed by the brand
+ * label since the existing dashboard shows them as one dept-level row.
+ */
+export function venueSummariesForBrand(
+  venueTotals: EbitdaAggregatedResponse["venue_totals"] | undefined,
+  brand: Brand,
+  collapse: boolean,
+): VenueAggregatedSummary[] {
+  const bucket = venueTotals?.[brand];
+  if (!bucket) return [];
+
+  if (collapse) {
+    // Sum every venue's category map into one collapsed cell map.
+    const merged: Record<string, CategoryCell> = {};
+    for (const venueKey in bucket) {
+      const cats = bucket[venueKey];
+      for (const cat in cats) {
+        const cell = merged[cat] ?? { value: 0, has_fallback: false, fallback_account_count: 0 };
+        cell.value += cats[cat].value;
+        if (cats[cat].has_fallback) {
+          cell.has_fallback = true;
+          cell.fallback_account_count += cats[cat].fallback_account_count;
+        }
+        merged[cat] = cell;
+      }
+    }
+    return [{ venueKey: "", ...categorySummaryFromCells(merged) }];
+  }
+
+  // Per-venue rows; skip rows with no revenue AND no expenses (empty).
+  return Object.keys(bucket).map(venueKey => ({
+    venueKey,
+    ...categorySummaryFromCells(bucket[venueKey]),
+  })).filter(v => v.revenue !== 0 || v.cogs !== 0 || v.wages !== 0 || v.rent !== 0
+                  || v.utilities !== 0 || v.sga !== 0 || v.advertising !== 0);
 }
 
 function toIso(d: Date): string {
@@ -89,6 +141,13 @@ export interface UseEbitdaAggregatedResult {
   aes:         BrandAggregatedSummary;
   slim:        BrandAggregatedSummary;
   hq:          BrandAggregatedSummary;
+  // Per-venue breakdowns. SPA is split by venue; AES, SLIM, HQ are each
+  // collapsed into a single summary (one row per brand in the dept-level
+  // venue P&L table).
+  spaVenues:   VenueAggregatedSummary[];
+  aesRow:      VenueAggregatedSummary;
+  slimRow:     VenueAggregatedSummary;
+  hqRow:       VenueAggregatedSummary;
   anyFallback: boolean;
   warnings:    string[];
 }
@@ -97,6 +156,8 @@ const EMPTY_SUMMARY: BrandAggregatedSummary = {
   revenue: 0, cogs: 0, wages: 0, advertising: 0, rent: 0, utilities: 0, sga: 0,
   ebitda: 0, ebitdaPct: 0, hasFallback: false,
 };
+
+const EMPTY_VENUE_ROW: VenueAggregatedSummary = { venueKey: "", ...EMPTY_SUMMARY };
 
 export function useEbitdaAggregated(dateFrom: Date, dateTo: Date): UseEbitdaAggregatedResult {
   const df = toIso(dateFrom);
@@ -118,7 +179,8 @@ export function useEbitdaAggregated(dateFrom: Date, dateTo: Date): UseEbitdaAggr
     staleTime: 30_000,
   });
 
-  const totals = q.data?.totals;
+  const totals      = q.data?.totals;
+  const venueTotals = q.data?.venue_totals;
   return {
     data:        q.data,
     isLoading:   q.isLoading,
@@ -128,6 +190,10 @@ export function useEbitdaAggregated(dateFrom: Date, dateTo: Date): UseEbitdaAggr
     aes:         totals ? brandSummaryFromTotals(totals, "AES")  : EMPTY_SUMMARY,
     slim:        totals ? brandSummaryFromTotals(totals, "SLIM") : EMPTY_SUMMARY,
     hq:          totals ? brandSummaryFromTotals(totals, "HQ")   : EMPTY_SUMMARY,
+    spaVenues:   venueSummariesForBrand(venueTotals, "SPA",  false),
+    aesRow:      venueSummariesForBrand(venueTotals, "AES",  true)[0]  ?? EMPTY_VENUE_ROW,
+    slimRow:     venueSummariesForBrand(venueTotals, "SLIM", true)[0]  ?? EMPTY_VENUE_ROW,
+    hqRow:       venueSummariesForBrand(venueTotals, "HQ",   true)[0]  ?? EMPTY_VENUE_ROW,
     anyFallback: q.data
       ? q.data.brands.some(b => brandHasFallback(totals?.[b]))
       : false,
