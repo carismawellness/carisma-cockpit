@@ -86,6 +86,20 @@ function onOpenEbidaLayerMenu() {
 // raw layer.
 var AGGREGATED_TAB              = "Aggregated Data";
 var AGGREGATED_OVERRIDE_BG      = "#ffd966";   // orange — user override marker
+
+// Top-level helper: convert 1-indexed column number to A1 letter notation.
+// 1 → "A", 26 → "Z", 27 → "AA", 113 → "DI", 487 → "RY". Defined at
+// top-level (not nested inside a function) so Apps Script V8 hoisting
+// can't lose it across cached invocations.
+function _ebidaColNumToA1(col) {
+  var s = "";
+  while (col > 0) {
+    var rem = (col - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    col = Math.floor((col - 1) / 26);
+  }
+  return s;
+}
 // Aggregated Data tab's control row layout (row 1)
 var AGG_CTRL_FROM_COL           = 2;   // B1 — From date for partial-range refresh
 var AGG_CTRL_TO_COL             = 4;   // D1 — To date
@@ -545,25 +559,14 @@ function lockVerifiedColumns(fromDateIso, toDateIso, editorEmail) {
     existingProtCols[pRng.getColumn()] = true;
   }
 
-  // OPT 2 — batch-paint backgrounds for ALL matched columns. Use the
-  // numeric form of getRange (start row, start col, num rows, num cols)
-  // and iterate per-column — but bypass the per-cell overhead by NOT
-  // touching .getEditors() / .removeEditors() for each.
-  // Use getRangeList with computed A1 notations so it's one batch call.
-  function colNumToA1(col) {
-    var s = "";
-    while (col > 0) {
-      var rem = (col - 1) % 26;
-      s = String.fromCharCode(65 + rem) + s;
-      col = Math.floor((col - 1) / 26);
-    }
-    return s;
-  }
+  // OPT 2 — batch-paint backgrounds for matched columns not already
+  // painted. Uses the top-level _ebidaColNumToA1 helper (defined below
+  // outside any function) so hoisting/caching can't break it.
   var paintRanges = [];
   for (var pj = 0; pj < matchedCols.length; pj++) {
     var c1 = matchedCols[pj];
-    if (existingProtCols[c1]) continue;   // already painted last run
-    var letter = colNumToA1(c1);
+    if (existingProtCols[c1]) continue;
+    var letter = _ebidaColNumToA1(c1);
     var a1 = letter + FIRST_DATA_ROW + ":" + letter + lastRow;
     paintRanges.push(a1);
   }
