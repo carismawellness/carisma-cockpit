@@ -30,7 +30,12 @@ export const dynamic = "force-dynamic";
 
 type Brand    = "SPA" | "AES" | "SLIM" | "HQ";
 type ZohoOrg  = "spa" | "aesthetics";
-type RuleType = "ttm_spread" | "manual_annual" | "disabled";
+type RuleType =
+  | "ttm_spread"
+  | "manual_annual"
+  | "previous_month"
+  | "quarterly_average"
+  | "disabled";
 
 interface FallbackRuleRow {
   account_code: string;
@@ -130,6 +135,59 @@ function shiftIso(iso: string, deltaDays: number): string {
   const d = isoToDate(iso);
   d.setUTCDate(d.getUTCDate() + deltaDays);
   return d.toISOString().slice(0, 10);
+}
+
+/** Last day of the month containing `iso` (yyyy-mm-dd). */
+function endOfMonth(iso: string): string {
+  const d = isoToDate(iso);
+  // Day 0 of next month = last day of this month.
+  const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0));
+  return last.toISOString().slice(0, 10);
+}
+
+/** First day of the month containing `iso`. */
+function startOfMonth(iso: string): string {
+  return iso.slice(0, 7) + "-01";
+}
+
+/** Number of days in the calendar month of `iso`. */
+function daysInMonthOf(iso: string): number {
+  const last = endOfMonth(iso);
+  return Number(last.slice(8, 10));
+}
+
+/**
+ * Previous full calendar month before `dateFrom`. E.g., dateFrom=2026-01-15 →
+ * {from: "2025-12-01", to: "2025-12-31", days: 31}.
+ */
+function previousCalendarMonth(dateFrom: string): { from: string; to: string; days: number } {
+  // Walk to first day of dateFrom's month, then subtract one day to land in
+  // the previous month, then take that month's start + end.
+  const firstOfThis = startOfMonth(dateFrom);
+  const lastOfPrev  = shiftIso(firstOfThis, -1);
+  return {
+    from: startOfMonth(lastOfPrev),
+    to:   lastOfPrev,
+    days: daysInMonthOf(lastOfPrev),
+  };
+}
+
+/**
+ * Last N full calendar months before `dateFrom`. Returns the inclusive ISO
+ * bounds [from, to] and the total day count across those N months.
+ */
+function lastNCalendarMonths(dateFrom: string, n: number): { from: string; to: string; days: number } {
+  const firstOfThis = startOfMonth(dateFrom);
+  // Walk back N months from the first of dateFrom's month.
+  const d = isoToDate(firstOfThis);
+  d.setUTCMonth(d.getUTCMonth() - n);
+  const from = d.toISOString().slice(0, 10);
+  const to   = shiftIso(firstOfThis, -1);
+  return {
+    from,
+    to,
+    days: daysBetween(from, to),
+  };
 }
 
 function normalizeBrand(raw: string | null | undefined): Brand | null {
@@ -455,6 +513,50 @@ export async function GET(req: NextRequest) {
             // No TTM history for this row key → keep literal, no fallback flag.
           }
           // If ttm fetch failed entirely, we already warned above.
+        } else if (rule.rule_type === "previous_month") {
+          if (ttm) {
+            const ttmKey = `${brand}|${row.account_code}|${row.line_item}|${row.venue}|${row.contact}|${row.allocation}`;
+            const ttmDaily = ttmIndex.get(ttmKey);
+            if (ttmDaily) {
+              const pm = previousCalendarMonth(dateFrom);
+              const pmSum = sumDailyInRange(ttmDaily, pm.from, pm.to);
+              periodValue = pmSum * (daysInPeriod / pm.days);
+              usedFallback = true;
+              fallbackApplied.push({
+                brand,
+                account_code:  row.account_code,
+                account_name:  row.line_item,
+                rule_type:     "previous_month",
+                period_value:  periodValue,
+                method_detail:
+                  `Prev-month (${pm.from}…${pm.to}) €${pmSum.toFixed(2)}` +
+                  ` × ${daysInPeriod}/${pm.days}`,
+              });
+            }
+          }
+        } else if (rule.rule_type === "quarterly_average") {
+          if (ttm) {
+            const ttmKey = `${brand}|${row.account_code}|${row.line_item}|${row.venue}|${row.contact}|${row.allocation}`;
+            const ttmDaily = ttmIndex.get(ttmKey);
+            if (ttmDaily) {
+              const q = lastNCalendarMonths(dateFrom, 3);
+              const qSum = sumDailyInRange(ttmDaily, q.from, q.to);
+              // User spec: literal "/ 90 × days_in_period". We use the actual
+              // day count of those 3 months (88-92) so leap months don't bias.
+              periodValue = qSum / q.days * daysInPeriod;
+              usedFallback = true;
+              fallbackApplied.push({
+                brand,
+                account_code:  row.account_code,
+                account_name:  row.line_item,
+                rule_type:     "quarterly_average",
+                period_value:  periodValue,
+                method_detail:
+                  `Last 3 mo (${q.from}…${q.to}) €${qSum.toFixed(2)}` +
+                  ` / ${q.days} × ${daysInPeriod}`,
+              });
+            }
+          }
         }
       }
 

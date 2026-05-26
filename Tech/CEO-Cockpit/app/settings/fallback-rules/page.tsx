@@ -8,7 +8,12 @@ import { Plus, Trash2, Loader2, AlertCircle, CheckCircle2, X } from "lucide-reac
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type RuleType = "ttm_spread" | "manual_annual" | "disabled";
+type RuleType =
+  | "ttm_spread"
+  | "manual_annual"
+  | "previous_month"
+  | "quarterly_average"
+  | "disabled";
 type Org = "spa" | "aesthetics";
 
 interface FallbackRow {
@@ -32,9 +37,11 @@ const ORG_OPTIONS: { value: Org; label: string }[] = [
 ];
 
 const RULE_OPTIONS: { value: RuleType; label: string }[] = [
-  { value: "ttm_spread",    label: "TTM-spread" },
-  { value: "manual_annual", label: "Manual annual" },
-  { value: "disabled",      label: "Disabled" },
+  { value: "ttm_spread",        label: "TTM-spread" },
+  { value: "manual_annual",     label: "Manual annual" },
+  { value: "previous_month",    label: "Previous month" },
+  { value: "quarterly_average", label: "Quarterly avg (last 3 mo)" },
+  { value: "disabled",          label: "Disabled" },
 ];
 
 const RULE_LABEL: Record<RuleType, string> = Object.fromEntries(
@@ -51,15 +58,6 @@ async function apiFetch(url: string, opts?: RequestInit) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
   return json;
-}
-
-function fmtEur(n: number | undefined | null): string {
-  if (n === undefined || n === null || !Number.isFinite(Number(n))) return "";
-  return new Intl.NumberFormat("en-MT", {
-    style: "decimal",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(Number(n));
 }
 
 // ── Add Account modal ─────────────────────────────────────────────────────────
@@ -305,11 +303,7 @@ function FallbackRow({
             />
           </div>
         ) : (
-          <span className="text-xs text-text-secondary italic">
-            {row.params?.annual_amount != null
-              ? `(${fmtEur(row.params.annual_amount)})`
-              : "—"}
-          </span>
+          <span className="text-xs text-text-secondary italic">—</span>
         )}
       </td>
       <td className="px-3 py-2">
@@ -436,6 +430,8 @@ export default function FallbackRulesPage() {
                 Accounts in this list get period-smoothed when running partial-period EBITDA.{" "}
                 <span className="font-medium">TTM-spread</span> = last 12 months / 365 × days_in_period.{" "}
                 <span className="font-medium">Manual annual</span> = your specified annual amount / 365 × days_in_period.{" "}
+                <span className="font-medium">Previous month</span> = prior calendar month total × (days_in_period / days_in_prev_month).{" "}
+                <span className="font-medium">Quarterly avg</span> = last 3 full months total / 90 × days_in_period.{" "}
                 <span className="font-medium">Disabled</span> = literal period sum.
               </p>
             </div>

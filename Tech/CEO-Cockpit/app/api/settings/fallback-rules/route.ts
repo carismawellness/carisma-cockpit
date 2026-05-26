@@ -3,8 +3,19 @@ import { getAdminClient } from "@/lib/supabase/admin";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type RuleType = "ttm_spread" | "manual_annual" | "disabled";
-const RULE_TYPES: RuleType[] = ["ttm_spread", "manual_annual", "disabled"];
+type RuleType =
+  | "ttm_spread"
+  | "manual_annual"
+  | "previous_month"
+  | "quarterly_average"
+  | "disabled";
+const RULE_TYPES: RuleType[] = [
+  "ttm_spread",
+  "manual_annual",
+  "previous_month",
+  "quarterly_average",
+  "disabled",
+];
 type Org = "spa" | "aesthetics";
 const ORGS: Org[] = ["spa", "aesthetics"];
 
@@ -186,7 +197,14 @@ export async function PATCH(req: NextRequest) {
   if (b.notes  !== undefined) updates.notes  = typeof b.notes === "string" ? b.notes : null;
 
   // Merge params/annual_amount with existing row so we don't clobber other keys.
-  if (b.params !== undefined || b.annual_amount !== undefined) {
+  // We ALSO read existing when only rule_type changes, so we can drop a stale
+  // annual_amount when the rule is no longer manual_annual.
+  const needsParamMerge =
+    b.params !== undefined ||
+    b.annual_amount !== undefined ||
+    updates.rule_type !== undefined;
+
+  if (needsParamMerge) {
     const { data: existing, error: getErr } = await supabase
       .from("ebitda_fallback_rules")
       .select("rule_type, params")
@@ -218,6 +236,12 @@ export async function PATCH(req: NextRequest) {
         }
         merged.annual_amount = n;
       }
+    }
+
+    // When the effective rule isn't manual_annual, the stored amount is dead
+    // weight and confuses the UI (it shows "(1,200.00)" next to a TTM rule).
+    if (effectiveRuleType !== "manual_annual") {
+      delete merged.annual_amount;
     }
 
     if (effectiveRuleType === "manual_annual") {
