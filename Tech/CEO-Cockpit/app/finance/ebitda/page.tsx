@@ -13,6 +13,7 @@ import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useSpaEbitda } from "@/lib/hooks/useSpaEbitda";
 import { useAestheticsEbitda } from "@/lib/hooks/useAestheticsEbitda";
 import { useHqEbitda } from "@/lib/hooks/useHqEbitda";
+import { useEbitdaAggregated } from "@/lib/hooks/useEbitdaAggregated";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine, Cell,
@@ -135,9 +136,15 @@ function buildWaterfall(rows: VenueRow[], hqEbitda: number) {
 function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
 
   /* ── Live data hooks ─────────────────────────────────────────────── */
+  // Per-venue hooks still drive the venue P&L table and waterfall — the
+  // aggregated API only has brand-level granularity.
   const spa = useSpaEbitda(dateFrom, dateTo);
   const aes = useAestheticsEbitda(dateFrom, dateTo);
   const hq  = useHqEbitda(dateFrom, dateTo);
+  // Brand summary cards (top of page) now come from the aggregated API,
+  // which applies TTM / manual / previous-month / quarterly-average
+  // fallback rules and reads from the live Zoho-backed Aggregated Data tab.
+  const agg = useEbitdaAggregated(dateFrom, dateTo);
 
   /* ── EBITDA Export ───────────────────────────────────────────────── */
   // Calls /api/finance/ebitda-export which talks to Apps Script and writes
@@ -169,9 +176,9 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
     }
   }
 
-  const isFetching    = spa.isFetching || aes.isFetching || hq.isFetching;
+  const isFetching    = spa.isFetching || aes.isFetching || hq.isFetching || agg.isFetching;
   const isSyncing     = spa.isSyncing  || aes.isSyncing  || hq.isSyncing;
-  const syncError     = spa.syncError  || aes.syncError  || hq.syncError;
+  const syncError     = spa.syncError  || aes.syncError  || hq.syncError || (agg.error ? agg.error.message : null);
   const missingMonths = [...spa.missingMonths, ...aes.missingMonths, ...hq.missingMonths];
   const CORPORATE     = hq.data;
 
@@ -179,29 +186,29 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
   const aesData  = aes.depts.find(d => d.dept === "aesthetics");
   const slimData = aes.depts.find(d => d.dept === "slimming");
 
-  /* ── Brand aggregates ────────────────────────────────────────────── */
-  const spaTotals = useMemo(
-    () => spa.locations.reduce(
-      (acc, l) => ({ revenue: acc.revenue + l.revenue, ebitda: acc.ebitda + l.ebitda }),
-      { revenue: 0, ebitda: 0 },
-    ),
-    [spa.locations],
-  );
+  /* ── Brand aggregates (sourced from aggregated API) ─────────────── */
+  // These now reflect TTM-spread / manual-annual / previous-month /
+  // quarterly-average fallback rules — correct for partial-period EBITDA.
+  // The venue table below still uses the per-venue Supabase hooks; numbers
+  // can disagree on partial periods (the aggregated values are the truth).
+  const spaTotals = useMemo(() => ({
+    revenue: agg.spa.revenue, ebitda: agg.spa.ebitda,
+  }), [agg.spa.revenue, agg.spa.ebitda]);
 
   const aesSummary = useMemo(() => ({
-    revenue:   aesData?.revenue  ?? 0,
-    ebitda:    aesData?.ebitda   ?? 0,
-    ebitdaPct: aesData ? pctOf(aesData.ebitda, aesData.revenue) : 0,
-  }), [aesData]);
+    revenue:   agg.aes.revenue,
+    ebitda:    agg.aes.ebitda,
+    ebitdaPct: agg.aes.ebitdaPct,
+  }), [agg.aes.revenue, agg.aes.ebitda, agg.aes.ebitdaPct]);
 
   const slimSummary = useMemo(() => ({
-    revenue:   slimData?.revenue  ?? 0,
-    ebitda:    slimData?.ebitda   ?? 0,
-    ebitdaPct: slimData ? pctOf(slimData.ebitda, slimData.revenue) : 0,
-  }), [slimData]);
+    revenue:   agg.slim.revenue,
+    ebitda:    agg.slim.ebitda,
+    ebitdaPct: agg.slim.ebitdaPct,
+  }), [agg.slim.revenue, agg.slim.ebitda, agg.slim.ebitdaPct]);
 
-  const groupRevenue = spaTotals.revenue + aesSummary.revenue + slimSummary.revenue + CORPORATE.revenue;
-  const groupEbitda  = spaTotals.ebitda  + aesSummary.ebitda  + slimSummary.ebitda  + CORPORATE.ebitda;
+  const groupRevenue = spaTotals.revenue + aesSummary.revenue + slimSummary.revenue + agg.hq.revenue;
+  const groupEbitda  = spaTotals.ebitda  + aesSummary.ebitda  + slimSummary.ebitda  + agg.hq.ebitda;
   const groupMargin  = groupRevenue > 0 ? Math.round((groupEbitda / groupRevenue) * 100) : 0;
 
   /* ── Date labels ─────────────────────────────────────────────────── */
