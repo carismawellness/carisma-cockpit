@@ -65,7 +65,8 @@ function onOpenEbidaLayerMenu() {
     .addItem("Pull Daily Granular from Zoho…",     "showEbidaLayerDialog")
     .addItem("Refresh Salary Supplement only…",    "showSalarySupplementDialog")
     .addSeparator()
-    .addItem("Refresh Aggregated Data from Zoho Raw Layer", "refreshAggregatedData")
+    .addItem("Refresh Aggregated Data (full)",          "refreshAggregatedData")
+    .addItem("Refresh Aggregated Data (range from B1/D1)", "refreshAggregatedDataFromControlRange")
     .addSeparator()
     .addItem("Lock verified columns…",             "showLockVerifiedDialog")
     .addItem("Unlock verified columns…",           "showUnlockVerifiedDialog")
@@ -84,8 +85,50 @@ function onOpenEbidaLayerMenu() {
 // raw layer.
 var AGGREGATED_TAB              = "Aggregated Data";
 var AGGREGATED_OVERRIDE_BG      = "#ffd966";   // orange — user override marker
+// Aggregated Data tab's control row layout (row 1)
+var AGG_CTRL_FROM_COL           = 2;   // B1 — From date for partial-range refresh
+var AGG_CTRL_TO_COL             = 4;   // D1 — To date
+var AGG_CTRL_REFRESH_LABEL_COL  = 9;   // I1 — "🔄 Refresh"
+var AGG_CTRL_REFRESH_CHECKBOX   = 10;  // J1 — checkbox to trigger refresh
+var AGG_CTRL_STATUS_COL         = 8;   // H1 — last-refresh status
 
+// Full refresh — ignores control row dates, refreshes everything.
 function refreshAggregatedData() {
+  return _refreshAggregatedDataImpl(null, null);
+}
+
+// Range refresh — reads B1/D1 from the Aggregated Data tab; only touches
+// date columns whose header falls inside that range. Cells in other date
+// columns are left alone (untouched, no preserve-vs-update logic runs).
+function refreshAggregatedDataFromControlRange() {
+  var ss = SpreadsheetApp.openById(EBIDA_SPREADSHEET_ID);
+  var dst = ss.getSheetByName(AGGREGATED_TAB);
+  if (!dst) throw new Error("Aggregated Data tab not found — run a full refresh first to create it.");
+  var fromVal = dst.getRange(CONTROL_ROW, AGG_CTRL_FROM_COL).getValue();
+  var toVal   = dst.getRange(CONTROL_ROW, AGG_CTRL_TO_COL).getValue();
+  var from    = _normalizeDateCell(fromVal);
+  var to      = _normalizeDateCell(toVal);
+  if (!from || !to) {
+    throw new Error("Set From in B1 and To in D1 first (YYYY-MM-DD).");
+  }
+  if (from > to) throw new Error("From date must be on or before To date.");
+  return _refreshAggregatedDataImpl(from, to);
+}
+
+function _normalizeDateCell(v) {
+  if (!v) return null;
+  if (v instanceof Date) {
+    var ss = SpreadsheetApp.openById(EBIDA_SPREADSHEET_ID);
+    return Utilities.formatDate(v, ss.getSpreadsheetTimeZone(), "yyyy-MM-dd");
+  }
+  var s = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  return null;
+}
+
+// Core refresh — when (fromIso, toIso) supplied, restrict the refresh to date
+// columns whose header falls in that range. Otherwise refresh every column.
+function _refreshAggregatedDataImpl(fromIso, toIso) {
   var ui = SpreadsheetApp.getUi();
   var ss = SpreadsheetApp.openById(EBIDA_SPREADSHEET_ID);
   var src = ss.getSheetByName(EBIDA_TAB);
@@ -101,73 +144,116 @@ function refreshAggregatedData() {
   var firstTime = !dst;
   if (firstTime) {
     dst = ss.insertSheet(AGGREGATED_TAB);
-    // Move it right after Zoho Raw Layer
     ss.setActiveSheet(dst);
     ss.moveActiveSheet(src.getIndex() + 1);
   }
 
-  // Read the full source snapshot (values + colours so we can preserve user
-  // edits AND existing protection markers from the raw layer).
   var srcRange = src.getRange(1, 1, srcLastRow, srcLastCol);
   var srcValues = srcRange.getValues();
-  var srcBgs    = srcRange.getBackgrounds();
   var srcFmts   = srcRange.getNumberFormats();
 
   if (firstTime) {
-    // Brand-new tab — straight copy of Zoho Raw Layer.
     dst.getRange(1, 1, srcLastRow, srcLastCol).setValues(srcValues);
     dst.getRange(1, 1, srcLastRow, srcLastCol).setNumberFormats(srcFmts);
     dst.setFrozenRows(HEADER_ROW);
     dst.setFrozenColumns(META_COUNT);
-    dst.getRange(CONTROL_ROW, 1).setValue("Aggregated Data (overrides — orange = manual)").setFontWeight("bold");
+    _ensureAggregatedControlCells(dst);
     ui.alert("Aggregated Data created with " + (srcLastRow - HEADER_ROW) + " row(s) × " +
-             (srcLastCol - META_COUNT) + " date column(s).");
+             (srcLastCol - META_COUNT) + " date column(s).\n\nUse B1/D1 + the J1 checkbox to do a date-range refresh.");
     return "Aggregated Data tab created — " + (srcLastRow - HEADER_ROW) + " rows copied from Zoho Raw Layer.";
   }
 
-  // Existing tab — REFRESH only non-override cells. Read current dst state.
+  _ensureAggregatedControlCells(dst);
+
+  // Match destination size to source.
   var dstLastRow = dst.getLastRow();
   var dstLastCol = dst.getLastColumn();
-  var resize = (dstLastRow !== srcLastRow) || (dstLastCol !== srcLastCol);
-  if (resize) {
-    // Grow / shrink the destination to match source shape. New cells will
-    // start blank and get filled below.
-    if (dstLastRow < srcLastRow) dst.insertRowsAfter(Math.max(dstLastRow, 1), srcLastRow - dstLastRow);
-    if (dstLastCol < srcLastCol) dst.insertColumnsAfter(Math.max(dstLastCol, 1), srcLastCol - dstLastCol);
-    dstLastRow = dst.getLastRow();
-    dstLastCol = dst.getLastColumn();
-  }
+  if (dstLastRow < srcLastRow) dst.insertRowsAfter(Math.max(dstLastRow, 1), srcLastRow - dstLastRow);
+  if (dstLastCol < srcLastCol) dst.insertColumnsAfter(Math.max(dstLastCol, 1), srcLastCol - dstLastCol);
+
   var dstRange = dst.getRange(1, 1, srcLastRow, srcLastCol);
   var dstValues = dstRange.getValues();
   var dstBgs    = dstRange.getBackgrounds();
 
+  // Build a set of column indices to refresh. If fromIso/toIso provided,
+  // restrict to date columns whose header is in [fromIso, toIso]; otherwise
+  // include EVERY column (meta + every date column).
+  var refreshCols = {};
+  var srcHeaderRow = srcValues[HEADER_ROW - 1];
+  if (fromIso && toIso) {
+    // Date-range mode: only touch matching date columns. Meta columns left alone.
+    var headerYear = parseInt(fromIso.slice(0, 4), 10);
+    for (var c = META_COUNT; c < srcLastCol; c++) {
+      var iso = _parseDateHeader(srcHeaderRow[c], headerYear);
+      if (!iso) continue;
+      if (iso < fromIso || iso > toIso) continue;
+      refreshCols[c] = true;
+    }
+  } else {
+    // Full mode: every column in range.
+    for (var c2 = 0; c2 < srcLastCol; c2++) refreshCols[c2] = true;
+  }
+
+  var matchedCols = Object.keys(refreshCols).length;
+  if (fromIso && matchedCols === 0) {
+    throw new Error("No date columns found in [" + fromIso + " → " + toIso + "].");
+  }
+
   var updates = 0, preserved = 0;
   for (var r = 0; r < srcLastRow; r++) {
-    for (var c = 0; c < srcLastCol; c++) {
-      var dstBg = String(dstBgs[r][c] || "").toLowerCase();
-      // Preserve any cell already marked as user override OR as a manual
-      // edit (yellow / red font / locked) — those are intentional and
-      // shouldn't be clobbered by refreshing from the raw layer.
+    for (var c3 in refreshCols) {
+      var cIdx = parseInt(c3, 10);
+      var dstBg = String(dstBgs[r][cIdx] || "").toLowerCase();
       if (dstBg === AGGREGATED_OVERRIDE_BG ||
           dstBg === PROTECTED_BG_COLOR ||
           dstBg === LOCKED_BG_COLOR) {
         preserved++;
         continue;
       }
-      if (dstValues[r][c] !== srcValues[r][c]) {
-        dst.getRange(r + 1, c + 1).setValue(srcValues[r][c]);
+      if (dstValues[r][cIdx] !== srcValues[r][cIdx]) {
+        dst.getRange(r + 1, cIdx + 1).setValue(srcValues[r][cIdx]);
         updates++;
       }
     }
   }
-  // Reapply source number-formats only on the data block (not the override cells)
-  // so user-edited values still render as numbers.
-  dst.getRange(HEADER_ROW + 1, META_COUNT + 1, srcLastRow - HEADER_ROW, srcLastCol - META_COUNT)
-     .setNumberFormat("#,##0.00;(#,##0.00);-");
+  if (srcLastRow > HEADER_ROW && srcLastCol > META_COUNT) {
+    dst.getRange(HEADER_ROW + 1, META_COUNT + 1, srcLastRow - HEADER_ROW, srcLastCol - META_COUNT)
+       .setNumberFormat("#,##0.00;(#,##0.00);-");
+  }
 
-  var msg = "Aggregated Data refreshed — " + updates + " cell update(s), " + preserved + " override cell(s) preserved.";
-  ui.alert(msg);
+  var rangeDesc = fromIso ? (" [" + fromIso + " → " + toIso + ", " + matchedCols + " cols]") : " [full]";
+  var msg = "Aggregated Data refreshed" + rangeDesc + " — " + updates + " cell update(s), " + preserved + " override cell(s) preserved.";
+  dst.getRange(CONTROL_ROW, AGG_CTRL_STATUS_COL).setValue(msg);
+  if (typeof e === "undefined" || !e) ui.alert(msg);
   return msg;
+}
+
+// Idempotent: populate B1/D1 placeholders + I1/J1 button + H1 status cell
+// on the Aggregated Data tab so the user has visual controls.
+function _ensureAggregatedControlCells(sheet) {
+  var labelB = sheet.getRange(CONTROL_ROW, 1).getValue();
+  if (!labelB || String(labelB).indexOf("Aggregated Data") === -1) {
+    sheet.getRange(CONTROL_ROW, 1).setValue("Aggregated Data — overrides = orange").setFontWeight("bold");
+  }
+  // From / To labels + cells
+  if (!sheet.getRange(CONTROL_ROW, AGG_CTRL_FROM_COL - 1).getValue()) {
+    sheet.getRange(CONTROL_ROW, AGG_CTRL_FROM_COL - 1).setValue("From:").setFontWeight("bold").setHorizontalAlignment("right");
+  }
+  sheet.getRange(CONTROL_ROW, AGG_CTRL_FROM_COL).setNumberFormat("yyyy-mm-dd").setBackground("#fff2cc");
+  if (!sheet.getRange(CONTROL_ROW, AGG_CTRL_TO_COL - 1).getValue()) {
+    sheet.getRange(CONTROL_ROW, AGG_CTRL_TO_COL - 1).setValue("To:").setFontWeight("bold").setHorizontalAlignment("right");
+  }
+  sheet.getRange(CONTROL_ROW, AGG_CTRL_TO_COL).setNumberFormat("yyyy-mm-dd").setBackground("#fff2cc");
+  // Refresh checkbox (J1) with label (I1)
+  sheet.getRange(CONTROL_ROW, AGG_CTRL_REFRESH_LABEL_COL).setValue("🔄 Refresh")
+    .setBackground("#e8f0fe").setFontColor("#1967d2").setFontWeight("bold")
+    .setHorizontalAlignment("center");
+  var cbCell = sheet.getRange(CONTROL_ROW, AGG_CTRL_REFRESH_CHECKBOX);
+  cbCell.setDataValidation(SpreadsheetApp.newDataValidation().requireCheckbox().build());
+  if (cbCell.getValue() !== true && cbCell.getValue() !== false) cbCell.setValue(false);
+  // Status cell
+  sheet.getRange(CONTROL_ROW, AGG_CTRL_STATUS_COL).setFontStyle("italic").setFontColor("#5f6368");
+  sheet.setRowHeight(CONTROL_ROW, 32);
 }
 
 // onEdit handler — paint any cell the user changes in the Aggregated Data tab
@@ -179,12 +265,28 @@ function onEditAggregatedData(e) {
     if (!e || !e.range) return;
     var sheet = e.range.getSheet();
     if (sheet.getName() !== AGGREGATED_TAB) return;
+    var row = e.range.getRow();
+    var col = e.range.getColumn();
+
+    // J1 checkbox checked → run range refresh, then auto-uncheck so the
+    // checkbox acts like a one-shot button.
+    if (row === CONTROL_ROW && col === AGG_CTRL_REFRESH_CHECKBOX && e.value === "TRUE") {
+      try {
+        var result = refreshAggregatedDataFromControlRange();
+        sheet.getRange(CONTROL_ROW, AGG_CTRL_STATUS_COL).setValue(result);
+      } catch (innerErr) {
+        sheet.getRange(CONTROL_ROW, AGG_CTRL_STATUS_COL).setValue("ERR: " + (innerErr.message || innerErr));
+      } finally {
+        sheet.getRange(CONTROL_ROW, AGG_CTRL_REFRESH_CHECKBOX).setValue(false);
+      }
+      return;
+    }
+
     // Skip header rows + meta cols — overrides only make sense on data area.
-    if (e.range.getRow() < FIRST_DATA_ROW) return;
-    if (e.range.getColumn() <= META_COUNT) return;
-    // Skip the case where the user clears a cell back to empty AND the cell
-    // was painted orange — we'll keep the orange so they know it's still an
-    // override (intentional zero).
+    if (row < FIRST_DATA_ROW) return;
+    if (col <= META_COUNT) return;
+    // Paint the edited cell orange — marks it as a user override so the
+    // next refresh from Zoho Raw Layer preserves it.
     e.range.setBackground(AGGREGATED_OVERRIDE_BG);
   } catch (err) {
     Logger.log("onEditAggregatedData error: " + err);
