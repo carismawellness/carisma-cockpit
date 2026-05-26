@@ -186,7 +186,7 @@ function lastNCalendarMonths(dateFrom: string, n: number): { from: string; to: s
   return {
     from,
     to,
-    days: daysBetween(from, to),
+    days: daysBetweenInclusive(from, to),
   };
 }
 
