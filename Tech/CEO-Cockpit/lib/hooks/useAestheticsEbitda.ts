@@ -402,8 +402,16 @@ export function useAestheticsEbitda(dateFrom: Date, dateTo: Date): UseAesthetics
     },
   });
 
-  const missingKey = missingMonths.join(",");
-  if (missingMonths.length > 0 && !isFetching && !syncMutation.isPending && missingKey !== lastFiredRef.current) {
+  // Auto-sync only fires when current OR previous calendar month is missing.
+  // Historical months stay visible in the badge but need a manual Sync click —
+  // otherwise opening any back-period kicks off a Zoho ETL on every page load.
+  const now = new Date();
+  const curMonthIso  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+  const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevMonthIso = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}-01`;
+  const autoSyncable = missingMonths.filter(m => m === curMonthIso || m === prevMonthIso);
+  const missingKey = autoSyncable.join(",");
+  if (autoSyncable.length > 0 && !isFetching && !syncMutation.isPending && missingKey !== lastFiredRef.current) {
     lastFiredRef.current = missingKey;
     setTimeout(() => syncMutation.mutate({ force: false }), 0);
   }
