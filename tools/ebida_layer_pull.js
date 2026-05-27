@@ -144,7 +144,10 @@ function _normalizeDateCell(v) {
 // Core refresh — when (fromIso, toIso) supplied, restrict the refresh to date
 // columns whose header falls in that range. Otherwise refresh every column.
 function _refreshAggregatedDataImpl(fromIso, toIso) {
-  var ui = SpreadsheetApp.getUi();
+  // getUi() throws in web-app / trigger contexts. We still want the function
+  // to run there (e.g. doGet action=refresh_supp_sal); just skip the alerts.
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (_uiErr) { ui = null; }
   var ss = SpreadsheetApp.openById(EBIDA_SPREADSHEET_ID);
   var src = ss.getSheetByName(EBIDA_TAB);
   if (!src) throw new Error("Source tab '" + EBIDA_TAB + "' not found.");
@@ -173,7 +176,7 @@ function _refreshAggregatedDataImpl(fromIso, toIso) {
     dst.setFrozenRows(HEADER_ROW);
     dst.setFrozenColumns(META_COUNT);
     _ensureAggregatedControlCells(dst);
-    ui.alert("Aggregated Data created with " + (srcLastRow - HEADER_ROW) + " row(s) × " +
+    if (ui) ui.alert("Aggregated Data created with " + (srcLastRow - HEADER_ROW) + " row(s) × " +
              (srcLastCol - META_COUNT) + " date column(s).\n\nUse B1/D1 + the J1 checkbox to do a date-range refresh.");
     return "Aggregated Data tab created — " + (srcLastRow - HEADER_ROW) + " rows copied from Zoho Raw Layer.";
   }
@@ -240,7 +243,7 @@ function _refreshAggregatedDataImpl(fromIso, toIso) {
   var rangeDesc = fromIso ? (" [" + fromIso + " → " + toIso + ", " + matchedCols + " cols]") : " [full]";
   var msg = "Aggregated Data refreshed" + rangeDesc + " — " + updates + " cell update(s), " + preserved + " override cell(s) preserved.";
   dst.getRange(CONTROL_ROW, AGG_CTRL_STATUS_COL).setValue(msg);
-  if (typeof e === "undefined" || !e) ui.alert(msg);
+  if (ui && (typeof e === "undefined" || !e)) ui.alert(msg);
   return msg;
 }
 
@@ -1089,7 +1092,7 @@ function refreshSalarySupplement(dateFrom, dateTo) {
   var allSuppRows = [];
   var allDates    = {};
   ["spa", "aesthetics"].forEach(function(org) {
-    var chunks = _splitIntoChunks(dateFrom, dateTo, CHUNK_DAYS);
+    var chunks = _computeChunks(dateFrom, dateTo, CHUNK_DAYS);
     for (var i = 0; i < chunks.length; i++) {
       var c = chunks[i];
       var data = _fetchChunk(c.from, c.to, org);
@@ -1112,6 +1115,131 @@ function refreshSalarySupplement(dateFrom, dateTo) {
     stats.cleared + " stale cell(s) cleared";
   _setStatus(summary.replace(/\n/g, " | "));
   return summary;
+}
+
+// Faster Salary Supplement refresh that bypasses the Cockpit→Zoho API path.
+// Reads salary_supplement_monthly directly from Supabase, aggregates per
+// (slug, month) → builds rows in the same shape _mergeSalarySupplementOnly
+// expects, then runs the same merge + Aggregated Data refresh.
+//
+// Use this when refreshSalarySupplement() times out (the Cockpit /api
+// /finance/zoho-transactions-daily roundtrip pulls Zoho for the full range
+// and frequently exceeds the 6-min Apps Script budget). This version only
+// hits Supabase, so it runs in seconds.
+var _SUPABASE_URL_FOR_SUPP = "https://gnripfrvcxrakjhiwlxy.supabase.co";
+var _SUPABASE_ANON_FOR_SUPP =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImducmlwZnJ2Y3hyYWtqaGl3bHh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyNDc4MzMsImV4cCI6MjA5MTgyMzgzM30.3bXDIXlF0UUmm4r7I2yNBK8zQUnRA0bkK4I0_vX2gUs";
+
+// slug → { display, brand }. Mirrors SALARY_SLUG_TO_ENTITY in
+// cockpit-revenue-feeds.ts so the row shape is identical to what
+// loadSalarySupplementMonthly produces.
+var _SUPP_SLUG_TO_ENTITY = {
+  hugos:      { display: "Hugos",            brand: "SPA"  },
+  inter:      { display: "InterContinental", brand: "SPA"  },
+  hyatt:      { display: "Hyatt",            brand: "SPA"  },
+  ramla:      { display: "Ramla",            brand: "SPA"  },
+  labranda:   { display: "Labranda",         brand: "SPA"  },
+  odycy:      { display: "Sunny Coast",      brand: "SPA"  },
+  excelsior:  { display: "Excelsior",        brand: "SPA"  },
+  novotel:    { display: "Novotel",          brand: "SPA"  },
+  hq:         { display: "HQ",               brand: "HQ"   },
+  aesthetics: { display: "Aesthetics",       brand: "AES"  },
+  slimming:   { display: "Slimming",         brand: "SLIM" },
+};
+
+function refreshSalarySupplementFromSupabase(dateFrom, dateTo) {
+  if (!dateFrom || !dateTo) throw new Error("From and To dates required.");
+  if (dateFrom > dateTo)    throw new Error("From date must be on or before To date.");
+
+  // Fetch from Supabase: every frozen row whose month-first-day overlaps
+  // [dateFrom, dateTo]. Last-day-of-month is computed client-side so partial-
+  // month windows are handled correctly downstream.
+  var fromMonth = dateFrom.slice(0, 7) + "-01";
+  var toMonth   = dateTo.slice(0, 7)   + "-01";
+  var url = _SUPABASE_URL_FOR_SUPP +
+    "/rest/v1/salary_supplement_monthly" +
+    "?select=month,spa_slug,amount" +
+    "&month=gte." + encodeURIComponent(fromMonth) +
+    "&month=lte." + encodeURIComponent(toMonth) +
+    "&is_frozen=eq.true";
+  var resp = UrlFetchApp.fetch(url, {
+    method: "get",
+    headers: {
+      apikey:        _SUPABASE_ANON_FOR_SUPP,
+      Authorization: "Bearer " + _SUPABASE_ANON_FOR_SUPP,
+    },
+    muteHttpExceptions: true,
+  });
+  if (resp.getResponseCode() !== 200) {
+    throw new Error("Supabase fetch failed " + resp.getResponseCode() + ": " +
+      resp.getContentText().slice(0, 200));
+  }
+  var suppRowsRaw = JSON.parse(resp.getContentText());
+
+  // Aggregate per (month, slug). Null slug → "hq" bucket (matches the
+  // Cockpit-side fallback in loadSalarySupplementMonthly).
+  var bucket = {};   // key = month|slug → total
+  for (var i = 0; i < suppRowsRaw.length; i++) {
+    var r = suppRowsRaw[i];
+    var slug = (r.spa_slug == null ? "hq" : String(r.spa_slug)).trim();
+    var amt  = Number(r.amount || 0);
+    if (!isFinite(amt) || amt === 0) continue;
+    var key  = r.month + "|" + slug;
+    bucket[key] = (bucket[key] || 0) + amt;
+  }
+
+  // Build rows in the shape _mergeSalarySupplementOnly expects. Each
+  // bucket entry becomes one row, posted to the last day of its month.
+  var rows = [];
+  var allDatesSet = {};
+  for (var k in bucket) {
+    var parts = k.split("|");
+    var monthFirstDay = parts[0];
+    var slug = parts[1];
+    var entity = _SUPP_SLUG_TO_ENTITY[slug];
+    if (!entity) continue;   // unknown slug — skip silently
+    var lastDay = _lastDayOfMonth(monthFirstDay);
+    if (lastDay < dateFrom || lastDay > dateTo) continue;
+    var amount = Math.round(bucket[k] * 100) / 100;
+    if (amount === 0) continue;
+    var venue_slug = entity.display.toLowerCase().replace(/\s+/g, "_");
+    var daily = {};
+    daily[lastDay] = amount;
+    allDatesSet[lastDay] = true;
+    rows.push({
+      brand:           entity.brand,
+      venue:           entity.display,
+      venue_slug:      venue_slug,
+      account_name:    "Salary Supplement",
+      account_code:    "SUPP_SAL",
+      ebitda_category: "wages",
+      split_rule:      "direct",
+      tag_source:      "split",
+      contact:         "",
+      daily:           daily,
+    });
+  }
+
+  var datesList = Object.keys(allDatesSet).sort();
+  var stats = _mergeSalarySupplementOnly(rows, datesList, dateFrom, dateTo);
+  // Cascade EBIDA Layer → Aggregated Data so the dashboard sees the update
+  // without a separate menu click.
+  var aggMsg = _refreshAggregatedDataImpl(dateFrom, dateTo);
+  return {
+    supp_rows:       rows.length,
+    updated_cells:   stats.updated,
+    appended_rows:   stats.appended,
+    protected_cells: stats.protected,
+    cleared_cells:   stats.cleared,
+    agg_result:      aggMsg,
+  };
+}
+
+function _lastDayOfMonth(monthFirstDayIso) {
+  var y = parseInt(monthFirstDayIso.slice(0, 4), 10);
+  var m = parseInt(monthFirstDayIso.slice(5, 7), 10);
+  var lastD = new Date(y, m, 0).getDate();   // day 0 of next month = last of this
+  return monthFirstDayIso.slice(0, 7) + "-" + String(lastD).padStart(2, "0");
 }
 
 // Specialised merge: ONLY touches rows where account_code = "SUPP_SAL".
@@ -1539,6 +1667,34 @@ function doGet(e) {
       var dumpResult = dumpSheetRows(p.org, p.code, p.month);
       return ContentService.createTextOutput(JSON.stringify(dumpResult))
         .setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService.createTextOutput(JSON.stringify({
+        error: (err && err.message ? err.message : String(err))
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
+  // Salary Supplement refresh — pulls SUPP_SAL rows from Cockpit for both
+  // orgs over [from..to], merges into EBIDA Layer (touching only SUPP_SAL
+  // rows), then copies the refresh window from EBIDA Layer into Aggregated
+  // Data so the dashboard sees the update without a manual menu click. Use
+  // when salary_supplement_monthly slugs change (e.g. user moves an
+  // employee from Slimming → Aesthetics in the Cockpit settings page).
+  //   <web-app-url>/exec?token=<TOKEN>&action=refresh_supp_sal&from=2026-02-01&to=2026-02-28
+  if (p.action === "refresh_supp_sal") {
+    try {
+      if (!p.from || !p.to) throw new Error("from and to params required (YYYY-MM-DD).");
+      // Uses the Supabase-direct path to stay inside the 6-min Apps Script
+      // budget. The Cockpit-API path (refreshSalarySupplement) calls
+      // /api/finance/zoho-transactions-daily which pulls Zoho for the full
+      // range and routinely exceeds the budget for multi-week windows.
+      var result = refreshSalarySupplementFromSupabase(p.from, p.to);
+      return ContentService.createTextOutput(JSON.stringify({
+        ok:     true,
+        from:   p.from,
+        to:     p.to,
+        result: result,
+      })).setMimeType(ContentService.MimeType.JSON);
     } catch (err) {
       return ContentService.createTextOutput(JSON.stringify({
         error: (err && err.message ? err.message : String(err))
