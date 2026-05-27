@@ -1242,6 +1242,98 @@ function _lastDayOfMonth(monthFirstDayIso) {
   return monthFirstDayIso.slice(0, 7) + "-" + String(lastD).padStart(2, "0");
 }
 
+// Same as refreshSalarySupplementFromSupabase, but first clears the cell-
+// level verified-lock background (#fff9c4) on every existing SUPP_SAL row
+// in the window, runs the merge, then re-applies the lock background to
+// the SUPP_SAL cells in that window. The column-wide Protected Range set
+// by lockVerifiedColumns is untouched — only the per-cell paint is
+// rewritten — so the script (running as the sheet owner) can write while
+// other editors stay locked out.
+//
+// Use this when slug changes need to propagate through a month that was
+// previously locked as verified, without unlocking the whole column.
+function refreshSalarySupplementFromSupabaseForce(dateFrom, dateTo) {
+  if (!dateFrom || !dateTo) throw new Error("From and To dates required.");
+  if (dateFrom > dateTo)    throw new Error("From date must be on or before To date.");
+
+  var ss    = SpreadsheetApp.openById(EBIDA_SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(EBIDA_TAB);
+  if (!sheet) throw new Error("Tab '" + EBIDA_TAB + "' not found.");
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+
+  var headerVals  = sheet.getRange(HEADER_ROW, 1, 1, lastCol).getValues()[0];
+  var fromYear    = parseInt(dateFrom.slice(0, 4), 10);
+  var dateCols    = [];  // 0-indexed column indices for date columns in window
+  for (var c = META_COUNT; c < lastCol; c++) {
+    var iso = _parseDateHeader(headerVals[c], fromYear);
+    if (!iso) continue;
+    if (iso < dateFrom || iso > dateTo) continue;
+    dateCols.push(c);
+  }
+  if (dateCols.length === 0) throw new Error("No date columns in window.");
+
+  var supp_rows_unlocked = 0;
+  var supp_cells_unlocked = 0;
+  // Step 1: clear bg + font color on SUPP_SAL rows in the window so the
+  // merge isn't blocked by _isProtected().
+  var dataRange = sheet.getRange(FIRST_DATA_ROW, 1, lastRow - FIRST_DATA_ROW + 1, lastCol);
+  var vals = dataRange.getValues();
+  var bgs  = dataRange.getBackgrounds();
+  var fgs  = dataRange.getFontColors();
+  var suppRowIndices = [];  // 0-indexed within dataRange
+  for (var r = 0; r < vals.length; r++) {
+    var accCode = String(vals[r][2] || "").trim();
+    if (_normalizeAccountCode(accCode) !== "SUPP_SAL") continue;
+    suppRowIndices.push(r);
+    var rowChanged = false;
+    for (var ci = 0; ci < dateCols.length; ci++) {
+      var col = dateCols[ci];
+      var bg  = String(bgs[r][col] || "").toLowerCase();
+      var fg  = String(fgs[r][col] || "").toLowerCase();
+      var hadLock   = (bg === LOCKED_BG_COLOR);
+      var hadYellow = (bg === PROTECTED_BG_COLOR);
+      var hadRed    = (fg === PROTECTED_FONT_COLOR);
+      if (!hadLock && !hadYellow && !hadRed) continue;
+      var cell = sheet.getRange(FIRST_DATA_ROW + r, col + 1);
+      if (hadLock || hadYellow) cell.setBackground(null);
+      if (hadRed)               cell.setFontColor(null);
+      supp_cells_unlocked++;
+      rowChanged = true;
+    }
+    if (rowChanged) supp_rows_unlocked++;
+  }
+  SpreadsheetApp.flush();
+
+  // Step 2: run the merge (uses _mergeSalarySupplementOnly internally, which
+  // also runs _refreshAggregatedDataImpl to cascade to the Aggregated Data tab).
+  var refreshResult = refreshSalarySupplementFromSupabase(dateFrom, dateTo);
+
+  // Step 3: re-apply the verified-lock bg to every SUPP_SAL cell in the
+  // window. Note: row indices may have shifted if the merge appended new
+  // rows (e.g. when no existing AES SUPP_SAL row existed). Re-scan to be safe.
+  lastRow = sheet.getLastRow();
+  dataRange = sheet.getRange(FIRST_DATA_ROW, 1, lastRow - FIRST_DATA_ROW + 1, lastCol);
+  var vals2 = dataRange.getValues();
+  var supp_cells_relocked = 0;
+  for (var r2 = 0; r2 < vals2.length; r2++) {
+    var accCode2 = String(vals2[r2][2] || "").trim();
+    if (_normalizeAccountCode(accCode2) !== "SUPP_SAL") continue;
+    for (var ci2 = 0; ci2 < dateCols.length; ci2++) {
+      sheet.getRange(FIRST_DATA_ROW + r2, dateCols[ci2] + 1).setBackground(LOCKED_BG_COLOR);
+      supp_cells_relocked++;
+    }
+  }
+  SpreadsheetApp.flush();
+
+  return {
+    supp_rows_unlocked:   supp_rows_unlocked,
+    supp_cells_unlocked:  supp_cells_unlocked,
+    supp_cells_relocked:  supp_cells_relocked,
+    refresh:              refreshResult,
+  };
+}
+
 // Specialised merge: ONLY touches rows where account_code = "SUPP_SAL".
 // Update / append / clear logic mirrors _mergeIntoSheet, but the clearing
 // scope is restricted to existing SUPP_SAL rows in the refresh window so
@@ -1684,15 +1776,19 @@ function doGet(e) {
   if (p.action === "refresh_supp_sal") {
     try {
       if (!p.from || !p.to) throw new Error("from and to params required (YYYY-MM-DD).");
-      // Uses the Supabase-direct path to stay inside the 6-min Apps Script
-      // budget. The Cockpit-API path (refreshSalarySupplement) calls
-      // /api/finance/zoho-transactions-daily which pulls Zoho for the full
-      // range and routinely exceeds the budget for multi-week windows.
-      var result = refreshSalarySupplementFromSupabase(p.from, p.to);
+      // Pass force=true to bypass the per-cell verified-lock bg on SUPP_SAL
+      // rows (preserves column-wide Protected Ranges + re-applies the lock
+      // bg after the merge). Use when a previously-verified month needs a
+      // slug correction to propagate.
+      var force = String(p.force || "").toLowerCase() === "true";
+      var result = force
+        ? refreshSalarySupplementFromSupabaseForce(p.from, p.to)
+        : refreshSalarySupplementFromSupabase(p.from, p.to);
       return ContentService.createTextOutput(JSON.stringify({
         ok:     true,
         from:   p.from,
         to:     p.to,
+        force:  force,
         result: result,
       })).setMimeType(ContentService.MimeType.JSON);
     } catch (err) {
