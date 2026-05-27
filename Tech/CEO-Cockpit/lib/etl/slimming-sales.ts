@@ -115,6 +115,25 @@ function processRows(
 
   for (const row of dataRows) {
     const col = makeColFn(headers, row);
+
+    // The Sales sheet ends with a totals row (all category cells empty,
+    // Full price + Paid both contain the SUM totals), followed by a
+    // commission summary block where therapist names ("Dr Teebi",
+    // "Brunna", "Diana") sit in the Treatments column with their
+    // commission amount in Paid. Without stopping here those rows look
+    // like real sales and inflate the month's revenue.
+    if (
+      !col("Date") && !col("Client") && !col("Weight loss") &&
+      !col("Treatment", "Treatments") && !col("Medical consultation") &&
+      !col("Products")
+    ) {
+      const fullSum = parsePrice(col("Full price"));
+      const paidSum = parsePrice(col("Paid"));
+      if (fullSum !== null && paidSum !== null && fullSum >= 100 && paidSum >= 100) {
+        break;
+      }
+    }
+
     const dateRaw  = col("Date");
     const client   = col("Client") || null;
     const treatment = col("Treatment", "Treatments") || null;
