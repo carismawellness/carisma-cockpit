@@ -1880,13 +1880,17 @@ function dumpSheetRows(org, code, ym) {
 // corrected parser output.
 function clearProtectionOnRows(org, code, fromIso, toIso, includeLocks) {
   if (!org)  throw new Error("org param required (SPA or Aesthetics).");
-  if (!code) throw new Error("code param required (account_code).");
   if (!fromIso || !/^\d{4}-\d{2}-\d{2}$/.test(fromIso)) throw new Error("from param required (YYYY-MM-DD).");
   if (!toIso   || !/^\d{4}-\d{2}-\d{2}$/.test(toIso))   throw new Error("to param required (YYYY-MM-DD).");
   if (toIso < fromIso) throw new Error("to must be >= from");
 
   var orgLower   = String(org).trim().toLowerCase();
-  var searchCode = String(code).trim();
+  // code="*" or code="" means apply to ALL account codes in the window
+  // (bulk-unlock variant used for wide historical re-syncs after a parser
+  // fix that affects many accounts).
+  var allCodes   = false;
+  var searchCode = String(code || "").trim();
+  if (searchCode === "" || searchCode === "*") allCodes = true;
   var stripped   = /^\d+$/.test(searchCode) ? searchCode.replace(/^0+/, "") : searchCode;
   if (stripped === "" && /^\d+$/.test(searchCode)) stripped = "0";
 
@@ -1927,10 +1931,12 @@ function clearProtectionOnRows(org, code, fromIso, toIso, includeLocks) {
     if (orgLower === "spa") { if (brand !== "spa") continue; }
     else                    { if (brand === "spa") continue; }
 
-    var rowCode = String(vals[r][2] || "").trim();
-    var rowCodeStripped = /^\d+$/.test(rowCode) ? rowCode.replace(/^0+/, "") : rowCode;
-    if (rowCodeStripped === "" && /^\d+$/.test(rowCode)) rowCodeStripped = "0";
-    if (rowCode !== searchCode && rowCodeStripped !== stripped) continue;
+    if (!allCodes) {
+      var rowCode = String(vals[r][2] || "").trim();
+      var rowCodeStripped = /^\d+$/.test(rowCode) ? rowCode.replace(/^0+/, "") : rowCode;
+      if (rowCodeStripped === "" && /^\d+$/.test(rowCode)) rowCodeStripped = "0";
+      if (rowCode !== searchCode && rowCodeStripped !== stripped) continue;
+    }
 
     var changedAny = false;
     for (var mi = 0; mi < matchedCols.length; mi++) {
@@ -1958,10 +1964,12 @@ function clearProtectionOnRows(org, code, fromIso, toIso, includeLocks) {
     var brand2 = String(vals[r2][0] || "").trim().toLowerCase();
     if (orgLower === "spa") { if (brand2 !== "spa") continue; }
     else                    { if (brand2 === "spa") continue; }
-    var rowCode2 = String(vals[r2][2] || "").trim();
-    var rowCodeStripped2 = /^\d+$/.test(rowCode2) ? rowCode2.replace(/^0+/, "") : rowCode2;
-    if (rowCodeStripped2 === "" && /^\d+$/.test(rowCode2)) rowCodeStripped2 = "0";
-    if (rowCode2 !== searchCode && rowCodeStripped2 !== stripped) continue;
+    if (!allCodes) {
+      var rowCode2 = String(vals[r2][2] || "").trim();
+      var rowCodeStripped2 = /^\d+$/.test(rowCode2) ? rowCode2.replace(/^0+/, "") : rowCode2;
+      if (rowCodeStripped2 === "" && /^\d+$/.test(rowCode2)) rowCodeStripped2 = "0";
+      if (rowCode2 !== searchCode && rowCodeStripped2 !== stripped) continue;
+    }
     for (var mi2 = 0; mi2 < matchedCols.length && colorSnapshot.length < 16; mi2++) {
       var col2 = matchedCols[mi2];
       var bg2  = String(bgs[r2][col2] || "").toLowerCase();
