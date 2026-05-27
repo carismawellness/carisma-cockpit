@@ -1276,16 +1276,19 @@ function refreshSalarySupplementFromSupabaseForce(dateFrom, dateTo) {
   var supp_rows_unlocked = 0;
   var supp_cells_unlocked = 0;
   // Step 1: clear bg + font color on SUPP_SAL rows in the window so the
-  // merge isn't blocked by _isProtected().
+  // merge isn't blocked by _isProtected(). Track per-column whether ANY
+  // SUPP_SAL cell was originally lock-painted (#fff9c4) — that signals
+  // the user previously verified this date as "this column is locked".
+  // We only re-lock columns that had that signal, so calling force=true
+  // on a never-locked month does NOT accidentally lock it.
   var dataRange = sheet.getRange(FIRST_DATA_ROW, 1, lastRow - FIRST_DATA_ROW + 1, lastCol);
   var vals = dataRange.getValues();
   var bgs  = dataRange.getBackgrounds();
   var fgs  = dataRange.getFontColors();
-  var suppRowIndices = [];  // 0-indexed within dataRange
+  var colHadLock = {};  // col_index → true if any SUPP_SAL cell was #fff9c4
   for (var r = 0; r < vals.length; r++) {
     var accCode = String(vals[r][2] || "").trim();
     if (_normalizeAccountCode(accCode) !== "SUPP_SAL") continue;
-    suppRowIndices.push(r);
     var rowChanged = false;
     for (var ci = 0; ci < dateCols.length; ci++) {
       var col = dateCols[ci];
@@ -1294,6 +1297,7 @@ function refreshSalarySupplementFromSupabaseForce(dateFrom, dateTo) {
       var hadLock   = (bg === LOCKED_BG_COLOR);
       var hadYellow = (bg === PROTECTED_BG_COLOR);
       var hadRed    = (fg === PROTECTED_FONT_COLOR);
+      if (hadLock) colHadLock[col] = true;
       if (!hadLock && !hadYellow && !hadRed) continue;
       var cell = sheet.getRange(FIRST_DATA_ROW + r, col + 1);
       if (hadLock || hadYellow) cell.setBackground(null);
@@ -1309,9 +1313,10 @@ function refreshSalarySupplementFromSupabaseForce(dateFrom, dateTo) {
   // also runs _refreshAggregatedDataImpl to cascade to the Aggregated Data tab).
   var refreshResult = refreshSalarySupplementFromSupabase(dateFrom, dateTo);
 
-  // Step 3: re-apply the verified-lock bg to every SUPP_SAL cell in the
-  // window. Note: row indices may have shifted if the merge appended new
-  // rows (e.g. when no existing AES SUPP_SAL row existed). Re-scan to be safe.
+  // Step 3: re-apply the verified-lock bg only to date columns whose
+  // SUPP_SAL cells were originally locked. Other columns are left as-is.
+  // Re-scan rows: the merge may have appended new SUPP_SAL rows that
+  // didn't exist before, and those should inherit the column's lock state.
   lastRow = sheet.getLastRow();
   dataRange = sheet.getRange(FIRST_DATA_ROW, 1, lastRow - FIRST_DATA_ROW + 1, lastCol);
   var vals2 = dataRange.getValues();
@@ -1320,7 +1325,9 @@ function refreshSalarySupplementFromSupabaseForce(dateFrom, dateTo) {
     var accCode2 = String(vals2[r2][2] || "").trim();
     if (_normalizeAccountCode(accCode2) !== "SUPP_SAL") continue;
     for (var ci2 = 0; ci2 < dateCols.length; ci2++) {
-      sheet.getRange(FIRST_DATA_ROW + r2, dateCols[ci2] + 1).setBackground(LOCKED_BG_COLOR);
+      var col2 = dateCols[ci2];
+      if (!colHadLock[col2]) continue;
+      sheet.getRange(FIRST_DATA_ROW + r2, col2 + 1).setBackground(LOCKED_BG_COLOR);
       supp_cells_relocked++;
     }
   }
@@ -1330,6 +1337,7 @@ function refreshSalarySupplementFromSupabaseForce(dateFrom, dateTo) {
     supp_rows_unlocked:   supp_rows_unlocked,
     supp_cells_unlocked:  supp_cells_unlocked,
     supp_cells_relocked:  supp_cells_relocked,
+    locked_cols:          Object.keys(colHadLock).length,
     refresh:              refreshResult,
   };
 }

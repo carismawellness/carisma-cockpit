@@ -1,5 +1,51 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { getAdminClient } from "@/lib/supabase/admin";
+
+// The refresh kick can take 30-60s on Apps Script (Supabase fetch + sheet
+// read/write + Aggregated Data cascade). after() guarantees Vercel keeps
+// the function alive until the work completes, up to maxDuration — without
+// it the serverless runtime would suspend mid-fetch as soon as the response
+// is sent.
+export const maxDuration = 120;
+
+// Apps Script web app that owns the EBIDA Layer + Aggregated Data tabs.
+// Token is the same one used by /api/finance/ebitda-aggregated.
+const APPS_SCRIPT_URL =
+  "https://script.google.com/macros/s/AKfycbwU345ph3xkGH7cHQWze7wm1Bepyr-2ATFYpFnusRbGgjIGtVLIDBC_jL6NT1McJksN/exec";
+const APPS_SCRIPT_TOKEN = "cbk-ebida-a7f3e91c2d";
+
+// Schedules a post-response Apps Script refresh for the month containing
+// `monthFirstDayIso` (YYYY-MM-DD, first of a month). The response returns
+// immediately; Vercel's after() keeps the function alive long enough for
+// the Apps Script call to complete.
+//
+// force=true is always passed: it's a no-op on months that were never
+// verified-locked (the action records the original lock state per column
+// and only re-applies #fff9c4 to columns that had it), and it correctly
+// handles verified months that need a slug correction.
+function kickRefreshSuppSal(monthFirstDayIso: string): void {
+  // last day of the month — server runs in a Vercel UTC env, so manual math
+  // is safer than Date.toISOString() acrobatics for month-end.
+  const [y, m] = monthFirstDayIso.split("-").map(Number);
+  const lastD = new Date(y, m, 0).getDate();   // day 0 of next month = last of this
+  const to    = `${monthFirstDayIso.slice(0, 7)}-${String(lastD).padStart(2, "0")}`;
+  const url =
+    `${APPS_SCRIPT_URL}?token=${encodeURIComponent(APPS_SCRIPT_TOKEN)}` +
+    `&action=refresh_supp_sal` +
+    `&from=${encodeURIComponent(monthFirstDayIso)}` +
+    `&to=${encodeURIComponent(to)}` +
+    `&force=true`;
+  after(async () => {
+    try {
+      const res = await fetch(url, { method: "GET", cache: "no-store" });
+      if (!res.ok) {
+        console.warn(`[supp-sal] refresh kick HTTP ${res.status} for ${monthFirstDayIso}`);
+      }
+    } catch (err) {
+      console.warn(`[supp-sal] refresh kick failed for ${monthFirstDayIso}: ${err}`);
+    }
+  });
+}
 
 async function lookupTalexioName(empNo: number): Promise<string | null> {
   const token = process.env.TALEXIO_TOKEN;
@@ -51,6 +97,11 @@ export async function PATCH(req: NextRequest) {
       .update({ is_frozen: body.freeze === true })
       .eq("month", body.month);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    // Kick the sheet refresh on both freeze and unfreeze. The Apps Script
+    // reads is_frozen=true, so unfreeze clears the month's SUPP_SAL cells
+    // (which is correct — unfrozen = not yet committed for the dashboard),
+    // and freeze writes the new totals.
+    kickRefreshSuppSal(body.month);
     return NextResponse.json({ ok: true });
   }
 
@@ -63,11 +114,25 @@ export async function PATCH(req: NextRequest) {
       updates.talexio_id = empNo;
       updates.talexio_name = empNo ? await lookupTalexioName(empNo) : null;
     }
+    // Fetch the row's month + is_frozen so we know whether to kick a
+    // sheet refresh. UI gates slug edits behind is_frozen=false, but
+    // direct PATCH callers can still hit this with a frozen row — in
+    // which case the dashboard would diverge from Supabase until the
+    // next freeze toggle. Kick the refresh whenever a frozen row's
+    // slug changes so the sheet stays consistent.
+    const { data: existing } = await supabase
+      .from("salary_supplement_monthly")
+      .select("month, is_frozen")
+      .eq("id", body.id)
+      .single();
     const { error } = await supabase
       .from("salary_supplement_monthly")
       .update(updates)
       .eq("id", body.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (existing && existing.is_frozen && body.spa_slug !== undefined) {
+      kickRefreshSuppSal(existing.month);
+    }
     return NextResponse.json({ ok: true, talexio_name: updates.talexio_name ?? null });
   }
 
