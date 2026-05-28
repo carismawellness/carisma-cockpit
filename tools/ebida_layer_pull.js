@@ -234,6 +234,20 @@ function _refreshAggregatedDataImpl(fromIso, toIso) {
         updates++;
       }
     }
+    // Date-range mode skips META columns to avoid churn, but the ebitda_category
+    // column (D, index 3) can legitimately change when a CoA mapping is
+    // updated upstream (e.g. account moves from collapsed "Sga" to the
+    // granular "Sga_misc" sub-bucket). Sync it through when it differs so
+    // the cockpit dashboard sees the new sub-category. The merge in
+    // _mergeIntoSheet already refreshed it in source; mirror that to dst.
+    if (r >= HEADER_ROW && fromIso && toIso) {
+      var srcCat = String(srcValues[r][3] || "").trim();
+      var dstCat = String(dstValues[r][3] || "").trim();
+      if (srcCat && srcCat !== dstCat) {
+        dst.getRange(r + 1, 4).setValue(srcCat);
+        updates++;
+      }
+    }
   }
   if (srcLastRow > HEADER_ROW && srcLastCol > META_COUNT) {
     dst.getRange(HEADER_ROW + 1, META_COUNT + 1, srcLastRow - HEADER_ROW, srcLastCol - META_COUNT)
@@ -1578,12 +1592,25 @@ function pullAndWriteEbidaLayer(dateFrom, dateTo, org) {
   // progress is safe — dates that weren't fetched yet aren't touched.
   var allDates = Object.keys(datesSet).sort();
   var stats    = { appended: 0, updated: 0, protected: 0 };
+  var aggMsg   = "";
   if (allDates.length > 0) {
     // For partial runs, narrow the refresh window to dates actually pulled so
     // we don't clear cells for accounts that *would* have appeared in later chunks.
     var actualFrom = allDates[0];
     var actualTo   = allDates[allDates.length - 1];
     stats = _mergeIntoSheet(accRows, allDates, actualFrom, actualTo, org);
+    // Cascade Zoho Raw Layer → Aggregated Data so the cockpit dashboard
+    // (which reads from Aggregated Data via action=aggregated_period)
+    // sees the new data — and the new ebitda_category values from
+    // _mergeIntoSheet's column-D refresh — without a separate menu click.
+    // Without this cascade, dashboard reads of the just-pulled window
+    // return no rows (dates: []) because Aggregated Data still lacks
+    // those date columns.
+    try {
+      aggMsg = _refreshAggregatedDataImpl(actualFrom, actualTo);
+    } catch (cascadeErr) {
+      aggMsg = "cascade error: " + (cascadeErr && cascadeErr.message ? cascadeErr.message : cascadeErr);
+    }
   }
 
   var elapsed = ((Date.now() - startedAt) / 1000).toFixed(0);
@@ -1598,7 +1625,8 @@ function pullAndWriteEbidaLayer(dateFrom, dateTo, org) {
   _setStatus("✓ Last pulled " + stamp + " (" + dateFrom + " → " + dateTo + ", " + (org || "SPA") + ")");
   return "✓ " + chunks.length + " chunk(s) pulled in " + elapsed + "s\n" +
          "  " + Object.keys(accRows).length + " (account,venue) row(s) merged\n" +
-         "  " + stats.appended + " new row(s), " + stats.updated + " cell update(s), " + stats.protected + " protected cell(s) skipped";
+         "  " + stats.appended + " new row(s), " + stats.updated + " cell update(s), " + stats.protected + " protected cell(s) skipped\n" +
+         (aggMsg ? "  cascade: " + aggMsg : "");
 }
 
 // Returns true if a cell should be treated as a manual edit and skipped
@@ -2637,6 +2665,19 @@ function _mergeIntoSheet(accRows, allDates, refreshFrom, refreshTo, org) {
     var existingIdxList = existingRowKey[key];
     if (!existingIdxList || existingIdxList.length === 0) continue;
     var primaryIdx = existingIdxList[0];
+    // Refresh column D (ebitda_category) when the new pull's category
+    // differs from what's already in the sheet — e.g., when a CoA
+    // mapping was updated to a granular sga_* sub-bucket. Without this,
+    // the merge key (which excludes ebitda_category) silently keeps the
+    // stale category and downstream consumers (the EBITDA dashboard) see
+    // collapsed "Sga" forever even after the ETL emits "Sga_misc".
+    var newCat = String(newRow.ebitda_category || "").trim();
+    var existingCat = String(values[primaryIdx][3] || "").trim();
+    if (newCat && newCat !== existingCat) {
+      sheet.getRange(primaryIdx + 1, 4).setValue(newCat);
+      values[primaryIdx][3] = newCat;   // keep snapshot consistent
+      stats.updated++;
+    }
     for (var iso in refreshDates) {
       var colIdx = dateToCol[iso];
       if (colIdx == null) continue;
