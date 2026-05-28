@@ -94,12 +94,23 @@ interface LineItem {
   ebitda_category: string;
   venue:           string;
   contact:         string;
+  // Canonical advertising channel bucket resolved from `contact` via the
+  // advertising_contact_mapping table. Set only when ebitda_category =
+  // "advertising". null otherwise OR when no pattern matches (caller renders
+  // null-channel ad rows under "Misc").
+  ad_channel:      string | null;
   allocation:      string;
   literal_sum:     number;
   period_value:    number;          // value used in totals (after fallback)
   used_fallback:   boolean;
   rule_type:       RuleType | null;
   method_detail:   string | null;
+}
+
+interface AdContactPattern {
+  pattern:   string;   // lowercased substring
+  canonical: string;   // "Meta" | "Google" | "Klaviyo" | "GHL" | …
+  priority:  number;
 }
 
 export interface EbitdaAggregatedResponse {
@@ -317,6 +328,31 @@ async function loadFallbackRules(): Promise<Map<string, FallbackRuleRow>> {
   return map;
 }
 
+// Loads contact-name patterns sorted by priority ASC (more specific wins).
+// Failure is non-fatal — the dashboard just shows every ad row under "Misc".
+async function loadAdContactPatterns(): Promise<AdContactPattern[]> {
+  const supabase = getAdminClient();
+  const { data, error } = await supabase
+    .from("advertising_contact_mapping")
+    .select("pattern, canonical, priority")
+    .order("priority", { ascending: true });
+  if (error) return [];
+  return (data ?? []).map(r => ({
+    pattern:   String(r.pattern || "").toLowerCase(),
+    canonical: String(r.canonical || ""),
+    priority:  Number(r.priority ?? 100),
+  })).filter(p => p.pattern && p.canonical);
+}
+
+function resolveAdChannel(contact: string, patterns: AdContactPattern[]): string | null {
+  if (!contact) return null;
+  const c = contact.toLowerCase();
+  for (const p of patterns) {            // patterns already sorted by priority ASC
+    if (c.includes(p.pattern)) return p.canonical;
+  }
+  return null;
+}
+
 // ── Row-summation helpers ────────────────────────────────────────────────────
 
 function sumDailyInRange(daily: Record<string, number>, fromIso: string, toIso: string): number {
@@ -432,10 +468,16 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // 2) Load fallback rules from Supabase.
+  // 2) Load fallback rules + advertising contact patterns from Supabase
+  //    in parallel. Contact-pattern load failures degrade gracefully:
+  //    advertising rows just won't carry a channel (UI shows Misc).
   let rules: Map<string, FallbackRuleRow>;
+  let adPatterns: AdContactPattern[];
   try {
-    rules = await loadFallbackRules();
+    [rules, adPatterns] = await Promise.all([
+      loadFallbackRules(),
+      loadAdContactPatterns(),
+    ]);
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : String(e) },
@@ -667,6 +709,9 @@ export async function GET(req: NextRequest) {
       // BOTH the literal and post-fallback sides; they only clutter the
       // export tab.
       if (literalSum !== 0 || periodValue !== 0) {
+        const adChannel = category === "advertising"
+          ? resolveAdChannel(row.contact || "", adPatterns)
+          : null;
         lineItems.push({
           brand,
           zoho_org:        zohoOrg,
@@ -675,6 +720,7 @@ export async function GET(req: NextRequest) {
           ebitda_category: category,
           venue:           row.venue || "",
           contact:         row.contact || "",
+          ad_channel:      adChannel,
           allocation:      row.allocation || "",
           literal_sum:     literalSum,
           period_value:    periodValue,

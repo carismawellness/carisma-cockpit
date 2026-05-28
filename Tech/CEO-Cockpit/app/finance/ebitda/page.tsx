@@ -63,14 +63,6 @@ function sgaShare(total: number, weight: number) {
   return Math.round(total * (weight / SGA_WEIGHT_TOTAL));
 }
 
-const AD_CHANNELS: { label: string; pct: number }[] = [
-  { label: "Meta",    pct: 0.55 },
-  { label: "Google",  pct: 0.20 },
-  { label: "Klaviyo", pct: 0.10 },
-  { label: "GHL",     pct: 0.10 },
-  { label: "Misc",    pct: 0.05 },
-];
-
 /* ------------------------------------------------------------------ */
 /*  HELPERS                                                            */
 /* ------------------------------------------------------------------ */
@@ -343,6 +335,64 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
     };
     return [agg, ...rest];
   }, [venueRows, spaExpanded]);
+
+  /* ── Advertising channel breakdown (real data from line_items) ──── */
+  // Aggregates lineItems where ebitda_category === "advertising" into the
+  // 5 fixed channel buckets (Meta / Google / Klaviyo / GHL / Misc). Channel
+  // is pre-resolved server-side via the advertising_contact_mapping table
+  // (anything unmatched or with null contact lands in Misc). Per-venue
+  // values are keyed by the same venueRow.id slugs used in displayedVenues,
+  // so the SPA-aggregate column can sum them at render time.
+  type AdChannelRow = {
+    label:    string;
+    perVenue: Record<string, number>;    // keyed by venueRow.id
+    hq:       number;
+    total:    number;
+  };
+  const adChannelRows = useMemo((): AdChannelRow[] => {
+    const order = ["Meta", "Google", "Klaviyo", "GHL", "Misc"] as const;
+    const byLabel: Record<string, AdChannelRow> = {};
+    for (const label of order) {
+      byLabel[label] = { label, perVenue: {}, hq: 0, total: 0 };
+    }
+    for (const li of agg.lineItems) {
+      if (li.ebitda_category !== "advertising") continue;
+      const v = li.period_value;
+      if (v === 0) continue;
+      const label = (li.ad_channel && order.includes(li.ad_channel as typeof order[number]))
+        ? li.ad_channel
+        : "Misc";
+      const row = byLabel[label];
+      if (li.brand === "HQ") {
+        row.hq += v;
+      } else if (li.brand === "SPA") {
+        const slug = spaVenueDisplayMeta[li.venue.toLowerCase()]?.slug
+                  ?? (li.venue || "spa-other");
+        row.perVenue[slug] = (row.perVenue[slug] ?? 0) + v;
+      } else if (li.brand === "AES") {
+        row.perVenue["aesthetics"] = (row.perVenue["aesthetics"] ?? 0) + v;
+      } else if (li.brand === "SLIM") {
+        row.perVenue["slimming"] = (row.perVenue["slimming"] ?? 0) + v;
+      }
+      row.total += v;
+    }
+    return order.map(l => byLabel[l]);
+  }, [agg.lineItems, spaVenueDisplayMeta]);
+
+  // Sum spa-venue keys into a single value for the spa-aggregate column.
+  // Used when SPA is collapsed (displayedVenues includes {id: "spa-aggregate"}).
+  const spaSlugs = useMemo(() => new Set(Object.values(SPA_LOCATION_META).map(m => m.name.toLowerCase())
+    .map(name => spaVenueDisplayMeta[name]?.slug ?? name)),
+    [spaVenueDisplayMeta]);
+
+  function adChannelValueForVenue(row: AdChannelRow, venueId: string): number {
+    if (venueId !== "spa-aggregate") return row.perVenue[venueId] ?? 0;
+    let sum = 0;
+    for (const k in row.perVenue) {
+      if (spaSlugs.has(k) || k === "spa-other") sum += row.perVenue[k];
+    }
+    return sum;
+  }
 
   /* ── Waterfall & brand cards ─────────────────────────────────────── */
   const waterfallData = useMemo(() => buildWaterfall(venueRows, CORPORATE.ebitda), [venueRows, CORPORATE.ebitda]);
@@ -636,28 +686,32 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
                   <span className="text-muted-foreground/80 font-normal">· {fmtPct(pctOf(venueTotals.advertising + CORPORATE.advertising, venueTotals.revenue))}</span>
                 </td>
               </tr>
-              {adsExpanded && AD_CHANNELS.map(({ label, pct }) => (
-                <tr key={label} className="group hover:bg-muted/30 transition-colors">
+              {adsExpanded && adChannelRows.map(row => (
+                <tr key={row.label} className="group hover:bg-muted/30 transition-colors">
                   <td className="py-1 px-2 text-muted-foreground sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-b border-border/40 transition-colors">
-                    <span className="inline-flex items-center gap-1.5 pl-5 border-l border-border/60 ml-1">
-                      <span>{label}</span>
-                      <span className="inline-flex items-center rounded-sm border border-border/60 px-1 py-px text-[9px] font-medium text-muted-foreground/70">api pending</span>
+                    <span className="inline-flex items-center pl-5 border-l border-border/60 ml-1">
+                      <span>{row.label}</span>
                     </span>
                   </td>
                   {displayedVenues.map(v => {
-                    const part = Math.round(v.advertising * pct);
+                    const part = adChannelValueForVenue(row, v.id);
                     return (
                       <td key={v.id} className="py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40">
-                        {fmtCurrencyShort(part)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(part, v.revenue))}</span>
+                        {part === 0
+                          ? <span className="text-muted-foreground/40">&mdash;</span>
+                          : <>{fmtCurrencyShort(part)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(part, v.revenue))}</span></>}
                       </td>
                     );
                   })}
-                  <td className="py-1 px-2 text-right text-muted-foreground bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40">&mdash;</td>
+                  <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40">
+                    {row.hq === 0
+                      ? <span className="text-muted-foreground/40">&mdash;</span>
+                      : fmtCurrencyShort(row.hq)}
+                  </td>
                   <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40">
-                    {(() => {
-                      const part = Math.round(venueTotals.advertising * pct);
-                      return <>{fmtCurrencyShort(part)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(part, venueTotals.revenue))}</span></>;
-                    })()}
+                    {row.total === 0
+                      ? <span className="text-muted-foreground/40">&mdash;</span>
+                      : <>{fmtCurrencyShort(row.total)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(row.total, venueTotals.revenue))}</span></>}
                   </td>
                 </tr>
               ))}

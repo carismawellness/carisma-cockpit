@@ -19,6 +19,11 @@ export interface LineItem {
   ebitda_category: string;
   venue:           string;
   contact:         string;
+  // Canonical channel bucket for advertising rows (Meta / Google / Klaviyo /
+  // GHL / …). null when ebitda_category !== "advertising" OR when no
+  // pattern in advertising_contact_mapping matched the contact name —
+  // unmatched ad rows fall into the "Misc" bucket at render time.
+  ad_channel:      string | null;
   allocation:      string;
   literal_sum:     number;
   period_value:    number;
