@@ -737,31 +737,36 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
                   <span className="text-muted-foreground/80 font-normal">· {fmtPct(pctOf(venueTotals.sga + CORPORATE.sga, venueTotals.revenue))}</span>
                 </td>
               </tr>
-              {sgaExpanded && SGA_CATEGORIES.map(({ label, weight }) => (
-                <tr key={label} className="group hover:bg-muted/30 transition-colors">
-                  <td className="py-1 px-2 text-muted-foreground sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-b border-border/40 transition-colors">
-                    <span className="inline-flex items-center gap-1.5 pl-5 border-l border-border/60 ml-1">
-                      <span>{label}</span>
-                      <span className="inline-flex items-center rounded-sm border border-border/60 px-1 py-px text-[9px] font-medium text-muted-foreground/70">allocated</span>
-                    </span>
-                  </td>
-                  {displayedVenues.map(v => {
-                    const part = sgaShare(v.sga, weight);
-                    return (
-                      <td key={v.id} className="py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40">
-                        {fmtCurrencyShort(part)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(part, v.revenue))}</span>
-                      </td>
-                    );
-                  })}
-                  <td className="py-1 px-2 text-right text-muted-foreground bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40">&mdash;</td>
-                  <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40">
-                    {(() => {
-                      const part = sgaShare(venueTotals.sga, weight);
-                      return <>{fmtCurrencyShort(part)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(part, venueTotals.revenue))}</span></>;
-                    })()}
-                  </td>
-                </tr>
-              ))}
+              {sgaExpanded && SGA_CATEGORIES.map(({ label, weight }) => {
+                const hqPart    = sgaShare(CORPORATE.sga, weight);
+                const groupPart = sgaShare(venueTotals.sga + CORPORATE.sga, weight);
+                return (
+                  <tr key={label} className="group hover:bg-muted/30 transition-colors">
+                    <td className="py-1 px-2 text-muted-foreground sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-b border-border/40 transition-colors">
+                      <span className="inline-flex items-center gap-1.5 pl-5 border-l border-border/60 ml-1">
+                        <span>{label}</span>
+                        <span className="inline-flex items-center rounded-sm border border-border/60 px-1 py-px text-[9px] font-medium text-muted-foreground/70">allocated</span>
+                      </span>
+                    </td>
+                    {displayedVenues.map(v => {
+                      const part = sgaShare(v.sga, weight);
+                      return (
+                        <td key={v.id} className="py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40">
+                          {fmtCurrencyShort(part)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(part, v.revenue))}</span>
+                        </td>
+                      );
+                    })}
+                    <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40">
+                      {hqPart === 0
+                        ? <span className="text-muted-foreground/40">&mdash;</span>
+                        : fmtCurrencyShort(hqPart)}
+                    </td>
+                    <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40">
+                      {fmtCurrencyShort(groupPart)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(groupPart, venueTotals.revenue))}</span>
+                    </td>
+                  </tr>
+                );
+              })}
 
               {/* COGS */}
               <tr className="group hover:bg-muted/30 transition-colors">
