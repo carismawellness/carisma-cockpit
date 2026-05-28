@@ -41,6 +41,37 @@ interface VenueRow {
 }
 
 /* ------------------------------------------------------------------ */
+/*  SG&A CATEGORY BREAKDOWN (allocated weights — placeholder until    */
+/*  per-account Zoho line-items are wired into this view)              */
+/* ------------------------------------------------------------------ */
+
+const SGA_CATEGORIES: { label: string; weight: number }[] = [
+  { label: "Prof services", weight: 20000 },
+  { label: "Fuel",          weight: 5000  },
+  { label: "Laundry",       weight: 50    },
+  { label: "Software",      weight: 10    },
+  { label: "Cleaning",      weight: 10    },
+  { label: "Travel",        weight: 10    },
+  { label: "Misc",          weight: 10    },
+  { label: "Insurance",     weight: 8     },
+  { label: "Events",        weight: 5     },
+  { label: "Maintenance",   weight: 5     },
+  { label: "Telecom",       weight: 2     },
+];
+const SGA_WEIGHT_TOTAL = SGA_CATEGORIES.reduce((a, c) => a + c.weight, 0);
+function sgaShare(total: number, weight: number) {
+  return Math.round(total * (weight / SGA_WEIGHT_TOTAL));
+}
+
+const AD_CHANNELS: { label: string; pct: number }[] = [
+  { label: "Meta",    pct: 0.55 },
+  { label: "Google",  pct: 0.20 },
+  { label: "Klaviyo", pct: 0.10 },
+  { label: "GHL",     pct: 0.10 },
+  { label: "Misc",    pct: 0.05 },
+];
+
+/* ------------------------------------------------------------------ */
 /*  HELPERS                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -288,12 +319,10 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
   ), [venueRows]);
 
   /* ── Table expand states ─────────────────────────────────────────── */
-  const [rentExpanded,  setRentExpanded]  = useState(false);
-  const [adsExpanded,   setAdsExpanded]   = useState(false);
-  const [sgaExpanded,   setSgaExpanded]   = useState(false);
-  const [wagesExpanded, setWagesExpanded] = useState(false);
-  const [cogsExpanded,  setCogsExpanded]  = useState(false);
-  const [spaExpanded,   setSpaExpanded]   = useState(false);
+  const [rentExpanded, setRentExpanded] = useState(false);
+  const [adsExpanded,  setAdsExpanded]  = useState(false);
+  const [sgaExpanded,  setSgaExpanded]  = useState(false);
+  const [spaExpanded,  setSpaExpanded]  = useState(false);
 
   /* ── Spa aggregate row for collapsed view ────────────────────────── */
   const spaVenueCount  = useMemo(() => venueRows.filter(v => v.brand === "Spa").length, [venueRows]);
@@ -314,110 +343,6 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
     };
     return [agg, ...rest];
   }, [venueRows, spaExpanded]);
-
-  /* ── Per-account breakdown by ebitda_category (from line_items) ─── */
-  // One Subrow per (category, account_name). Powers the expanded rows
-  // under Advertising / SG&A / Wages / COGS / Rent / Utilities so the
-  // user sees real Zoho accounts, not hardcoded "allocated" splits.
-  type Subrow = {
-    accountName: string;
-    perVenue:    Record<string, number>; // keyed by venueRow.id
-    hq:          number;
-    total:       number;
-  };
-  const subrowsByCategory: Record<string, Subrow[]> = useMemo(() => {
-    const byCat = new Map<string, Map<string, Subrow>>();
-    for (const li of agg.lineItems) {
-      const v = li.period_value;
-      if (v === 0) continue;
-      const cat = li.ebitda_category;
-      let byAccount = byCat.get(cat);
-      if (!byAccount) {
-        byAccount = new Map();
-        byCat.set(cat, byAccount);
-      }
-      const key = li.account_name || li.account_code || "(unnamed)";
-      const row = byAccount.get(key) ?? {
-        accountName: key,
-        perVenue:    {},
-        hq:          0,
-        total:       0,
-      };
-
-      if (li.brand === "HQ") {
-        row.hq += v;
-      } else if (li.brand === "SPA") {
-        const slug = spaVenueDisplayMeta[li.venue.toLowerCase()]?.slug
-                  ?? (li.venue || "spa-other");
-        row.perVenue[slug] = (row.perVenue[slug] ?? 0) + v;
-      } else if (li.brand === "AES") {
-        row.perVenue["aesthetics"] = (row.perVenue["aesthetics"] ?? 0) + v;
-      } else if (li.brand === "SLIM") {
-        row.perVenue["slimming"] = (row.perVenue["slimming"] ?? 0) + v;
-      }
-      row.total += v;
-      byAccount.set(key, row);
-    }
-    const result: Record<string, Subrow[]> = {};
-    for (const [cat, byAccount] of byCat) {
-      result[cat] = Array.from(byAccount.values()).sort((a, b) => b.total - a.total);
-    }
-    return result;
-  }, [agg.lineItems, spaVenueDisplayMeta]);
-
-  const sgaSubrows         = subrowsByCategory["sga"]         ?? [];
-  const adsSubrows         = subrowsByCategory["advertising"] ?? [];
-  const wagesSubrows       = subrowsByCategory["wages"]       ?? [];
-  const cogsSubrows        = subrowsByCategory["cogs"]        ?? [];
-  const rentSubrows        = subrowsByCategory["rent"]        ?? [];
-  const utilitiesSubrows   = subrowsByCategory["utilities"]   ?? [];
-
-  // Renders one expanded sub-row (account-level) under any parent
-  // category. Used by Advertising / SG&A / Wages / COGS / Rent / Utils.
-  // keyPrefix avoids React-key collisions when the same account name
-  // appears under multiple sections (rare but possible).
-  function renderAccountSubrow(sub: Subrow, keyPrefix: string) {
-    return (
-      <tr key={keyPrefix + "::" + sub.accountName} className="group hover:bg-muted/30 transition-colors">
-        <td className="py-1 px-2 text-muted-foreground sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-b border-border/40 transition-colors">
-          <span className="inline-flex items-center gap-1.5 pl-5 border-l border-border/60 ml-1" title={sub.accountName}>
-            <span className="truncate max-w-[260px]">{sub.accountName}</span>
-          </span>
-        </td>
-        {displayedVenues.map(v => {
-          const part = sub.perVenue[v.id] ?? 0;
-          return (
-            <td key={v.id} className="py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40">
-              {part === 0
-                ? <span className="text-muted-foreground/40">&mdash;</span>
-                : <>{fmtCurrencyShort(part)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(part, v.revenue))}</span></>}
-            </td>
-          );
-        })}
-        <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40">
-          {sub.hq === 0
-            ? <span className="text-muted-foreground/40">&mdash;</span>
-            : fmtCurrencyShort(sub.hq)}
-        </td>
-        <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40">
-          {fmtCurrencyShort(sub.total)}
-        </td>
-      </tr>
-    );
-  }
-
-  // Visual sub-header inside an expanded section (e.g. "Rent" /
-  // "Utilities" dividers when Rent Plus is open). Spans the full row.
-  function renderSectionDivider(label: string, keyPrefix: string) {
-    const span = 1 + displayedVenues.length + 2; // first col + venues + HQ + Group
-    return (
-      <tr key={keyPrefix + "::divider"} className="bg-warm-white/60">
-        <td colSpan={span} className="py-1 px-2 pl-7 text-[11px] uppercase tracking-wide text-muted-foreground/80 border-b border-border/30">
-          {label}
-        </td>
-      </tr>
-    );
-  }
 
   /* ── Waterfall & brand cards ─────────────────────────────────────── */
   const waterfallData = useMemo(() => buildWaterfall(venueRows, CORPORATE.ebitda), [venueRows, CORPORATE.ebitda]);
@@ -675,12 +600,7 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
 
               {/* Wages */}
               <tr className="group hover:bg-muted/30 transition-colors">
-                <td className="py-1.5 px-2 text-foreground sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-b border-border/60 transition-colors">
-                  <button type="button" onClick={() => setWagesExpanded(x => !x)} className="flex items-center gap-1 hover:text-foreground/70 transition-colors" aria-expanded={wagesExpanded}>
-                    {wagesExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                    <span>Wages &amp; Salaries</span>
-                  </button>
-                </td>
+                <td className="py-1.5 px-2 text-foreground sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-b border-border/60 transition-colors">Wages &amp; Salaries</td>
                 {displayedVenues.map(v => (
                   <td key={v.id} className="py-1.5 px-2 text-right text-foreground tabular-nums border-b border-border/60">
                     {fmtCurrencyShort(v.wages)} <span className="text-muted-foreground/80">· {fmtPct(pctOf(v.wages, v.revenue))}</span>
@@ -694,7 +614,6 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
                   <span className="text-muted-foreground/80 font-normal">· {fmtPct(pctOf(venueTotals.wages + CORPORATE.wages, venueTotals.revenue))}</span>
                 </td>
               </tr>
-              {wagesExpanded && wagesSubrows.map(sub => renderAccountSubrow(sub, "wages"))}
 
               {/* Advertising */}
               <tr className="group hover:bg-muted/30 transition-colors">
@@ -717,7 +636,31 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
                   <span className="text-muted-foreground/80 font-normal">· {fmtPct(pctOf(venueTotals.advertising + CORPORATE.advertising, venueTotals.revenue))}</span>
                 </td>
               </tr>
-              {adsExpanded && adsSubrows.map(sub => renderAccountSubrow(sub, "ad"))}
+              {adsExpanded && AD_CHANNELS.map(({ label, pct }) => (
+                <tr key={label} className="group hover:bg-muted/30 transition-colors">
+                  <td className="py-1 px-2 text-muted-foreground sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-b border-border/40 transition-colors">
+                    <span className="inline-flex items-center gap-1.5 pl-5 border-l border-border/60 ml-1">
+                      <span>{label}</span>
+                      <span className="inline-flex items-center rounded-sm border border-border/60 px-1 py-px text-[9px] font-medium text-muted-foreground/70">api pending</span>
+                    </span>
+                  </td>
+                  {displayedVenues.map(v => {
+                    const part = Math.round(v.advertising * pct);
+                    return (
+                      <td key={v.id} className="py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40">
+                        {fmtCurrencyShort(part)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(part, v.revenue))}</span>
+                      </td>
+                    );
+                  })}
+                  <td className="py-1 px-2 text-right text-muted-foreground bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40">&mdash;</td>
+                  <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40">
+                    {(() => {
+                      const part = Math.round(venueTotals.advertising * pct);
+                      return <>{fmtCurrencyShort(part)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(part, venueTotals.revenue))}</span></>;
+                    })()}
+                  </td>
+                </tr>
+              ))}
 
               {/* SG&A */}
               <tr className="group hover:bg-muted/30 transition-colors">
@@ -740,16 +683,35 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
                   <span className="text-muted-foreground/80 font-normal">· {fmtPct(pctOf(venueTotals.sga + CORPORATE.sga, venueTotals.revenue))}</span>
                 </td>
               </tr>
-              {sgaExpanded && sgaSubrows.map(sub => renderAccountSubrow(sub, "sga"))}
+              {sgaExpanded && SGA_CATEGORIES.map(({ label, weight }) => (
+                <tr key={label} className="group hover:bg-muted/30 transition-colors">
+                  <td className="py-1 px-2 text-muted-foreground sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-b border-border/40 transition-colors">
+                    <span className="inline-flex items-center gap-1.5 pl-5 border-l border-border/60 ml-1">
+                      <span>{label}</span>
+                      <span className="inline-flex items-center rounded-sm border border-border/60 px-1 py-px text-[9px] font-medium text-muted-foreground/70">allocated</span>
+                    </span>
+                  </td>
+                  {displayedVenues.map(v => {
+                    const part = sgaShare(v.sga, weight);
+                    return (
+                      <td key={v.id} className="py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40">
+                        {fmtCurrencyShort(part)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(part, v.revenue))}</span>
+                      </td>
+                    );
+                  })}
+                  <td className="py-1 px-2 text-right text-muted-foreground bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40">&mdash;</td>
+                  <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40">
+                    {(() => {
+                      const part = sgaShare(venueTotals.sga, weight);
+                      return <>{fmtCurrencyShort(part)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(part, venueTotals.revenue))}</span></>;
+                    })()}
+                  </td>
+                </tr>
+              ))}
 
               {/* COGS */}
               <tr className="group hover:bg-muted/30 transition-colors">
-                <td className="py-1.5 px-2 text-foreground sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-b border-border/60 transition-colors">
-                  <button type="button" onClick={() => setCogsExpanded(x => !x)} className="flex items-center gap-1 hover:text-foreground/70 transition-colors" aria-expanded={cogsExpanded}>
-                    {cogsExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                    <span>COGS</span>
-                  </button>
-                </td>
+                <td className="py-1.5 px-2 text-foreground sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-b border-border/60 transition-colors">COGS</td>
                 {displayedVenues.map(v => (
                   <td key={v.id} className="py-1.5 px-2 text-right text-foreground tabular-nums border-b border-border/60">
                     {fmtCurrencyShort(v.cogs)} <span className="text-muted-foreground/80">· {fmtPct(pctOf(v.cogs, v.revenue))}</span>
@@ -763,7 +725,6 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
                   <span className="text-muted-foreground/80 font-normal">· {fmtPct(pctOf(venueTotals.cogs + CORPORATE.cogs, venueTotals.revenue))}</span>
                 </td>
               </tr>
-              {cogsExpanded && cogsSubrows.map(sub => renderAccountSubrow(sub, "cogs"))}
 
               {/* Rent Plus */}
               <tr className="group hover:bg-muted/30 transition-colors">
@@ -795,10 +756,43 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
               </tr>
               {rentExpanded && (
                 <>
-                  {rentSubrows.length > 0 && renderSectionDivider("Rent", "rent")}
-                  {rentSubrows.map(sub => renderAccountSubrow(sub, "rent"))}
-                  {utilitiesSubrows.length > 0 && renderSectionDivider("Utilities", "util")}
-                  {utilitiesSubrows.map(sub => renderAccountSubrow(sub, "util"))}
+                  <tr className="group hover:bg-muted/30 transition-colors">
+                    <td className="py-1 px-2 text-muted-foreground sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-b border-border/40 transition-colors">
+                      <span className="inline-flex items-center pl-5 border-l border-border/60 ml-1">Rent</span>
+                    </td>
+                    {displayedVenues.map(v => (
+                      <td key={v.id} className="py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40">
+                        {v.rent > 0
+                          ? <>{fmtCurrencyShort(v.rent)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(v.rent, v.revenue))}</span></>
+                          : <span className="text-muted-foreground">&mdash;</span>}
+                      </td>
+                    ))}
+                    <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40">
+                      {CORPORATE.rent > 0 ? fmtCurrencyShort(CORPORATE.rent) : <span className="text-muted-foreground">&mdash;</span>}
+                    </td>
+                    <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40">
+                      {(venueTotals.rent + CORPORATE.rent) > 0
+                        ? <>{fmtCurrencyShort(venueTotals.rent + CORPORATE.rent)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(venueTotals.rent + CORPORATE.rent, venueTotals.revenue))}</span></>
+                        : <span className="text-muted-foreground">&mdash;</span>}
+                    </td>
+                  </tr>
+                  <tr className="group hover:bg-muted/30 transition-colors">
+                    <td className="py-1 px-2 text-muted-foreground sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-b border-border/40 transition-colors">
+                      <span className="inline-flex items-center pl-5 border-l border-border/60 ml-1">Utilities</span>
+                    </td>
+                    {displayedVenues.map(v => (
+                      <td key={v.id} className="py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40">
+                        {fmtCurrencyShort(v.utilities)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(v.utilities, v.revenue))}</span>
+                      </td>
+                    ))}
+                    <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40">
+                      {CORPORATE.utilities > 0 ? fmtCurrencyShort(CORPORATE.utilities) : <span className="text-muted-foreground">&mdash;</span>}
+                    </td>
+                    <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40">
+                      {fmtCurrencyShort(venueTotals.utilities + CORPORATE.utilities)}{" "}
+                      <span className="text-muted-foreground/60">· {fmtPct(pctOf(venueTotals.utilities + CORPORATE.utilities, venueTotals.revenue))}</span>
+                    </td>
+                  </tr>
                 </>
               )}
 
