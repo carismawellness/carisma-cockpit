@@ -155,6 +155,18 @@ function spaTagToSlug(tags: TxnLine["tags"]): string | null {
   return null;
 }
 
+// Cross-org override: SPA Zoho lines tagged "Aesthetic" are wages/salary
+// posted to SPA books that economically belong to the Aesthetics brand
+// (CoA 3104 today). They must be excised from SPA venue allocation and
+// emitted as brand="AES" rows so they roll up under Aesthetics in the
+// EBITDA dashboard. See feedback_ebitda_dashboard_source memory.
+function spaHasAestheticTag(tags: TxnLine["tags"]): boolean {
+  for (const t of tags) {
+    if (t.tag_option_name.trim().toLowerCase() === "aesthetic") return true;
+  }
+  return false;
+}
+
 function aesthTagToDept(tags: TxnLine["tags"]): "aesthetics" | "slimming" | null {
   for (const t of tags) {
     const norm = t.tag_option_name.trim().toLowerCase();
@@ -468,6 +480,7 @@ async function buildSpaRows(
     ebitda:  string;          // revenue / cogs / wages / ...
     rule:    string;          // CoA split rule from the mapping
     tagSlug: string | null;   // "hq" or one of the 8 venue slugs (or null)
+    crossOrgAes: boolean;     // SPA-org line tagged "Aesthetic" → re-route to AES
   };
   const classified: Classified[] = [];
   let droppedUnmapped = 0, droppedExcluded = 0;
@@ -484,7 +497,11 @@ async function buildSpaRows(
     // on /finance/ebitda keeps showing the correct combined number.
     const ebitda = rawLine;
     if (!VALID_LINES.has(ebitda)) { droppedExcluded++; continue; }
-    classified.push({ line: ln, ebitda, rule, tagSlug: spaTagToSlug(ln.tags) });
+    classified.push({
+      line: ln, ebitda, rule,
+      tagSlug:     spaTagToSlug(ln.tags),
+      crossOrgAes: spaHasAestheticTag(ln.tags),
+    });
   }
   log.push(`SPA classified: ${classified.length} kept; dropped ${droppedUnmapped} unmapped, ${droppedExcluded} excluded`);
 
@@ -567,9 +584,10 @@ async function buildSpaRows(
   // 3. Bucket per (account, venue, tag_source, contact) — daily values inside.
   // Brand is "SPA" for Zoho-derived rows + Lapis revenue, plus "HQ" for the
   // Supplementary Salary rows whose Cockpit slug = "hq" (HQ is a separate
-  // EBITDA department, not a SPA venue).
+  // EBITDA department, not a SPA venue), plus "AES" for SPA-org lines that
+  // carry the "Aesthetic" reporting tag (cross-org re-route — CoA 3104 today).
   type Bucket = {
-    brand:           "SPA" | "HQ";
+    brand:           "SPA" | "HQ" | "AES";
     venue:           string;
     venue_slug:      string;
     account_name:    string;
@@ -582,25 +600,27 @@ async function buildSpaRows(
   };
   const buckets = new Map<string, Bucket>();
   const venueDisplay = (slug: string): string => SLUG_DISPLAY[slug] ?? slug;
-  const tagCount = { tagged: 0, split: 0 };
+  const tagCount = { tagged: 0, split: 0, crossOrgAes: 0 };
 
   function addToBucket(
     c: Classified,
     slug: string,
     amount: number,
     tagSource: "tagged" | "split",
+    brand: "SPA" | "HQ" | "AES" = "SPA",
+    venueOverride?: string,
   ) {
     if (amount === 0) return;
     const contact = c.ebitda === "advertising"
       ? resolveAdvertisingContact(c.line.contact_name, adContactMap)
       : "";
     const accountKey = c.line.account_code || c.line.account_name;
-    const key = `${accountKey}::${slug}::${tagSource}::${contact}`;
+    const key = `${brand}::${accountKey}::${slug}::${tagSource}::${contact}`;
     let b = buckets.get(key);
     if (!b) {
       b = {
-        brand:           "SPA",
-        venue:           venueDisplay(slug),
+        brand,
+        venue:           venueOverride ?? venueDisplay(slug),
         venue_slug:      slug,
         account_name:    c.line.account_name,
         account_code:    c.line.account_code,
@@ -616,6 +636,13 @@ async function buildSpaRows(
   }
 
   for (const c of classified) {
+    // Cross-org re-route: SPA-org lines tagged "Aesthetic" land under AES
+    // brand with venue="Aesthetics". Excised from any SPA venue allocation.
+    if (c.crossOrgAes) {
+      addToBucket(c, "aesthetics", c.line.amount, "tagged", "AES", "Aesthetics");
+      tagCount.crossOrgAes++;
+      continue;
+    }
     // Tag wins
     if (c.tagSlug === "hq") {
       addToBucket(c, "hq", c.line.amount, "tagged");
@@ -640,7 +667,7 @@ async function buildSpaRows(
     }
     tagCount.split++;
   }
-  log.push(`SPA allocation: ${tagCount.tagged} tagged, ${tagCount.split} split-rule`);
+  log.push(`SPA allocation: ${tagCount.tagged} tagged, ${tagCount.split} split-rule, ${tagCount.crossOrgAes} cross-org Aesthetic`);
 
   // 4. Cockpit-side revenue (Lapis POS) — one bucket per (date, venue_slug).
   //    Layered on TOP of Zoho-derived revenue so the EBIDA Layer sheet shows
