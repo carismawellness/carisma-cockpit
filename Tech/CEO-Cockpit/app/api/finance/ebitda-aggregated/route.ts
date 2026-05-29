@@ -419,6 +419,23 @@ function sumAndMonthsTouched(
 // ── Core handler ─────────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
+  // Top-level guard: the body below has un-try/caught sections (aggregation
+  // loop, rent adjustments) that would otherwise surface as an opaque platform
+  // 500. Wrap so callers always get a structured error instead.
+  try {
+    return await handleGet(req);
+  } catch (e) {
+    return NextResponse.json(
+      {
+        error: `Unhandled error in ebitda-aggregated: ${e instanceof Error ? e.message : String(e)}`,
+        stack: e instanceof Error ? e.stack?.split("\n").slice(0, 8).join("\n") : undefined,
+      },
+      { status: 500 },
+    );
+  }
+}
+
+async function handleGet(req: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(req.url);
   const dateFrom   = searchParams.get("date_from");
   const dateTo     = searchParams.get("date_to");
