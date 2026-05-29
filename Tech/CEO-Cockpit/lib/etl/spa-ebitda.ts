@@ -24,7 +24,22 @@ const BENCHMARK_RENT_MONTHLY: Record<number, number> = {
   5: 1000.00,  // Labranda
   6:  944.44,  // Sunny Coast (€2833.305/quarter ÷ 3)
   7: 2500.00,  // Excelsior
-  8:    0.00,  // Novotel
+  8:    0.00,  // Novotel — see FIXED_RENT_MONTHLY (hardwired, never from Zoho)
+};
+
+// Hardwired rents that NEVER flow from Zoho. The fixed monthly amount always
+// overrides any Zoho-posted rent and the fallback chain; it is pro-rated to the
+// period for partial months. Add a location here only when its rent is a fixed
+// off-Zoho lease that must be hardcoded.
+const FIXED_RENT_MONTHLY: Record<number, number> = {
+  8: 2750.00,  // Novotel — fixed €2750/month lease, never billed through Zoho
+};
+
+// Revenue-based rent surcharge: a fraction of the period's net revenue added ON
+// TOP of the base rent (whatever the rules above resolve to). Already period-
+// scoped because net revenue is pulled for the same period, so no extra proration.
+const REVENUE_RENT_SURCHARGE: Record<number, number> = {
+  7: 0.05,  // Excelsior — base rent + 5% of net revenue
 };
 
 const SUPP_SLUG_TO_LOC: Record<string, number> = {
@@ -661,8 +676,15 @@ export async function runSpaEbitdaMonth(
     log.push(`Warning: could not load previous month rent: ${e}`);
   }
 
-  let fallbackCount = 0, benchmarkCount = 0;
+  let fallbackCount = 0, benchmarkCount = 0, fixedCount = 0;
   for (const id of ALL_LOCATION_IDS) {
+    // Hardwired fixed rent (never from Zoho) — always overrides, pro-rated to period.
+    if (id in FIXED_RENT_MONTHLY) {
+      totals[id].rent = (FIXED_RENT_MONTHLY[id] / monthDays) * periodDays;
+      fixedCount++;
+      continue;
+    }
+
     const currentRent = totals[id].rent;
     const prevRent    = prevRentByLoc[id] ?? 0;
     const benchmark   = BENCHMARK_RENT_MONTHLY[id] ?? 0;
@@ -677,6 +699,17 @@ export async function runSpaEbitdaMonth(
       totals[id].rent = (currentRent / monthDays) * periodDays;
     }
   }
+  // Revenue-based surcharge: add x% of period net revenue on top of base rent.
+  for (const id of ALL_LOCATION_IDS) {
+    const pct = REVENUE_RENT_SURCHARGE[id] ?? 0;
+    if (pct > 0) {
+      const surcharge = totals[id].revenue * pct;
+      totals[id].rent += surcharge;
+      log.push(`Rent surcharge: location ${id} +€${surcharge.toFixed(2)} (${(pct * 100).toFixed(0)}% of net revenue €${totals[id].revenue.toFixed(2)})`);
+    }
+  }
+
+  if (fixedCount) log.push(`Rent hardwired: ${fixedCount} location(s) used fixed monthly rent prorated ${periodDays}/${monthDays} days (off-Zoho lease)`);
   if (fallbackCount) log.push(`Rent fallback: ${fallbackCount} locations used ${prevKey} prorated ${periodDays}/${prevDays} days`);
   if (benchmarkCount) log.push(`Rent benchmark: ${benchmarkCount} locations used hardcoded benchmark`);
 

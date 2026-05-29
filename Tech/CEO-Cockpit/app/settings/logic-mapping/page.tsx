@@ -42,7 +42,7 @@ const EBITDA_METRICS: MetricRow[] = [
   { metric: "Utilities",        formula: "salaries × 0.03",                                       source: "Derived from Zoho salaries", notes: "Cost-redistribution split" },
   { metric: "Advertising",      formula: "sga × 0.40",                                            source: "Derived from Zoho SG&A",     notes: "40 % of Zoho-reported SG&A is reclassified as advertising" },
   { metric: "SG&A",             formula: "sga × 0.60",                                            source: "Derived from Zoho SG&A",     notes: "Remaining 60 % stays as SG&A" },
-  { metric: "Rent",             formula: "Zoho rent (passthrough)",                               source: "Zoho",   notes: "Per venue rent in lease terms" },
+  { metric: "Rent",             formula: "Zoho rent (passthrough) [+ surcharge]",                  source: "Zoho",   notes: "Per venue rent in lease terms. Novotel hardwired at €2,750/mo (never from Zoho), pro-rated. Excelsior = base rent + 5% of period net revenue" },
   { metric: "EBITDA",           formula: "revenue − wages − cogs − utilities − advertising − sga − rent", source: "Computed", notes: "Per venue and group" },
   { metric: "EBITDA Margin",    formula: "ebitda ÷ revenue × 100, rounded to whole %",            source: "Computed", notes: "Used in KPI cards, brand cards, and EBITDA % row" },
 ];
@@ -116,6 +116,8 @@ const HARDCODED_CONSTANTS: ConstantRow[] = [
   { name: "Ad-channel split",            value: "55 % Meta, 20 % Google, 10 % Klaviyo, 10 % GHL, 5 % Misc (placeholder)", where: "app/finance/ebitda/page.tsx (adsExpanded block)" },
   { name: "EBITDA margin badge thresholds", value: "≥50 % green, ≥30 % amber, <30 % red", where: "app/finance/ebitda/page.tsx (EBITDA % row)" },
   { name: "Group EBITDA margin target",  value: "30 %",                                 where: "app/finance/ebitda/page.tsx (KPI cards)" },
+  { name: "Novotel rent (hardwired)",     value: "€2,750 / month — never from Zoho; pro-rated for partial months", where: "lib/etl/spa-ebitda.ts + etl/etl_zoho_books_spa_ebitda.py (FIXED_RENT_MONTHLY)" },
+  { name: "Excelsior rent surcharge",     value: "base rent + 5% of period net revenue", where: "lib/etl/spa-ebitda.ts + etl/etl_zoho_books_spa_ebitda.py (REVENUE_RENT_SURCHARGE)" },
 ];
 
 /* ------------------------------------------------------------------ */

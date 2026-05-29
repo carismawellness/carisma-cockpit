@@ -69,7 +69,22 @@ BENCHMARK_RENT_MONTHLY: dict[int, float] = {
     LOCATION_MAP["labranda"]:         1000.00,
     LOCATION_MAP["sunny_coast"]:       944.44,  # €2833.305/quarter ÷ 3
     LOCATION_MAP["excelsior"]:        2500.00,
-    LOCATION_MAP["novotel"]:             0.00,
+    LOCATION_MAP["novotel"]:             0.00,  # see FIXED_RENT_MONTHLY (hardwired)
+}
+
+# Hardwired rents that NEVER flow from Zoho. The fixed monthly amount always
+# overrides any Zoho-posted rent and the fallback chain; it is pro-rated to the
+# period for partial months. Add a location here only when its rent is a fixed
+# off-Zoho lease that must be hardcoded.
+FIXED_RENT_MONTHLY: dict[int, float] = {
+    LOCATION_MAP["novotel"]: 2750.00,  # fixed €2750/month lease, never billed through Zoho
+}
+
+# Revenue-based rent surcharge: a fraction of the period's net revenue added ON
+# TOP of the base rent (whatever the rules above resolve to). Already period-
+# scoped because net revenue is pulled for the same period, so no extra proration.
+REVENUE_RENT_SURCHARGE: dict[int, float] = {
+    LOCATION_MAP["excelsior"]: 0.05,  # base rent + 5% of net revenue
 }
 
 # Maps salary_supplement_monthly.spa_slug → spa_ebitda_monthly.location_id
@@ -902,7 +917,14 @@ def run_month(client: ZohoBooksClient, year: int, month_num: int, force: bool = 
 
     fallback_count   = 0
     benchmark_count  = 0
+    fixed_count      = 0
     for loc_id in ALL_LOCATION_IDS:
+        # Hardwired fixed rent (never from Zoho) — always overrides, pro-rated to period.
+        if loc_id in FIXED_RENT_MONTHLY:
+            totals[loc_id]["rent"] = FIXED_RENT_MONTHLY[loc_id] / month_days * period_days_actual
+            fixed_count += 1
+            continue
+
         current_rent = totals[loc_id]["rent"]
         prev_rent    = prev_rent_by_loc.get(loc_id, 0.0)
         benchmark    = BENCHMARK_RENT_MONTHLY.get(loc_id, 0.0)
@@ -919,6 +941,18 @@ def run_month(client: ZohoBooksClient, year: int, month_num: int, force: bool = 
             # Already posted — prorate to actual period days
             totals[loc_id]["rent"] = current_rent / month_days * period_days_actual
 
+    # Revenue-based surcharge: add x% of period net revenue on top of base rent.
+    for loc_id in ALL_LOCATION_IDS:
+        pct = REVENUE_RENT_SURCHARGE.get(loc_id, 0.0)
+        if pct > 0:
+            surcharge = totals[loc_id]["revenue"] * pct
+            totals[loc_id]["rent"] += surcharge
+            print(f"  Rent surcharge: location {loc_id} +EUR{surcharge:.2f} "
+                  f"({pct * 100:.0f}% of net revenue EUR{totals[loc_id]['revenue']:.2f})")
+
+    if fixed_count:
+        print(f"  Rent hardwired: {fixed_count} location(s) used fixed monthly rent "
+              f"prorated {period_days_actual}/{month_days} days (off-Zoho lease)")
     if fallback_count:
         print(f"  Rent fallback: {fallback_count} locations used {prev_key} "
               f"prorated {period_days_actual}/{prev_days} days")
