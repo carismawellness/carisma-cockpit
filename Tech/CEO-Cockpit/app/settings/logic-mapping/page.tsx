@@ -71,8 +71,7 @@ const AD_CHANNELS: AllocationRow[] = [
   { category: "Meta",    weight: 55 },
   { category: "Google",  weight: 20 },
   { category: "Klaviyo", weight: 10 },
-  { category: "GHL",     weight: 10 },
-  { category: "Misc",    weight:  5 },
+  { category: "Misc",    weight: 15 },
 ];
 
 interface VenueMap {
@@ -113,7 +112,7 @@ const HARDCODED_CONSTANTS: ConstantRow[] = [
   { name: "Wages-from-salaries split",   value: "89 % wages, 8 % COGS, 3 % utilities", where: "app/finance/ebitda/page.tsx (buildVenueRows)" },
   { name: "SG&A-vs-advertising split",   value: "60 % SG&A, 40 % advertising",         where: "app/finance/ebitda/page.tsx (buildVenueRows)" },
   { name: "SG&A category weights",       value: "11 weights summing to 25,110",         where: "app/finance/ebitda/page.tsx (SGA_CATEGORIES) + sga-categorization skill" },
-  { name: "Ad-channel split",            value: "55 % Meta, 20 % Google, 10 % Klaviyo, 10 % GHL, 5 % Misc (placeholder)", where: "app/finance/ebitda/page.tsx (adsExpanded block)" },
+  { name: "Ad-channel split",            value: "55 % Meta, 20 % Google, 10 % Klaviyo, 15 % Misc (placeholder)", where: "app/finance/ebitda/page.tsx (adsExpanded block)" },
   { name: "EBITDA margin badge thresholds", value: "≥50 % green, ≥30 % amber, <30 % red", where: "app/finance/ebitda/page.tsx (EBITDA % row)" },
   { name: "Group EBITDA margin target",  value: "30 %",                                 where: "app/finance/ebitda/page.tsx (KPI cards)" },
   { name: "Novotel rent (hardwired)",     value: "€2,750 / month — never from Zoho; pro-rated for partial months", where: "lib/etl/spa-ebitda.ts + etl/etl_zoho_books_spa_ebitda.py (FIXED_RENT_MONTHLY)" },
@@ -235,9 +234,9 @@ export default function LogicMappingPage() {
           <Card className="p-3 md:p-6">
             <h2 className="text-lg font-semibold text-foreground mb-1">Advertising Sub-channels</h2>
             <p className="text-xs text-muted-foreground mb-4">
-              Placeholder allocation until Meta / Google / Klaviyo / GHL APIs are wired into the EBITDA page.
-              GHL is a flat monthly platform cost (CRM / automation), not a media spend — when wired, pull
-              the plan fee from GHL billing or hardcode per-location.
+              Placeholder allocation until Meta / Google / Klaviyo APIs are wired into the EBITDA page.
+              GHL is no longer tracked as its own channel — any GHL (CRM / automation) contact now falls
+              under Misc on the Advertising line.
             </p>
             <SectionTable headers={["Channel", "Allocation"]}>
               {AD_CHANNELS.map((r) => (

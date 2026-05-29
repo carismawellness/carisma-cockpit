@@ -360,9 +360,10 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
 
   /* ── Advertising channel breakdown (real data from line_items) ──── */
   // Aggregates lineItems where ebitda_category === "advertising" into the
-  // 5 fixed channel buckets (Meta / Google / Klaviyo / GHL / Misc). Channel
+  // 4 fixed channel buckets (Meta / Google / Klaviyo / Misc). Channel
   // is pre-resolved server-side via the advertising_contact_mapping table
-  // (anything unmatched or with null contact lands in Misc). Per-venue
+  // (anything unmatched or with null contact lands in Misc — this now
+  // includes GHL, which is no longer tracked as its own channel). Per-venue
   // values are keyed by the same venueRow.id slugs used in displayedVenues,
   // so the SPA-aggregate column can sum them at render time.
   type AdChannelRow = {
@@ -372,7 +373,7 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
     total:    number;
   };
   const adChannelRows = useMemo((): AdChannelRow[] => {
-    const order = ["Meta", "Google", "Klaviyo", "GHL", "Misc"] as const;
+    const order = ["Meta", "Google", "Klaviyo", "Misc"] as const;
     const byLabel: Record<string, AdChannelRow> = {};
     for (const label of order) {
       byLabel[label] = { label, perVenue: {}, hq: 0, total: 0 };

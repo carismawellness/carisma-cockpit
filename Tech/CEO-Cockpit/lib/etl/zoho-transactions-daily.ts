@@ -39,7 +39,7 @@ export type DailyRow = {
   ebitda_category: string;        // revenue / cogs / wages / advertising / rent / utilities / sga
   split_rule:      string;        // raw CoA rule (sales_ratio, equal, hugos, custom:{}, …)
   tag_source:      "tagged" | "split";
-  contact:         string;        // Advertising sub-bucket: Meta / Google / Klaviyo / GHL / Misc — empty for non-Advertising rows
+  contact:         string;        // Advertising sub-bucket: Meta / Google / Klaviyo / Misc — empty for non-Advertising rows
   daily:           Record<string, number>;   // YYYY-MM-DD → amount
 };
 
@@ -102,7 +102,7 @@ const AESTH_BRAND_DISPLAY: Record<"aesthetics" | "slimming", { brand: "AES" | "S
 
 // ── Advertising contact mapping ─────────────────────────────────────────────
 // Maps Zoho vendor / customer names to canonical advertising channel
-// buckets (Meta, Google, Klaviyo, GHL, Misc). Loaded once per pull from
+// buckets (Meta, Google, Klaviyo, Misc). Loaded once per pull from
 // the advertising_contact_mapping Supabase table. Used only for lines
 // whose CoA mapping puts them on the "advertising" EBITDA line.
 

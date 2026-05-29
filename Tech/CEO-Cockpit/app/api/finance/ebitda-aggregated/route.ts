@@ -109,7 +109,7 @@ interface LineItem {
 
 interface AdContactPattern {
   pattern:   string;   // lowercased substring
-  canonical: string;   // "Meta" | "Google" | "Klaviyo" | "GHL" | …
+  canonical: string;   // "Meta" | "Google" | "Klaviyo" | …
   priority:  number;
 }
 

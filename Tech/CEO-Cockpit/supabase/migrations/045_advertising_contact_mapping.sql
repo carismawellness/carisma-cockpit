@@ -1,6 +1,7 @@
 -- Maps Zoho contact (vendor / customer) names to canonical advertising
 -- channel buckets shown on the P&L by Venue table (Meta, Google, Klaviyo,
--- GHL, Misc). Used by zoho-transactions-daily.ts and the EBIDA Layer
+-- Misc). NOTE: the GHL bucket seeded below was retired in migration 049 —
+-- GHL contacts now fall through to Misc. Used by zoho-transactions-daily.ts and the EBIDA Layer
 -- Apps Script sheet pull to populate the "Contact" sub-category for
 -- accounts whose CoA mapping puts them on the Advertising EBITDA line.
 --
