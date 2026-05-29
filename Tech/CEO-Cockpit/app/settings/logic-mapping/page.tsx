@@ -115,8 +115,8 @@ const HARDCODED_CONSTANTS: ConstantRow[] = [
   { name: "Ad-channel split",            value: "55 % Meta, 20 % Google, 10 % Klaviyo, 15 % Misc (placeholder)", where: "app/finance/ebitda/page.tsx (adsExpanded block)" },
   { name: "EBITDA margin badge thresholds", value: "≥50 % green, ≥30 % amber, <30 % red", where: "app/finance/ebitda/page.tsx (EBITDA % row)" },
   { name: "Group EBITDA margin target",  value: "30 %",                                 where: "app/finance/ebitda/page.tsx (KPI cards)" },
-  { name: "Novotel rent (hardwired)",     value: "€2,750 / month — never from Zoho; pro-rated for partial months", where: "lib/etl/spa-ebitda.ts + etl/etl_zoho_books_spa_ebitda.py (FIXED_RENT_MONTHLY)" },
-  { name: "Excelsior rent surcharge",     value: "base rent + 5% of period net revenue", where: "lib/etl/spa-ebitda.ts + etl/etl_zoho_books_spa_ebitda.py (REVENUE_RENT_SURCHARGE)" },
+  { name: "Novotel rent (hardwired)",     value: "€2,750 / month — never from Zoho; pro-rated for partial months", where: "app/api/finance/ebitda-aggregated/route.ts (SPA_FIXED_RENT_MONTHLY) — live page; legacy: lib/etl/spa-ebitda.ts + etl/*.py" },
+  { name: "Excelsior rent surcharge",     value: "base rent + 5% of period net revenue", where: "app/api/finance/ebitda-aggregated/route.ts (SPA_REVENUE_RENT_SURCHARGE) — live page; legacy: lib/etl/spa-ebitda.ts + etl/*.py" },
 ];
 
 /* ------------------------------------------------------------------ */

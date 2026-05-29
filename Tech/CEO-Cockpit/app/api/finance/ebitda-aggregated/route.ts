@@ -158,6 +158,16 @@ const BRAND_TO_ORG_PARAM: Record<Brand, "SPA" | "Aesthetics"> = {
 
 const ALL_BRANDS: readonly Brand[] = ["SPA", "AES", "SLIM", "HQ"] as const;
 
+// Hardwired SPA rent rules that never come from Zoho and cannot be expressed
+// as ebitda_fallback_rules. Applied as a read-side adjustment AFTER aggregation,
+// on both full and partial periods (unlike fallback rules). Keyed by lowercased
+// venue display name (column E).
+//   • Novotel  — fixed €2,750/month lease. Overrides any Zoho rent, pro-rated
+//                per calendar month for partial periods.
+//   • Excelsior — turnover rent: base rent + 5% of the period's net revenue.
+const SPA_FIXED_RENT_MONTHLY: Record<string, number> = { novotel: 2750 };
+const SPA_REVENUE_RENT_SURCHARGE: Record<string, number> = { excelsior: 0.05 };
+
 // ── Utility helpers ──────────────────────────────────────────────────────────
 
 function isoToDate(iso: string): Date {
@@ -226,6 +236,28 @@ function lastNCalendarMonths(dateFrom: string, n: number): { from: string; to: s
     to,
     days: daysBetweenInclusive(from, to),
   };
+}
+
+/**
+ * A fixed monthly amount pro-rated across the calendar months overlapped by
+ * [fromIso, toIso]. A full calendar month contributes exactly `monthly`; a
+ * partial month contributes `monthly × overlapDays / daysInThatMonth`. So a
+ * full-month query returns the exact monthly figure and a 3-month query
+ * returns 3× it, while a mid-month range is pro-rated.
+ */
+function proratedMonthlyAmount(monthly: number, fromIso: string, toIso: string): number {
+  let total = 0;
+  let cursor = startOfMonth(fromIso);
+  while (cursor <= toIso) {
+    const mStart = cursor;
+    const mEnd   = endOfMonth(cursor);
+    const overlapStart = mStart > fromIso ? mStart : fromIso;
+    const overlapEnd   = mEnd   < toIso   ? mEnd   : toIso;
+    const overlapDays  = daysBetweenInclusive(overlapStart, overlapEnd);
+    total += monthly * (overlapDays / daysInMonthOf(mStart));
+    cursor = shiftIso(mEnd, 1);   // first day of the next month
+  }
+  return total;
 }
 
 function normalizeBrand(raw: string | null | undefined): Brand | null {
@@ -764,6 +796,61 @@ export async function GET(req: NextRequest) {
       for (const cat of Object.keys(vCats)) {
         if (cat.startsWith("sga_")) addCell(vCats, "sga", vCats[cat]);
       }
+    }
+  }
+
+  // ── Hardwired SPA rent adjustments (off-Zoho business rules) ──────────────
+  // Novotel (fixed monthly lease) and Excelsior (base + 5% turnover rent) can't
+  // be sourced from Zoho or expressed as fallback rules. Apply them to BOTH the
+  // per-venue cells and the SPA brand total so the venue P&L table and the
+  // EBITDA arithmetic stay consistent. Runs on full AND partial periods.
+  if (!brandFilter || brandFilter === "SPA") {
+    const spaVenues = venueTotals.SPA;
+    const spaTotals = totals.SPA;
+    const newCell = (): CellTotal => ({ value: 0, has_fallback: false, fallback_account_count: 0 });
+
+    const findVenueKey = (wantLower: string): string | null => {
+      for (const k in spaVenues) if (k.trim().toLowerCase() === wantLower) return k;
+      return null;
+    };
+    const ensureVenueRentCell = (venueKey: string): CellTotal => {
+      const bucket = spaVenues[venueKey] ?? (spaVenues[venueKey] = {});
+      return bucket.rent ?? (bucket.rent = newCell());
+    };
+    // Adjust the SPA brand-level rent total by `delta` so EBITDA stays correct.
+    // The brand cell's value tracks the venue cells; we leave its has_fallback
+    // flag untouched so we don't mislabel every venue's real rent as estimated.
+    const bumpBrandRent = (delta: number) => {
+      const cell = spaTotals.rent ?? (spaTotals.rent = newCell());
+      cell.value += delta;
+      spaTotals.rent = cell;
+    };
+
+    // Novotel — fixed monthly rent; overrides whatever (if anything) Zoho posted.
+    for (const wantLower in SPA_FIXED_RENT_MONTHLY) {
+      const fixed = proratedMonthlyAmount(SPA_FIXED_RENT_MONTHLY[wantLower], dateFrom, dateTo);
+      const key   = findVenueKey(wantLower)
+        ?? (wantLower.charAt(0).toUpperCase() + wantLower.slice(1));
+      const cell  = ensureVenueRentCell(key);
+      bumpBrandRent(fixed - cell.value);   // delta vs whatever was there
+      cell.value = fixed;
+      cell.has_fallback = true;            // rule-derived, not a literal Zoho sum
+      seenBrands.add("SPA");
+      seenCategories.add("rent");
+    }
+
+    // Excelsior — base rent + 5% of period net revenue (added on top).
+    for (const wantLower in SPA_REVENUE_RENT_SURCHARGE) {
+      const key = findVenueKey(wantLower);
+      if (!key) continue;                  // no Excelsior rows in this period
+      const revenue   = spaVenues[key]?.revenue?.value ?? 0;
+      const surcharge = revenue * SPA_REVENUE_RENT_SURCHARGE[wantLower];
+      if (surcharge === 0) continue;
+      const cell = ensureVenueRentCell(key);
+      cell.value += surcharge;
+      cell.has_fallback = true;
+      bumpBrandRent(surcharge);
+      seenCategories.add("rent");
     }
   }
 
