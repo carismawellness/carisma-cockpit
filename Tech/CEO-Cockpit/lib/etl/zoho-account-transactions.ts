@@ -59,7 +59,7 @@ async function loadCoaByCode(client: ZohoBooksClient): Promise<Map<string, AcctI
   const byCode = new Map<string, AcctInfo>();
   // Two passes (active + inactive) mirror loadAccountMeta in zoho-line-extractor —
   // historical postings can sit on since-deactivated accounts.
-  for (const extra of [{}, { filter_by: "AccountType.Inactive" }]) {
+  for (const extra of [{}, { filter_by: "AccountType.Inactive" }] as Record<string, string>[]) {
     let page = 1;
     while (true) {
       let data: Record<string, unknown>;
