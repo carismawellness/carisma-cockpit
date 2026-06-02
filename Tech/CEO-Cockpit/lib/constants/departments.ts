@@ -85,6 +85,7 @@ export const departments: Department[] = [
     path: "/settings",
     children: [
       { slug: "coa-mapping",         label: "COA Mapping",         path: "/settings/coa-mapping",         icon: BookOpen },
+      { slug: "employee-mapping",    label: "Employee Mapping",    path: "/settings/employee-mapping",    icon: Users },
       { slug: "salary-supplement",   label: "Salary Supplement",   path: "/settings/salary-supplement",   icon: BookOpen },
       { slug: "fallback-rules",      label: "Fallback Rules",      path: "/settings/fallback-rules",      icon: BookOpen },
       { slug: "logic-mapping",       label: "Logic Mapping",       path: "/settings/logic-mapping",       icon: BookOpen },

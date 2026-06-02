@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import type * as React from "react";
 import {
   ChevronDown, ChevronRight, ArrowUpRight,
   TrendingUp, TrendingDown, Minus, RefreshCw, FileSpreadsheet,
@@ -15,6 +16,12 @@ import { useAestheticsEbitda } from "@/lib/hooks/useAestheticsEbitda";
 import { useHqEbitda } from "@/lib/hooks/useHqEbitda";
 import { useEbitdaAggregated } from "@/lib/hooks/useEbitdaAggregated";
 import { useSlimmingSales } from "@/lib/hooks/useSlimmingSales";
+import { EbitdaTransactionsDialog } from "@/components/finance/EbitdaTransactionsDialog";
+import type { DrillTarget } from "@/lib/hooks/useEbitdaTransactions";
+import {
+  useWageRoles, resolveRole,
+  WAGE_ROLE_ORDER, WAGE_ROLE_LABEL, type WageRole,
+} from "@/lib/hooks/useWageRoles";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine, Cell,
@@ -147,6 +154,9 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
   // which applies TTM / manual / previous-month / quarterly-average
   // fallback rules and reads from the live Zoho-backed Aggregated Data tab.
   const agg = useEbitdaAggregated(dateFrom, dateTo);
+  // Wage-role mapping (small table, client-side). Used to break the Wages &
+  // Salaries row into Manager / Reception / Practitioner / CRM / Unassigned.
+  const { roleByContact } = useWageRoles();
   // Slimming revenue is sourced from slimming_sales_daily (same path as
   // /sales/slimming-deepa) instead of the Zoho Aggregated Data total. The
   // Zoho total combines sales+treatments under one bucket; the dashboard
@@ -333,10 +343,42 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
   ), [venueRows]);
 
   /* ── Table expand states ─────────────────────────────────────────── */
-  const [rentExpanded, setRentExpanded] = useState(false);
-  const [adsExpanded,  setAdsExpanded]  = useState(false);
-  const [sgaExpanded,  setSgaExpanded]  = useState(false);
-  const [spaExpanded,  setSpaExpanded]  = useState(false);
+  const [rentExpanded,  setRentExpanded]  = useState(false);
+  const [adsExpanded,   setAdsExpanded]   = useState(false);
+  const [sgaExpanded,   setSgaExpanded]   = useState(false);
+  const [wagesExpanded, setWagesExpanded] = useState(false);
+  const [spaExpanded,   setSpaExpanded]   = useState(false);
+
+  /* ── Transaction drill-down ──────────────────────────────────────── */
+  // Double-click (or Enter / click) any cost cell to open the individual
+  // Zoho transactions that comprise that venue × category for the period.
+  const [drillTarget, setDrillTarget] = useState<DrillTarget | null>(null);
+
+  // Map a venueRow.id to the brand + venue-display the drill API expects.
+  // SPA per-venue rows pass their column-E display name; the spa-aggregate,
+  // HQ and Group columns pass sentinels the route understands.
+  const drillScopeForVenueId = useCallback((venueId: string, venueName: string): { brand: DrillTarget["brand"]; venue: string } => {
+    if (venueId === "spa-aggregate") return { brand: "SPA",  venue: "spa-aggregate" };
+    if (venueId === "aesthetics")    return { brand: "AES",  venue: "aesthetics" };
+    if (venueId === "slimming")      return { brand: "SLIM", venue: "slimming" };
+    // Any other id is a specific SPA venue — match on its column-E display name.
+    return { brand: "SPA", venue: venueName };
+  }, []);
+
+  const openDrill = useCallback((t: DrillTarget) => setDrillTarget(t), []);
+  // Props that make a cost cell behave like a button (click / Enter / Space /
+  // dbl-click all open the drill) while staying a <td>. Keyboard-accessible.
+  const cellDrillProps = useCallback((t: DrillTarget) => ({
+    role:      "button" as const,
+    tabIndex:  0,
+    title:     `View transactions: ${t.label}`,
+    className: "cursor-pointer hover:bg-amber-50/60 hover:ring-1 hover:ring-inset hover:ring-amber-200/70 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-amber-400",
+    onClick:        () => openDrill(t),
+    onDoubleClick:  () => openDrill(t),
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDrill(t); }
+    },
+  }), [openDrill]);
 
   /* ── Spa aggregate row for collapsed view ────────────────────────── */
   const spaVenueCount  = useMemo(() => venueRows.filter(v => v.brand === "Spa").length, [venueRows]);
@@ -409,6 +451,62 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
     [spaVenueDisplayMeta]);
 
   function adChannelValueForVenue(row: AdChannelRow, venueId: string): number {
+    if (venueId !== "spa-aggregate") return row.perVenue[venueId] ?? 0;
+    let sum = 0;
+    for (const k in row.perVenue) {
+      if (spaSlugs.has(k) || k === "spa-other") sum += row.perVenue[k];
+    }
+    return sum;
+  }
+
+  /* ── Wages & Salaries role breakdown (Manager / Reception / … ) ──── */
+  // Buckets lineItems where ebitda_category === "wages" by venue and by the
+  // employee's role, resolved CLIENT-SIDE from the wage_role_mapping table
+  // (join key = normalised `contact` name). Anyone with no mapping (or a blank
+  // contact) lands in "Unassigned", so the five sub-rows ALWAYS sum back to the
+  // Wages & Salaries cell for every venue / HQ / Group column. Mirrors the
+  // adChannelRows structure exactly (perVenue keyed by venueRow.id slugs, plus
+  // hq + total) so wageRoleValueForVenue can fold spa venues into spa-aggregate.
+  type WageRoleRow = {
+    key:      WageRole | "unassigned";
+    label:    string;
+    perVenue: Record<string, number>;   // keyed by venueRow.id
+    hq:       number;
+    total:    number;
+  };
+  const wageRoleRows = useMemo((): WageRoleRow[] => {
+    const order: (WageRole | "unassigned")[] = [...WAGE_ROLE_ORDER, "unassigned"];
+    const byKey: Record<string, WageRoleRow> = {};
+    for (const key of order) {
+      byKey[key] = {
+        key,
+        label: key === "unassigned" ? "Unassigned" : WAGE_ROLE_LABEL[key as WageRole],
+        perVenue: {}, hq: 0, total: 0,
+      };
+    }
+    for (const li of agg.lineItems) {
+      if (li.ebitda_category !== "wages") continue;
+      const v = li.period_value;
+      if (v === 0) continue;
+      const role = resolveRole(roleByContact, li.contact);
+      const row = byKey[role ?? "unassigned"];
+      if (li.brand === "HQ") {
+        row.hq += v;
+      } else if (li.brand === "SPA") {
+        const slug = spaVenueDisplayMeta[li.venue.toLowerCase()]?.slug
+                  ?? (li.venue || "spa-other");
+        row.perVenue[slug] = (row.perVenue[slug] ?? 0) + v;
+      } else if (li.brand === "AES") {
+        row.perVenue["aesthetics"] = (row.perVenue["aesthetics"] ?? 0) + v;
+      } else if (li.brand === "SLIM") {
+        row.perVenue["slimming"] = (row.perVenue["slimming"] ?? 0) + v;
+      }
+      row.total += v;
+    }
+    return order.map(k => byKey[k]);
+  }, [agg.lineItems, roleByContact, spaVenueDisplayMeta]);
+
+  function wageRoleValueForVenue(row: WageRoleRow, venueId: string): number {
     if (venueId !== "spa-aggregate") return row.perVenue[venueId] ?? 0;
     let sum = 0;
     for (const k in row.perVenue) {
@@ -730,35 +828,97 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
               {/* Net Revenue */}
               <tr className="group bg-slate-50/40 hover:bg-slate-50/80 transition-colors">
                 <td className="py-2 px-2 text-[13px] font-semibold text-foreground sticky left-0 bg-slate-50/40 group-hover:bg-slate-50/80 z-10 border-b border-border transition-colors">Net Revenue</td>
-                {displayedVenues.map(v => (
-                  <td key={v.id} className="py-2 px-2 text-right text-[13px] font-semibold text-foreground tabular-nums border-b border-border">
-                    {fmtCurrencyShort(v.revenue)}
-                  </td>
-                ))}
-                <td className="py-2 px-2 text-right text-[13px] font-semibold text-foreground tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border">
-                  {CORPORATE.revenue > 0 ? fmtCurrencyShort(CORPORATE.revenue) : <span className="text-muted-foreground font-normal">&mdash;</span>}
-                </td>
-                <td className="py-2 px-2 text-right text-[13px] font-bold text-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border">
-                  {fmtCurrencyShort(venueTotals.revenue + CORPORATE.revenue)}
-                </td>
+                {displayedVenues.map(v => {
+                  const scope = drillScopeForVenueId(v.id, v.name);
+                  const dp = cellDrillProps({ ...scope, category: "revenue", label: `${v.name} · Net Revenue` });
+                  return (
+                    <td key={v.id} {...dp} className={`py-2 px-2 text-right text-[13px] font-semibold text-foreground tabular-nums border-b border-border ${dp.className}`}>
+                      {fmtCurrencyShort(v.revenue)}
+                    </td>
+                  );
+                })}
+                {(() => {
+                  const dp = cellDrillProps({ brand: "HQ", venue: "hq", category: "revenue", label: "HQ · Net Revenue" });
+                  return (
+                    <td {...dp} className={`py-2 px-2 text-right text-[13px] font-semibold text-foreground tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border ${dp.className}`}>
+                      {CORPORATE.revenue > 0 ? fmtCurrencyShort(CORPORATE.revenue) : <span className="text-muted-foreground font-normal">&mdash;</span>}
+                    </td>
+                  );
+                })()}
+                {(() => {
+                  const dp = cellDrillProps({ brand: null, venue: "group", category: "revenue", label: "Group · Net Revenue" });
+                  return (
+                    <td {...dp} className={`py-2 px-2 text-right text-[13px] font-bold text-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border ${dp.className}`}>
+                      {fmtCurrencyShort(venueTotals.revenue + CORPORATE.revenue)}
+                    </td>
+                  );
+                })()}
               </tr>
 
               {/* Wages */}
               <tr className="group hover:bg-muted/30 transition-colors">
-                <td className="py-1.5 px-2 text-foreground sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-b border-border/60 transition-colors">Wages &amp; Salaries</td>
-                {displayedVenues.map(v => (
-                  <td key={v.id} className="py-1.5 px-2 text-right text-foreground tabular-nums border-b border-border/60">
-                    {fmtCurrencyShort(v.wages)} <span className="text-muted-foreground/80">· {fmtPct(pctOf(v.wages, v.revenue))}</span>
-                  </td>
-                ))}
-                <td className="py-1.5 px-2 text-right tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/60">
-                  {CORPORATE.wages > 0 ? fmtCurrencyShort(CORPORATE.wages) : <span className="text-muted-foreground">&mdash;</span>}
+                <td className="py-1.5 px-2 text-foreground sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-b border-border/60 transition-colors">
+                  <button type="button" onClick={() => setWagesExpanded(x => !x)} className="flex items-center gap-1 hover:text-foreground/70 transition-colors" aria-expanded={wagesExpanded}>
+                    {wagesExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                    <span>Wages &amp; Salaries</span>
+                  </button>
                 </td>
-                <td className="py-1.5 px-2 text-right font-medium text-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/60">
-                  {fmtCurrencyShort(venueTotals.wages + CORPORATE.wages)}{" "}
-                  <span className="text-muted-foreground/80 font-normal">· {fmtPct(pctOf(venueTotals.wages + CORPORATE.wages, venueTotals.revenue))}</span>
-                </td>
+                {displayedVenues.map(v => {
+                  const scope = drillScopeForVenueId(v.id, v.name);
+                  const dp = cellDrillProps({ ...scope, category: "wages", label: `${v.name} · Wages & Salaries` });
+                  return (
+                    <td key={v.id} {...dp} className={`py-1.5 px-2 text-right text-foreground tabular-nums border-b border-border/60 ${dp.className}`}>
+                      {fmtCurrencyShort(v.wages)} <span className="text-muted-foreground/80">· {fmtPct(pctOf(v.wages, v.revenue))}</span>
+                    </td>
+                  );
+                })}
+                {(() => {
+                  const dp = cellDrillProps({ brand: "HQ", venue: "hq", category: "wages", label: "HQ · Wages & Salaries" });
+                  return (
+                    <td {...dp} className={`py-1.5 px-2 text-right tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/60 ${dp.className}`}>
+                      {CORPORATE.wages > 0 ? fmtCurrencyShort(CORPORATE.wages) : <span className="text-muted-foreground">&mdash;</span>}
+                    </td>
+                  );
+                })()}
+                {(() => {
+                  const dp = cellDrillProps({ brand: null, venue: "group", category: "wages", label: "Group · Wages & Salaries" });
+                  return (
+                    <td {...dp} className={`py-1.5 px-2 text-right font-medium text-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/60 ${dp.className}`}>
+                      {fmtCurrencyShort(venueTotals.wages + CORPORATE.wages)}{" "}
+                      <span className="text-muted-foreground/80 font-normal">· {fmtPct(pctOf(venueTotals.wages + CORPORATE.wages, venueTotals.revenue))}</span>
+                    </td>
+                  );
+                })()}
               </tr>
+              {wagesExpanded && wageRoleRows.map(row => (
+                <tr key={row.key} className="group hover:bg-muted/30 transition-colors">
+                  <td className="py-1 px-2 text-muted-foreground sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-b border-border/40 transition-colors">
+                    <span className="inline-flex items-center pl-5 border-l border-border/60 ml-1">
+                      <span className={row.key === "unassigned" ? "italic text-amber-600/80" : ""}>{row.label}</span>
+                    </span>
+                  </td>
+                  {displayedVenues.map(v => {
+                    const part = wageRoleValueForVenue(row, v.id);
+                    return (
+                      <td key={v.id} className="py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40">
+                        {part === 0
+                          ? <span className="text-muted-foreground/40">&mdash;</span>
+                          : <>{fmtCurrencyShort(part)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(part, v.wages))}</span></>}
+                      </td>
+                    );
+                  })}
+                  <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40">
+                    {row.hq === 0
+                      ? <span className="text-muted-foreground/40">&mdash;</span>
+                      : <>{fmtCurrencyShort(row.hq)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(row.hq, CORPORATE.wages))}</span></>}
+                  </td>
+                  <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40">
+                    {row.total === 0
+                      ? <span className="text-muted-foreground/40">&mdash;</span>
+                      : <>{fmtCurrencyShort(row.total)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(row.total, venueTotals.wages + CORPORATE.wages))}</span></>}
+                  </td>
+                </tr>
+              ))}
 
               {/* Advertising */}
               <tr className="group hover:bg-muted/30 transition-colors">
@@ -768,18 +928,32 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
                     <span>Advertising</span>
                   </button>
                 </td>
-                {displayedVenues.map(v => (
-                  <td key={v.id} className="py-1.5 px-2 text-right text-foreground tabular-nums border-b border-border/60">
-                    {fmtCurrencyShort(v.advertising)} <span className="text-muted-foreground/80">· {fmtPct(pctOf(v.advertising, v.revenue))}</span>
-                  </td>
-                ))}
-                <td className="py-1.5 px-2 text-right tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/60">
-                  {CORPORATE.advertising > 0 ? fmtCurrencyShort(CORPORATE.advertising) : <span className="text-muted-foreground">&mdash;</span>}
-                </td>
-                <td className="py-1.5 px-2 text-right font-medium text-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/60">
-                  {fmtCurrencyShort(venueTotals.advertising + CORPORATE.advertising)}{" "}
-                  <span className="text-muted-foreground/80 font-normal">· {fmtPct(pctOf(venueTotals.advertising + CORPORATE.advertising, venueTotals.revenue))}</span>
-                </td>
+                {displayedVenues.map(v => {
+                  const scope = drillScopeForVenueId(v.id, v.name);
+                  const dp = cellDrillProps({ ...scope, category: "advertising", label: `${v.name} · Advertising` });
+                  return (
+                    <td key={v.id} {...dp} className={`py-1.5 px-2 text-right text-foreground tabular-nums border-b border-border/60 ${dp.className}`}>
+                      {fmtCurrencyShort(v.advertising)} <span className="text-muted-foreground/80">· {fmtPct(pctOf(v.advertising, v.revenue))}</span>
+                    </td>
+                  );
+                })}
+                {(() => {
+                  const dp = cellDrillProps({ brand: "HQ", venue: "hq", category: "advertising", label: "HQ · Advertising" });
+                  return (
+                    <td {...dp} className={`py-1.5 px-2 text-right tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/60 ${dp.className}`}>
+                      {CORPORATE.advertising > 0 ? fmtCurrencyShort(CORPORATE.advertising) : <span className="text-muted-foreground">&mdash;</span>}
+                    </td>
+                  );
+                })()}
+                {(() => {
+                  const dp = cellDrillProps({ brand: null, venue: "group", category: "advertising", label: "Group · Advertising" });
+                  return (
+                    <td {...dp} className={`py-1.5 px-2 text-right font-medium text-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/60 ${dp.className}`}>
+                      {fmtCurrencyShort(venueTotals.advertising + CORPORATE.advertising)}{" "}
+                      <span className="text-muted-foreground/80 font-normal">· {fmtPct(pctOf(venueTotals.advertising + CORPORATE.advertising, venueTotals.revenue))}</span>
+                    </td>
+                  );
+                })()}
               </tr>
               {adsExpanded && adChannelRows.map(row => (
                 <tr key={row.label} className="group hover:bg-muted/30 transition-colors">
@@ -790,24 +964,36 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
                   </td>
                   {displayedVenues.map(v => {
                     const part = adChannelValueForVenue(row, v.id);
+                    const scope = drillScopeForVenueId(v.id, v.name);
+                    const dp = cellDrillProps({ ...scope, category: "advertising", channel: row.label, label: `${v.name} · Advertising · ${row.label}` });
                     return (
-                      <td key={v.id} className="py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40">
+                      <td key={v.id} {...dp} className={`py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40 ${dp.className}`}>
                         {part === 0
                           ? <span className="text-muted-foreground/40">&mdash;</span>
                           : <>{fmtCurrencyShort(part)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(part, v.revenue))}</span></>}
                       </td>
                     );
                   })}
-                  <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40">
-                    {row.hq === 0
-                      ? <span className="text-muted-foreground/40">&mdash;</span>
-                      : fmtCurrencyShort(row.hq)}
-                  </td>
-                  <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40">
-                    {row.total === 0
-                      ? <span className="text-muted-foreground/40">&mdash;</span>
-                      : <>{fmtCurrencyShort(row.total)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(row.total, venueTotals.revenue))}</span></>}
-                  </td>
+                  {(() => {
+                    const dp = cellDrillProps({ brand: "HQ", venue: "hq", category: "advertising", channel: row.label, label: `HQ · Advertising · ${row.label}` });
+                    return (
+                      <td {...dp} className={`py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40 ${dp.className}`}>
+                        {row.hq === 0
+                          ? <span className="text-muted-foreground/40">&mdash;</span>
+                          : fmtCurrencyShort(row.hq)}
+                      </td>
+                    );
+                  })()}
+                  {(() => {
+                    const dp = cellDrillProps({ brand: null, venue: "group", category: "advertising", channel: row.label, label: `Group · Advertising · ${row.label}` });
+                    return (
+                      <td {...dp} className={`py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40 ${dp.className}`}>
+                        {row.total === 0
+                          ? <span className="text-muted-foreground/40">&mdash;</span>
+                          : <>{fmtCurrencyShort(row.total)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(row.total, venueTotals.revenue))}</span></>}
+                      </td>
+                    );
+                  })()}
                 </tr>
               ))}
 
@@ -819,18 +1005,32 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
                     <span>SG&amp;A</span>
                   </button>
                 </td>
-                {displayedVenues.map(v => (
-                  <td key={v.id} className="py-1.5 px-2 text-right text-foreground tabular-nums border-b border-border/60">
-                    {fmtCurrencyShort(v.sga)} <span className="text-muted-foreground/80">· {fmtPct(pctOf(v.sga, v.revenue))}</span>
-                  </td>
-                ))}
-                <td className="py-1.5 px-2 text-right tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/60">
-                  {CORPORATE.sga > 0 ? fmtCurrencyShort(CORPORATE.sga) : <span className="text-muted-foreground">&mdash;</span>}
-                </td>
-                <td className="py-1.5 px-2 text-right font-medium text-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/60">
-                  {fmtCurrencyShort(venueTotals.sga + CORPORATE.sga)}{" "}
-                  <span className="text-muted-foreground/80 font-normal">· {fmtPct(pctOf(venueTotals.sga + CORPORATE.sga, venueTotals.revenue))}</span>
-                </td>
+                {displayedVenues.map(v => {
+                  const scope = drillScopeForVenueId(v.id, v.name);
+                  const dp = cellDrillProps({ ...scope, category: "sga", label: `${v.name} · SG&A` });
+                  return (
+                    <td key={v.id} {...dp} className={`py-1.5 px-2 text-right text-foreground tabular-nums border-b border-border/60 ${dp.className}`}>
+                      {fmtCurrencyShort(v.sga)} <span className="text-muted-foreground/80">· {fmtPct(pctOf(v.sga, v.revenue))}</span>
+                    </td>
+                  );
+                })}
+                {(() => {
+                  const dp = cellDrillProps({ brand: "HQ", venue: "hq", category: "sga", label: "HQ · SG&A" });
+                  return (
+                    <td {...dp} className={`py-1.5 px-2 text-right tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/60 ${dp.className}`}>
+                      {CORPORATE.sga > 0 ? fmtCurrencyShort(CORPORATE.sga) : <span className="text-muted-foreground">&mdash;</span>}
+                    </td>
+                  );
+                })()}
+                {(() => {
+                  const dp = cellDrillProps({ brand: null, venue: "group", category: "sga", label: "Group · SG&A" });
+                  return (
+                    <td {...dp} className={`py-1.5 px-2 text-right font-medium text-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/60 ${dp.className}`}>
+                      {fmtCurrencyShort(venueTotals.sga + CORPORATE.sga)}{" "}
+                      <span className="text-muted-foreground/80 font-normal">· {fmtPct(pctOf(venueTotals.sga + CORPORATE.sga, venueTotals.revenue))}</span>
+                    </td>
+                  );
+                })()}
               </tr>
               {sgaExpanded && sgaSubcatData.hasReal && sgaSubcatData.rows.map(row => (
                 <tr key={row.key} className="group hover:bg-muted/30 transition-colors">
@@ -841,24 +1041,36 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
                   </td>
                   {displayedVenues.map(v => {
                     const part = sgaSubcatValueForVenue(row, v.id);
+                    const scope = drillScopeForVenueId(v.id, v.name);
+                    const dp = cellDrillProps({ ...scope, category: row.key, label: `${v.name} · ${row.label}` });
                     return (
-                      <td key={v.id} className="py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40">
+                      <td key={v.id} {...dp} className={`py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40 ${dp.className}`}>
                         {part === 0
                           ? <span className="text-muted-foreground/40">&mdash;</span>
                           : <>{fmtCurrencyShort(part)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(part, v.revenue))}</span></>}
                       </td>
                     );
                   })}
-                  <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40">
-                    {row.hq === 0
-                      ? <span className="text-muted-foreground/40">&mdash;</span>
-                      : fmtCurrencyShort(row.hq)}
-                  </td>
-                  <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40">
-                    {row.total === 0
-                      ? <span className="text-muted-foreground/40">&mdash;</span>
-                      : <>{fmtCurrencyShort(row.total)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(row.total, venueTotals.revenue))}</span></>}
-                  </td>
+                  {(() => {
+                    const dp = cellDrillProps({ brand: "HQ", venue: "hq", category: row.key, label: `HQ · ${row.label}` });
+                    return (
+                      <td {...dp} className={`py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40 ${dp.className}`}>
+                        {row.hq === 0
+                          ? <span className="text-muted-foreground/40">&mdash;</span>
+                          : fmtCurrencyShort(row.hq)}
+                      </td>
+                    );
+                  })()}
+                  {(() => {
+                    const dp = cellDrillProps({ brand: null, venue: "group", category: row.key, label: `Group · ${row.label}` });
+                    return (
+                      <td {...dp} className={`py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40 ${dp.className}`}>
+                        {row.total === 0
+                          ? <span className="text-muted-foreground/40">&mdash;</span>
+                          : <>{fmtCurrencyShort(row.total)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(row.total, venueTotals.revenue))}</span></>}
+                      </td>
+                    );
+                  })()}
                 </tr>
               ))}
               {sgaExpanded && !sgaSubcatData.hasReal && SGA_CATEGORIES.map(({ label, weight }) => {
@@ -895,18 +1107,32 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
               {/* COGS */}
               <tr className="group hover:bg-muted/30 transition-colors">
                 <td className="py-1.5 px-2 text-foreground sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-b border-border/60 transition-colors">COGS</td>
-                {displayedVenues.map(v => (
-                  <td key={v.id} className="py-1.5 px-2 text-right text-foreground tabular-nums border-b border-border/60">
-                    {fmtCurrencyShort(v.cogs)} <span className="text-muted-foreground/80">· {fmtPct(pctOf(v.cogs, v.revenue))}</span>
-                  </td>
-                ))}
-                <td className="py-1.5 px-2 text-right tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/60">
-                  {CORPORATE.cogs > 0 ? fmtCurrencyShort(CORPORATE.cogs) : <span className="text-muted-foreground">&mdash;</span>}
-                </td>
-                <td className="py-1.5 px-2 text-right font-medium text-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/60">
-                  {fmtCurrencyShort(venueTotals.cogs + CORPORATE.cogs)}{" "}
-                  <span className="text-muted-foreground/80 font-normal">· {fmtPct(pctOf(venueTotals.cogs + CORPORATE.cogs, venueTotals.revenue))}</span>
-                </td>
+                {displayedVenues.map(v => {
+                  const scope = drillScopeForVenueId(v.id, v.name);
+                  const dp = cellDrillProps({ ...scope, category: "cogs", label: `${v.name} · COGS` });
+                  return (
+                    <td key={v.id} {...dp} className={`py-1.5 px-2 text-right text-foreground tabular-nums border-b border-border/60 ${dp.className}`}>
+                      {fmtCurrencyShort(v.cogs)} <span className="text-muted-foreground/80">· {fmtPct(pctOf(v.cogs, v.revenue))}</span>
+                    </td>
+                  );
+                })}
+                {(() => {
+                  const dp = cellDrillProps({ brand: "HQ", venue: "hq", category: "cogs", label: "HQ · COGS" });
+                  return (
+                    <td {...dp} className={`py-1.5 px-2 text-right tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/60 ${dp.className}`}>
+                      {CORPORATE.cogs > 0 ? fmtCurrencyShort(CORPORATE.cogs) : <span className="text-muted-foreground">&mdash;</span>}
+                    </td>
+                  );
+                })()}
+                {(() => {
+                  const dp = cellDrillProps({ brand: null, venue: "group", category: "cogs", label: "Group · COGS" });
+                  return (
+                    <td {...dp} className={`py-1.5 px-2 text-right font-medium text-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/60 ${dp.className}`}>
+                      {fmtCurrencyShort(venueTotals.cogs + CORPORATE.cogs)}{" "}
+                      <span className="text-muted-foreground/80 font-normal">· {fmtPct(pctOf(venueTotals.cogs + CORPORATE.cogs, venueTotals.revenue))}</span>
+                    </td>
+                  );
+                })()}
               </tr>
 
               {/* Rent Plus */}
@@ -919,23 +1145,33 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
                 </td>
                 {displayedVenues.map(v => {
                   const sum = v.rent + v.utilities;
+                  const scope = drillScopeForVenueId(v.id, v.name);
+                  const dp = cellDrillProps({ ...scope, category: "rent_plus", label: `${v.name} · Rent Plus` });
                   return (
-                    <td key={v.id} className="py-1.5 px-2 text-right text-foreground tabular-nums border-b border-border/60">
+                    <td key={v.id} {...dp} className={`py-1.5 px-2 text-right text-foreground tabular-nums border-b border-border/60 ${dp.className}`}>
                       {fmtCurrencyShort(sum)} <span className="text-muted-foreground/80">· {fmtPct(pctOf(sum, v.revenue))}</span>
                     </td>
                   );
                 })}
-                <td className="py-1.5 px-2 text-right tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/60">
-                  {(CORPORATE.rent + CORPORATE.utilities) > 0
-                    ? fmtCurrencyShort(CORPORATE.rent + CORPORATE.utilities)
-                    : <span className="text-muted-foreground">&mdash;</span>}
-                </td>
-                <td className="py-1.5 px-2 text-right font-medium text-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/60">
-                  {(() => {
-                    const sum = venueTotals.rent + venueTotals.utilities + CORPORATE.rent + CORPORATE.utilities;
-                    return <>{fmtCurrencyShort(sum)} <span className="text-muted-foreground/80 font-normal">· {fmtPct(pctOf(sum, venueTotals.revenue))}</span></>;
-                  })()}
-                </td>
+                {(() => {
+                  const dp = cellDrillProps({ brand: "HQ", venue: "hq", category: "rent_plus", label: "HQ · Rent Plus" });
+                  return (
+                    <td {...dp} className={`py-1.5 px-2 text-right tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/60 ${dp.className}`}>
+                      {(CORPORATE.rent + CORPORATE.utilities) > 0
+                        ? fmtCurrencyShort(CORPORATE.rent + CORPORATE.utilities)
+                        : <span className="text-muted-foreground">&mdash;</span>}
+                    </td>
+                  );
+                })()}
+                {(() => {
+                  const dp = cellDrillProps({ brand: null, venue: "group", category: "rent_plus", label: "Group · Rent Plus" });
+                  const sum = venueTotals.rent + venueTotals.utilities + CORPORATE.rent + CORPORATE.utilities;
+                  return (
+                    <td {...dp} className={`py-1.5 px-2 text-right font-medium text-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/60 ${dp.className}`}>
+                      {fmtCurrencyShort(sum)} <span className="text-muted-foreground/80 font-normal">· {fmtPct(pctOf(sum, venueTotals.revenue))}</span>
+                    </td>
+                  );
+                })()}
               </tr>
               {rentExpanded && (
                 <>
@@ -943,38 +1179,66 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
                     <td className="py-1 px-2 text-muted-foreground sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-b border-border/40 transition-colors">
                       <span className="inline-flex items-center pl-5 border-l border-border/60 ml-1">Rent</span>
                     </td>
-                    {displayedVenues.map(v => (
-                      <td key={v.id} className="py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40">
-                        {v.rent > 0
-                          ? <>{fmtCurrencyShort(v.rent)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(v.rent, v.revenue))}</span></>
-                          : <span className="text-muted-foreground">&mdash;</span>}
-                      </td>
-                    ))}
-                    <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40">
-                      {CORPORATE.rent > 0 ? fmtCurrencyShort(CORPORATE.rent) : <span className="text-muted-foreground">&mdash;</span>}
-                    </td>
-                    <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40">
-                      {(venueTotals.rent + CORPORATE.rent) > 0
-                        ? <>{fmtCurrencyShort(venueTotals.rent + CORPORATE.rent)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(venueTotals.rent + CORPORATE.rent, venueTotals.revenue))}</span></>
-                        : <span className="text-muted-foreground">&mdash;</span>}
-                    </td>
+                    {displayedVenues.map(v => {
+                      const scope = drillScopeForVenueId(v.id, v.name);
+                      const dp = cellDrillProps({ ...scope, category: "rent", label: `${v.name} · Rent` });
+                      return (
+                        <td key={v.id} {...dp} className={`py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40 ${dp.className}`}>
+                          {v.rent > 0
+                            ? <>{fmtCurrencyShort(v.rent)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(v.rent, v.revenue))}</span></>
+                            : <span className="text-muted-foreground">&mdash;</span>}
+                        </td>
+                      );
+                    })}
+                    {(() => {
+                      const dp = cellDrillProps({ brand: "HQ", venue: "hq", category: "rent", label: "HQ · Rent" });
+                      return (
+                        <td {...dp} className={`py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40 ${dp.className}`}>
+                          {CORPORATE.rent > 0 ? fmtCurrencyShort(CORPORATE.rent) : <span className="text-muted-foreground">&mdash;</span>}
+                        </td>
+                      );
+                    })()}
+                    {(() => {
+                      const dp = cellDrillProps({ brand: null, venue: "group", category: "rent", label: "Group · Rent" });
+                      return (
+                        <td {...dp} className={`py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40 ${dp.className}`}>
+                          {(venueTotals.rent + CORPORATE.rent) > 0
+                            ? <>{fmtCurrencyShort(venueTotals.rent + CORPORATE.rent)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(venueTotals.rent + CORPORATE.rent, venueTotals.revenue))}</span></>
+                            : <span className="text-muted-foreground">&mdash;</span>}
+                        </td>
+                      );
+                    })()}
                   </tr>
                   <tr className="group hover:bg-muted/30 transition-colors">
                     <td className="py-1 px-2 text-muted-foreground sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-b border-border/40 transition-colors">
                       <span className="inline-flex items-center pl-5 border-l border-border/60 ml-1">Utilities</span>
                     </td>
-                    {displayedVenues.map(v => (
-                      <td key={v.id} className="py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40">
-                        {fmtCurrencyShort(v.utilities)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(v.utilities, v.revenue))}</span>
-                      </td>
-                    ))}
-                    <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40">
-                      {CORPORATE.utilities > 0 ? fmtCurrencyShort(CORPORATE.utilities) : <span className="text-muted-foreground">&mdash;</span>}
-                    </td>
-                    <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40">
-                      {fmtCurrencyShort(venueTotals.utilities + CORPORATE.utilities)}{" "}
-                      <span className="text-muted-foreground/60">· {fmtPct(pctOf(venueTotals.utilities + CORPORATE.utilities, venueTotals.revenue))}</span>
-                    </td>
+                    {displayedVenues.map(v => {
+                      const scope = drillScopeForVenueId(v.id, v.name);
+                      const dp = cellDrillProps({ ...scope, category: "utilities", label: `${v.name} · Utilities` });
+                      return (
+                        <td key={v.id} {...dp} className={`py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40 ${dp.className}`}>
+                          {fmtCurrencyShort(v.utilities)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(v.utilities, v.revenue))}</span>
+                        </td>
+                      );
+                    })}
+                    {(() => {
+                      const dp = cellDrillProps({ brand: "HQ", venue: "hq", category: "utilities", label: "HQ · Utilities" });
+                      return (
+                        <td {...dp} className={`py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40 ${dp.className}`}>
+                          {CORPORATE.utilities > 0 ? fmtCurrencyShort(CORPORATE.utilities) : <span className="text-muted-foreground">&mdash;</span>}
+                        </td>
+                      );
+                    })()}
+                    {(() => {
+                      const dp = cellDrillProps({ brand: null, venue: "group", category: "utilities", label: "Group · Utilities" });
+                      return (
+                        <td {...dp} className={`py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40 ${dp.className}`}>
+                          {fmtCurrencyShort(venueTotals.utilities + CORPORATE.utilities)}{" "}
+                          <span className="text-muted-foreground/60">· {fmtPct(pctOf(venueTotals.utilities + CORPORATE.utilities, venueTotals.revenue))}</span>
+                        </td>
+                      );
+                    })()}
                   </tr>
                 </>
               )}
@@ -1078,6 +1342,13 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
           </ResponsiveContainer>
         </div>
       </Card>
+
+      <EbitdaTransactionsDialog
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        target={drillTarget}
+        onClose={() => setDrillTarget(null)}
+      />
 
       <CIChat />
     </>
