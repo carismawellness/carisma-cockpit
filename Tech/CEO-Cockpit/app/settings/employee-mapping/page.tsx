@@ -6,7 +6,6 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
 import { useEbitdaAggregated, type LineItem } from "@/lib/hooks/useEbitdaAggregated";
 import { SPA_LOCATION_META } from "@/lib/hooks/useSpaEbitda";
-import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import {
   useWageRoles,
   resolveRole,
@@ -166,8 +165,14 @@ const ROLE_BUCKETS: { key: WageRole | "unassigned"; label: string; color: string
   { key: "unassigned",   label: "Unassigned",   color: "#94A3B8" },
 ];
 
-function EmployeeMappingContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
-  const agg = useEbitdaAggregated(dateFrom, dateTo);
+// Employee-to-role mapping is a global setting, not period-specific.
+// We use a fixed 2-year lookback so all known payroll contacts are visible
+// regardless of whatever date the EBITDA cockpit currently has selected.
+const MAPPING_FROM = new Date("2024-01-01");
+
+function EmployeeMappingContent() {
+  const dateTo = useMemo(() => new Date(), []);
+  const agg = useEbitdaAggregated(MAPPING_FROM, dateTo);
   const { roleByContact, setRole } = useWageRoles();
 
   const groups = useMemo(() => buildVenueGroups(agg.lineItems), [agg.lineItems]);
@@ -196,11 +201,6 @@ function EmployeeMappingContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
     () => groups.reduce((s, g) => s + g.employees.filter((e) => e.name !== UNATTRIBUTED).length, 0),
     [groups],
   );
-  const rangeLabel = useMemo(() => formatDateRangeLabel(dateFrom, dateTo), [dateFrom, dateTo]);
-
-  // Whether any group has a fallback-estimated row — relevant on partial
-  // periods where the cockpit smooths wages and exact per-person figures
-  // are modelled rather than booked.
   const anyFallback = useMemo(() => groups.some((g) => g.employees.some((e) => e.usedFallback)), [groups]);
 
   return (
@@ -213,9 +213,9 @@ function EmployeeMappingContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
             Employee Mapping
           </h1>
           <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-            A double-click into <span className="font-medium text-foreground">Wages &amp; Salaries</span> on the
-            EBITDA cockpit. Every individual booked to each venue&apos;s payroll for {rangeLabel}, straight from the
-            same Zoho-backed feed — use it to sense-check who is being counted, and for how much.
+            Assign each employee a role (Manager, Reception, Practitioner, CRM). The EBITDA cockpit&apos;s
+            Wages &amp; Salaries row uses these mappings to break payroll down by role for the selected period.
+            Unassigned employees are counted separately. Employees are loaded from the last 2 years of payroll data.
           </p>
         </div>
         <div className="text-right shrink-0">
@@ -240,7 +240,7 @@ function EmployeeMappingContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
 
       {!agg.isFetching && !agg.error && groups.length === 0 && (
         <Card className="p-8 text-center text-sm text-muted-foreground">
-          No wages were booked to any venue in {rangeLabel}.
+          No wages found in the last 2 years of payroll data.
         </Card>
       )}
 
@@ -415,7 +415,7 @@ function EmployeeMappingContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
 export default function EmployeeMappingPage() {
   return (
     <DashboardShell>
-      {({ dateFrom, dateTo }) => <EmployeeMappingContent dateFrom={dateFrom} dateTo={dateTo} />}
+      {() => <EmployeeMappingContent />}
     </DashboardShell>
   );
 }
