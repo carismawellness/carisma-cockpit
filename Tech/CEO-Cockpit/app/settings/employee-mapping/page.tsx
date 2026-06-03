@@ -27,17 +27,22 @@ function orgsLabel(orgs: string[]): string {
   return orgs.join(" / ") || "—";
 }
 
-interface ImportFromZohoProps {
+interface ContactImportSectionProps {
+  title: string;
+  subtitle: string;
+  apiEndpoint: string;
+  cacheKey: string;
+  emptyMessage: string;
   roleByContact: Map<string, WageRole>;
   setRole: ReturnType<typeof useWageRoles>["setRole"];
 }
 
-const CACHE_KEY = "wage-contacts-cache";
-
-function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
+function ContactImportSection({
+  title, subtitle, apiEndpoint, cacheKey, emptyMessage, roleByContact, setRole,
+}: ContactImportSectionProps) {
   const [importedContacts, setImportedContacts] = useState<ImportedContact[] | null>(() => {
     try {
-      const raw = sessionStorage.getItem(CACHE_KEY);
+      const raw = sessionStorage.getItem(cacheKey);
       return raw ? (JSON.parse(raw) as ImportedContact[]) : null;
     } catch { return null; }
   });
@@ -60,7 +65,7 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
     setIsImporting(true);
     setImportError(null);
     try {
-      const res = await fetch("/api/settings/wage-contacts", {
+      const res = await fetch(apiEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ date_from: "2025-01-01", date_to: "2026-06-30" }),
@@ -73,7 +78,7 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
       const data: ImportedContact[] = json.contacts ?? [];
       setImportedContacts(data);
       setLocalRoles({});
-      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch { /* ignore */ }
+      try { sessionStorage.setItem(cacheKey, JSON.stringify(data)); } catch { /* ignore */ }
     } catch (err) {
       setImportError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -98,10 +103,8 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
     <Card className="overflow-hidden">
       <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-foreground">Import from Zoho</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Discover all wage contacts from Jan 2025 – Jun 2026 and assign roles in bulk.
-          </p>
+          <h2 className="text-base font-semibold text-foreground">{title}</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
         </div>
         <button
           onClick={handleLoad}
@@ -125,9 +128,7 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
       )}
 
       {importedContacts && importedContacts.length === 0 && (
-        <div className="px-4 py-6 text-sm text-center text-muted-foreground">
-          No wage contacts found for the selected period.
-        </div>
+        <div className="px-4 py-6 text-sm text-center text-muted-foreground">{emptyMessage}</div>
       )}
 
       {importedContacts && importedContacts.length > 0 && (
@@ -135,52 +136,32 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/60">
-                <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Employee
-                </th>
-                <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Zoho Org
-                </th>
-                <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Role / Designation
-                </th>
+                <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Employee</th>
+                <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Zoho Org</th>
+                <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Role / Designation</th>
                 <th className="py-2 px-4" />
               </tr>
             </thead>
             <tbody>
               {importedContacts.map((c) => {
-                const alreadyMapped = roleByContact.has(c.contact_name);
+                const mapped = roleByContact.has(normalizeKey(c.contact_name));
                 return (
-                  <tr
-                    key={c.contact_name}
-                    className="border-b border-border/40 last:border-0 hover:bg-muted/30 transition-colors"
-                  >
+                  <tr key={c.contact_name} className="border-b border-border/40 last:border-0 hover:bg-muted/30 transition-colors">
                     <td className="py-1.5 px-4">
                       <span className="text-foreground">{c.contact_name}</span>
-                      {alreadyMapped && (
+                      {mapped && (
                         <span className="ml-2 inline-flex items-center rounded-sm border border-green-300 bg-green-50 px-1 py-px text-[9px] font-medium text-green-700">
                           mapped
                         </span>
                       )}
                     </td>
-                    <td className="py-1.5 px-4 text-xs text-muted-foreground">
-                      {orgsLabel(c.orgs)}
-                    </td>
+                    <td className="py-1.5 px-4 text-xs text-muted-foreground">{orgsLabel(c.orgs)}</td>
                     <td className="py-1.5 px-4">
                       <select
                         value={mergedRoles[c.contact_name] ?? ""}
-                        onChange={(ev) =>
-                          setLocalRoles((prev) => ({
-                            ...prev,
-                            [c.contact_name]: ev.target.value as WageRole | "",
-                          }))
-                        }
+                        onChange={(ev) => setLocalRoles((prev) => ({ ...prev, [c.contact_name]: ev.target.value as WageRole | "" }))}
                         disabled={setRole.isPending}
-                        className={`text-xs border rounded px-2 py-1 bg-background disabled:opacity-50 ${
-                          draftRoles[c.contact_name]
-                            ? "border-border text-foreground"
-                            : "border-amber-400 text-amber-700"
-                        }`}
+                        className={`text-xs border rounded px-2 py-1 bg-background disabled:opacity-50 ${draftRoles[c.contact_name] ? "border-border text-foreground" : "border-amber-400 text-amber-700"}`}
                       >
                         <option value="">Unassigned</option>
                         {WAGE_ROLES.map((r) => (
@@ -189,11 +170,7 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
                       </select>
                     </td>
                     <td className="py-1.5 px-4">
-                      <button
-                        onClick={() => saveOne(c.contact_name)}
-                        disabled={setRole.isPending}
-                        className="text-xs border border-border rounded px-2 py-1 hover:bg-muted/50 disabled:opacity-50 transition-colors"
-                      >
+                      <button onClick={() => saveOne(c.contact_name)} disabled={setRole.isPending} className="text-xs border border-border rounded px-2 py-1 hover:bg-muted/50 disabled:opacity-50 transition-colors">
                         Save
                       </button>
                     </td>
@@ -202,13 +179,8 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
               })}
             </tbody>
           </table>
-
           <div className="px-4 py-3 border-t border-border flex justify-end">
-            <button
-              onClick={saveAll}
-              disabled={setRole.isPending}
-              className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted/50 disabled:opacity-50 transition-colors"
-            >
+            <button onClick={saveAll} disabled={setRole.isPending} className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted/50 disabled:opacity-50 transition-colors">
               Save All
             </button>
           </div>
@@ -216,6 +188,10 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
       )}
     </Card>
   );
+}
+
+function normalizeKey(name: string): string {
+  return (name || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function EmployeeMappingContent() {
@@ -235,7 +211,25 @@ function EmployeeMappingContent() {
         </p>
       </div>
 
-      <ImportFromZoho roleByContact={roleByContact} setRole={setRole} />
+      <ContactImportSection
+        title="Wages & Salary COA"
+        subtitle="All payroll contacts from wages/salary GL accounts — Jan 2025 to Jun 2026."
+        apiEndpoint="/api/settings/wage-contacts"
+        cacheKey="wage-contacts-cache"
+        emptyMessage="No wage contacts found for the selected period."
+        roleByContact={roleByContact}
+        setRole={setRole}
+      />
+
+      <ContactImportSection
+        title="Professional Fees COA"
+        subtitle="Contractors and CRM staff from professional fees GL accounts — Jan 2025 to Jun 2026."
+        apiEndpoint="/api/settings/prof-fee-contacts"
+        cacheKey="prof-fee-contacts-cache"
+        emptyMessage="No professional fee contacts found for the selected period."
+        roleByContact={roleByContact}
+        setRole={setRole}
+      />
     </div>
   );
 }
