@@ -4,6 +4,18 @@ const API_BASE  = "https://www.zohoapis.eu/books/v3";
 type TokenCache = { accessToken: string; expiresAt: number };
 const tokenCache = new Map<string, TokenCache>();
 
+// Module-level rate limiter: enforce a minimum gap between consecutive Zoho
+// API calls per org.  600ms → max ~1.6 req/s per org, well under the 5 req/s
+// burst limit and the 60 req/min quota.
+const _lastCallAt = new Map<string, number>();
+async function rateLimit(org: string) {
+  const MIN_MS = 600;
+  const last   = _lastCallAt.get(org) ?? 0;
+  const wait   = MIN_MS - (Date.now() - last);
+  if (wait > 0) await new Promise<void>((r) => setTimeout(r, wait));
+  _lastCallAt.set(org, Date.now());
+}
+
 async function refreshAccessToken(org: "spa" | "aesthetics"): Promise<string> {
   const clientId     = process.env.ZOHO_BOOKS_CLIENT_ID!;
   const clientSecret = process.env.ZOHO_BOOKS_CLIENT_SECRET!;
@@ -51,6 +63,7 @@ export class ZohoBooksClient {
   }
 
   async get(endpoint: string, params?: Record<string, string>): Promise<unknown> {
+    await rateLimit(this.org);
     const token = await getAccessToken(this.org);
     const qs    = new URLSearchParams({ organization_id: this.orgId, ...(params ?? {}) });
     const resp  = await fetch(`${API_BASE}/${endpoint}?${qs}`, {

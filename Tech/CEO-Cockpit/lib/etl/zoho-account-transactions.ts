@@ -143,10 +143,8 @@ export async function fetchAccountTransactions(
   return out;
 }
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-/** Pull transactions for many account codes sequentially with a small delay
- *  between each to avoid Zoho's per-minute request-rate limit (429). */
+/** Pull transactions for many account codes sequentially.
+ *  Rate limiting is handled centrally in ZohoBooksClient.get(). */
 export async function fetchTransactionsForAccounts(
   client:   ZohoBooksClient,
   codes:    string[],
@@ -158,8 +156,8 @@ export async function fetchTransactionsForAccounts(
   const coa = await loadCoaByCode(client);
   for (const code of codes) {
     if (!coa.has(code)) { unknownCodes.push(code); continue; }
-    await sleep(700);   // ~1.4 req/s — safely under Zoho's 5 req/s burst limit
     const part = await fetchAccountTransactions(client, code, fromDate, toDate);
+    txns.push(...part);
   }
   return { txns, unknownCodes };
 }
