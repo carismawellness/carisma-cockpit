@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Users } from "lucide-react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
@@ -46,7 +47,9 @@ function ContactImportSection({
       return raw ? (JSON.parse(raw) as ImportedContact[]) : null;
     } catch { return null; }
   });
+  const queryClient = useQueryClient();
   const [isImporting, setIsImporting] = useState(false);
+  const [isSavingAll, setIsSavingAll] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
 
   const draftRoles = useMemo(() => {
@@ -91,11 +94,37 @@ function ContactImportSection({
     setRole.mutate({ contactName, role: (role || null) as WageRole | null });
   }
 
-  function saveAll() {
+  function deleteRow(contactName: string) {
+    // Hide from this session's view only — DB role is preserved.
+    // A fresh "Load Contacts" will bring it back.
+    setImportedContacts((prev) => {
+      const next = (prev ?? []).filter((c) => c.contact_name !== contactName);
+      try { sessionStorage.setItem(cacheKey, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+    setLocalRoles((prev) => { const n = { ...prev }; delete n[contactName]; return n; });
+  }
+
+  async function saveAll() {
     if (!importedContacts) return;
-    for (const c of importedContacts) {
-      const role = mergedRoles[c.contact_name];
-      setRole.mutate({ contactName: c.contact_name, role: (role || null) as WageRole | null });
+    setIsSavingAll(true);
+    try {
+      const assignments = importedContacts
+        .map((c) => ({ contact_name: c.contact_name, role: mergedRoles[c.contact_name] || null }))
+        .filter((a) => a.role);
+      if (assignments.length > 0) {
+        const res = await fetch("/api/settings/wage-roles/bulk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ assignments }),
+        });
+        if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+        await queryClient.invalidateQueries({ queryKey: ["wage-roles"] });
+      }
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSavingAll(false);
     }
   }
 
@@ -170,9 +199,14 @@ function ContactImportSection({
                       </select>
                     </td>
                     <td className="py-1.5 px-4">
-                      <button onClick={() => saveOne(c.contact_name)} disabled={setRole.isPending} className="text-xs border border-border rounded px-2 py-1 hover:bg-muted/50 disabled:opacity-50 transition-colors">
-                        Save
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => saveOne(c.contact_name)} disabled={setRole.isPending} className="text-xs border border-border rounded px-2 py-1 hover:bg-muted/50 disabled:opacity-50 transition-colors">
+                          Save
+                        </button>
+                        <button onClick={() => deleteRow(c.contact_name)} disabled={setRole.isPending} className="text-xs border border-red-200 text-red-600 rounded px-2 py-1 hover:bg-red-50 disabled:opacity-50 transition-colors">
+                          ✕
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -180,8 +214,8 @@ function ContactImportSection({
             </tbody>
           </table>
           <div className="px-4 py-3 border-t border-border flex justify-end">
-            <button onClick={saveAll} disabled={setRole.isPending} className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted/50 disabled:opacity-50 transition-colors">
-              Save All
+            <button onClick={saveAll} disabled={isSavingAll} className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted/50 disabled:opacity-50 transition-colors">
+              {isSavingAll ? "Saving…" : "Save All"}
             </button>
           </div>
         </>
