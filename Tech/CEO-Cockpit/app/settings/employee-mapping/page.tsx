@@ -159,7 +159,7 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
                       <span className="text-foreground">{c.contact_name}</span>
                       {alreadyMapped && (
                         <span className="ml-2 inline-flex items-center rounded-sm border border-green-300 bg-green-50 px-1 py-px text-[9px] font-medium text-green-700">
-                          Already mapped
+                          mapped
                         </span>
                       )}
                     </td>
@@ -218,10 +218,6 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  CONTENT                                                            */
-/* ------------------------------------------------------------------ */
-
 function EmployeeMappingContent() {
   const { roleByContact, setRole } = useWageRoles();
 
@@ -243,10 +239,6 @@ function EmployeeMappingContent() {
     </div>
   );
 }
-
-/* ------------------------------------------------------------------ */
-/*  PAGE                                                               */
-/* ------------------------------------------------------------------ */
 
 export default function EmployeeMappingPage() {
   return (
