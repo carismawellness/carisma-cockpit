@@ -371,7 +371,7 @@ export async function runSpaEbitdaMonthFromTransactions(
     amount:           +c.amount.toFixed(2),
     synced_at:        nowTs,
   }));
-  const rawCount = await upsert("transactions_raw", rawRows, "org,txn_id,account_code,ebitda_line");
+  const rawCount = await upsert("transactions_raw", rawRows, "org,txn_id,account_code,contact_name,ebitda_line");
 
   log.push(`${monthKey}: ${spaCount} spa daily row(s) + ${hqCount} hq daily row(s) + ${rawCount} raw line(s) upserted`);
   return { spaRowsUpserted: spaCount, hqRowsUpserted: hqCount, log };

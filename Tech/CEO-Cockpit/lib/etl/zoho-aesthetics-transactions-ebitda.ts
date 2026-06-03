@@ -477,7 +477,7 @@ export async function runAestheticsEbitdaMonthFromTransactions(
     amount:           +c.amount.toFixed(2),
     synced_at:        nowTs,
   }));
-  const rawCount = await upsert("transactions_raw", rawRows, "org,txn_id,account_code,ebitda_line");
+  const rawCount = await upsert("transactions_raw", rawRows, "org,txn_id,account_code,contact_name,ebitda_line");
 
   log.push(`${monthKey}: ${deptCount} aesth daily row(s) + ${hqCount} hq row(s) + ${rawCount} raw line(s) upserted`);
   return { rowsUpserted: deptCount + hqCount, log };
