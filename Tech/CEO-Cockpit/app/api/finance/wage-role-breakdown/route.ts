@@ -215,6 +215,7 @@ export async function GET(req: NextRequest) {
       manager:      round(totals.manager),
       reception:    round(totals.reception),
       practitioner: round(totals.practitioner),
+      therapist:    round(totals.therapist),
       crm:          round(totals.crm),
       unassigned:   round(totals.unassigned),
     },
