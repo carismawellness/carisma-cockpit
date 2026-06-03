@@ -464,19 +464,23 @@ export async function runAestheticsEbitdaMonthFromTransactions(
 
   // ── 6. Write raw transaction lines for contact-level drill-down ───────────
   await deleteRange("transactions_raw", [["org", "eq.aesthetics"], ["date", `gte.${fromDate}`], ["date", `lte.${toDate}`]]);
-  const rawRows = classified.map(c => ({
-    org:              "aesthetics",
-    txn_id:           c.txn_id,
-    date:             c.date,
-    ebitda_line:      c.line,
-    ebitda_sub_line:  c.sub_line,
-    account_code:     c.code,
-    account_name:     c.account_name,
-    contact_name:     c.contact_name,
-    transaction_type: c.txn_type,
-    amount:           +c.amount.toFixed(2),
-    synced_at:        nowTs,
-  }));
+  const rawMap = new Map<string, Record<string, unknown>>();
+  for (const c of classified) {
+    const key = `${c.txn_id}|${c.code}|${c.contact_name}|${c.line}`;
+    const existing = rawMap.get(key);
+    if (existing) {
+      existing.amount = +((existing.amount as number) + c.amount).toFixed(2);
+    } else {
+      rawMap.set(key, {
+        org: "aesthetics", txn_id: c.txn_id, date: c.date,
+        ebitda_line: c.line, ebitda_sub_line: c.sub_line,
+        account_code: c.code, account_name: c.account_name,
+        contact_name: c.contact_name, transaction_type: c.txn_type,
+        amount: +c.amount.toFixed(2), synced_at: nowTs,
+      });
+    }
+  }
+  const rawRows = Array.from(rawMap.values());
   const rawCount = await upsert("transactions_raw", rawRows, "org,txn_id,account_code,contact_name,ebitda_line");
 
   log.push(`${monthKey}: ${deptCount} aesth daily row(s) + ${hqCount} hq row(s) + ${rawCount} raw line(s) upserted`);
