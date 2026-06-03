@@ -8,6 +8,7 @@ export interface WageRoleBreakdownData {
     manager:      number;
     reception:    number;
     practitioner: number;
+    therapist:    number;
     crm:          number;
     unassigned:   number;
   };

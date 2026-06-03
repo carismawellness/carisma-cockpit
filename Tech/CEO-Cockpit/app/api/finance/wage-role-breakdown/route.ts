@@ -19,13 +19,14 @@ export const dynamic = "force-dynamic";
 const VALID_ORGS  = new Set(["spa", "aesthetics", "both"]);
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-type KnownRole = "manager" | "reception" | "practitioner" | "crm";
+type KnownRole = "manager" | "reception" | "practitioner" | "therapist" | "crm";
 
 interface WageRoleResponse {
   roles: {
     manager:      number;
     reception:    number;
     practitioner: number;
+    therapist:    number;
     crm:          number;
     unassigned:   number;
   };
@@ -182,6 +183,7 @@ export async function GET(req: NextRequest) {
     manager:      0,
     reception:    0,
     practitioner: 0,
+    therapist:    0,
     crm:          0,
     unassigned:   0,
   };

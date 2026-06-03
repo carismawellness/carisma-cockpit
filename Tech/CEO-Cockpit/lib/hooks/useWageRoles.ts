@@ -6,19 +6,20 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 // Canonical role keys + display labels. Unassigned is an implicit bucket
 // (NOT a stored role) for any employee with no mapping, so the dashboard's
 // role sub-rows always reconcile back to the Wages & Salaries cell.
-export const WAGE_ROLES = ["manager", "reception", "practitioner", "crm"] as const;
+export const WAGE_ROLES = ["manager", "reception", "practitioner", "therapist", "crm"] as const;
 export type WageRole = (typeof WAGE_ROLES)[number];
 
 export const WAGE_ROLE_LABEL: Record<WageRole, string> = {
   manager:      "Manager",
   reception:    "Reception",
   practitioner: "Practitioner",
+  therapist:    "Therapist",
   crm:          "CRM",
 };
 
 // Order used for rendering role sub-rows on the EBITDA table and the
 // settings % summary. Unassigned always last.
-export const WAGE_ROLE_ORDER: WageRole[] = ["manager", "reception", "practitioner", "crm"];
+export const WAGE_ROLE_ORDER: WageRole[] = ["manager", "reception", "practitioner", "therapist", "crm"];
 
 export interface WageRoleMapping {
   contact_key:  string;

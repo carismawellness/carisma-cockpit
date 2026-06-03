@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdminClient } from "@/lib/supabase/admin";
 
 // Canonical role keys. Mirrors the CHECK constraint in migration 050.
-const ROLES = ["manager", "reception", "practitioner", "crm"] as const;
+const ROLES = ["manager", "reception", "practitioner", "therapist", "crm"] as const;
 type Role = (typeof ROLES)[number];
 
 // Normalise a Zoho contact name into the join key used as the table's unique
