@@ -188,13 +188,32 @@ interface ImportFromZohoProps {
   setRole: ReturnType<typeof useWageRoles>["setRole"];
 }
 
-function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
-  const [importedContacts, setImportedContacts] = useState<ImportedContact[] | null>(null);
-  const [isImporting, setIsImporting]           = useState(false);
-  const [importError, setImportError]           = useState<string | null>(null);
+const CACHE_KEY = "wage-contacts-cache";
 
-  // Per-row draft roles — initialised on load, updated by the dropdowns.
-  const [draftRoles, setDraftRoles] = useState<Record<string, WageRole | "">>({});
+function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
+  // Restore cached contacts from sessionStorage so revisiting the page
+  // doesn't require a re-pull from Zoho.
+  const [importedContacts, setImportedContacts] = useState<ImportedContact[] | null>(() => {
+    try {
+      const raw = sessionStorage.getItem(CACHE_KEY);
+      return raw ? (JSON.parse(raw) as ImportedContact[]) : null;
+    } catch { return null; }
+  });
+  const [isImporting, setIsImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  // Per-row draft roles — always reflects latest roleByContact mapping.
+  const draftRoles = useMemo(() => {
+    const draft: Record<string, WageRole | ""> = {};
+    for (const c of importedContacts ?? []) {
+      const key = (c.contact_name || "").trim().toLowerCase().replace(/\s+/g, " ");
+      draft[c.contact_name] = roleByContact.get(key) ?? "";
+    }
+    return draft;
+  }, [importedContacts, roleByContact]);
+
+  const [localRoles, setLocalRoles] = useState<Record<string, WageRole | "">>({});
+  const mergedRoles = { ...draftRoles, ...localRoles };
 
   async function handleLoad() {
     setIsImporting(true);
@@ -212,13 +231,8 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
       const json = await res.json();
       const data: ImportedContact[] = json.contacts ?? [];
       setImportedContacts(data);
-      // Pre-fill draft roles from existing mapping.
-      const draft: Record<string, WageRole | ""> = {};
-      for (const c of data) {
-        const key = (c.contact_name || "").trim().toLowerCase().replace(/\s+/g, " ");
-        draft[c.contact_name] = roleByContact.get(key) ?? "";
-      }
-      setDraftRoles(draft);
+      setLocalRoles({});
+      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch { /* ignore */ }
     } catch (err) {
       setImportError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -227,14 +241,14 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
   }
 
   function saveOne(contactName: string) {
-    const role = draftRoles[contactName];
+    const role = mergedRoles[contactName];
     setRole.mutate({ contactName, role: (role || null) as WageRole | null });
   }
 
   function saveAll() {
     if (!importedContacts) return;
     for (const c of importedContacts) {
-      const role = draftRoles[c.contact_name];
+      const role = mergedRoles[c.contact_name];
       setRole.mutate({ contactName: c.contact_name, role: (role || null) as WageRole | null });
     }
   }
@@ -281,16 +295,13 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
             <thead>
               <tr className="border-b border-border/60">
                 <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Contact
+                  Employee
                 </th>
                 <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Orgs
-                </th>
-                <th className="text-right py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Total
+                  Org
                 </th>
                 <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Role
+                  Role / Designation
                 </th>
                 <th className="py-2 px-4" />
               </tr>
@@ -314,14 +325,11 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
                     <td className="py-1.5 px-4 text-xs text-muted-foreground">
                       {orgsLabel(c.orgs)}
                     </td>
-                    <td className="py-1.5 px-4 text-right font-medium text-foreground tabular-nums">
-                      {fmtEuro(c.total_amount)}
-                    </td>
                     <td className="py-1.5 px-4">
                       <select
-                        value={draftRoles[c.contact_name] ?? ""}
+                        value={mergedRoles[c.contact_name] ?? ""}
                         onChange={(ev) =>
-                          setDraftRoles((prev) => ({
+                          setLocalRoles((prev) => ({
                             ...prev,
                             [c.contact_name]: ev.target.value as WageRole | "",
                           }))
