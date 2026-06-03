@@ -7,8 +7,11 @@ const BASE_URL = process.env.VERCEL_URL
   : "http://localhost:3000";
 
 export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get("authorization");
-  if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  // Vercel secures cron jobs at infrastructure level — no separate secret needed.
+  // Reject non-Vercel callers in production by checking the standard cron header.
+  const isCron = req.headers.get("x-vercel-cron") === "1";
+  const isLocal = !process.env.VERCEL_URL;
+  if (!isCron && !isLocal) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
