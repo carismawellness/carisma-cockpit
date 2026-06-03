@@ -37,7 +37,7 @@ const WAGE_CODES = [
 ];
 
 const DEFAULT_DATE_FROM = "2025-01-01";
-const DEFAULT_DATE_TO   = "2026-04-30";
+const DEFAULT_DATE_TO   = "2026-06-30";
 
 function isValidIso(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(new Date(s + "T00:00:00Z").getTime());

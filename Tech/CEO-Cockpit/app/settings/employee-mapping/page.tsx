@@ -203,7 +203,7 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
       const res = await fetch("/api/settings/wage-contacts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date_from: "2025-01-01", date_to: "2026-04-30" }),
+        body: JSON.stringify({ date_from: "2025-01-01", date_to: "2026-06-30" }),
       });
       if (!res.ok) {
         const text = await res.text().catch(() => res.statusText);
@@ -245,7 +245,7 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
         <div>
           <h2 className="text-base font-semibold text-foreground">Import from Zoho</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Discover all wage contacts from Jan 2025 – Apr 2026 and assign roles in bulk.
+            Discover all wage contacts from Jan 2025 – Jun 2026 and assign roles in bulk.
           </p>
         </div>
         <button
@@ -259,7 +259,7 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
             </svg>
           )}
-          {isImporting ? "Loading…" : "Load Contacts from Zoho (Jan 2025 – Apr 2026)"}
+          {isImporting ? "Loading…" : "Load Contacts from Zoho (Jan 2025 – Jun 2026)"}
         </button>
       </div>
 
