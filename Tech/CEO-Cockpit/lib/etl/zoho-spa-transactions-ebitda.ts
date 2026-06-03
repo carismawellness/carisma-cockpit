@@ -1,5 +1,5 @@
 import { ZohoBooksClient } from "./zoho-client";
-import { upsert } from "./supabase-etl";
+import { upsert, deleteRange } from "./supabase-etl";
 import { fetchTransactionLines, TxnLine } from "./zoho-line-extractor";
 import {
   COA_MAP,
@@ -167,13 +167,17 @@ export async function runSpaEbitdaMonthFromTransactions(
 
   // ── 2. Per-line CoA lookup + EBITDA line + initial classification ────────
   type Classified = {
-    date:    string;
-    line:    string;
-    rule:    string;
-    tagSlug: string | null;
-    code:    string;
-    amount:  number;
-    section: TxnLine["section"];
+    date:         string;
+    line:         string;
+    rule:         string;
+    tagSlug:      string | null;
+    code:         string;
+    account_name: string;
+    txn_id:       string;
+    txn_type:     string;
+    contact_name: string;
+    amount:       number;
+    section:      TxnLine["section"];
   };
 
   const classified: Classified[] = [];
@@ -197,13 +201,17 @@ export async function runSpaEbitdaMonthFromTransactions(
     const nameLoc = tagSlug ? null : detectLocation(ln.account_name);
 
     classified.push({
-      date:    ln.date,
+      date:         ln.date,
       line,
-      rule:    nameLoc ?? rule,
+      rule:         nameLoc ?? rule,
       tagSlug,
-      code:    ln.account_code,
-      amount:  ln.amount,
-      section: ln.section,
+      code:         ln.account_code,
+      account_name: ln.account_name,
+      txn_id:       ln.txn_id,
+      txn_type:     ln.source,
+      contact_name: ln.contact_name,
+      amount:       ln.amount,
+      section:      ln.section,
     });
   }
 
@@ -317,6 +325,22 @@ export async function runSpaEbitdaMonthFromTransactions(
   const spaCount = await upsert("spa_ebitda_daily", spaRows, "date,location_id");
   const hqCount  = await upsert("hq_ebitda_daily",  hqRows,  "date,source");
 
-  log.push(`${monthKey}: ${spaCount} spa daily row(s) + ${hqCount} hq daily row(s) upserted (${dailyVenue.size} dates with activity)`);
+  // ── 6. Write raw transaction lines for contact-level drill-down ───────────
+  await deleteRange("transactions_raw", [["org", "eq.spa"], ["date", `gte.${fromDate}`], ["date", `lte.${toDate}`]]);
+  const rawRows = classified.map(c => ({
+    org:              "spa",
+    txn_id:           c.txn_id,
+    date:             c.date,
+    ebitda_line:      c.line,
+    account_code:     c.code,
+    account_name:     c.account_name,
+    contact_name:     c.contact_name,
+    transaction_type: c.txn_type,
+    amount:           +c.amount.toFixed(2),
+    synced_at:        nowTs,
+  }));
+  const rawCount = await upsert("transactions_raw", rawRows, "org,txn_id,account_code,ebitda_line");
+
+  log.push(`${monthKey}: ${spaCount} spa daily row(s) + ${hqCount} hq daily row(s) + ${rawCount} raw line(s) upserted`);
   return { spaRowsUpserted: spaCount, hqRowsUpserted: hqCount, log };
 }

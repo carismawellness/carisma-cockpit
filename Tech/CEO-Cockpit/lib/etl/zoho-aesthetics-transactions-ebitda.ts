@@ -1,5 +1,5 @@
 import { ZohoBooksClient } from "./zoho-client";
-import { upsert } from "./supabase-etl";
+import { upsert, deleteRange } from "./supabase-etl";
 import { fetchTransactionLines, TxnLine } from "./zoho-line-extractor";
 import { loadAestheticsCoaMap } from "./aesthetics-ebitda";
 
@@ -258,16 +258,20 @@ export async function runAestheticsEbitdaMonthFromTransactions(
   // ── 2. Per-line classify ─────────────────────────────────────────────────
   const VALID_LINES = new Set(["revenue", "cogs", "wages", "advertising", "rent", "utilities", "sga"]);
   type Classified = {
-    date:    string;
-    line:    string;
-    rule:    string;
-    tagDept: Dept | null;
-    nameDept: Dept | null;
-    code:    string;
-    amount:  number;
-    isHq:    boolean;
-    reclass: boolean;   // forced Wages & Salaries via WAGES_RECLASS_CONTACT_KEYS
-    section: TxnLine["section"];
+    date:         string;
+    line:         string;
+    rule:         string;
+    tagDept:      Dept | null;
+    nameDept:     Dept | null;
+    code:         string;
+    account_name: string;
+    txn_id:       string;
+    txn_type:     string;
+    contact_name: string;
+    amount:       number;
+    isHq:         boolean;
+    reclass:      boolean;
+    section:      TxnLine["section"];
   };
 
   const classified: Classified[] = [];
@@ -294,16 +298,20 @@ export async function runAestheticsEbitdaMonthFromTransactions(
     if (reclass) line = "wages";
 
     classified.push({
-      date:    ln.date,
+      date:         ln.date,
       line,
       rule,
-      tagDept: tagsToDept(ln.tags),
-      nameDept: detectDept(ln.account_name),
-      code:    ln.account_code,
-      amount:  ln.amount,
-      isHq:    isHqOnlyRule(rule),
+      tagDept:      tagsToDept(ln.tags),
+      nameDept:     detectDept(ln.account_name),
+      code:         ln.account_code,
+      account_name: ln.account_name,
+      txn_id:       ln.txn_id,
+      txn_type:     ln.source,
+      contact_name: ln.contact_name,
+      amount:       ln.amount,
+      isHq:         isHqOnlyRule(rule),
       reclass,
-      section: ln.section,
+      section:      ln.section,
     });
   }
   if (droppedExcluded || droppedZero) {
@@ -422,6 +430,22 @@ export async function runAestheticsEbitdaMonthFromTransactions(
   const deptCount = await upsert("aesthetics_ebitda_daily", deptRows, "date,department");
   const hqCount   = await upsert("hq_ebitda_daily",         hqRows,   "date,source");
 
-  log.push(`${monthKey}: ${deptCount} aesth daily row(s) + ${hqCount} hq-source-aesthetics daily row(s) upserted`);
+  // ── 6. Write raw transaction lines for contact-level drill-down ───────────
+  await deleteRange("transactions_raw", [["org", "eq.aesthetics"], ["date", `gte.${fromDate}`], ["date", `lte.${toDate}`]]);
+  const rawRows = classified.map(c => ({
+    org:              "aesthetics",
+    txn_id:           c.txn_id,
+    date:             c.date,
+    ebitda_line:      c.line,
+    account_code:     c.code,
+    account_name:     c.account_name,
+    contact_name:     c.contact_name,
+    transaction_type: c.txn_type,
+    amount:           +c.amount.toFixed(2),
+    synced_at:        nowTs,
+  }));
+  const rawCount = await upsert("transactions_raw", rawRows, "org,txn_id,account_code,ebitda_line");
+
+  log.push(`${monthKey}: ${deptCount} aesth daily row(s) + ${hqCount} hq row(s) + ${rawCount} raw line(s) upserted`);
   return { rowsUpserted: deptCount + hqCount, log };
 }

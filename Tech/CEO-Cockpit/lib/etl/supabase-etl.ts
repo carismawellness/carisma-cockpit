@@ -61,6 +61,23 @@ export async function selectRaw(
   return resp.json() as Promise<Record<string, unknown>[]>;
 }
 
+// Like deleteWhere but accepts raw PostgREST filter values (e.g. "gte.2026-01-01").
+// Pass an array of [key, value] pairs to allow duplicate keys.
+export async function deleteRange(
+  table: string,
+  params: [string, string][],
+): Promise<void> {
+  const qs   = new URLSearchParams(params);
+  const resp = await fetch(`${sbUrl(table)}?${qs}`, {
+    method:  "DELETE",
+    headers: sbHeaders(),
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Supabase deleteRange ${table} failed ${resp.status}: ${text}`);
+  }
+}
+
 export async function deleteWhere(
   table: string,
   params: Record<string, string>,
