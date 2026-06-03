@@ -257,9 +257,40 @@ export async function runAestheticsEbitdaMonthFromTransactions(
 
   // ── 2. Per-line classify ─────────────────────────────────────────────────
   const VALID_LINES = new Set(["revenue", "cogs", "wages", "advertising", "rent", "utilities", "sga"]);
+
+  function resolveSubLine(line: string, account_name: string): string {
+    const low = account_name.toLowerCase();
+    if (line === "wages")       return "wages";
+    if (line === "cogs")        return "cogs";
+    if (line === "rent")        return "rent";
+    if (line === "utilities")   return "utilities";
+    if (line === "revenue")     return "revenue";
+    if (line === "advertising") {
+      if (/meta|facebook/.test(low))  return "meta";
+      if (/google/.test(low))         return "google";
+      if (/klaviyo/.test(low))        return "klaviyo";
+      return "misc";
+    }
+    if (line === "sga") {
+      if (/professional|legal|audit|accounting|consultant|advisory/.test(low)) return "prof_services";
+      if (/fuel|petrol|diesel|gas station/.test(low))                          return "fuel";
+      if (/laundry|linen|uniform/.test(low))                                   return "laundry";
+      if (/software|subscription|saas|licen[cs]e|system/.test(low))           return "software";
+      if (/clean|hygiene|sanitiz|pest/.test(low))                              return "cleaning";
+      if (/travel|transport|flight|hotel|accommodation|taxi|uber|airbnb/.test(low)) return "travel";
+      if (/insur/.test(low))                                                   return "insurance";
+      if (/event|function|catering|hospitality/.test(low))                     return "events";
+      if (/maintenance|repair|service contract|fix/.test(low))                 return "maintenance";
+      if (/telecom|telephone|mobile|internet|broadband|phone/.test(low))       return "telecom";
+      return "misc";
+    }
+    return line;
+  }
+
   type Classified = {
     date:         string;
     line:         string;
+    sub_line:     string;
     rule:         string;
     tagDept:      Dept | null;
     nameDept:     Dept | null;
@@ -300,6 +331,7 @@ export async function runAestheticsEbitdaMonthFromTransactions(
     classified.push({
       date:         ln.date,
       line,
+      sub_line:     resolveSubLine(line, ln.account_name),
       rule,
       tagDept:      tagsToDept(ln.tags),
       nameDept:     detectDept(ln.account_name),
@@ -437,6 +469,7 @@ export async function runAestheticsEbitdaMonthFromTransactions(
     txn_id:           c.txn_id,
     date:             c.date,
     ebitda_line:      c.line,
+    ebitda_sub_line:  c.sub_line,
     account_code:     c.code,
     account_name:     c.account_name,
     contact_name:     c.contact_name,
