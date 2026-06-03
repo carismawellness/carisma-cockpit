@@ -177,9 +177,11 @@ const ROLE_BUCKETS: { key: WageRole | "unassigned"; label: string; color: string
 
 function orgsLabel(orgs: string[]): string {
   const set = new Set(orgs.map((o) => o.toUpperCase()));
-  if (set.has("SPA") && set.has("AES")) return "Both";
-  if (set.has("SPA"))  return "SPA";
-  if (set.has("AES"))  return "Aesthetics";
+  const hasSpa = set.has("SPA");
+  const hasAes = set.has("AESTHETICS") || set.has("AES");
+  if (hasSpa && hasAes) return "Both";
+  if (hasSpa)  return "SPA";
+  if (hasAes)  return "Aesthetics";
   return orgs.join(" / ") || "—";
 }
 
@@ -298,7 +300,7 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
                   Employee
                 </th>
                 <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Org
+                  Zoho Org
                 </th>
                 <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                   Role / Designation
