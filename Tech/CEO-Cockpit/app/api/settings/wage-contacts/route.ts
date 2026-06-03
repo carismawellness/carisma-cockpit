@@ -30,6 +30,39 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ZohoBooksClient } from "@/lib/etl/zoho-client";
 import { fetchTransactionsForAccounts } from "@/lib/etl/zoho-account-transactions";
+import { getAdminClient } from "@/lib/supabase/admin";
+
+// ── Staff-grid fuzzy role assignment ────────────────────────────────────────
+// Token lists from the staff planning grid.  Prefix-matching: a staff token
+// matches if the contact name token STARTS WITH the staff token (min 4 chars).
+const STAFF_TOKENS: Record<string, string[]> = {
+  manager:   ["neli", "natasha", "aakansha", "kristina", "rita", "jovana", "melanie"],
+  reception: ["maila", "romero", "baretto", "kemi", "alana", "anja", "jean",
+              "gabriely", "gulnaz", "praise", "sofia", "daniela"],
+  therapist: ["milena", "mini", "julie", "yeniffer", "chris", "anda",
+              "lourdes", "lovely", "tessa", "tamara", "tina", "kunyak",
+              "ety", "patricia", "vivenne", "marivic", "karla", "darsi",
+              "karen", "laura", "juliana", "silvia", "blago", "claudia",
+              "thais", "elizabet", "jenny", "vanessa", "pakinee",
+              "deborah", "lorena", "sebastia", "sangay", "glecila", "gale"],
+};
+const ROLE_PRIORITY = ["manager", "reception", "therapist"] as const;
+
+function fuzzyRole(contactName: string): string | null {
+  const toks = contactName.toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean);
+  for (const role of ROLE_PRIORITY) {
+    const known = STAFF_TOKENS[role];
+    for (const tok of toks) {
+      if (known.some((st) => st.length >= 4 && tok.startsWith(st))) return role;
+      if (known.some((st) => st.length >= 4 && st.startsWith(tok) && tok.length >= 4)) return role;
+    }
+  }
+  return null;
+}
+
+function normalizeContact(name: string): string {
+  return (name || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
 
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
@@ -207,6 +240,36 @@ export async function POST(req: NextRequest) {
       })
       // Sort by total amount descending; alphabetical as tiebreak.
       .sort((a, b) => b.total_amount - a.total_amount || a.contact_name.localeCompare(b.contact_name));
+
+    // Auto-seed roles for any contact not already mapped.
+    // Runs as a fire-and-forget side-effect: failures are logged but don't
+    // block the contact list response.
+    try {
+      const supabase = getAdminClient();
+      const { data: existing } = await supabase
+        .from("wage_role_mapping")
+        .select("contact_key");
+      const alreadyMapped = new Set((existing ?? []).map((r: { contact_key: string }) => r.contact_key));
+
+      const toSeed = contacts
+        .map((c) => ({ contact_name: c.contact_name, role: fuzzyRole(c.contact_name) }))
+        .filter((r): r is { contact_name: string; role: string } =>
+          r.role !== null && !alreadyMapped.has(normalizeContact(r.contact_name))
+        )
+        .map((r) => ({
+          contact_key:  normalizeContact(r.contact_name),
+          contact_name: r.contact_name.trim(),
+          role:         r.role,
+          updated_at:   new Date().toISOString(),
+        }));
+
+      if (toSeed.length > 0) {
+        await supabase.from("wage_role_mapping").upsert(toSeed, { onConflict: "contact_key" });
+        log.push(`Auto-seeded ${toSeed.length} role(s) from staff grid matching`);
+      }
+    } catch (seedErr) {
+      log.push(`Auto-seed skipped: ${seedErr instanceof Error ? seedErr.message : String(seedErr)}`);
+    }
 
     return NextResponse.json({
       contacts,
