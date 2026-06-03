@@ -53,6 +53,7 @@ export interface DrillTarget {
   venue:    string;                 // display name | "spa-aggregate" | "group" | "hq"
   category: string;                 // ebitda category | "rent_plus" | "sga_*" | "advertising" | "revenue"
   channel?: string | null;          // advertising channel sub-row
+  wageRole?: string | null;         // wage role sub-row (client-side only — not sent to API)
   label:    string;                 // human label for the dialog title (row × column)
 }
 

@@ -542,6 +542,36 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
     return sum;
   }
 
+  /* ── Per-employee breakdown for a clicked wage-role cell ─────────── */
+  const wageEmployeeBreakdown = useMemo((): { contact: string; amount: number }[] | null => {
+    if (!drillTarget?.wageRole) return null;
+    const targetRole = drillTarget.wageRole;
+    const targetVenueId = drillTarget.venue;
+    const byContact: Record<string, number> = {};
+    for (const li of agg.lineItems) {
+      if (li.ebitda_category !== "wages") continue;
+      const v = li.period_value;
+      if (v === 0) continue;
+      const role = resolveRole(roleByContact, li.contact) ?? "unassigned";
+      if (role !== targetRole) continue;
+      let venueSlug: string;
+      if (li.brand === "HQ") venueSlug = "hq";
+      else if (li.brand === "AES") venueSlug = "aesthetics";
+      else if (li.brand === "SLIM") venueSlug = "slimming";
+      else venueSlug = spaVenueDisplayMeta[li.venue.toLowerCase()]?.slug ?? (li.venue || "spa-other");
+      if (targetVenueId !== "group") {
+        if (targetVenueId === "spa-aggregate") {
+          if (!spaSlugs.has(venueSlug) && venueSlug !== "spa-other") continue;
+        } else if (venueSlug !== targetVenueId) continue;
+      }
+      const contact = li.contact || "(no contact)";
+      byContact[contact] = (byContact[contact] ?? 0) + v;
+    }
+    return Object.entries(byContact)
+      .map(([contact, amount]) => ({ contact, amount }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [drillTarget, agg.lineItems, roleByContact, spaVenueDisplayMeta, spaSlugs]);
+
   /* ── SG&A sub-bucket breakdown (real per-account data when available) ─ */
   // Aggregates lineItems where ebitda_category starts with "sga_" into the
   // 11 fixed sub-buckets configured in COA Settings (migration 036). When
@@ -890,32 +920,18 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
                     <span>Wages &amp; Salaries</span>
                   </button>
                 </td>
-                {displayedVenues.map(v => {
-                  const scope = drillScopeForVenueId(v.id, v.name);
-                  const dp = cellDrillProps({ ...scope, category: "wages", label: `${v.name} · Wages & Salaries` });
-                  return (
-                    <td key={v.id} {...dp} className={`py-1.5 px-2 text-right text-foreground tabular-nums border-b border-border/60 ${dp.className}`}>
-                      {fmtCurrencyShort(v.wages)} <span className="text-muted-foreground/80">· {fmtPct(pctOf(v.wages, v.revenue))}</span>
-                    </td>
-                  );
-                })}
-                {(() => {
-                  const dp = cellDrillProps({ brand: "HQ", venue: "hq", category: "wages", label: "HQ · Wages & Salaries" });
-                  return (
-                    <td {...dp} className={`py-1.5 px-2 text-right tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/60 ${dp.className}`}>
-                      {CORPORATE.wages > 0 ? fmtCurrencyShort(CORPORATE.wages) : <span className="text-muted-foreground">&mdash;</span>}
-                    </td>
-                  );
-                })()}
-                {(() => {
-                  const dp = cellDrillProps({ brand: null, venue: "group", category: "wages", label: "Group · Wages & Salaries" });
-                  return (
-                    <td {...dp} className={`py-1.5 px-2 text-right font-medium text-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/60 ${dp.className}`}>
-                      {fmtCurrencyShort(venueTotals.wages + CORPORATE.wages)}{" "}
-                      <span className="text-muted-foreground/80 font-normal">· {fmtPct(pctOf(venueTotals.wages + CORPORATE.wages, venueTotals.revenue))}</span>
-                    </td>
-                  );
-                })()}
+                {displayedVenues.map(v => (
+                  <td key={v.id} className="py-1.5 px-2 text-right text-foreground tabular-nums border-b border-border/60">
+                    {fmtCurrencyShort(v.wages)} <span className="text-muted-foreground/80">· {fmtPct(pctOf(v.wages, v.revenue))}</span>
+                  </td>
+                ))}
+                <td className="py-1.5 px-2 text-right tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/60">
+                  {CORPORATE.wages > 0 ? fmtCurrencyShort(CORPORATE.wages) : <span className="text-muted-foreground">&mdash;</span>}
+                </td>
+                <td className="py-1.5 px-2 text-right font-medium text-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/60">
+                  {fmtCurrencyShort(venueTotals.wages + CORPORATE.wages)}{" "}
+                  <span className="text-muted-foreground/80 font-normal">· {fmtPct(pctOf(venueTotals.wages + CORPORATE.wages, venueTotals.revenue))}</span>
+                </td>
               </tr>
               {wagesExpanded && wageRoleRows.map(row => (
                 <tr key={row.key} className="group hover:bg-muted/30 transition-colors">
@@ -926,24 +942,36 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
                   </td>
                   {displayedVenues.map(v => {
                     const part = wageRoleValueForVenue(row, v.id);
+                    const scope = drillScopeForVenueId(v.id, v.name);
+                    const dp = cellDrillProps({ ...scope, category: "wages", wageRole: row.key, label: `${v.name} · ${row.label}` });
                     return (
-                      <td key={v.id} className="py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40">
+                      <td key={v.id} {...dp} className={`py-1 px-2 text-right text-muted-foreground tabular-nums border-b border-border/40 ${dp.className}`}>
                         {part === 0
                           ? <span className="text-muted-foreground/40">&mdash;</span>
                           : <>{fmtCurrencyShort(part)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(part, v.wages))}</span></>}
                       </td>
                     );
                   })}
-                  <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40">
-                    {row.hq === 0
-                      ? <span className="text-muted-foreground/40">&mdash;</span>
-                      : <>{fmtCurrencyShort(row.hq)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(row.hq, CORPORATE.wages))}</span></>}
-                  </td>
-                  <td className="py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40">
-                    {row.total === 0
-                      ? <span className="text-muted-foreground/40">&mdash;</span>
-                      : <>{fmtCurrencyShort(row.total)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(row.total, venueTotals.wages + CORPORATE.wages))}</span></>}
-                  </td>
+                  {(() => {
+                    const dp = cellDrillProps({ brand: "HQ", venue: "hq", category: "wages", wageRole: row.key, label: `HQ · ${row.label}` });
+                    return (
+                      <td {...dp} className={`py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-50/60 border-l-2 border-border/80 border-b border-border/40 ${dp.className}`}>
+                        {row.hq === 0
+                          ? <span className="text-muted-foreground/40">&mdash;</span>
+                          : <>{fmtCurrencyShort(row.hq)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(row.hq, CORPORATE.wages))}</span></>}
+                      </td>
+                    );
+                  })()}
+                  {(() => {
+                    const dp = cellDrillProps({ brand: null, venue: "group", category: "wages", wageRole: row.key, label: `Group · ${row.label}` });
+                    return (
+                      <td {...dp} className={`py-1 px-2 text-right text-muted-foreground tabular-nums bg-slate-100/70 border-l-2 border-border border-b border-border/40 ${dp.className}`}>
+                        {row.total === 0
+                          ? <span className="text-muted-foreground/40">&mdash;</span>
+                          : <>{fmtCurrencyShort(row.total)} <span className="text-muted-foreground/60">· {fmtPct(pctOf(row.total, venueTotals.wages + CORPORATE.wages))}</span></>}
+                      </td>
+                    );
+                  })()}
                 </tr>
               ))}
 
@@ -1375,6 +1403,7 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
         dateTo={dateTo}
         target={drillTarget}
         onClose={() => setDrillTarget(null)}
+        employeeBreakdown={wageEmployeeBreakdown}
       />
 
       <CIChat />

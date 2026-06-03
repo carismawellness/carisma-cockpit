@@ -13,6 +13,10 @@ function fmtFull(v: number): string {
   return `${sign}€${Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function fmtPct(p: number): string {
+  return `${Math.round(p)}%`;
+}
+
 // Lines where contact breakdown is meaningful
 const CONTACT_LINES = new Set(["wages", "sga", "cogs", "advertising", "rent", "utilities"]);
 
@@ -60,20 +64,29 @@ export function EbitdaTransactionsDialog({
   dateTo,
   target,
   onClose,
+  employeeBreakdown,
 }: {
   dateFrom: Date;
   dateTo: Date;
   target: DrillTarget | null;
   onClose: () => void;
+  employeeBreakdown?: { contact: string; amount: number }[] | null;
 }) {
-  const [activeTab, setActiveTab] = useState<"transactions" | "contacts">("transactions");
-
-  const { data, isLoading, isFetching, error } = useEbitdaTransactions(dateFrom, dateTo, target);
+  const hasEmployeeBreakdown = employeeBreakdown != null;
+  const employeeTotal = employeeBreakdown?.reduce((sum, r) => sum + r.amount, 0) ?? 0;
 
   const ebitdaLine    = targetToEbitdaLine(target);
   const ebitdaSubLine = targetToSubLine(target);
-  const showContactTab = ebitdaLine !== null && CONTACT_LINES.has(ebitdaLine);
+  // showContactTab applies when NOT drilling a specific role row (those use employeeBreakdown instead)
+  const showContactTab = !hasEmployeeBreakdown && ebitdaLine !== null && CONTACT_LINES.has(ebitdaLine);
   const isWages = ebitdaLine === "wages";
+
+  // Default to the richest tab: employees for role rows, contacts for other drillable rows
+  const defaultTab = hasEmployeeBreakdown ? "employees" : (showContactTab ? "contacts" : "transactions");
+  const [activeTab, setActiveTab] = useState<"transactions" | "contacts" | "employees">(defaultTab);
+
+  const { data, isLoading, isFetching, error } = useEbitdaTransactions(dateFrom, dateTo, target);
+
   const { data: contactData, isLoading: contactLoading, error: contactError } = useContactBreakdown(
     targetToOrg(target),
     ebitdaLine,
@@ -89,12 +102,18 @@ export function EbitdaTransactionsDialog({
     showContactTab && activeTab === "contacts" && isWages,
   );
 
-  // Reset to transactions tab when panel closes
+  // Switch to appropriate default when target changes
   useEffect(() => {
     if (target === null) {
       setActiveTab("transactions");
+    } else if (hasEmployeeBreakdown) {
+      setActiveTab("employees");
+    } else if (showContactTab) {
+      setActiveTab("contacts");
+    } else {
+      setActiveTab("transactions");
     }
-  }, [target]);
+  }, [target, hasEmployeeBreakdown, showContactTab]);
 
   // ESC key closes the panel
   useEffect(() => {
@@ -147,16 +166,18 @@ export function EbitdaTransactionsDialog({
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-border pb-0 -mb-px px-4 shrink-0">
-          <button
-            onClick={() => setActiveTab("transactions")}
-            className={`px-3 py-1.5 text-xs font-medium rounded-t border-b-2 transition-colors ${
-              activeTab === "transactions"
-                ? "border-foreground text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Transactions
-          </button>
+          {hasEmployeeBreakdown && (
+            <button
+              onClick={() => setActiveTab("employees")}
+              className={`px-3 py-1.5 text-xs font-medium rounded-t border-b-2 transition-colors flex items-center gap-1.5 ${
+                activeTab === "employees"
+                  ? "border-foreground text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Users className="h-3 w-3" /> By Employee
+            </button>
+          )}
           {showContactTab && (
             <button
               onClick={() => setActiveTab("contacts")}
@@ -169,7 +190,70 @@ export function EbitdaTransactionsDialog({
               <Users className="h-3 w-3" /> {isWages ? "By Role" : "By Contact"}
             </button>
           )}
+          <button
+            onClick={() => setActiveTab("transactions")}
+            className={`px-3 py-1.5 text-xs font-medium rounded-t border-b-2 transition-colors ${
+              activeTab === "transactions"
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Transactions
+          </button>
         </div>
+
+        {/* ── By Employee tab (role row drills) ──────────────────────────── */}
+        {activeTab === "employees" && (
+          <div className="overflow-y-auto flex-1 px-4 py-2">
+            {employeeBreakdown!.length === 0 ? (
+              <div className="py-10 text-center text-sm text-muted-foreground">
+                No employees mapped to this role for this venue.
+              </div>
+            ) : (
+              <table className="w-full text-xs border-separate border-spacing-0">
+                <thead className="sticky top-0 bg-popover z-10">
+                  <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <th className="text-left py-1.5 px-2 border-b border-border">Employee</th>
+                    <th className="text-right py-1.5 px-2 border-b border-border">Amount</th>
+                    <th className="text-right py-1.5 px-2 border-b border-border w-20">Share</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {employeeBreakdown!.map((row, i) => (
+                    <tr key={i} className="hover:bg-muted/30 transition-colors">
+                      <td className="py-1.5 px-2 border-b border-border/50 text-foreground">
+                        {row.contact || <span className="italic text-muted-foreground">(no contact)</span>}
+                      </td>
+                      <td className="py-1.5 px-2 border-b border-border/50 text-right tabular-nums font-medium text-foreground">
+                        {fmtFull(row.amount)}
+                      </td>
+                      <td className="py-1.5 px-2 border-b border-border/50 text-right tabular-nums">
+                        <div className="flex items-center justify-end gap-2">
+                          <div className="w-16 bg-muted rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-amber-400"
+                              style={{ width: `${employeeTotal > 0 ? Math.min(row.amount / employeeTotal * 100, 100) : 0}%` }}
+                            />
+                          </div>
+                          <span className="text-muted-foreground w-10 text-right">
+                            {employeeTotal > 0 ? fmtPct(row.amount / employeeTotal * 100) : "—"}
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="font-semibold">
+                    <td className="py-2 px-2 text-right text-muted-foreground">Total</td>
+                    <td className="py-2 px-2 text-right tabular-nums text-foreground">{fmtFull(employeeTotal)}</td>
+                    <td className="py-2 px-2 text-right text-muted-foreground">100%</td>
+                  </tr>
+                </tfoot>
+              </table>
+            )}
+          </div>
+        )}
 
         {/* ── Transactions tab ─────────────────────────────────────────────── */}
         {activeTab === "transactions" && (
