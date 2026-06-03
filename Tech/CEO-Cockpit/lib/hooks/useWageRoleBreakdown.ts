@@ -11,8 +11,9 @@ export interface WageRoleBreakdownData {
     crm:          number;
     unassigned:   number;
   };
-  total:    number;
-  has_data: boolean;
+  total:            number;
+  supplement_total: number;
+  has_data:         boolean;
 }
 
 function toIso(d: Date): string {

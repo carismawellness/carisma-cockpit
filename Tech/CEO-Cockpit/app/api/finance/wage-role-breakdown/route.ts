@@ -4,6 +4,7 @@
  * Breaks down wages transactions by staff role using the wage_role_mapping table.
  * Joins client-side: contact_name is normalised (lowercase, trim, collapse spaces)
  * and looked up in wage_role_mapping. Unmatched contacts fall into "unassigned".
+ * Also merges salary_supplement_monthly (is_frozen=true) amounts into role buckets.
  *
  * Query params:
  *   • org       — "spa" | "aesthetics" | "both"
@@ -28,8 +29,9 @@ interface WageRoleResponse {
     crm:          number;
     unassigned:   number;
   };
-  total:    number;
-  has_data: boolean;
+  total:            number;
+  supplement_total: number;
+  has_data:         boolean;
 }
 
 /** Normalise a contact name the same way the ETL / mapping UI does. */
@@ -133,6 +135,48 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  // ── Derive month boundaries for salary_supplement_monthly ───────────────────
+  // first day of the month containing date_from / date_to
+  const firstMonth = dateFrom.slice(0, 7) + "-01";
+  const lastMonth  = dateTo.slice(0, 7)   + "-01";
+
+  // ── Fetch salary_supplement_monthly ─────────────────────────────────────────
+  const sqEntries: [string, string][] = [
+    ["select",    "employee_name,amount"],
+    ["is_frozen", "eq.true"],
+    ["month",     `gte.${firstMonth}`],
+    ["month",     `lte.${lastMonth}`],
+  ];
+  if (org === "spa") {
+    sqEntries.push(["spa_slug", "not.in.(aesthetics,slimming)"]);
+  } else if (org === "aesthetics") {
+    sqEntries.push(["spa_slug", "in.(aesthetics,slimming)"]);
+  }
+  // org === "both" → no spa_slug filter
+
+  const suppQs = new URLSearchParams(sqEntries);
+
+  let suppRows: Array<{ employee_name: string; amount: number }>;
+  try {
+    const res = await fetch(
+      `${base}/rest/v1/salary_supplement_monthly?${suppQs.toString()}`,
+      { headers, cache: "no-store" },
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      return NextResponse.json(
+        { error: `Supabase error ${res.status} (salary_supplement_monthly): ${text}` },
+        { status: 502 },
+      );
+    }
+    suppRows = await res.json();
+  } catch (e) {
+    return NextResponse.json(
+      { error: `Failed to query salary_supplement_monthly: ${e instanceof Error ? e.message : String(e)}` },
+      { status: 502 },
+    );
+  }
+
   // ── Client-side join & aggregation ──────────────────────────────────────────
   const totals: Record<string, number> = {
     manager:      0,
@@ -149,6 +193,16 @@ export async function GET(req: NextRequest) {
     totals[bucket] = (totals[bucket] ?? 0) + tx.amount;
   }
 
+  // Merge supplement amounts into role buckets
+  let supplementTotal = 0;
+  for (const supp of suppRows) {
+    const key    = normalise(supp.employee_name);
+    const role   = roleMap.get(key) as KnownRole | undefined;
+    const bucket: string = role && role in totals ? role : "unassigned";
+    totals[bucket]  = (totals[bucket] ?? 0) + supp.amount;
+    supplementTotal += supp.amount;
+  }
+
   const grandTotal =
     totals.manager + totals.reception + totals.practitioner + totals.crm + totals.unassigned;
 
@@ -162,8 +216,9 @@ export async function GET(req: NextRequest) {
       crm:          round(totals.crm),
       unassigned:   round(totals.unassigned),
     },
-    total:    round(grandTotal),
-    has_data: txRows.length > 0,
+    total:            round(grandTotal),
+    supplement_total: round(supplementTotal),
+    has_data:         txRows.length > 0 || suppRows.length > 0,
   };
 
   return NextResponse.json(response);
