@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type * as React from "react";
 import {
   ChevronDown, ChevronRight, ArrowUpRight,
@@ -164,6 +164,33 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
   // Price ex-VAT"). Costs and SG&A still come from agg.slim — only revenue
   // and the derived EBITDA / margin are overridden.
   const slimSales = useSlimmingSales(dateFrom, dateTo);
+
+  // ── Background revenue refresh on date range change ───────────────────────
+  // Fires whenever the selected period changes. Shows existing Supabase data
+  // immediately, then silently re-pulls Google Sheets revenue sources in the
+  // background so stale/corrected data is picked up automatically.
+  // Only refreshes if the period overlaps the current or previous calendar month
+  // (historical-only ranges are immutable in practice).
+  const lastRefreshKey = useRef<string>("");
+  useEffect(() => {
+    const df = dateFrom.toISOString().slice(0, 10);
+    const dt = dateTo.toISOString().slice(0, 10);
+    const key = `${df}|${dt}`;
+    if (key === lastRefreshKey.current) return;
+    lastRefreshKey.current = key;
+
+    const now = new Date();
+    const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const periodEnd = new Date(dt);
+    if (periodEnd < prevMonth) return; // historical only — skip
+
+    const base = typeof window !== "undefined" ? "" : "";
+    fetch(`${base}/api/etl/revenue-refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date_from: df, date_to: dt, force: true }),
+    }).catch(() => { /* silent — UI already shows Supabase data */ });
+  }, [dateFrom, dateTo]);
 
   /* ── EBITDA Export ───────────────────────────────────────────────── */
   // Calls /api/finance/ebitda-export which talks to Apps Script and writes

@@ -1,0 +1,49 @@
+import { NextRequest, NextResponse } from "next/server";
+
+export const maxDuration = 300;
+
+const BASE_URL = process.env.VERCEL_URL
+  ? `https://${process.env.VERCEL_URL}`
+  : "http://localhost:3000";
+
+export async function GET(req: NextRequest) {
+  const authHeader = req.headers.get("authorization");
+  if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const now = new Date();
+  // First day of 2 months ago
+  const from = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+  // Last day of current month
+  const to   = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+  const pad  = (n: number) => String(n).padStart(2, "0");
+  const fmt  = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  const date_from = fmt(from);
+  const date_to   = fmt(to);
+
+  const payload = JSON.stringify({ date_from, date_to, force: true });
+  const headers = { "Content-Type": "application/json" };
+
+  const [revenueRes, spaRes, aestheticsRes] = await Promise.allSettled([
+    fetch(`${BASE_URL}/api/etl/revenue-refresh`,           { method: "POST", headers, body: payload }),
+    fetch(`${BASE_URL}/api/etl/zoho-spa-transactions`,     { method: "POST", headers, body: payload }),
+    fetch(`${BASE_URL}/api/etl/zoho-aesthetics-transactions`, { method: "POST", headers, body: payload }),
+  ]);
+
+  const outcome = (r: PromiseSettledResult<Response>) =>
+    r.status === "fulfilled" && r.value.ok ? "ok" : "error";
+
+  return NextResponse.json({
+    status: "ok",
+    date_from,
+    date_to,
+    results: {
+      revenue:    outcome(revenueRes),
+      zoho_spa:   outcome(spaRes),
+      zoho_aesthetics: outcome(aestheticsRes),
+    },
+  });
+}
