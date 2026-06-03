@@ -34,12 +34,13 @@ interface ContactImportSectionProps {
   apiEndpoint: string;
   cacheKey: string;
   emptyMessage: string;
+  showDelete?: boolean;
   roleByContact: Map<string, WageRole>;
   setRole: ReturnType<typeof useWageRoles>["setRole"];
 }
 
 function ContactImportSection({
-  title, subtitle, apiEndpoint, cacheKey, emptyMessage, roleByContact, setRole,
+  title, subtitle, apiEndpoint, cacheKey, emptyMessage, showDelete = false, roleByContact, setRole,
 }: ContactImportSectionProps) {
   const [importedContacts, setImportedContacts] = useState<ImportedContact[] | null>(() => {
     try {
@@ -203,9 +204,11 @@ function ContactImportSection({
                         <button onClick={() => saveOne(c.contact_name)} disabled={setRole.isPending} className="text-xs border border-border rounded px-2 py-1 hover:bg-muted/50 disabled:opacity-50 transition-colors">
                           Save
                         </button>
-                        <button onClick={() => deleteRow(c.contact_name)} disabled={setRole.isPending} className="text-xs border border-red-200 text-red-600 rounded px-2 py-1 hover:bg-red-50 disabled:opacity-50 transition-colors">
-                          ✕
-                        </button>
+                        {showDelete && (
+                          <button onClick={() => deleteRow(c.contact_name)} className="text-xs border border-red-200 text-red-600 rounded px-2 py-1 hover:bg-red-50 transition-colors">
+                            ✕
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -257,6 +260,7 @@ function EmployeeMappingContent() {
 
       <ContactImportSection
         title="Professional Fees COA"
+        showDelete
         subtitle="Contractors and CRM staff from professional fees GL accounts — Jan 2025 to Jun 2026."
         apiEndpoint="/api/settings/prof-fee-contacts"
         cacheKey="prof-fee-contacts-cache"
