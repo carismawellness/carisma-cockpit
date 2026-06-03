@@ -281,6 +281,7 @@ function isValidIsoDate(s: string): boolean {
 }
 
 // ── Apps Script fetch with retry/backoff ─────────────────────────────────────
+// KEPT FOR REFERENCE — no longer called. Replaced by fetchFromSupabase below.
 
 const FETCH_TIMEOUT_MS = 90_000;     // per attempt; Apps Script can be slow
 const FETCH_MAX_ATTEMPTS = 3;
@@ -344,6 +345,425 @@ async function fetchAggregatedSheet(
     `fetchAggregatedSheet(${orgParam}, ${fromIso} → ${toIso}) failed after ` +
     `${FETCH_MAX_ATTEMPTS} attempts: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
   );
+}
+
+// ── Supabase REST helper ──────────────────────────────────────────────────────
+
+/**
+ * Low-level GET against the Supabase REST API using the service-role key.
+ * `params` is an array of [key, value] pairs so that repeated filter keys
+ * (e.g. `date=gte.X` and `date=lte.Y`) are both sent correctly.
+ * Supabase PostgREST requires the Prefer header to get JSON objects back.
+ */
+async function sbFetch<T>(path: string, params: Array<[string, string]> = []): Promise<T[]> {
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY env vars are not set");
+  }
+  const qs = new URLSearchParams(params).toString();
+  const url = `${SUPABASE_URL}/rest/v1/${path}${qs ? "?" + qs : ""}`;
+  const res = await fetch(url, {
+    method:  "GET",
+    headers: {
+      "apikey":        SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Accept":        "application/json",
+      "Prefer":        "return=representation",
+    },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Supabase REST ${path} HTTP ${res.status}: ${body.slice(0, 200)}`);
+  }
+  return res.json() as Promise<T[]>;
+}
+
+// ── ebitda_line → human label ─────────────────────────────────────────────────
+
+const EBITDA_LINE_LABEL: Record<string, string> = {
+  wages:       "Wages & Salaries",
+  advertising: "Advertising",
+  sga:         "SG&A",
+  cogs:        "COGS",
+  rent:        "Rent",
+  utilities:   "Utilities",
+  revenue:     "Net Revenue",
+};
+
+// ── Supabase-backed replacement for fetchAggregatedSheet ─────────────────────
+
+/**
+ * Fetches all EBITDA cost + revenue data directly from Supabase for [dateFrom,
+ * dateTo] and converts it to the same AggregatedSheetRow[] format that the Apps
+ * Script aggregated-period endpoint previously returned.
+ *
+ * The `org` parameter mirrors the old Apps Script org routing:
+ *   "SPA"        → only SPA + HQ rows
+ *   "Aesthetics" → only Aesthetics + Slimming + HQ rows
+ *   "both"       → all brands (used by the main route to replace two separate calls)
+ *
+ * Each returned row covers ONE ebitda_line (wages / rent / …) for ONE
+ * brand × venue combination, with per-ISO-date values in `daily`.
+ *
+ * The function uses:
+ *  1. spa_ebitda_daily         — SPA costs (join locations for slug/name)
+ *  2. spa_revenue_monthly      — SPA revenue spread across days in the window
+ *  3. aesthetics_ebitda_daily  — Aesthetics & Slimming costs
+ *  4. aesthetics_sales_daily   — Aesthetics revenue
+ *  5. slimming_sales_daily     — Slimming revenue
+ *  6. hq_ebitda_daily          — HQ costs
+ *  7. salary_supplement_monthly — Extra wages spread across days in the window
+ */
+async function fetchFromSupabase(
+  org: "SPA" | "Aesthetics" | "both",
+  dateFrom: string,
+  dateTo:   string,
+): Promise<AggregatedSheetRow[]> {
+
+  // ── Raw DB row types ──────────────────────────────────────────────────────
+
+  type SpaEbitdaRow = {
+    date: string; location_id: number;
+    cogs: string; wages: string; advertising: string;
+    rent: string; utilities: string; sga: string; laundry: string;
+    locations: { slug: string; name: string } | null;
+  };
+  type SpaRevenueRow = {
+    month: string; location_id: number;
+    services: string; product_phytomer: string; product_purest: string;
+    product_other: string; wholesale: string; sales_discount: string; sales_refund: string;
+    locations: { slug: string; name: string } | null;
+  };
+  type AesthEbitdaRow = {
+    date: string; department: string;
+    cogs: string; wages: string; advertising: string;
+    rent: string; utilities: string; sga: string;
+  };
+  type AesthSalesRow = { date_of_service: string | null; price_ex_vat: string | null };
+  type SlimmingSalesRow = { date_of_service: string | null; price_ex_vat: string | null };
+  type HqEbitdaRow = {
+    date: string; source: string;
+    cogs: string; wages: string; advertising: string;
+    rent: string; utilities: string; sga: string;
+  };
+  type SalarySupplementRow = {
+    month: string; spa_slug: string | null; amount: string;
+  };
+
+  // ── Determine which tables to query ──────────────────────────────────────
+
+  const wantSpa  = org === "SPA"  || org === "both";
+  const wantAes  = org === "Aesthetics" || org === "both";
+
+  // Expand the query window for monthly tables: we may need the month that
+  // straddles dateFrom, so fetch from the 1st of dateFrom's month.
+  const monthFrom = startOfMonth(dateFrom);
+  const monthTo   = dateTo;   // endOfMonth(dateTo) would include the next month's start
+
+  // ── Parallel fetches ──────────────────────────────────────────────────────
+
+  const [
+    spaEbitdaRaw,
+    spaRevenueRaw,
+    aesthEbitdaRaw,
+    aesthSalesRaw,
+    slimmingSalesRaw,
+    hqEbitdaRaw,
+    salarySupplRaw,
+  ] = await Promise.all([
+    wantSpa
+      ? sbFetch<SpaEbitdaRow>(
+          "spa_ebitda_daily",
+          [
+            ["select", "date,location_id,cogs,wages,advertising,rent,utilities,sga,laundry,locations(slug,name)"],
+            ["date",   `gte.${dateFrom}`],
+            ["date",   `lte.${dateTo}`],
+          ],
+        ).catch(() => [] as SpaEbitdaRow[])
+      : Promise.resolve([] as SpaEbitdaRow[]),
+
+    wantSpa
+      ? sbFetch<SpaRevenueRow>(
+          "spa_revenue_monthly",
+          [
+            ["select", "month,location_id,services,product_phytomer,product_purest,product_other,wholesale,sales_discount,sales_refund,locations(slug,name)"],
+            ["month",  `gte.${monthFrom}`],
+            ["month",  `lte.${monthTo}`],
+          ],
+        ).catch(() => [] as SpaRevenueRow[])
+      : Promise.resolve([] as SpaRevenueRow[]),
+
+    wantAes
+      ? sbFetch<AesthEbitdaRow>(
+          "aesthetics_ebitda_daily",
+          [
+            ["select", "date,department,cogs,wages,advertising,rent,utilities,sga"],
+            ["date",   `gte.${dateFrom}`],
+            ["date",   `lte.${dateTo}`],
+          ],
+        ).catch(() => [] as AesthEbitdaRow[])
+      : Promise.resolve([] as AesthEbitdaRow[]),
+
+    wantAes
+      ? sbFetch<AesthSalesRow>(
+          "aesthetics_sales_daily",
+          [
+            ["select",           "date_of_service,price_ex_vat"],
+            ["date_of_service",  `gte.${dateFrom}`],
+            ["date_of_service",  `lte.${dateTo}`],
+          ],
+        ).catch(() => [] as AesthSalesRow[])
+      : Promise.resolve([] as AesthSalesRow[]),
+
+    wantAes
+      ? sbFetch<SlimmingSalesRow>(
+          "slimming_sales_daily",
+          [
+            ["select",           "date_of_service,price_ex_vat"],
+            ["date_of_service",  `gte.${dateFrom}`],
+            ["date_of_service",  `lte.${dateTo}`],
+          ],
+        ).catch(() => [] as SlimmingSalesRow[])
+      : Promise.resolve([] as SlimmingSalesRow[]),
+
+    // HQ is queried for both orgs since it belongs to neither SPA nor Aes
+    // exclusively — always fetch it.
+    sbFetch<HqEbitdaRow>(
+      "hq_ebitda_daily",
+      [
+        ["select", "date,source,cogs,wages,advertising,rent,utilities,sga"],
+        ["date",   `gte.${dateFrom}`],
+        ["date",   `lte.${dateTo}`],
+      ],
+    ).catch(() => [] as HqEbitdaRow[]),
+
+    sbFetch<SalarySupplementRow>(
+      "salary_supplement_monthly",
+      [
+        ["select",    "month,spa_slug,amount"],
+        ["is_frozen", "eq.true"],
+        ["month",     `gte.${monthFrom}`],
+        ["month",     `lte.${monthTo}`],
+      ],
+    ).catch(() => [] as SalarySupplementRow[]),
+  ]);
+
+  // ── Builder helpers ───────────────────────────────────────────────────────
+
+  /**
+   * Groups by a composite key, merging `daily` maps additively.
+   * Key: `${brand}|${ebitda_line}|${venue}`
+   */
+  const rowMap = new Map<string, AggregatedSheetRow>();
+
+  function upsertRow(
+    brand:           string,
+    ebitdaLine:      string,
+    venue:           string,
+    date:            string,
+    value:           number,
+  ) {
+    if (!date || value === 0) return;
+    const key = `${brand}|${ebitdaLine}|${venue}`;
+    let row = rowMap.get(key);
+    if (!row) {
+      row = {
+        brand,
+        line_item:       EBITDA_LINE_LABEL[ebitdaLine] ?? ebitdaLine,
+        account_code:    ebitdaLine,   // pseudo account_code = ebitda_line slug
+        ebitda_category: ebitdaLine,
+        venue,
+        contact:    "",
+        allocation: "",
+        daily: {},
+      };
+      rowMap.set(key, row);
+    }
+    row.daily[date] = (row.daily[date] ?? 0) + value;
+  }
+
+  /**
+   * Spreads a monthly amount proportionally across days within the overlap of
+   * [mStart, mEnd] ∩ [dateFrom, dateTo], emitting one call to upsertRow per day.
+   */
+  function spreadMonthlyAcrossDays(
+    monthIso: string,    // YYYY-MM-01
+    amount:   number,
+    brand:    string,
+    line:     string,
+    venue:    string,
+  ) {
+    if (!amount) return;
+    const mStart = startOfMonth(monthIso);
+    const mEnd   = endOfMonth(monthIso);
+    const winStart = mStart < dateFrom ? dateFrom : mStart;
+    const winEnd   = mEnd   > dateTo   ? dateTo   : mEnd;
+    if (winStart > winEnd) return;
+    const daysInMonth  = daysInMonthOf(monthIso);
+    const dailyAmount  = amount / daysInMonth;
+    // Iterate day by day inside [winStart, winEnd]
+    let cursor = winStart;
+    while (cursor <= winEnd) {
+      upsertRow(brand, line, venue, cursor, dailyAmount);
+      // advance one day
+      const d = isoToDate(cursor);
+      d.setUTCDate(d.getUTCDate() + 1);
+      cursor = d.toISOString().slice(0, 10);
+    }
+  }
+
+  // ── 1. SPA costs (spa_ebitda_daily) ──────────────────────────────────────
+  // Supabase returns the embedded join under the "locations" key as an object
+  // (not array) when using ?select=...,locations(slug,name).
+
+  // Build a fallback slug map from location_id → slug for safety
+  const locationSlugById = new Map<number, string>();
+
+  for (const r of spaEbitdaRaw) {
+    // Resolve venue slug: prefer join data, fall back to hardwired map
+    let slug: string;
+    if (r.locations && r.locations.slug) {
+      slug = r.locations.slug;
+      locationSlugById.set(r.location_id, slug);
+    } else {
+      // Hardwired fallback: ids 1-8
+      const SLUG_BY_ID: Record<number, string> = {
+        1: "inter", 2: "hugos", 3: "hyatt", 4: "ramla",
+        5: "labranda", 6: "odycy", 7: "excelsior", 8: "novotel",
+      };
+      slug = locationSlugById.get(r.location_id)
+          ?? SLUG_BY_ID[r.location_id]
+          ?? String(r.location_id);
+    }
+
+    const ebitdaLines: Array<[string, string]> = [
+      ["cogs",        r.cogs],
+      ["wages",       r.wages],
+      ["advertising", r.advertising],
+      ["rent",        r.rent],
+      ["utilities",   r.utilities],
+      // sga + laundry both go into sga bucket
+      ["sga",         String((parseFloat(r.sga || "0") + parseFloat(r.laundry || "0")).toFixed(2))],
+    ];
+    for (const [line, raw] of ebitdaLines) {
+      const val = parseFloat(raw || "0");
+      if (val !== 0) upsertRow("SPA", line, slug, r.date, val);
+    }
+  }
+
+  // ── 2. SPA revenue (spa_revenue_monthly) — spread per day ─────────────────
+
+  for (const r of spaRevenueRaw) {
+    let slug: string;
+    if (r.locations && r.locations.slug) {
+      slug = r.locations.slug;
+    } else {
+      const SLUG_BY_ID: Record<number, string> = {
+        1: "inter", 2: "hugos", 3: "hyatt", 4: "ramla",
+        5: "labranda", 6: "odycy", 7: "excelsior", 8: "novotel",
+      };
+      slug = locationSlugById.get(r.location_id)
+          ?? SLUG_BY_ID[r.location_id]
+          ?? String(r.location_id);
+    }
+    const net =
+      parseFloat(r.services          || "0") +
+      parseFloat(r.product_phytomer  || "0") +
+      parseFloat(r.product_purest    || "0") +
+      parseFloat(r.product_other     || "0") +
+      parseFloat(r.wholesale         || "0") -
+      parseFloat(r.sales_discount    || "0") -
+      parseFloat(r.sales_refund      || "0");
+    if (net !== 0) spreadMonthlyAcrossDays(r.month, net, "SPA", "revenue", slug);
+  }
+
+  // ── 3. Aesthetics / Slimming costs (aesthetics_ebitda_daily) ──────────────
+
+  for (const r of aesthEbitdaRaw) {
+    const dept = (r.department || "").toLowerCase();
+    const brand = dept === "slimming" ? "Slimming" : "Aesthetics";
+    const venue = brand;  // venue mirrors brand for non-SPA departments
+
+    const lines: Array<[string, string]> = [
+      ["cogs",        r.cogs],
+      ["wages",       r.wages],
+      ["advertising", r.advertising],
+      ["rent",        r.rent],
+      ["utilities",   r.utilities],
+      ["sga",         r.sga],
+    ];
+    for (const [line, raw] of lines) {
+      const val = parseFloat(raw || "0");
+      if (val !== 0) upsertRow(brand, line, venue, r.date, val);
+    }
+  }
+
+  // ── 4. Aesthetics revenue (aesthetics_sales_daily) ─────────────────────────
+
+  for (const r of aesthSalesRaw) {
+    if (!r.date_of_service) continue;
+    const val = parseFloat(r.price_ex_vat || "0");
+    if (val !== 0) upsertRow("Aesthetics", "revenue", "Aesthetics", r.date_of_service, val);
+  }
+
+  // ── 5. Slimming revenue (slimming_sales_daily) ─────────────────────────────
+
+  for (const r of slimmingSalesRaw) {
+    if (!r.date_of_service) continue;
+    const val = parseFloat(r.price_ex_vat || "0");
+    if (val !== 0) upsertRow("Slimming", "revenue", "Slimming", r.date_of_service, val);
+  }
+
+  // ── 6. HQ costs (hq_ebitda_daily) ─────────────────────────────────────────
+  // Both sources ("spa" and "aesthetics") collapse into brand="HQ", venue="HQ".
+  // The existing route logic re-routes rows to HQ when venue="HQ" — here we
+  // set brand directly to "HQ" and use account_code as the ebitda_line, which
+  // correctly bypasses the venue re-routing logic (isHqVenue check uses column E
+  // of the old sheet, i.e. row.venue === "HQ"). We set venue="HQ" to match.
+
+  for (const r of hqEbitdaRaw) {
+    const lines: Array<[string, string]> = [
+      ["cogs",        r.cogs],
+      ["wages",       r.wages],
+      ["advertising", r.advertising],
+      ["rent",        r.rent],
+      ["utilities",   r.utilities],
+      ["sga",         r.sga],
+    ];
+    for (const [line, raw] of lines) {
+      const val = parseFloat(raw || "0");
+      if (val !== 0) upsertRow("HQ", line, "HQ", r.date, val);
+    }
+  }
+
+  // ── 7. Salary supplements (salary_supplement_monthly, is_frozen=true) ──────
+  // spa_slug determines brand + venue.
+
+  for (const r of salarySupplRaw) {
+    const slug = (r.spa_slug || "").trim().toLowerCase();
+    if (!slug) continue;   // unassigned supplements skipped
+    const amount = parseFloat(r.amount || "0");
+    if (!amount) continue;
+
+    let brand: string;
+    let venue: string;
+    if (slug === "aesthetics") {
+      brand = "Aesthetics"; venue = "Aesthetics";
+    } else if (slug === "slimming") {
+      brand = "Slimming";   venue = "Slimming";
+    } else if (slug === "hq") {
+      brand = "HQ";         venue = "HQ";
+    } else {
+      brand = "SPA";        venue = slug;  // spa slug = venue slug
+    }
+    spreadMonthlyAcrossDays(r.month, amount, brand, "wages", venue);
+  }
+
+  // ── Collect results ───────────────────────────────────────────────────────
+
+  return Array.from(rowMap.values()).filter(row => Object.keys(row.daily).length > 0);
 }
 
 // ── Fallback rule loader ─────────────────────────────────────────────────────
@@ -474,48 +894,81 @@ async function handleGet(req: NextRequest): Promise<NextResponse> {
   const warnings: string[] = [];
   const daysInPeriod = daysBetweenInclusive(dateFrom, dateTo);
 
-  // Which Apps-Script orgs to query (deduplicated). SPA brand → SPA org;
-  // AES/SLIM/HQ → Aesthetics org. No brand filter → both.
-  const orgsToFetch = new Set<"SPA" | "Aesthetics">();
-  if (brandFilter) {
-    orgsToFetch.add(BRAND_TO_ORG_PARAM[brandFilter]);
-  } else {
-    orgsToFetch.add("SPA");
-    orgsToFetch.add("Aesthetics");
-  }
-
   // Compute the TTM window. Capped at 2024-01-01 since we have no prior history.
   const ttmFromRequested = shiftIso(dateFrom, -365);
   const ttmFrom = ttmFromRequested < "2024-01-01" ? "2024-01-01" : ttmFromRequested;
   const ttmTo   = shiftIso(dateFrom, -1);  // day before period start
 
-  // 1) Period rows + TTM rows from Apps Script, in parallel per org.
+  // 1) Period rows + TTM rows from Supabase, in parallel.
+  //    fetchFromSupabase returns a flat AggregatedSheetRow[] for all brands.
+  //    We split them into two synthetic OrgFetchResult entries — one keyed
+  //    "SPA" (for SPA rows) and one keyed "Aesthetics" (for AES/SLIM/HQ rows)
+  //    — so the downstream TTM-index build and zohoOrg derivation work exactly
+  //    as they did against the Apps Script data.
   type OrgFetchResult = {
     orgParam: "SPA" | "Aesthetics";
     period:   AggregatedSheetResponse;
     ttm:      AggregatedSheetResponse | null;
   };
+
+  /** Split a flat row array into {SPA: row[], Aesthetics: row[]} buckets. */
+  function splitByOrg(rows: AggregatedSheetRow[]): { SPA: AggregatedSheetRow[]; Aesthetics: AggregatedSheetRow[] } {
+    const SPA: AggregatedSheetRow[] = [];
+    const Aesthetics: AggregatedSheetRow[] = [];
+    for (const row of rows) {
+      const b = (row.brand || "").trim().toUpperCase();
+      if (b === "SPA") {
+        SPA.push(row);
+      } else {
+        // Aesthetics, Slimming, HQ — all come from the "Aesthetics" org
+        Aesthetics.push(row);
+      }
+    }
+    return { SPA, Aesthetics };
+  }
+
+  /** Fake AggregatedSheetResponse wrapping a row array (dates unused downstream). */
+  function makeSheetResponse(rows: AggregatedSheetRow[]): AggregatedSheetResponse {
+    // dateFrom / dateTo are string at this point (validated above); cast for TS.
+    return { org: "", date_from: dateFrom as string, date_to: dateTo as string, rows, dates: [] };
+  }
+
   let orgResults: OrgFetchResult[];
   try {
-    orgResults = await Promise.all(
-      Array.from(orgsToFetch).map(async (orgParam) => {
-        const periodP = fetchAggregatedSheet(orgParam, dateFrom, dateTo);
-        // Skip TTM fetch if the period start IS the TTM start (zero-width window).
-        const ttmP = ttmTo >= ttmFrom
-          ? fetchAggregatedSheet(orgParam, ttmFrom, ttmTo).catch((e: unknown) => {
-              warnings.push(
-                `TTM fetch failed for ${orgParam} (${ttmFrom} → ${ttmTo}): ${e instanceof Error ? e.message : String(e)} — TTM-spread rules will fall back to literal sums.`,
-              );
-              return null;
-            })
-          : Promise.resolve(null);
-        const [period, ttm] = await Promise.all([periodP, ttmP]);
-        return { orgParam, period, ttm };
-      }),
-    );
+    // Fetch period + TTM in parallel from Supabase.
+    const [periodRows, ttmRows] = await Promise.all([
+      fetchFromSupabase("both", dateFrom, dateTo),
+      ttmTo >= ttmFrom
+        ? fetchFromSupabase("both", ttmFrom, ttmTo).catch((e: unknown) => {
+            warnings.push(
+              `TTM fetch failed (${ttmFrom} → ${ttmTo}): ${e instanceof Error ? e.message : String(e)} — TTM-spread rules will fall back to literal sums.`,
+            );
+            return null as AggregatedSheetRow[] | null;
+          })
+        : Promise.resolve(null as AggregatedSheetRow[] | null),
+    ]);
+
+    const periodSplit = splitByOrg(periodRows);
+    const ttmSplit    = ttmRows ? splitByOrg(ttmRows) : null;
+
+    // Build orgResults in the same shape the downstream loop expects.
+    // Always include both org entries — the brand filter is applied inside the
+    // loop (row-by-row), so producing empty buckets is safe.
+    orgResults = [
+      {
+        orgParam: "SPA",
+        period:   makeSheetResponse(periodSplit.SPA),
+        ttm:      ttmSplit ? makeSheetResponse(ttmSplit.SPA) : null,
+      },
+      {
+        orgParam: "Aesthetics",
+        period:   makeSheetResponse(periodSplit.Aesthetics),
+        ttm:      ttmSplit ? makeSheetResponse(ttmSplit.Aesthetics) : null,
+      },
+    ];
   } catch (e) {
     return NextResponse.json(
-      { error: `Apps Script fetch failed: ${e instanceof Error ? e.message : String(e)}` },
+      { error: `Supabase fetch failed: ${e instanceof Error ? e.message : String(e)}` },
       { status: 502 },
     );
   }
