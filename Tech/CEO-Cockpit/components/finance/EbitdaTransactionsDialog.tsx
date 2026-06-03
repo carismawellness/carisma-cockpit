@@ -5,6 +5,8 @@ import { AlertTriangle, CheckCircle2, FileText, Loader2, SplitSquareHorizontal, 
 import { Badge } from "@/components/ui/badge";
 import { useEbitdaTransactions, DrillTarget } from "@/lib/hooks/useEbitdaTransactions";
 import { useContactBreakdown } from "@/lib/hooks/useContactBreakdown";
+import { useWageRoleBreakdown } from "@/lib/hooks/useWageRoleBreakdown";
+import { WAGE_ROLES, WAGE_ROLE_LABEL } from "@/lib/hooks/useWageRoles";
 
 function fmtFull(v: number): string {
   const sign = v < 0 ? "-" : "";
@@ -71,13 +73,20 @@ export function EbitdaTransactionsDialog({
   const ebitdaLine    = targetToEbitdaLine(target);
   const ebitdaSubLine = targetToSubLine(target);
   const showContactTab = ebitdaLine !== null && CONTACT_LINES.has(ebitdaLine);
+  const isWages = ebitdaLine === "wages";
   const { data: contactData, isLoading: contactLoading, error: contactError } = useContactBreakdown(
     targetToOrg(target),
     ebitdaLine,
     dateFrom,
     dateTo,
-    showContactTab && activeTab === "contacts",
+    showContactTab && activeTab === "contacts" && !isWages,
     ebitdaSubLine,
+  );
+  const { data: roleData, isLoading: roleLoading, error: roleError } = useWageRoleBreakdown(
+    targetToOrg(target),
+    dateFrom,
+    dateTo,
+    showContactTab && activeTab === "contacts" && isWages,
   );
 
   // Reset to transactions tab when panel closes
@@ -157,7 +166,7 @@ export function EbitdaTransactionsDialog({
                   : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
-              <Users className="h-3 w-3" /> By Contact
+              <Users className="h-3 w-3" /> {isWages ? "By Role" : "By Contact"}
             </button>
           )}
         </div>
@@ -294,73 +303,151 @@ export function EbitdaTransactionsDialog({
           </>
         )}
 
-        {/* ── By Contact tab ───────────────────────────────────────────────── */}
+        {/* ── By Contact / By Role tab ─────────────────────────────────────── */}
         {activeTab === "contacts" && (
           <div className="overflow-y-auto flex-1 px-4 py-2">
-            {contactLoading && (
-              <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading contact breakdown…
-              </div>
-            )}
-            {contactError && (
-              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {contactError.message}
-              </div>
-            )}
-            {contactData && !contactLoading && (
+
+            {/* ── By Role (wages only) ── */}
+            {isWages && (
               <>
-                {contactData.rows.length === 0 ? (
-                  <div className="py-10 text-center text-sm text-muted-foreground">
-                    No contact data for this selection. Run a Sync to populate.
+                {roleLoading && (
+                  <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading role breakdown…
                   </div>
-                ) : (
-                  <table className="w-full text-xs border-separate border-spacing-0">
-                    <thead className="sticky top-0 bg-popover z-10">
-                      <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                        <th className="text-left py-1.5 px-2 border-b border-border">Contact</th>
-                        <th className="text-right py-1.5 px-2 border-b border-border">Amount</th>
-                        <th className="text-right py-1.5 px-2 border-b border-border w-20">Share</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {contactData.rows.map((r, i) => {
-                        const isUnassigned = r.contact_name === "Unassigned";
-                        return (
-                          <tr key={i} className={`hover:bg-muted/30 transition-colors ${isUnassigned ? "text-muted-foreground" : ""}`}>
-                            <td className="py-1.5 px-2 border-b border-border/50">
-                              {isUnassigned
-                                ? <span className="italic">{r.contact_name}</span>
-                                : r.contact_name}
-                            </td>
-                            <td className="py-1.5 px-2 border-b border-border/50 text-right tabular-nums font-medium text-foreground">
-                              {fmtFull(r.amount)}
-                            </td>
-                            <td className="py-1.5 px-2 border-b border-border/50 text-right tabular-nums">
-                              <div className="flex items-center justify-end gap-2">
-                                <div className="w-16 bg-muted rounded-full h-1.5 overflow-hidden">
-                                  <div
-                                    className={`h-full rounded-full ${isUnassigned ? "bg-muted-foreground/30" : "bg-amber-400"}`}
-                                    style={{ width: `${Math.min(r.pct, 100)}%` }}
-                                  />
-                                </div>
-                                <span className="text-muted-foreground w-10 text-right">{r.pct.toFixed(1)}%</span>
-                              </div>
-                            </td>
+                )}
+                {roleError && (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {roleError.message}
+                  </div>
+                )}
+                {roleData && !roleLoading && (
+                  <>
+                    {!roleData.has_data ? (
+                      <div className="py-10 text-center text-sm text-muted-foreground">
+                        No data yet — run a Sync to populate
+                      </div>
+                    ) : (
+                      <table className="w-full text-xs border-separate border-spacing-0">
+                        <thead className="sticky top-0 bg-popover z-10">
+                          <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            <th className="text-left py-1.5 px-2 border-b border-border">Role</th>
+                            <th className="text-right py-1.5 px-2 border-b border-border">Amount</th>
+                            <th className="text-right py-1.5 px-2 border-b border-border w-20">Share</th>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                    <tfoot>
-                      <tr className="font-semibold">
-                        <td className="py-2 px-2 text-right text-muted-foreground">Total</td>
-                        <td className="py-2 px-2 text-right tabular-nums text-foreground">{fmtFull(contactData.total)}</td>
-                        <td className="py-2 px-2 text-right text-muted-foreground">100%</td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                        </thead>
+                        <tbody>
+                          {([...WAGE_ROLES, "unassigned"] as const).map((role) => {
+                            const isUnassigned = role === "unassigned";
+                            const label = isUnassigned ? "Unassigned" : WAGE_ROLE_LABEL[role as keyof typeof WAGE_ROLE_LABEL];
+                            const amount = roleData.roles[role];
+                            const pct = roleData.total > 0 ? (amount / roleData.total) * 100 : 0;
+                            return (
+                              <tr key={role} className={`hover:bg-muted/30 transition-colors ${isUnassigned ? "text-muted-foreground" : ""}`}>
+                                <td className="py-1.5 px-2 border-b border-border/50">
+                                  {isUnassigned ? <span className="italic">{label}</span> : label}
+                                </td>
+                                <td className="py-1.5 px-2 border-b border-border/50 text-right tabular-nums font-medium text-foreground">
+                                  {fmtFull(amount)}
+                                </td>
+                                <td className="py-1.5 px-2 border-b border-border/50 text-right tabular-nums">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <div className="w-16 bg-muted rounded-full h-1.5 overflow-hidden">
+                                      <div
+                                        className={`h-full rounded-full ${isUnassigned ? "bg-muted-foreground/30" : "bg-amber-400"}`}
+                                        style={{ width: `${Math.min(pct, 100)}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-muted-foreground w-10 text-right">{pct.toFixed(1)}%</span>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr className="font-semibold">
+                            <td className="py-2 px-2 text-right text-muted-foreground">Total</td>
+                            <td className="py-2 px-2 text-right tabular-nums text-foreground">{fmtFull(roleData.total)}</td>
+                            <td className="py-2 px-2 text-right text-muted-foreground">100%</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    )}
+                  </>
                 )}
               </>
             )}
+
+            {/* ── By Contact (all other lines) ── */}
+            {!isWages && (
+              <>
+                {contactLoading && (
+                  <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading contact breakdown…
+                  </div>
+                )}
+                {contactError && (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {contactError.message}
+                  </div>
+                )}
+                {contactData && !contactLoading && (
+                  <>
+                    {contactData.rows.length === 0 ? (
+                      <div className="py-10 text-center text-sm text-muted-foreground">
+                        No contact data for this selection. Run a Sync to populate.
+                      </div>
+                    ) : (
+                      <table className="w-full text-xs border-separate border-spacing-0">
+                        <thead className="sticky top-0 bg-popover z-10">
+                          <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            <th className="text-left py-1.5 px-2 border-b border-border">Contact</th>
+                            <th className="text-right py-1.5 px-2 border-b border-border">Amount</th>
+                            <th className="text-right py-1.5 px-2 border-b border-border w-20">Share</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {contactData.rows.map((r, i) => {
+                            const isUnassigned = r.contact_name === "Unassigned";
+                            return (
+                              <tr key={i} className={`hover:bg-muted/30 transition-colors ${isUnassigned ? "text-muted-foreground" : ""}`}>
+                                <td className="py-1.5 px-2 border-b border-border/50">
+                                  {isUnassigned
+                                    ? <span className="italic">{r.contact_name}</span>
+                                    : r.contact_name}
+                                </td>
+                                <td className="py-1.5 px-2 border-b border-border/50 text-right tabular-nums font-medium text-foreground">
+                                  {fmtFull(r.amount)}
+                                </td>
+                                <td className="py-1.5 px-2 border-b border-border/50 text-right tabular-nums">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <div className="w-16 bg-muted rounded-full h-1.5 overflow-hidden">
+                                      <div
+                                        className={`h-full rounded-full ${isUnassigned ? "bg-muted-foreground/30" : "bg-amber-400"}`}
+                                        style={{ width: `${Math.min(r.pct, 100)}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-muted-foreground w-10 text-right">{r.pct.toFixed(1)}%</span>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr className="font-semibold">
+                            <td className="py-2 px-2 text-right text-muted-foreground">Total</td>
+                            <td className="py-2 px-2 text-right tabular-nums text-foreground">{fmtFull(contactData.total)}</td>
+                            <td className="py-2 px-2 text-right text-muted-foreground">100%</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+
           </div>
         )}
       </div>

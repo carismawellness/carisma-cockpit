@@ -184,7 +184,7 @@ function orgsLabel(orgs: string[]): string {
 }
 
 interface ImportFromZohoProps {
-  roleByContact: Record<string, WageRole | null>;
+  roleByContact: Map<string, WageRole>;
   setRole: ReturnType<typeof useWageRoles>["setRole"];
 }
 
@@ -214,7 +214,7 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
       // Pre-fill draft roles from existing mapping.
       const draft: Record<string, WageRole | ""> = {};
       for (const c of data) {
-        draft[c.contact_name] = roleByContact[c.contact_name] ?? "";
+        draft[c.contact_name] = roleByContact.get(c.contact_name) ?? "";
       }
       setDraftRoles(draft);
     } catch (err) {
@@ -295,7 +295,7 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
             </thead>
             <tbody>
               {importedContacts.map((c) => {
-                const alreadyMapped = Boolean(roleByContact[c.contact_name]);
+                const alreadyMapped = roleByContact.has(c.contact_name);
                 return (
                   <tr
                     key={c.contact_name}
