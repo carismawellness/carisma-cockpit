@@ -185,14 +185,14 @@ export async function POST(req: NextRequest) {
       accumulator.set(key, entry);
     }
 
-    // Pull both orgs sequentially to stay gentle on Zoho rate limits.
-    for (const org of ["spa", "aesthetics"] as const) {
-      const client = new ZohoBooksClient(org);
+    // Pull both orgs sequentially with a pause between them.
+    const orgs = ["spa", "aesthetics"] as const;
+    for (let i = 0; i < orgs.length; i++) {
+      if (i > 0) await new Promise<void>((r) => setTimeout(r, 3000)); // let Zoho quota recover
+      const client = new ZohoBooksClient(orgs[i]);
       const { txns } = await fetchTransactionsForAccounts(client, wageCodes, dateFrom, dateTo);
       for (const txn of txns) {
-        if (txn.payee) {
-          accumulate(txn.payee, txn.amount, org);
-        }
+        if (txn.payee) accumulate(txn.payee, txn.amount, orgs[i]);
       }
     }
 
