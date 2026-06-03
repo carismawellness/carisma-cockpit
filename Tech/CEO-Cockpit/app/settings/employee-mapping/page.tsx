@@ -209,12 +209,14 @@ function ImportFromZoho({ roleByContact, setRole }: ImportFromZohoProps) {
         const text = await res.text().catch(() => res.statusText);
         throw new Error(`Server error ${res.status}: ${text}`);
       }
-      const data: ImportedContact[] = await res.json();
+      const json = await res.json();
+      const data: ImportedContact[] = json.contacts ?? [];
       setImportedContacts(data);
       // Pre-fill draft roles from existing mapping.
       const draft: Record<string, WageRole | ""> = {};
       for (const c of data) {
-        draft[c.contact_name] = roleByContact.get(c.contact_name) ?? "";
+        const key = (c.contact_name || "").trim().toLowerCase().replace(/\s+/g, " ");
+        draft[c.contact_name] = roleByContact.get(key) ?? "";
       }
       setDraftRoles(draft);
     } catch (err) {
