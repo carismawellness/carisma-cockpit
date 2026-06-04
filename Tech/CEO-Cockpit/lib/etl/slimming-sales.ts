@@ -68,14 +68,32 @@ function parseCSV(text: string): string[][] {
 
 // ── Date parsing ──────────────────────────────────────────────────────────────
 
-function parseDate(raw: string): string | null {
+function parseDate(raw: string, targetMonth?: number): string | null {
   raw = raw.trim().replace(/(\d+)(st|nd|rd|th)\b/gi, "$1");
-  // D/M/YYYY
-  let m = raw.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
-  if (m) { try { return new Date(+m[3], +m[2] - 1, +m[1]).toISOString().slice(0, 10); } catch { /* */ } }
-  // D/M/YY
+  const tryBoth = (a: number, b: number, y: number): string | null => {
+    // Try D/M first, then M/D — prefer the one whose month matches targetMonth.
+    const dmDate = (a >= 1 && b >= 1 && b <= 12 && a <= 31)
+      ? new Date(y, b - 1, a) : null;
+    const mdDate = (b >= 1 && a >= 1 && a <= 12 && b <= 31)
+      ? new Date(y, a - 1, b) : null;
+    if (targetMonth) {
+      if (dmDate && dmDate.getMonth() + 1 === targetMonth) return dmDate.toISOString().slice(0, 10);
+      if (mdDate && mdDate.getMonth() + 1 === targetMonth) return mdDate.toISOString().slice(0, 10);
+    }
+    // No target month — fall back to D/M (European default)
+    if (dmDate && !isNaN(dmDate.getTime())) return dmDate.toISOString().slice(0, 10);
+    if (mdDate && !isNaN(mdDate.getTime())) return mdDate.toISOString().slice(0, 10);
+    return null;
+  };
+  // YYYY-MM-DD (ISO)
+  let m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) { try { return new Date(+m[1], +m[2] - 1, +m[3]).toISOString().slice(0, 10); } catch { /**/ } }
+  // N/N/YYYY
+  m = raw.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
+  if (m) { const r = tryBoth(+m[1], +m[2], +m[3]); if (r) return r; }
+  // N/N/YY
   m = raw.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2})$/);
-  if (m) { try { return new Date(2000 + +m[3], +m[2] - 1, +m[1]).toISOString().slice(0, 10); } catch { /* */ } }
+  if (m) { const r = tryBoth(+m[1], +m[2], 2000 + +m[3]); if (r) return r; }
   return null;
 }
 
@@ -146,7 +164,7 @@ function processRows(
     if (therapist && /total/i.test(therapist)) therapist = null;
 
     const revenue = price ?? 0;
-    const parsed  = parseDate(dateRaw);
+    const parsed  = parseDate(dateRaw, month);   // pass month so M/D vs D/M resolves correctly
     if (parsed) lastDate = parsed;
     const svcDate = lastDate;
 
