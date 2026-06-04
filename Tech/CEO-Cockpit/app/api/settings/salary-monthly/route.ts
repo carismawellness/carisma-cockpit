@@ -59,6 +59,7 @@ export async function GET(req: NextRequest) {
   }
 
   // Group by contact_name + org + month (YYYY-MM)
+  // Using \x00 as a safe separator — won't appear in names
   const grouped = new Map<string, number>();
   const monthSet = new Set<string>();
 
@@ -67,7 +68,6 @@ export async function GET(req: NextRequest) {
     const org   = (row.org ?? "").toLowerCase();
     const month = (row.date ?? "").slice(0, 7); // "2026-01"
     if (!month || !name) continue;
-    // \x00 is safe — won't appear in contact names or org slugs
     const k = `${name}\x00${org}\x00${month}`;
     grouped.set(k, (grouped.get(k) ?? 0) + row.amount);
     monthSet.add(month);

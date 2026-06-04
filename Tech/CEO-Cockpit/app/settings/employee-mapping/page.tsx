@@ -35,16 +35,18 @@ interface ContactImportSectionProps {
   cacheKey: string;
   emptyMessage: string;
   showDelete?: boolean;
+  noCache?: boolean;   // when true, never auto-restore on page load — require explicit click
   roleByContact: Map<string, WageRole>;
   setRole: ReturnType<typeof useWageRoles>["setRole"];
 }
 
 function ContactImportSection({
-  title, subtitle, apiEndpoint, cacheKey, emptyMessage, showDelete = false, roleByContact, setRole,
+  title, subtitle, apiEndpoint, cacheKey, emptyMessage, showDelete = false, noCache = false, roleByContact, setRole,
 }: ContactImportSectionProps) {
   const [importedContacts, setImportedContacts] = useState<ImportedContact[] | null>(() => {
+    if (noCache) return null;
     try {
-      const raw = localStorage.getItem(cacheKey);
+      const raw = sessionStorage.getItem(cacheKey);
       return raw ? (JSON.parse(raw) as ImportedContact[]) : null;
     } catch { return null; }
   });
@@ -82,7 +84,7 @@ function ContactImportSection({
       const data: ImportedContact[] = json.contacts ?? [];
       setImportedContacts(data);
       setLocalRoles({});
-      try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch { /* ignore */ }
+      try { sessionStorage.setItem(cacheKey, JSON.stringify(data)); } catch { /* ignore */ }
     } catch (err) {
       setImportError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -96,10 +98,11 @@ function ContactImportSection({
   }
 
   function deleteRow(contactName: string) {
-    // Hide from view — DB role is preserved. A fresh "Load Contacts" will bring it back.
+    // Hide from this session's view only — DB role is preserved.
+    // A fresh "Load Contacts" will bring it back.
     setImportedContacts((prev) => {
       const next = (prev ?? []).filter((c) => c.contact_name !== contactName);
-      try { localStorage.setItem(cacheKey, JSON.stringify(next)); } catch { /* ignore */ }
+      try { sessionStorage.setItem(cacheKey, JSON.stringify(next)); } catch { /* ignore */ }
       return next;
     });
     setLocalRoles((prev) => { const n = { ...prev }; delete n[contactName]; return n; });
@@ -230,9 +233,7 @@ function normalizeKey(name: string): string {
   return (name || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-/* ------------------------------------------------------------------ */
-/*  SALARY BREAKDOWN PIVOT TABLE                                       */
-/* ------------------------------------------------------------------ */
+// ── Salary Breakdown ────────────────────────────────────────────────────────
 
 const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -241,16 +242,14 @@ function fmtMonth(m: string): string {
   return `${MONTH_NAMES[parseInt(mon, 10) - 1]} ${year.slice(2)}`;
 }
 
-const euro = new Intl.NumberFormat("en-GB", {
-  style: "currency", currency: "EUR",
-  minimumFractionDigits: 0, maximumFractionDigits: 0,
-});
-function fmtEuro(n: number) { return euro.format(Number.isFinite(n) ? n : 0); }
+function fmtAmount(n: number): string {
+  if (!n) return "";
+  return `€${Math.round(n).toLocaleString("en-GB")}`;
+}
 
 function orgLabel(org: string): string {
   if (org === "spa") return "SPA";
   if (org === "aesthetics") return "Aesthetics";
-  if (org === "slimming") return "Slimming";
   return org.charAt(0).toUpperCase() + org.slice(1);
 }
 
@@ -294,7 +293,7 @@ function SalaryBreakdown() {
     <Card className="overflow-hidden">
       <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-foreground">Salary by Staff &amp; Month</h2>
+          <h2 className="text-base font-semibold text-foreground">Salary Breakdown</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
             Monthly wages per employee by org — Jan 2025 to Jun 2026. Source: transactions_raw (wages COA).
           </p>
@@ -315,7 +314,9 @@ function SalaryBreakdown() {
       </div>
 
       {error && (
-        <div className="px-4 py-3 text-sm text-red-700 bg-red-50/60 border-b border-red-200">{error}</div>
+        <div className="px-4 py-3 text-sm text-red-700 bg-red-50/60 border-b border-red-200">
+          {error}
+        </div>
       )}
 
       {data && data.employees.length === 0 && (
@@ -360,19 +361,22 @@ function SalaryBreakdown() {
                   {data.months.map((m) => (
                     <td key={m} className="py-1.5 px-3 text-right text-xs tabular-nums whitespace-nowrap">
                       {emp.monthly[m]
-                        ? <span className="text-foreground">{fmtEuro(emp.monthly[m])}</span>
+                        ? <span className="text-foreground">{fmtAmount(emp.monthly[m])}</span>
                         : <span className="text-muted-foreground/30">—</span>}
                     </td>
                   ))}
                   <td className="py-1.5 px-4 text-right text-xs tabular-nums font-semibold text-foreground whitespace-nowrap">
-                    {fmtEuro(emp.total)}
+                    {fmtAmount(emp.total)}
                   </td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr className="border-t border-border bg-muted/20">
-                <td colSpan={2} className="py-2 px-4 text-xs font-medium text-muted-foreground sticky left-0 bg-muted/20 z-10">
+                <td
+                  colSpan={2}
+                  className="py-2 px-4 text-xs font-medium text-muted-foreground sticky left-0 bg-muted/20 z-10"
+                >
                   Monthly total
                 </td>
                 {data.months.map((m) => {
@@ -380,13 +384,13 @@ function SalaryBreakdown() {
                   return (
                     <td key={m} className="py-2 px-3 text-right text-xs tabular-nums font-medium text-foreground whitespace-nowrap">
                       {monthTotal > 0
-                        ? fmtEuro(monthTotal)
+                        ? fmtAmount(monthTotal)
                         : <span className="text-muted-foreground/30">—</span>}
                     </td>
                   );
                 })}
                 <td className="py-2 px-4 text-right text-xs tabular-nums font-bold text-foreground whitespace-nowrap">
-                  {fmtEuro(grandTotal)}
+                  {fmtAmount(grandTotal)}
                 </td>
               </tr>
             </tfoot>
@@ -396,10 +400,6 @@ function SalaryBreakdown() {
     </Card>
   );
 }
-
-/* ------------------------------------------------------------------ */
-/*  CONTENT                                                            */
-/* ------------------------------------------------------------------ */
 
 function EmployeeMappingContent() {
   const { roleByContact, setRole } = useWageRoles();
@@ -431,6 +431,7 @@ function EmployeeMappingContent() {
       <ContactImportSection
         title="Professional Fees COA"
         showDelete
+        noCache
         subtitle="Contractors and CRM staff from professional fees GL accounts — Jan 2025 to Jun 2026."
         apiEndpoint="/api/settings/prof-fee-contacts"
         cacheKey="prof-fee-contacts-cache"
