@@ -369,6 +369,10 @@ async function sbFetch<T>(path: string, params: Array<[string, string]> = []): P
       "apikey":        SUPABASE_KEY,
       "Authorization": `Bearer ${SUPABASE_KEY}`,
       "Accept":        "application/json",
+      // PostgREST defaults to 1,000 rows. The TTM window spans ~2,880 rows
+      // (8 venues × 365 days) — without a range header April data is cut off
+      // and the previous_month fallback finds nothing. 50,000 covers years.
+      "Range":         "0-49999",
       "Prefer":        "return=representation",
     },
     cache: "no-store",
