@@ -43,6 +43,35 @@ const SALARY_RATIO_ACCOUNTS: Record<string, number> = {
 
 const LAUNDRY_ACCOUNTS = new Set(["611514", "611520"]);
 
+// ── Wages reclassification (contacts billed as SGA but treated as wages) ─────
+// Contacts billed through professional-fees / consulting accounts that must be
+// reported as Wages & Salaries in the EBITDA. They are always tagged to HQ
+// so no venue split is needed — the amount flows directly to hq_ebitda_daily.wages.
+// Mirror of the same list in zoho-aesthetics-transactions-ebitda.ts and
+// zoho-transactions-daily.ts — keep all three in sync.
+function normalizeContactKey(name: string): string {
+  return name.toLowerCase().replace(/\./g, "").replace(/\s+/g, " ").trim();
+}
+const WAGES_RECLASS_CONTACT_KEYS: Set<string> = new Set(
+  [
+    "Dr. Walter",
+    "FRANCESCA CHIRCOP",
+    "Giovanni Scornavacca",
+    "Dr Zaid Teebi",
+    "Ivana Boskovic Stamenkovic",
+  ].map(normalizeContactKey),
+);
+// Substring/token matches — first name or unique brand token is sufficient.
+// "upwork" catches "Upwork", "Upwork payments", "Upwork Inc", etc.
+const WAGES_RECLASS_FUZZY = ["yamuna", "mandar", "manan", "ruksana", "mellisa", "melissa", "upwork"];
+
+function isWagesReclassContact(contactName: string): boolean {
+  if (!contactName) return false;
+  if (WAGES_RECLASS_CONTACT_KEYS.has(normalizeContactKey(contactName))) return true;
+  const lower = contactName.toLowerCase();
+  return WAGES_RECLASS_FUZZY.some(t => lower.includes(t));
+}
+
 const UI_KEY_TO_LOC: Record<string, string> = {
   inter:     "intercontinental",
   hugos:     "hugos",
@@ -226,6 +255,11 @@ export async function runSpaEbitdaMonthFromTransactions(
     if (line.startsWith("sga_")) line = "sga";
     if (line === "excluded") { droppedExcluded++; continue; }
     if (!VALID_LINES.has(line)) { droppedExcluded++; continue; }
+
+    // Contact-based wages override: contractors billed through SGA/professional
+    // fees that are employment costs. They are always HQ-tagged, so the amount
+    // flows straight to hq_ebitda_daily.wages — no venue split needed.
+    if (line === "sga" && isWagesReclassContact(ln.contact_name)) line = "wages";
 
     const tagSlug = tagsToSlug(ln.tags);
     const nameLoc = tagSlug ? null : detectLocation(ln.account_name);

@@ -1,228 +1,118 @@
 /**
- * GET /api/finance/wage-role-breakdown
+ * GET /api/finance/wage-role-breakdown?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD
  *
- * Breaks down wages transactions by staff role using the wage_role_mapping table.
- * Joins client-side: contact_name is normalised (lowercase, trim, collapse spaces)
- * and looked up in wage_role_mapping. Unmatched contacts fall into "unassigned".
- * Also merges salary_supplement_monthly (is_frozen=true) amounts into role buckets.
+ * Returns per-employee wage amounts bucketed by venue slug and role.
  *
- * Query params:
- *   • org       — "spa" | "aesthetics" | "both"
- *   • date_from — YYYY-MM-DD (inclusive)
- *   • date_to   — YYYY-MM-DD (inclusive)
+ * Fetches GL transactions from Zoho SPA org for venue-specific wage account codes
+ * (accounts where COA_MAP assigns a fixed venue, e.g. hugos / hyatt / excelsior).
+ * Each transaction's payee is matched against wage_role_mapping to determine role.
+ * Unmatched payees fall into "unassigned".
+ *
+ * Response:
+ *   byVenueRole:        { [venue_slug]: { [role | "unassigned"]: amount } }
+ *   byVenueRoleContact: { [venue_slug]: { [role | "unassigned"]: { [contact]: amount } } }
+ *
+ * Used by the EBITDA page to populate the Wages & Salaries role sub-rows.
+ * Parent row totals still come from spa_ebitda_daily (more accurate); this
+ * endpoint only supplies the per-role / per-employee breakdown detail.
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { ZohoBooksClient }            from "@/lib/etl/zoho-client";
+import { fetchTransactionsForAccounts } from "@/lib/etl/zoho-account-transactions";
+import { COA_MAP }                    from "@/lib/etl/spa-ebitda";
+import { getAdminClient }             from "@/lib/supabase/admin";
 
-export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+export const dynamic     = "force-dynamic";
 
-const VALID_ORGS  = new Set(["spa", "aesthetics", "both"]);
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+// Translate COA_MAP split_rule names → current DB venue slugs.
+// sunny_coast was renamed to odycy; intercontinental shortened to inter.
+const SPLIT_RULE_TO_SLUG: Record<string, string> = {
+  intercontinental: "inter",
+  hugos:            "hugos",
+  hyatt:            "hyatt",
+  ramla:            "ramla",
+  sunny_coast:      "odycy",
+  labranda:         "labranda",
+  excelsior:        "excelsior",
+  novotel:          "novotel",
+};
 
-type KnownRole = "manager" | "reception" | "practitioner" | "therapist" | "crm";
-
-interface WageRoleResponse {
-  roles: {
-    manager:      number;
-    reception:    number;
-    practitioner: number;
-    therapist:    number;
-    crm:          number;
-    unassigned:   number;
-  };
-  total:            number;
-  supplement_total: number;
-  has_data:         boolean;
+// account_code → venue slug — built once at module load from COA_MAP.
+// Only includes venue-specific codes; skips sales_ratio / equal / salary_cost.
+const CODE_TO_VENUE: Record<string, string> = {};
+for (const [code, [splitRule, ebitdaLine]] of Object.entries(COA_MAP)) {
+  if (ebitdaLine !== "wages") continue;
+  const slug = SPLIT_RULE_TO_SLUG[splitRule];
+  if (slug) CODE_TO_VENUE[code] = slug;
 }
 
-/** Normalise a contact name the same way the ETL / mapping UI does. */
-function normalise(name: string | null | undefined): string {
-  return (name ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+function normalizeContact(name: string): string {
+  return (name || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
+  const { searchParams } = req.nextUrl;
+  const dateFrom = searchParams.get("date_from");
+  const dateTo   = searchParams.get("date_to");
 
-  const org      = searchParams.get("org")       ?? "";
-  const dateFrom = searchParams.get("date_from")  ?? "";
-  const dateTo   = searchParams.get("date_to")    ?? "";
-
-  // ── Validation ──────────────────────────────────────────────────────────────
-  const missing = (["org", "date_from", "date_to"] as const).filter(
-    (k) => !searchParams.get(k),
-  );
-  if (missing.length) {
+  if (!dateFrom || !dateTo) {
     return NextResponse.json(
-      { error: `Missing required params: ${missing.join(", ")}` },
-      { status: 400 },
-    );
-  }
-  if (!VALID_ORGS.has(org)) {
-    return NextResponse.json(
-      { error: "org must be one of: spa, aesthetics, both" },
-      { status: 400 },
-    );
-  }
-  if (!ISO_DATE_RE.test(dateFrom) || !ISO_DATE_RE.test(dateTo)) {
-    return NextResponse.json(
-      { error: "date_from and date_to must be YYYY-MM-DD" },
+      { error: "date_from and date_to required" },
       { status: 400 },
     );
   }
 
-  // ── Supabase credentials ────────────────────────────────────────────────────
-  const base = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key  = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  const headers = {
-    apikey:        key,
-    Authorization: `Bearer ${key}`,
-  };
-
-  // ── Fetch wage_role_mapping ─────────────────────────────────────────────────
-  let mappingRows: Array<{ contact_key: string; role: string }>;
   try {
-    const res = await fetch(
-      `${base}/rest/v1/wage_role_mapping?select=contact_key,role`,
-      { headers, cache: "no-store" },
+    // 1. Load wage_role_mapping from Supabase (small table, fast)
+    const supabase = getAdminClient();
+    const { data: roleRows } = await supabase
+      .from("wage_role_mapping")
+      .select("contact_key, role");
+    const roleByContact = new Map<string, string>(
+      (roleRows ?? []).map((r: { contact_key: string; role: string }) => [r.contact_key, r.role]),
     );
-    if (!res.ok) {
-      const text = await res.text();
-      return NextResponse.json(
-        { error: `Supabase error ${res.status} (wage_role_mapping): ${text}` },
-        { status: 502 },
-      );
+
+    // 2. Fetch Zoho GL transactions for venue-specific wage codes (SPA org only)
+    const client = new ZohoBooksClient("spa");
+    const codes  = Object.keys(CODE_TO_VENUE);
+    const { txns } = await fetchTransactionsForAccounts(client, codes, dateFrom, dateTo);
+
+    // 3. Aggregate by venue × role — and keep per-contact detail for drill-down
+    const byVenueRole: Record<string, Record<string, number>> = {};
+    const byVenueRoleContact: Record<string, Record<string, Record<string, number>>> = {};
+
+    for (const txn of txns) {
+      const venue = CODE_TO_VENUE[txn.account_code];
+      if (!venue || !txn.amount) continue;
+
+      const contactKey  = normalizeContact(txn.payee);
+      const role        = roleByContact.get(contactKey) ?? "unassigned";
+      const contactName = txn.payee || "(no contact)";
+
+      // byVenueRole totals
+      if (!byVenueRole[venue]) byVenueRole[venue] = {};
+      byVenueRole[venue][role] = (byVenueRole[venue][role] ?? 0) + txn.amount;
+
+      // byVenueRoleContact detail
+      if (!byVenueRoleContact[venue])       byVenueRoleContact[venue] = {};
+      if (!byVenueRoleContact[venue][role]) byVenueRoleContact[venue][role] = {};
+      byVenueRoleContact[venue][role][contactName] =
+        (byVenueRoleContact[venue][role][contactName] ?? 0) + txn.amount;
     }
-    mappingRows = await res.json();
+
+    return NextResponse.json({
+      byVenueRole,
+      byVenueRoleContact,
+      date_from:  dateFrom,
+      date_to:    dateTo,
+      total_txns: txns.length,
+    });
   } catch (e) {
     return NextResponse.json(
-      { error: `Failed to query wage_role_mapping: ${e instanceof Error ? e.message : String(e)}` },
-      { status: 502 },
+      { error: `wage-role-breakdown failed: ${e instanceof Error ? e.message : String(e)}` },
+      { status: 500 },
     );
   }
-
-  // Build lookup map: normalised contact_key → role
-  const roleMap = new Map<string, string>();
-  for (const m of mappingRows) {
-    roleMap.set(normalise(m.contact_key), m.role);
-  }
-
-  // ── Fetch transactions_raw (wages only) ─────────────────────────────────────
-  const qs = new URLSearchParams([
-    ["select",      "contact_name,amount"],
-    ["ebitda_line", "eq.wages"],
-    ["date",        `gte.${dateFrom}`],
-    ["date",        `lte.${dateTo}`],
-  ]);
-  if (org !== "both") qs.append("org", `eq.${org}`);
-
-  let txRows: Array<{ contact_name: string; amount: number }>;
-  try {
-    const res = await fetch(
-      `${base}/rest/v1/transactions_raw?${qs.toString()}`,
-      { headers, cache: "no-store" },
-    );
-    if (!res.ok) {
-      const text = await res.text();
-      return NextResponse.json(
-        { error: `Supabase error ${res.status} (transactions_raw): ${text}` },
-        { status: 502 },
-      );
-    }
-    txRows = await res.json();
-  } catch (e) {
-    return NextResponse.json(
-      { error: `Failed to query transactions_raw: ${e instanceof Error ? e.message : String(e)}` },
-      { status: 502 },
-    );
-  }
-
-  // ── Derive month boundaries for salary_supplement_monthly ───────────────────
-  // first day of the month containing date_from / date_to
-  const firstMonth = dateFrom.slice(0, 7) + "-01";
-  const lastMonth  = dateTo.slice(0, 7)   + "-01";
-
-  // ── Fetch salary_supplement_monthly ─────────────────────────────────────────
-  const sqEntries: [string, string][] = [
-    ["select",    "employee_name,amount"],
-    ["is_frozen", "eq.true"],
-    ["month",     `gte.${firstMonth}`],
-    ["month",     `lte.${lastMonth}`],
-  ];
-  if (org === "spa") {
-    sqEntries.push(["spa_slug", "not.in.(aesthetics,slimming)"]);
-  } else if (org === "aesthetics") {
-    sqEntries.push(["spa_slug", "in.(aesthetics,slimming)"]);
-  }
-  // org === "both" → no spa_slug filter
-
-  const suppQs = new URLSearchParams(sqEntries);
-
-  let suppRows: Array<{ employee_name: string; amount: number }>;
-  try {
-    const res = await fetch(
-      `${base}/rest/v1/salary_supplement_monthly?${suppQs.toString()}`,
-      { headers, cache: "no-store" },
-    );
-    if (!res.ok) {
-      const text = await res.text();
-      return NextResponse.json(
-        { error: `Supabase error ${res.status} (salary_supplement_monthly): ${text}` },
-        { status: 502 },
-      );
-    }
-    suppRows = await res.json();
-  } catch (e) {
-    return NextResponse.json(
-      { error: `Failed to query salary_supplement_monthly: ${e instanceof Error ? e.message : String(e)}` },
-      { status: 502 },
-    );
-  }
-
-  // ── Client-side join & aggregation ──────────────────────────────────────────
-  const totals: Record<string, number> = {
-    manager:      0,
-    reception:    0,
-    practitioner: 0,
-    therapist:    0,
-    crm:          0,
-    unassigned:   0,
-  };
-
-  for (const tx of txRows) {
-    const key  = normalise(tx.contact_name);
-    const role = roleMap.get(key) as KnownRole | undefined;
-    const bucket: string = role && role in totals ? role : "unassigned";
-    totals[bucket] = (totals[bucket] ?? 0) + tx.amount;
-  }
-
-  // Merge supplement amounts into role buckets
-  let supplementTotal = 0;
-  for (const supp of suppRows) {
-    const key    = normalise(supp.employee_name);
-    const role   = roleMap.get(key) as KnownRole | undefined;
-    const bucket: string = role && role in totals ? role : "unassigned";
-    totals[bucket]  = (totals[bucket] ?? 0) + supp.amount;
-    supplementTotal += supp.amount;
-  }
-
-  const grandTotal =
-    totals.manager + totals.reception + totals.practitioner + totals.crm + totals.unassigned;
-
-  const round = (n: number) => Math.round(n * 100) / 100;
-
-  const response: WageRoleResponse = {
-    roles: {
-      manager:      round(totals.manager),
-      reception:    round(totals.reception),
-      practitioner: round(totals.practitioner),
-      therapist:    round(totals.therapist),
-      crm:          round(totals.crm),
-      unassigned:   round(totals.unassigned),
-    },
-    total:            round(grandTotal),
-    supplement_total: round(supplementTotal),
-    has_data:         txRows.length > 0 || suppRows.length > 0,
-  };
-
-  return NextResponse.json(response);
 }

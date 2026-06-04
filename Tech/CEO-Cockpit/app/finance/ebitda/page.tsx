@@ -19,9 +19,9 @@ import { useSlimmingSales } from "@/lib/hooks/useSlimmingSales";
 import { EbitdaTransactionsDialog } from "@/components/finance/EbitdaTransactionsDialog";
 import type { DrillTarget } from "@/lib/hooks/useEbitdaTransactions";
 import {
-  useWageRoles, resolveRole,
   WAGE_ROLE_ORDER, WAGE_ROLE_LABEL, type WageRole,
 } from "@/lib/hooks/useWageRoles";
+import { useWageRoleBreakdown } from "@/lib/hooks/useWageRoleBreakdown";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine, Cell,
@@ -154,9 +154,10 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
   // which applies TTM / manual / previous-month / quarterly-average
   // fallback rules and reads from the live Zoho-backed Aggregated Data tab.
   const agg = useEbitdaAggregated(dateFrom, dateTo);
-  // Wage-role mapping (small table, client-side). Used to break the Wages &
-  // Salaries row into Manager / Reception / Practitioner / CRM / Unassigned.
-  const { roleByContact } = useWageRoles();
+  // Wage-role breakdown: fetches per-employee Zoho GL transactions and maps
+  // them to roles via wage_role_mapping. Separate from agg (which has no
+  // per-employee contact info) so the sub-rows can actually populate.
+  const { breakdown: wageBreakdown } = useWageRoleBreakdown(dateFrom, dateTo);
   // Slimming revenue is sourced from slimming_sales_daily (same path as
   // /sales/slimming-deepa) instead of the Zoho Aggregated Data total. The
   // Zoho total combines sales+treatments under one bucket; the dashboard
@@ -511,27 +512,20 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
         perVenue: {}, hq: 0, total: 0,
       };
     }
-    for (const li of agg.lineItems) {
-      if (li.ebitda_category !== "wages") continue;
-      const v = li.period_value;
-      if (v === 0) continue;
-      const role = resolveRole(roleByContact, li.contact);
-      const row = byKey[role ?? "unassigned"];
-      if (li.brand === "HQ") {
-        row.hq += v;
-      } else if (li.brand === "SPA") {
-        const slug = spaVenueDisplayMeta[li.venue.toLowerCase()]?.slug
-                  ?? (li.venue || "spa-other");
-        row.perVenue[slug] = (row.perVenue[slug] ?? 0) + v;
-      } else if (li.brand === "AES") {
-        row.perVenue["aesthetics"] = (row.perVenue["aesthetics"] ?? 0) + v;
-      } else if (li.brand === "SLIM") {
-        row.perVenue["slimming"] = (row.perVenue["slimming"] ?? 0) + v;
+    // Source: per-employee Zoho GL transactions keyed by venue slug and role.
+    // byVenueRole only covers SPA venue-specific accounts; HQ/AES/SLIM role
+    // breakdown is not yet supported (no per-employee data in those sources).
+    const bvr = wageBreakdown?.byVenueRole ?? {};
+    for (const [venue, roleAmounts] of Object.entries(bvr)) {
+      for (const [role, amount] of Object.entries(roleAmounts)) {
+        if (!amount) continue;
+        const row = byKey[role] ?? byKey["unassigned"];
+        row.perVenue[venue] = (row.perVenue[venue] ?? 0) + amount;
+        row.total += amount;
       }
-      row.total += v;
     }
     return order.map(k => byKey[k]);
-  }, [agg.lineItems, roleByContact, spaVenueDisplayMeta]);
+  }, [wageBreakdown?.byVenueRole]);
 
   function wageRoleValueForVenue(row: WageRoleRow, venueId: string): number {
     if (venueId !== "spa-aggregate") return row.perVenue[venueId] ?? 0;
@@ -545,32 +539,25 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
   /* ── Per-employee breakdown for a clicked wage-role cell ─────────── */
   const wageEmployeeBreakdown = useMemo((): { contact: string; amount: number }[] | null => {
     if (!drillTarget?.wageRole) return null;
-    const targetRole = drillTarget.wageRole;
+    const targetRole    = drillTarget.wageRole;
     const targetVenueId = drillTarget.venue;
+    const bvrc = wageBreakdown?.byVenueRoleContact ?? {};
     const byContact: Record<string, number> = {};
-    for (const li of agg.lineItems) {
-      if (li.ebitda_category !== "wages") continue;
-      const v = li.period_value;
-      if (v === 0) continue;
-      const role = resolveRole(roleByContact, li.contact) ?? "unassigned";
-      if (role !== targetRole) continue;
-      let venueSlug: string;
-      if (li.brand === "HQ") venueSlug = "hq";
-      else if (li.brand === "AES") venueSlug = "aesthetics";
-      else if (li.brand === "SLIM") venueSlug = "slimming";
-      else venueSlug = spaVenueDisplayMeta[li.venue.toLowerCase()]?.slug ?? (li.venue || "spa-other");
-      if (targetVenueId !== "group") {
-        if (targetVenueId === "spa-aggregate") {
-          if (!spaSlugs.has(venueSlug) && venueSlug !== "spa-other") continue;
-        } else if (venueSlug !== targetVenueId) continue;
+
+    for (const [venue, roleMap] of Object.entries(bvrc)) {
+      // Filter to the target venue (or all SPA venues when spa-aggregate / group)
+      if (targetVenueId !== "group" && targetVenueId !== "spa-aggregate" && venue !== targetVenueId) continue;
+
+      const contacts = roleMap[targetRole] ?? {};
+      for (const [contact, amount] of Object.entries(contacts)) {
+        byContact[contact] = (byContact[contact] ?? 0) + amount;
       }
-      const contact = li.contact || "(no contact)";
-      byContact[contact] = (byContact[contact] ?? 0) + v;
     }
+
     return Object.entries(byContact)
       .map(([contact, amount]) => ({ contact, amount }))
       .sort((a, b) => b.amount - a.amount);
-  }, [drillTarget, agg.lineItems, roleByContact, spaVenueDisplayMeta, spaSlugs]);
+  }, [drillTarget, wageBreakdown?.byVenueRoleContact]);
 
   /* ── SG&A sub-bucket breakdown (real per-account data when available) ─ */
   // Aggregates lineItems where ebitda_category starts with "sga_" into the

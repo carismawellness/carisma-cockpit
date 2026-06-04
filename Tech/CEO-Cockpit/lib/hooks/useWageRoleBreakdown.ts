@@ -1,49 +1,50 @@
-"use client";
+﻿"use client";
 
 import { useQuery } from "@tanstack/react-query";
 
-// Mirrors the /api/finance/wage-role-breakdown response.
-export interface WageRoleBreakdownData {
-  roles: {
-    manager:      number;
-    reception:    number;
-    practitioner: number;
-    therapist:    number;
-    crm:          number;
-    unassigned:   number;
-  };
-  total:            number;
-  supplement_total: number;
-  has_data:         boolean;
+export type WageRoleBreakdown = {
+  byVenueRole:        Record<string, Record<string, number>>;
+  byVenueRoleContact: Record<string, Record<string, Record<string, number>>>;
+  date_from:  string;
+  date_to:    string;
+  total_txns: number;
+};
+
+function toIso(d: Date) {
+  return d.toISOString().slice(0, 10);
 }
 
-function toIso(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-}
-
-export function useWageRoleBreakdown(
-  org:      string | null,
-  dateFrom: Date,
-  dateTo:   Date,
-  enabled:  boolean,
-) {
+/**
+ * Fetches per-role per-venue wage amounts from Zoho GL transactions.
+ * Cached for 5 minutes — payroll does not change mid-day.
+ *
+ * byVenueRole:        venue_slug -> role -> total amount
+ * byVenueRoleContact: venue_slug -> role -> contact_name -> amount  (for drill-down)
+ */
+export function useWageRoleBreakdown(dateFrom: Date, dateTo: Date) {
   const df = toIso(dateFrom);
   const dt = toIso(dateTo);
 
-  return useQuery<WageRoleBreakdownData>({
-    queryKey: ["wage-role-breakdown", org, df, dt],
-    enabled:  enabled && org !== null,
-    staleTime: 60_000,
-    queryFn: async () => {
+  const q = useQuery<WageRoleBreakdown>({
+    queryKey: ["wage-role-breakdown", df, dt],
+    queryFn:  async () => {
       const res = await fetch(
-        `/api/finance/wage-role-breakdown?org=${org}&date_from=${df}&date_to=${dt}`,
-        { cache: "no-store" },
+        `/api/finance/wage-role-breakdown?date_from=${df}&date_to=${dt}`,
       );
       if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        throw new Error(body || `HTTP ${res.status}`);
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `HTTP ${res.status}`);
       }
       return res.json();
     },
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
   });
+
+  return {
+    breakdown:  q.data,
+    isLoading:  q.isLoading,
+    isFetching: q.isFetching,
+    error:      q.error as Error | null,
+  };
 }

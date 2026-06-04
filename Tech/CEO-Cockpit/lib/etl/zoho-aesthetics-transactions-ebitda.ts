@@ -74,9 +74,16 @@ const WAGES_RECLASS_CONTACT_KEYS: Set<string> = new Set(
   ].map(normalizeContactKey),
 );
 
+// Contacts where a substring/token match is sufficient (first name, or a
+// name token that is unique enough). "upwork" catches "Upwork", "Upwork
+// payments", "Upwork Inc", etc.  All matched case-insensitively.
+const WAGES_RECLASS_FUZZY = ["yamuna", "mandar", "manan", "ruksana", "mellisa", "melissa", "upwork"];
+
 function isWagesReclassContact(contactName: string): boolean {
   if (!contactName) return false;
-  return WAGES_RECLASS_CONTACT_KEYS.has(normalizeContactKey(contactName));
+  if (WAGES_RECLASS_CONTACT_KEYS.has(normalizeContactKey(contactName))) return true;
+  const lower = contactName.toLowerCase();
+  return WAGES_RECLASS_FUZZY.some(t => lower.includes(t));
 }
 
 // ── Marketing spend ratio (Growth Sheet) ─────────────────────────────────────

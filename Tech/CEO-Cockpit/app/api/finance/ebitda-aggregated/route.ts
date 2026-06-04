@@ -1069,10 +1069,13 @@ async function handleGet(req: NextRequest): Promise<NextResponse> {
       let appliedRuleType: RuleType | null = null;
       let appliedMethodDetail: string | null = null;
 
-      // Fallback rules only apply on partial periods. On a full
-      // calendar-months range, the literal sum is the ground truth and we
-      // must not overwrite it with an estimate.
-      if (!periodIsFullCalendarMonths && rule && rule.active && rule.rule_type !== "disabled") {
+      // Fallback rules apply on partial periods. Also apply for wages when the
+      // literal sum is exactly zero on a full calendar month — this happens when
+      // salary entries haven't been posted yet (typically posted ~10 days after
+      // month-end). Zero wages on a closed month is a data-lag issue, not
+      // genuinely zero wages.
+      const wagesUnposted = category === "wages" && literalSum === 0;
+      if ((!periodIsFullCalendarMonths || wagesUnposted) && rule && rule.active && rule.rule_type !== "disabled") {
         if (rule.rule_type === "manual_annual") {
           const annual = rule.params?.annual_amount;
           if (typeof annual === "number" && Number.isFinite(annual)) {
