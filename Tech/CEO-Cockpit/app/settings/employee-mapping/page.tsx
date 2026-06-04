@@ -46,7 +46,7 @@ function ContactImportSection({
   const [importedContacts, setImportedContacts] = useState<ImportedContact[] | null>(() => {
     if (noCache) return null;
     try {
-      const raw = sessionStorage.getItem(cacheKey);
+      const raw = localStorage.getItem(cacheKey);
       return raw ? (JSON.parse(raw) as ImportedContact[]) : null;
     } catch { return null; }
   });
@@ -84,7 +84,7 @@ function ContactImportSection({
       const data: ImportedContact[] = json.contacts ?? [];
       setImportedContacts(data);
       setLocalRoles({});
-      try { sessionStorage.setItem(cacheKey, JSON.stringify(data)); } catch { /* ignore */ }
+      try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch { /* ignore */ }
     } catch (err) {
       setImportError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -102,7 +102,7 @@ function ContactImportSection({
     // A fresh "Load Contacts" will bring it back.
     setImportedContacts((prev) => {
       const next = (prev ?? []).filter((c) => c.contact_name !== contactName);
-      try { sessionStorage.setItem(cacheKey, JSON.stringify(next)); } catch { /* ignore */ }
+      try { localStorage.setItem(cacheKey, JSON.stringify(next)); } catch { /* ignore */ }
       return next;
     });
     setLocalRoles((prev) => { const n = { ...prev }; delete n[contactName]; return n; });
@@ -431,7 +431,6 @@ function EmployeeMappingContent() {
       <ContactImportSection
         title="Professional Fees COA"
         showDelete
-        noCache
         subtitle="Contractors and CRM staff from professional fees GL accounts — Jan 2025 to Jun 2026."
         apiEndpoint="/api/settings/prof-fee-contacts"
         cacheKey="prof-fee-contacts-cache"
