@@ -11,6 +11,7 @@ import {
   Heart,
   Filter,
   BookOpen,
+  RefreshCw,
   type LucideIcon,
 } from "lucide-react";
 
@@ -89,6 +90,7 @@ export const departments: Department[] = [
       { slug: "salary-supplement",   label: "Salary Supplement",   path: "/settings/salary-supplement",   icon: BookOpen },
       { slug: "fallback-rules",      label: "Fallback Rules",      path: "/settings/fallback-rules",      icon: BookOpen },
       { slug: "logic-mapping",       label: "Logic Mapping",       path: "/settings/logic-mapping",       icon: BookOpen },
+      { slug: "etl-runner",          label: "ETL Runner",          path: "/settings/etl-runner",          icon: RefreshCw },
     ],
   },
 ];
