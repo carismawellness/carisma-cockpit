@@ -263,6 +263,8 @@ interface SalaryEmployee {
   org: string;
   monthly: Record<string, number>;
   total: number;
+  coa_codes: string[];
+  has_supplement: boolean;
 }
 
 interface SalaryData {
@@ -384,6 +386,9 @@ function SalaryBreakdown() {
                 <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground min-w-[90px]">
                   Org
                 </th>
+                <th className="text-left py-2 px-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground min-w-[110px]">
+                  Source / COA
+                </th>
                 {data.months.map((m) => (
                   <th key={m} className="text-right py-2 px-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground whitespace-nowrap min-w-[72px]">
                     {fmtMonth(m)}
@@ -406,6 +411,23 @@ function SalaryBreakdown() {
                   <td className="py-1.5 px-4 text-xs text-muted-foreground whitespace-nowrap">
                     {orgLabel(emp.org)}
                   </td>
+                  <td className="py-1.5 px-3 whitespace-nowrap">
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex gap-1 flex-wrap">
+                        {emp.coa_codes.length > 0 && (
+                          <span className="inline-flex items-center rounded-sm bg-blue-50 border border-blue-200 px-1 py-px text-[9px] font-medium text-blue-700">Zoho</span>
+                        )}
+                        {emp.has_supplement && (
+                          <span className="inline-flex items-center rounded-sm bg-amber-50 border border-amber-200 px-1 py-px text-[9px] font-medium text-amber-700">Supp</span>
+                        )}
+                      </div>
+                      {emp.coa_codes.length > 0 && (
+                        <span className="text-[10px] text-muted-foreground tabular-nums leading-tight">
+                          {emp.coa_codes.join(", ")}
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   {data.months.map((m) => (
                     <td key={m} className="py-1.5 px-3 text-right text-xs tabular-nums whitespace-nowrap">
                       {emp.monthly[m]
@@ -422,7 +444,7 @@ function SalaryBreakdown() {
             <tfoot>
               <tr className="border-t border-border bg-muted/20">
                 <td
-                  colSpan={2}
+                  colSpan={3}
                   className="py-2 px-4 text-xs font-medium text-muted-foreground sticky left-0 bg-muted/20 z-10"
                 >
                   Monthly total

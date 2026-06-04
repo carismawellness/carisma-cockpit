@@ -16,6 +16,16 @@ export const dynamic = "force-dynamic";
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+// ── Name normalisation helpers ────────────────────────────────────────────────
+// Remove punctuation, collapse spaces, lowercase → used for exact fuzzy match.
+function normName(n: string): string {
+  return n.toLowerCase().replace(/[.\-',]/g, " ").replace(/\s+/g, " ").trim();
+}
+// Sort tokens alphabetically → matches "Smith John" ↔ "John Smith"
+function sortedTokenKey(n: string): string {
+  return normName(n).split(" ").sort().join(" ");
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const dateFrom = searchParams.get("date_from") ?? "2025-01-01";
@@ -37,7 +47,7 @@ export async function GET(req: NextRequest) {
   };
 
   const zohoQs = new URLSearchParams([
-    ["select",      "contact_name,org,date,amount"],
+    ["select",      "contact_name,org,date,amount,account_code"],
     ["ebitda_line", "eq.wages"],
     ["date",        `gte.${dateFrom}`],
     ["date",        `lte.${dateTo}`],
@@ -45,7 +55,7 @@ export async function GET(req: NextRequest) {
     ["order",       "date.asc,contact_name.asc"],
   ]);
 
-  // Supplements are stored as the 1st of each month (DATE). Filter to the same window.
+  // Supplements are stored as the 1st of each month (DATE). Filter to same window.
   const suppQs = new URLSearchParams([
     ["select",    "month,employee_name,amount,spa_slug"],
     ["is_frozen", "eq.true"],
@@ -65,14 +75,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `Supabase ${zohoRes.status}: ${text}` }, { status: 502 });
   }
 
-  const rawRows: Array<{ contact_name: string; org: string; date: string; amount: number }> =
-    await zohoRes.json();
+  const rawRows: Array<{
+    contact_name: string; org: string; date: string; amount: number; account_code: string;
+  }> = await zohoRes.json();
 
-  let suppRows: Array<{ month: string; employee_name: string; amount: number; spa_slug: string | null }> = [];
+  let suppRows: Array<{
+    month: string; employee_name: string; amount: number; spa_slug: string | null;
+  }> = [];
   if (suppRes.ok) suppRows = await suppRes.json();
 
-  // ── Step 1: Group Zoho wages by contact_name + org + month (YYYY-MM) ────────
-  const grouped = new Map<string, number>();
+  // ── Step 1: Build employee records from Zoho wages ───────────────────────────
+  type EmpRecord = {
+    contact_name: string;
+    org: string;
+    monthly: Record<string, number>;
+    total: number;
+    coaCodes: Set<string>;
+    hasSupplement: boolean;
+  };
+  const empMap = new Map<string, EmpRecord>();
   const monthSet = new Set<string>();
 
   for (const row of rawRows) {
@@ -80,69 +101,71 @@ export async function GET(req: NextRequest) {
     const org   = (row.org ?? "").toLowerCase();
     const month = (row.date ?? "").slice(0, 7);
     if (!month || !name) continue;
-    const k = `${name}\x00${org}\x00${month}`;
-    grouped.set(k, (grouped.get(k) ?? 0) + row.amount);
+
+    const ek = `${name}\x00${org}`;
+    if (!empMap.has(ek)) {
+      empMap.set(ek, { contact_name: name, org, monthly: {}, total: 0, coaCodes: new Set(), hasSupplement: false });
+    }
+    const emp = empMap.get(ek)!;
+    emp.monthly[month] = Math.round(((emp.monthly[month] ?? 0) + row.amount) * 100) / 100;
+    emp.total          = Math.round((emp.total + row.amount) * 100) / 100;
+    if (row.account_code) emp.coaCodes.add(row.account_code);
     monthSet.add(month);
   }
 
-  // ── Step 2: Build employee records ──────────────────────────────────────────
-  type EmpRecord = {
-    contact_name: string;
-    org: string;
-    monthly: Record<string, number>;
-    total: number;
-  };
-  const empMap = new Map<string, EmpRecord>();
-
-  for (const [k, amount] of grouped) {
-    const [name, org, month] = k.split("\x00");
-    const ek = `${name}\x00${org}`;
-    if (!empMap.has(ek)) {
-      empMap.set(ek, { contact_name: name, org, monthly: {}, total: 0 });
-    }
-    const emp = empMap.get(ek)!;
-    emp.monthly[month] = Math.round(((emp.monthly[month] ?? 0) + amount) * 100) / 100;
-    emp.total          = Math.round((emp.total + amount) * 100) / 100;
+  // ── Step 2: Build fuzzy name index → empMap key ──────────────────────────────
+  // Two keys per employee: normalised exact + token-sorted, to handle:
+  //   • case / punctuation differences: "Dr. Walter" ↔ "DR WALTER"
+  //   • word-order differences:          "Smith John" ↔ "John Smith"
+  const nameIndex = new Map<string, string>();
+  for (const [ek, emp] of empMap) {
+    const norm   = normName(emp.contact_name);
+    const sorted = sortedTokenKey(emp.contact_name);
+    if (!nameIndex.has(norm))   nameIndex.set(norm, ek);
+    if (!nameIndex.has(sorted)) nameIndex.set(sorted, ek);
   }
 
   // ── Step 3: Merge frozen supplements ────────────────────────────────────────
-  // Try to match supplement employee_name to a Zoho contact_name (case-insensitive).
-  // If matched, the supplement is added to the existing employee's row.
-  // If unmatched, a new row is created (org derived from spa_slug presence).
-  const nameIndex = new Map<string, string>(); // normalised name → empMap key
-  for (const [ek, emp] of empMap) {
-    const norm = emp.contact_name.toLowerCase().trim().replace(/\s+/g, " ");
-    if (!nameIndex.has(norm)) nameIndex.set(norm, ek);
-  }
-
   for (const supp of suppRows) {
     const suppName = (supp.employee_name ?? "").trim();
     if (!suppName || !supp.amount) continue;
     const month = (supp.month ?? "").slice(0, 7);
     if (!month) continue;
 
-    const normName = suppName.toLowerCase().replace(/\s+/g, " ");
-    let ek = nameIndex.get(normName);
+    let ek = nameIndex.get(normName(suppName)) ?? nameIndex.get(sortedTokenKey(suppName));
 
     if (!ek) {
       const org = supp.spa_slug ? "spa" : "supplement";
       ek = `${suppName}\x00${org}`;
       if (!empMap.has(ek)) {
-        empMap.set(ek, { contact_name: suppName, org, monthly: {}, total: 0 });
-        nameIndex.set(normName, ek);
+        empMap.set(ek, { contact_name: suppName, org, monthly: {}, total: 0, coaCodes: new Set(), hasSupplement: false });
+        nameIndex.set(normName(suppName), ek);
+        nameIndex.set(sortedTokenKey(suppName), ek);
       }
     }
 
     const emp = empMap.get(ek)!;
     emp.monthly[month] = Math.round(((emp.monthly[month] ?? 0) + supp.amount) * 100) / 100;
     emp.total          = Math.round((emp.total + supp.amount) * 100) / 100;
+    emp.hasSupplement  = true;
     monthSet.add(month);
   }
 
   const months = Array.from(monthSet).sort();
-  const employees = Array.from(empMap.values()).sort(
-    (a, b) => a.contact_name.localeCompare(b.contact_name) || a.org.localeCompare(b.org),
-  );
+
+  const employees = Array.from(empMap.values())
+    .map(emp => ({
+      contact_name:    emp.contact_name,
+      org:             emp.org,
+      monthly:         emp.monthly,
+      total:           emp.total,
+      coa_codes:       Array.from(emp.coaCodes).sort(),
+      has_supplement:  emp.hasSupplement,
+    }))
+    .sort((a, b) =>
+      a.contact_name.localeCompare(b.contact_name, undefined, { sensitivity: "base" }) ||
+      a.org.localeCompare(b.org),
+    );
 
   return NextResponse.json({ date_from: dateFrom, date_to: dateTo, months, employees });
 }
