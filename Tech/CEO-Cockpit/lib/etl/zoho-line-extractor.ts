@@ -472,6 +472,14 @@ async function fetchDetails(
       const tags = extractTags(ln);
       const effectiveTags = tags.length ? tags : headerTags;
 
+      // Journal entries store the employee/contact at the LINE level as `customer_name`
+      // (not on the journal header). E.g. payroll journals have the employee name on
+      // each debit line. Use the line-level contact when present; fall back to the
+      // journal header contact, then "".
+      const lineContact = cfg.source === "journal"
+        ? (String(ln.customer_name ?? ln.contact_name ?? "").trim() || contactName)
+        : contactName;
+
       lines.push({
         date:         txnDate,
         source:       cfg.source,
@@ -482,7 +490,7 @@ async function fetchDetails(
         section,
         amount:       converted,
         tags:         effectiveTags,
-        contact_name: contactName,
+        contact_name: lineContact,
       });
     }
   }
