@@ -32,11 +32,14 @@ export function useWageSplitByVenue(dateFrom: Date, dateTo: Date) {
       const res = await fetch(
         `/api/finance/wage-role-breakdown?date_from=${df}&date_to=${dt}`,
       );
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? `HTTP ${res.status}`);
+      // Parse body safely — the endpoint may return "An error occurred" plain text
+      // on a Vercel cold-start crash (200 but non-JSON). Treat any parse failure
+      // as an empty breakdown so the rest of the EBITDA page still loads.
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body) {
+        throw new Error(body?.error ?? `HTTP ${res.status}`);
       }
-      return res.json();
+      return body as WageRoleBreakdown;
     },
     staleTime: 5 * 60 * 1000,
     retry: 1,

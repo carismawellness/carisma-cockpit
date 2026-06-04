@@ -204,11 +204,15 @@ export function useEbitdaAggregated(dateFrom: Date, dateTo: Date): UseEbitdaAggr
         `/api/finance/ebitda-aggregated?date_from=${df}&date_to=${dt}`,
         { cache: "no-store" },
       );
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        throw new Error(body || `HTTP ${res.status}`);
+      const text = await res.text().catch(() => "");
+      if (!res.ok) throw new Error(text || `HTTP ${res.status}`);
+      try {
+        return JSON.parse(text) as EbitdaAggregatedResponse;
+      } catch {
+        // Vercel can return 200 with "An error occurred" plain text when
+        // a serverless function times out mid-stream. Throw a clean message.
+        throw new Error("EBITDA API timed out — please retry");
       }
-      return res.json();
     },
     staleTime: 30_000,
   });
