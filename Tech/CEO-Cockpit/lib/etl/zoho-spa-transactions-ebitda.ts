@@ -63,7 +63,18 @@ const WAGES_RECLASS_CONTACT_KEYS: Set<string> = new Set(
 );
 // Substring/token matches — first name or unique brand token is sufficient.
 // "upwork" catches "Upwork", "Upwork payments", "Upwork Inc", etc.
-const WAGES_RECLASS_FUZZY = ["yamuna", "mandar", "manan", "ruksana", "mellisa", "melissa", "upwork"];
+const WAGES_RECLASS_FUZZY = [
+  "yamuna", "mandar", "manan", "ruksana", "mellisa", "melissa", "upwork",
+  // Additional contacts confirmed by business owner (Jun 2026):
+  "yofana",   // Yofana Virgianne
+  "banaban",  // April Joy Banaban (unique surname)
+  "veloso",   // Natalia Veloso De Melo (unique surname)
+  "rana",     // Rana Abid
+  "veejay",   // Veejay / VJ
+  "bast",     // Nicole Maria Bast (unique surname)
+  "juliana",  // Juliana Maria Velasquez
+  "adeel",    // Adeel Khan
+];
 
 function isWagesReclassContact(contactName: string): boolean {
   if (!contactName) return false;
@@ -256,19 +267,22 @@ export async function runSpaEbitdaMonthFromTransactions(
     if (line === "excluded") { droppedExcluded++; continue; }
     if (!VALID_LINES.has(line)) { droppedExcluded++; continue; }
 
-    // Contact-based wages override: contractors billed through SGA/professional
-    // fees that are employment costs. They are always HQ-tagged, so the amount
-    // flows straight to hq_ebitda_daily.wages — no venue split needed.
-    if (line === "sga" && isWagesReclassContact(ln.contact_name)) line = "wages";
+    // Contact-based wages override: certain contacts billed through ANY non-revenue
+    // COA must appear under Wages & Salaries. Split by Zoho tag when present;
+    // if no tag → HQ (business rule: untagged reclassified contacts → HQ).
+    const isWagesReclass = line !== "revenue" && isWagesReclassContact(ln.contact_name);
+    if (isWagesReclass) line = "wages";
 
     const tagSlug = tagsToSlug(ln.tags);
     const nameLoc = tagSlug ? null : detectLocation(ln.account_name);
+    // Reclassified contacts with no tag go to HQ; others follow normal routing.
+    const effectiveRule = (isWagesReclass && !tagSlug) ? "hq" : (nameLoc ?? rule);
 
     classified.push({
       date:         ln.date,
       line,
       sub_line:     resolveSubLine(line, ln.account_name),
-      rule:         nameLoc ?? rule,
+      rule:         effectiveRule,
       tagSlug,
       code:         ln.account_code,
       account_name: ln.account_name,
