@@ -1,33 +1,47 @@
-﻿"use client";
+"use client";
 
 import { useQuery } from "@tanstack/react-query";
 
-export type WageRoleBreakdown = {
-  byVenueRole:        Record<string, Record<string, number>>;
-  byVenueRoleContact: Record<string, Record<string, Record<string, number>>>;
-  date_from:  string;
-  date_to:    string;
-  total_txns: number;
-};
+export interface WageRoleData {
+  roles: {
+    manager:      number;
+    reception:    number;
+    practitioner: number;
+    therapist:    number;
+    crm:          number;
+    unassigned:   number;
+  };
+  total:    number;
+  has_data: boolean;
+}
 
-function toIso(d: Date) {
+function toIso(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
 /**
- * Fetches per-role per-venue wage amounts from Zoho GL transactions.
- * Cached for 5 minutes — payroll does not change mid-day.
+ * Used by EbitdaTransactionsDialog to show role totals when a wages cell
+ * is clicked. Calls wage-role-breakdown and sums across all venues.
+ * Signature is (org, dateFrom, dateTo, enabled) to match the dialog's
+ * existing call pattern.
  *
- * byVenueRole:        venue_slug -> role -> total amount
- * byVenueRoleContact: venue_slug -> role -> contact_name -> amount  (for drill-down)
+ * NOTE: currently only covers SPA venue-specific wage accounts.
  */
-export function useWageRoleBreakdown(dateFrom: Date, dateTo: Date) {
+export function useWageRoleBreakdown(
+  org:      string | null,
+  dateFrom: Date,
+  dateTo:   Date,
+  enabled:  boolean,
+) {
   const df = toIso(dateFrom);
   const dt = toIso(dateTo);
 
-  const q = useQuery<WageRoleBreakdown>({
-    queryKey: ["wage-role-breakdown", df, dt],
-    queryFn:  async () => {
+  return useQuery<WageRoleData>({
+    queryKey: ["wage-role-breakdown", org, df, dt],
+    enabled:  enabled && org !== null,
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+    queryFn: async () => {
       const res = await fetch(
         `/api/finance/wage-role-breakdown?date_from=${df}&date_to=${dt}`,
       );
@@ -35,16 +49,19 @@ export function useWageRoleBreakdown(dateFrom: Date, dateTo: Date) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `HTTP ${res.status}`);
       }
-      return res.json();
-    },
-    staleTime: 5 * 60 * 1000,
-    retry: 1,
-  });
+      const raw = await res.json();
 
-  return {
-    breakdown:  q.data,
-    isLoading:  q.isLoading,
-    isFetching: q.isFetching,
-    error:      q.error as Error | null,
-  };
+      // Sum byVenueRole across all venues → flat totals for the dialog table
+      const roles = { manager: 0, reception: 0, practitioner: 0, therapist: 0, crm: 0, unassigned: 0 };
+      const bvr = (raw.byVenueRole ?? {}) as Record<string, Record<string, number>>;
+      for (const roleAmounts of Object.values(bvr)) {
+        for (const [role, amount] of Object.entries(roleAmounts)) {
+          if (role in roles) (roles as Record<string, number>)[role] += amount;
+          else roles.unassigned += amount;
+        }
+      }
+      const total = Object.values(roles).reduce((a, b) => a + b, 0);
+      return { roles, total, has_data: (raw.total_txns ?? 0) > 0 };
+    },
+  });
 }

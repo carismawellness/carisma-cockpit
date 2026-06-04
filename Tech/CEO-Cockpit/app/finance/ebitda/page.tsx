@@ -21,7 +21,7 @@ import type { DrillTarget } from "@/lib/hooks/useEbitdaTransactions";
 import {
   WAGE_ROLE_ORDER, WAGE_ROLE_LABEL, type WageRole,
 } from "@/lib/hooks/useWageRoles";
-import { useWageRoleBreakdown } from "@/lib/hooks/useWageRoleBreakdown";
+import { useWageSplitByVenue } from "@/lib/hooks/useWageSplitByVenue";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine, Cell,
@@ -157,7 +157,7 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
   // Wage-role breakdown: fetches per-employee Zoho GL transactions and maps
   // them to roles via wage_role_mapping. Separate from agg (which has no
   // per-employee contact info) so the sub-rows can actually populate.
-  const { breakdown: wageBreakdown } = useWageRoleBreakdown(dateFrom, dateTo);
+  const { breakdown: wageBreakdown } = useWageSplitByVenue(dateFrom, dateTo);
   // Slimming revenue is sourced from slimming_sales_daily (same path as
   // /sales/slimming-deepa) instead of the Zoho Aggregated Data total. The
   // Zoho total combines sales+treatments under one bucket; the dashboard
