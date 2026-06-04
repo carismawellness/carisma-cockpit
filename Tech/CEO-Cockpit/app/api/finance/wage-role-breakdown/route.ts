@@ -3,53 +3,26 @@
  *
  * Returns per-employee wage amounts bucketed by venue slug and role.
  *
- * Fetches GL transactions from Zoho SPA org for venue-specific wage account codes
- * (accounts where COA_MAP assigns a fixed venue, e.g. hugos / hyatt / excelsior).
- * Each transaction's payee is matched against wage_role_mapping to determine role.
- * Unmatched payees fall into "unassigned".
+ * Source: salary_supplement_monthly (is_frozen=true) — the canonical per-employee
+ * per-venue monthly salary table. Fast Supabase-only query, no Zoho API calls.
  *
  * Response:
  *   byVenueRole:        { [venue_slug]: { [role | "unassigned"]: amount } }
  *   byVenueRoleContact: { [venue_slug]: { [role | "unassigned"]: { [contact]: amount } } }
- *
- * Used by the EBITDA page to populate the Wages & Salaries role sub-rows.
- * Parent row totals still come from spa_ebitda_daily (more accurate); this
- * endpoint only supplies the per-role / per-employee breakdown detail.
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { ZohoBooksClient }            from "@/lib/etl/zoho-client";
-import { fetchTransactionsForAccounts } from "@/lib/etl/zoho-account-transactions";
-import { COA_MAP }                    from "@/lib/etl/spa-ebitda";
-import { getAdminClient }             from "@/lib/supabase/admin";
+import { getAdminClient } from "@/lib/supabase/admin";
 
-export const maxDuration = 60;
-export const dynamic     = "force-dynamic";
-
-// Translate COA_MAP split_rule names → current DB venue slugs.
-// sunny_coast was renamed to odycy; intercontinental shortened to inter.
-const SPLIT_RULE_TO_SLUG: Record<string, string> = {
-  intercontinental: "inter",
-  hugos:            "hugos",
-  hyatt:            "hyatt",
-  ramla:            "ramla",
-  sunny_coast:      "odycy",
-  labranda:         "labranda",
-  excelsior:        "excelsior",
-  novotel:          "novotel",
-};
-
-// account_code → venue slug — built once at module load from COA_MAP.
-// Only includes venue-specific codes; skips sales_ratio / equal / salary_cost.
-const CODE_TO_VENUE: Record<string, string> = {};
-for (const [code, [splitRule, ebitdaLine]] of Object.entries(COA_MAP)) {
-  if (ebitdaLine !== "wages") continue;
-  const slug = SPLIT_RULE_TO_SLUG[splitRule];
-  if (slug) CODE_TO_VENUE[code] = slug;
-}
+export const dynamic = "force-dynamic";
 
 function normalizeContact(name: string): string {
   return (name || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/** First day of the month containing the given ISO date. */
+function monthStart(iso: string): string {
+  return iso.slice(0, 7) + "-01";
 }
 
 export async function GET(req: NextRequest) {
@@ -65,41 +38,49 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // 1. Load wage_role_mapping from Supabase (small table, fast)
     const supabase = getAdminClient();
-    const { data: roleRows } = await supabase
+
+    // 1. Load role mapping (contact_key → role)
+    const { data: roleRows, error: roleErr } = await supabase
       .from("wage_role_mapping")
       .select("contact_key, role");
+    if (roleErr) throw new Error(`wage_role_mapping: ${roleErr.message}`);
+
     const roleByContact = new Map<string, string>(
       (roleRows ?? []).map((r: { contact_key: string; role: string }) => [r.contact_key, r.role]),
     );
 
-    // 2. Fetch Zoho GL transactions for venue-specific wage codes (SPA org only)
-    const client = new ZohoBooksClient("spa");
-    const codes  = Object.keys(CODE_TO_VENUE);
-    const { txns } = await fetchTransactionsForAccounts(client, codes, dateFrom, dateTo);
+    // 2. Load salary_supplement_monthly for months overlapping the date range
+    const { data: salaryRows, error: salErr } = await supabase
+      .from("salary_supplement_monthly")
+      .select("employee_name, spa_slug, amount, month")
+      .eq("is_frozen", true)
+      .gte("month", monthStart(dateFrom))
+      .lte("month", monthStart(dateTo));
+    if (salErr) throw new Error(`salary_supplement_monthly: ${salErr.message}`);
 
-    // 3. Aggregate by venue × role — and keep per-contact detail for drill-down
+    // 3. Aggregate by venue × role
     const byVenueRole: Record<string, Record<string, number>> = {};
     const byVenueRoleContact: Record<string, Record<string, Record<string, number>>> = {};
 
-    for (const txn of txns) {
-      const venue = CODE_TO_VENUE[txn.account_code];
-      if (!venue || !txn.amount) continue;
+    for (const row of salaryRows ?? []) {
+      const venue       = (row.spa_slug || "").trim().toLowerCase();
+      const amount      = Number(row.amount ?? 0);
+      if (!venue || !amount) continue;
 
-      const contactKey  = normalizeContact(txn.payee);
+      const contactKey  = normalizeContact(row.employee_name);
       const role        = roleByContact.get(contactKey) ?? "unassigned";
-      const contactName = txn.payee || "(no contact)";
+      const contactName = (row.employee_name || "").trim() || "(no name)";
 
-      // byVenueRole totals
+      // byVenueRole
       if (!byVenueRole[venue]) byVenueRole[venue] = {};
-      byVenueRole[venue][role] = (byVenueRole[venue][role] ?? 0) + txn.amount;
+      byVenueRole[venue][role] = (byVenueRole[venue][role] ?? 0) + amount;
 
-      // byVenueRoleContact detail
+      // byVenueRoleContact
       if (!byVenueRoleContact[venue])       byVenueRoleContact[venue] = {};
       if (!byVenueRoleContact[venue][role]) byVenueRoleContact[venue][role] = {};
       byVenueRoleContact[venue][role][contactName] =
-        (byVenueRoleContact[venue][role][contactName] ?? 0) + txn.amount;
+        (byVenueRoleContact[venue][role][contactName] ?? 0) + amount;
     }
 
     return NextResponse.json({
@@ -107,7 +88,7 @@ export async function GET(req: NextRequest) {
       byVenueRoleContact,
       date_from:  dateFrom,
       date_to:    dateTo,
-      total_txns: txns.length,
+      total_rows: (salaryRows ?? []).length,
     });
   } catch (e) {
     return NextResponse.json(

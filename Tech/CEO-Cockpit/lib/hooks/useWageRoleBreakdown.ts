@@ -61,7 +61,7 @@ export function useWageRoleBreakdown(
         }
       }
       const total = Object.values(roles).reduce((a, b) => a + b, 0);
-      return { roles, total, has_data: (raw.total_txns ?? 0) > 0 };
+      return { roles, total, has_data: (raw.total_rows ?? raw.total_txns ?? 0) > 0 };
     },
   });
 }
