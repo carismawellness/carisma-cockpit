@@ -1,164 +1,237 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Users } from "lucide-react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
-import { useEbitdaAggregated, type LineItem } from "@/lib/hooks/useEbitdaAggregated";
-import { SPA_LOCATION_META } from "@/lib/hooks/useSpaEbitda";
 import {
   useWageRoles,
-  resolveRole,
   WAGE_ROLES,
   WAGE_ROLE_LABEL,
   type WageRole,
 } from "@/lib/hooks/useWageRoles";
 
-/* ------------------------------------------------------------------ */
-/*  EMPLOYEE MAPPING                                                   */
-/*                                                                     */
-/*  A double-click into the "Wages & Salaries" line item on the main  */
-/*  EBITDA cockpit. For each venue we list every individual (the Zoho  */
-/*  `contact` on each wage transaction) that was accounted for in the  */
-/*  selected period, and the salary booked against them. Numbers come  */
-/*  from the SAME /api/finance/ebitda-aggregated feed the cockpit uses */
-/*  (category === "wages"), so the venue subtotals here reconcile      */
-/*  exactly with the Wages & Salaries row on /finance/ebitda.          */
-/* ------------------------------------------------------------------ */
-
-type Brand = LineItem["brand"];
-
-// Display label + colour for a wage line item's venue. SPA rows carry a real
-// column-E venue (InterContinental, Hugos, …); AES/SLIM rows usually have an
-// empty venue, so they collapse under the brand name; HQ is corporate payroll.
-const BRAND_FALLBACK_LABEL: Record<Brand, string> = {
-  SPA:  "Spa (unmapped)",
-  AES:  "Aesthetics",
-  SLIM: "Slimming",
-  HQ:   "HQ",
-};
-const BRAND_COLOR: Record<Brand, string> = {
-  SPA:  "#1B3A4B",
-  AES:  "#B79E61",
-  SLIM: "#8EB093",
-  HQ:   "#64748B",
-};
-
-// SPA venue display name (lowercased) → its brand colour, so the per-venue
-// cards reuse the same palette as the EBITDA dashboard's venue columns.
-const SPA_VENUE_COLOR: Record<string, string> = Object.fromEntries(
-  Object.values(SPA_LOCATION_META).map((m) => [m.name.toLowerCase(), m.color]),
-);
-
-// Stable venue ordering: known SPA venues first (in dashboard order), then the
-// three brand-level buckets, then anything unexpected alphabetically.
-const SPA_VENUE_ORDER = Object.values(SPA_LOCATION_META).map((m) => m.name);
-const VENUE_ORDER = [...SPA_VENUE_ORDER, "Aesthetics", "Slimming", "HQ"];
-
-const UNATTRIBUTED = "(Unattributed / allocated)";
-
-interface EmployeeRow {
-  name:        string;
-  amount:      number;   // post-fallback period value (matches the cockpit)
-  literal:     number;   // literal Zoho sum, for partial-period transparency
-  accounts:    Set<string>;
-  usedFallback: boolean;
+interface ImportedContact {
+  contact_name: string;
+  total_amount: number;
+  orgs: string[];
 }
 
-interface VenueGroup {
-  label:    string;
-  color:    string;
-  total:    number;
-  literal:  number;
-  employees: EmployeeRow[];
+function orgsLabel(orgs: string[]): string {
+  const set = new Set(orgs.map((o) => o.toUpperCase()));
+  const hasSpa = set.has("SPA");
+  const hasAes = set.has("AESTHETICS") || set.has("AES");
+  if (hasSpa && hasAes) return "Both";
+  if (hasSpa)  return "SPA";
+  if (hasAes)  return "Aesthetics";
+  return orgs.join(" / ") || "—";
 }
 
-function venueLabelFor(li: LineItem): string {
-  const venue = (li.venue || "").trim();
-  if (venue) return venue;
-  return BRAND_FALLBACK_LABEL[li.brand];
+interface ContactImportSectionProps {
+  title: string;
+  subtitle: string;
+  apiEndpoint: string;
+  cacheKey: string;
+  emptyMessage: string;
+  showDelete?: boolean;
+  roleByContact: Map<string, WageRole>;
+  setRole: ReturnType<typeof useWageRoles>["setRole"];
 }
 
-function venueColorFor(label: string, brand: Brand): string {
-  return SPA_VENUE_COLOR[label.toLowerCase()] ?? BRAND_COLOR[brand];
-}
-
-const euro = new Intl.NumberFormat("en-GB", {
-  style: "currency",
-  currency: "EUR",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
-});
-function fmtEuro(n: number) {
-  return euro.format(Number.isFinite(n) ? n : 0);
-}
-
-function buildVenueGroups(lineItems: LineItem[]): VenueGroup[] {
-  // venueLabel → contactName → EmployeeRow
-  const byVenue = new Map<string, { color: string; emps: Map<string, EmployeeRow> }>();
-
-  for (const li of lineItems) {
-    if (li.ebitda_category !== "wages") continue;
-    // Skip rows that contributed nothing either way — they'd just be noise.
-    if (li.period_value === 0 && li.literal_sum === 0) continue;
-
-    const label = venueLabelFor(li);
-    const color = venueColorFor(label, li.brand);
-    const name  = (li.contact || "").trim() || UNATTRIBUTED;
-
-    let venue = byVenue.get(label);
-    if (!venue) {
-      venue = { color, emps: new Map() };
-      byVenue.set(label, venue);
-    }
-
-    let emp = venue.emps.get(name);
-    if (!emp) {
-      emp = { name, amount: 0, literal: 0, accounts: new Set(), usedFallback: false };
-      venue.emps.set(name, emp);
-    }
-    emp.amount  += li.period_value;
-    emp.literal += li.literal_sum;
-    if (li.account_name) emp.accounts.add(li.account_name);
-    if (li.used_fallback) emp.usedFallback = true;
-  }
-
-  const groups: VenueGroup[] = [];
-  for (const [label, venue] of byVenue) {
-    const employees = Array.from(venue.emps.values())
-      // Drop net-zero contacts (a positive + offsetting negative wash).
-      .filter((e) => e.amount !== 0 || e.literal !== 0)
-      .sort((a, b) => {
-        // Unattributed always last; named employees alphabetically
-        if (a.name === UNATTRIBUTED) return 1;
-        if (b.name === UNATTRIBUTED) return -1;
-        return a.name.localeCompare(b.name);
-      });
-    if (employees.length === 0) continue;
-    groups.push({
-      label,
-      color: venue.color,
-      total:   employees.reduce((s, e) => s + e.amount, 0),
-      literal: employees.reduce((s, e) => s + e.literal, 0),
-      employees,
-    });
-  }
-
-  // Order venues by the canonical list, unknowns last (alphabetical).
-  groups.sort((a, b) => {
-    const ia = VENUE_ORDER.indexOf(a.label);
-    const ib = VENUE_ORDER.indexOf(b.label);
-    if (ia === -1 && ib === -1) return a.label.localeCompare(b.label);
-    if (ia === -1) return 1;
-    if (ib === -1) return -1;
-    return ia - ib;
+function ContactImportSection({
+  title, subtitle, apiEndpoint, cacheKey, emptyMessage, showDelete = false, roleByContact, setRole,
+}: ContactImportSectionProps) {
+  const [importedContacts, setImportedContacts] = useState<ImportedContact[] | null>(() => {
+    try {
+      const raw = sessionStorage.getItem(cacheKey);
+      return raw ? (JSON.parse(raw) as ImportedContact[]) : null;
+    } catch { return null; }
   });
-  return groups;
+  const queryClient = useQueryClient();
+  const [isImporting, setIsImporting] = useState(false);
+  const [isSavingAll, setIsSavingAll] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  const draftRoles = useMemo(() => {
+    const draft: Record<string, WageRole | ""> = {};
+    for (const c of importedContacts ?? []) {
+      const key = (c.contact_name || "").trim().toLowerCase().replace(/\s+/g, " ");
+      draft[c.contact_name] = roleByContact.get(key) ?? "";
+    }
+    return draft;
+  }, [importedContacts, roleByContact]);
+
+  const [localRoles, setLocalRoles] = useState<Record<string, WageRole | "">>({});
+  const mergedRoles = { ...draftRoles, ...localRoles };
+
+  async function handleLoad() {
+    setIsImporting(true);
+    setImportError(null);
+    try {
+      const res = await fetch(apiEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date_from: "2025-01-01", date_to: "2026-06-30" }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => res.statusText);
+        throw new Error(`Server error ${res.status}: ${text}`);
+      }
+      const json = await res.json();
+      const data: ImportedContact[] = json.contacts ?? [];
+      setImportedContacts(data);
+      setLocalRoles({});
+      try { sessionStorage.setItem(cacheKey, JSON.stringify(data)); } catch { /* ignore */ }
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
+  function saveOne(contactName: string) {
+    const role = mergedRoles[contactName];
+    setRole.mutate({ contactName, role: (role || null) as WageRole | null });
+  }
+
+  function deleteRow(contactName: string) {
+    // Hide from this session's view only — DB role is preserved.
+    // A fresh "Load Contacts" will bring it back.
+    setImportedContacts((prev) => {
+      const next = (prev ?? []).filter((c) => c.contact_name !== contactName);
+      try { sessionStorage.setItem(cacheKey, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+    setLocalRoles((prev) => { const n = { ...prev }; delete n[contactName]; return n; });
+  }
+
+  async function saveAll() {
+    if (!importedContacts) return;
+    setIsSavingAll(true);
+    try {
+      const assignments = importedContacts
+        .map((c) => ({ contact_name: c.contact_name, role: mergedRoles[c.contact_name] || null }))
+        .filter((a) => a.role);
+      if (assignments.length > 0) {
+        const res = await fetch("/api/settings/wage-roles/bulk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ assignments }),
+        });
+        if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+        await queryClient.invalidateQueries({ queryKey: ["wage-roles"] });
+      }
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSavingAll(false);
+    }
+  }
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-foreground">{title}</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
+        </div>
+        <button
+          onClick={handleLoad}
+          disabled={isImporting}
+          className="shrink-0 inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted/50 disabled:opacity-50 transition-colors"
+        >
+          {isImporting && (
+            <svg className="animate-spin h-3.5 w-3.5 text-muted-foreground" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+            </svg>
+          )}
+          {isImporting ? "Loading…" : "Load Contacts from Zoho (Jan 2025 – Jun 2026)"}
+        </button>
+      </div>
+
+      {importError && (
+        <div className="px-4 py-3 text-sm text-red-700 bg-red-50/60 border-b border-red-200">
+          {importError}
+        </div>
+      )}
+
+      {importedContacts && importedContacts.length === 0 && (
+        <div className="px-4 py-6 text-sm text-center text-muted-foreground">{emptyMessage}</div>
+      )}
+
+      {importedContacts && importedContacts.length > 0 && (
+        <>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border/60">
+                <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Employee</th>
+                <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Zoho Org</th>
+                <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Role / Designation</th>
+                <th className="py-2 px-4" />
+              </tr>
+            </thead>
+            <tbody>
+              {importedContacts.map((c) => {
+                const mapped = roleByContact.has(normalizeKey(c.contact_name));
+                return (
+                  <tr key={c.contact_name} className="border-b border-border/40 last:border-0 hover:bg-muted/30 transition-colors">
+                    <td className="py-1.5 px-4">
+                      <span className="text-foreground">{c.contact_name}</span>
+                      {mapped && (
+                        <span className="ml-2 inline-flex items-center rounded-sm border border-green-300 bg-green-50 px-1 py-px text-[9px] font-medium text-green-700">
+                          mapped
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-1.5 px-4 text-xs text-muted-foreground">{orgsLabel(c.orgs)}</td>
+                    <td className="py-1.5 px-4">
+                      <select
+                        value={mergedRoles[c.contact_name] ?? ""}
+                        onChange={(ev) => setLocalRoles((prev) => ({ ...prev, [c.contact_name]: ev.target.value as WageRole | "" }))}
+                        disabled={setRole.isPending}
+                        className={`text-xs border rounded px-2 py-1 bg-background disabled:opacity-50 ${draftRoles[c.contact_name] ? "border-border text-foreground" : "border-amber-400 text-amber-700"}`}
+                      >
+                        <option value="">Unassigned</option>
+                        {WAGE_ROLES.map((r) => (
+                          <option key={r} value={r}>{WAGE_ROLE_LABEL[r]}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="py-1.5 px-4">
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => saveOne(c.contact_name)} disabled={setRole.isPending} className="text-xs border border-border rounded px-2 py-1 hover:bg-muted/50 disabled:opacity-50 transition-colors">
+                          Save
+                        </button>
+                        {showDelete && (
+                          <button onClick={() => deleteRow(c.contact_name)} className="text-xs border border-red-200 text-red-600 rounded px-2 py-1 hover:bg-red-50 transition-colors">
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div className="px-4 py-3 border-t border-border flex justify-end">
+            <button onClick={saveAll} disabled={isSavingAll} className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted/50 disabled:opacity-50 transition-colors">
+              {isSavingAll ? "Saving…" : "Save All"}
+            </button>
+          </div>
+        </>
+      )}
+    </Card>
+  );
 }
 
-/* ------------------------------------------------------------------ */
-/*  SALARY BREAKDOWN PIVOT TABLE                                       */
-/* ------------------------------------------------------------------ */
+function normalizeKey(name: string): string {
+  return (name || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+// ── Salary Breakdown ────────────────────────────────────────────────────────
 
 const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -167,10 +240,14 @@ function fmtMonth(m: string): string {
   return `${MONTH_NAMES[parseInt(mon, 10) - 1]} ${year.slice(2)}`;
 }
 
+function fmtAmount(n: number): string {
+  if (!n) return "";
+  return `€${Math.round(n).toLocaleString("en-GB")}`;
+}
+
 function orgLabel(org: string): string {
   if (org === "spa") return "SPA";
   if (org === "aesthetics") return "Aesthetics";
-  if (org === "slimming") return "Slimming";
   return org.charAt(0).toUpperCase() + org.slice(1);
 }
 
@@ -214,7 +291,7 @@ function SalaryBreakdown() {
     <Card className="overflow-hidden">
       <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-foreground">Salary by Staff &amp; Month</h2>
+          <h2 className="text-base font-semibold text-foreground">Salary Breakdown</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
             Monthly wages per employee by org — Jan 2025 to Jun 2026. Source: transactions_raw (wages COA).
           </p>
@@ -235,7 +312,9 @@ function SalaryBreakdown() {
       </div>
 
       {error && (
-        <div className="px-4 py-3 text-sm text-red-700 bg-red-50/60 border-b border-red-200">{error}</div>
+        <div className="px-4 py-3 text-sm text-red-700 bg-red-50/60 border-b border-red-200">
+          {error}
+        </div>
       )}
 
       {data && data.employees.length === 0 && (
@@ -280,19 +359,22 @@ function SalaryBreakdown() {
                   {data.months.map((m) => (
                     <td key={m} className="py-1.5 px-3 text-right text-xs tabular-nums whitespace-nowrap">
                       {emp.monthly[m]
-                        ? <span className="text-foreground">{fmtEuro(emp.monthly[m])}</span>
+                        ? <span className="text-foreground">{fmtAmount(emp.monthly[m])}</span>
                         : <span className="text-muted-foreground/30">—</span>}
                     </td>
                   ))}
                   <td className="py-1.5 px-4 text-right text-xs tabular-nums font-semibold text-foreground whitespace-nowrap">
-                    {fmtEuro(emp.total)}
+                    {fmtAmount(emp.total)}
                   </td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr className="border-t border-border bg-muted/20">
-                <td colSpan={2} className="py-2 px-4 text-xs font-medium text-muted-foreground sticky left-0 bg-muted/20 z-10">
+                <td
+                  colSpan={2}
+                  className="py-2 px-4 text-xs font-medium text-muted-foreground sticky left-0 bg-muted/20 z-10"
+                >
                   Monthly total
                 </td>
                 {data.months.map((m) => {
@@ -300,13 +382,13 @@ function SalaryBreakdown() {
                   return (
                     <td key={m} className="py-2 px-3 text-right text-xs tabular-nums font-medium text-foreground whitespace-nowrap">
                       {monthTotal > 0
-                        ? fmtEuro(monthTotal)
+                        ? fmtAmount(monthTotal)
                         : <span className="text-muted-foreground/30">—</span>}
                     </td>
                   );
                 })}
                 <td className="py-2 px-4 text-right text-xs tabular-nums font-bold text-foreground whitespace-nowrap">
-                  {fmtEuro(grandTotal)}
+                  {fmtAmount(grandTotal)}
                 </td>
               </tr>
             </tfoot>
@@ -317,27 +399,11 @@ function SalaryBreakdown() {
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  CONTENT                                                            */
-/* ------------------------------------------------------------------ */
-
-// Employee-to-role mapping is a global setting, not period-specific.
-// We use a fixed 2-year lookback so all known payroll contacts are visible
-// regardless of whatever date the EBITDA cockpit currently has selected.
-const MAPPING_FROM = new Date("2024-01-01");
-
 function EmployeeMappingContent() {
-  const dateTo = useMemo(() => new Date(), []);
-  const agg = useEbitdaAggregated(MAPPING_FROM, dateTo);
   const { roleByContact, setRole } = useWageRoles();
-
-  const groups = useMemo(() => buildVenueGroups(agg.lineItems), [agg.lineItems]);
-
-  const anyFallback = useMemo(() => groups.some((g) => g.employees.some((e) => e.usedFallback)), [groups]);
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
           <Users className="h-5 w-5 text-gold" />
@@ -350,153 +416,35 @@ function EmployeeMappingContent() {
         </p>
       </div>
 
-      {/* States */}
-      {agg.error && (
-        <Card className="p-4 border-red-200 bg-red-50/60 text-sm text-red-700">
-          Failed to load wages data: {agg.error.message}
-        </Card>
-      )}
+      <ContactImportSection
+        title="Wages & Salary COA"
+        subtitle="All payroll contacts from wages/salary GL accounts — Jan 2025 to Jun 2026."
+        apiEndpoint="/api/settings/wage-contacts"
+        cacheKey="wage-contacts-cache"
+        emptyMessage="No wage contacts found for the selected period."
+        roleByContact={roleByContact}
+        setRole={setRole}
+      />
 
-      {agg.isFetching && groups.length === 0 && (
-        <div className="py-12 text-center text-sm text-muted-foreground animate-pulse">Loading payroll…</div>
-      )}
+      <ContactImportSection
+        title="Professional Fees COA"
+        showDelete
+        subtitle="Contractors and CRM staff from professional fees GL accounts — Jan 2025 to Jun 2026."
+        apiEndpoint="/api/settings/prof-fee-contacts"
+        cacheKey="prof-fee-contacts-cache"
+        emptyMessage="No professional fee contacts found for the selected period."
+        roleByContact={roleByContact}
+        setRole={setRole}
+      />
 
-      {!agg.isFetching && !agg.error && groups.length === 0 && (
-        <Card className="p-8 text-center text-sm text-muted-foreground">
-          No wages found in the last 2 years of payroll data.
-        </Card>
-      )}
-
-      {anyFallback && (
-        <Card className="p-3 border-amber-200 bg-amber-50/60 text-xs text-amber-700">
-          ⚠ This period is partial, so the cockpit estimates some wages via fallback rules. Rows marked{" "}
-          <span className="font-medium">est.</span> are modelled (annualised / smoothed), not literal booked
-          transactions — they reconcile with the cockpit total but won&apos;t match a single payslip.
-        </Card>
-      )}
-
-      {/* Venue cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 items-start">
-        {groups.map((g) => (
-          <Card key={g.label} className="overflow-hidden">
-            {/* Venue header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-              <div className="flex items-center gap-2.5">
-                <span className="inline-block h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: g.color }} />
-                <h2 className="text-base font-semibold text-foreground">{g.label}</h2>
-              </div>
-              <div className="text-right">
-                <p className="text-sm font-bold text-foreground tabular-nums">{fmtEuro(g.total)}</p>
-                <p className="text-[11px] text-muted-foreground">
-                  {g.employees.filter((e) => e.name !== UNATTRIBUTED).length} people
-                </p>
-              </div>
-            </div>
-
-            {/* Employee table */}
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border/60">
-                  <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                    Employee
-                  </th>
-                  <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                    Role
-                  </th>
-                  <th className="text-right py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                    Salary
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {g.employees.map((e) => {
-                  const unattributed = e.name === UNATTRIBUTED;
-                  const role = unattributed ? null : resolveRole(roleByContact, e.name);
-                  return (
-                    <tr key={e.name} className="border-b border-border/40 last:border-0 hover:bg-muted/30 transition-colors">
-                      <td className="py-1.5 px-4">
-                        <span className={unattributed ? "text-amber-600 italic" : "text-foreground"}>{e.name}</span>
-                        {e.usedFallback && (
-                          <span
-                            className="ml-2 inline-flex items-center rounded-sm border border-amber-300 bg-amber-50 px-1 py-px text-[9px] font-medium text-amber-700"
-                            title="Estimated via EBITDA fallback rule, not a literal booked amount"
-                          >
-                            est.
-                          </span>
-                        )}
-                        {e.accounts.size > 0 && (
-                          <span className="block text-[10px] text-muted-foreground/70 truncate max-w-[260px]">
-                            {Array.from(e.accounts).join(" · ")}
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-1.5 px-4 align-top">
-                        {unattributed ? (
-                          <span className="text-[11px] text-muted-foreground/70 italic">—</span>
-                        ) : (
-                          <select
-                            value={role ?? ""}
-                            onChange={(ev) =>
-                              setRole.mutate({
-                                contactName: e.name,
-                                role: (ev.target.value || null) as WageRole | null,
-                              })
-                            }
-                            disabled={setRole.isPending}
-                            className={`text-xs border rounded px-2 py-1 bg-background disabled:opacity-50 ${
-                              role ? "border-border text-foreground" : "border-amber-400 text-amber-700"
-                            }`}
-                          >
-                            <option value="">Unassigned</option>
-                            {WAGE_ROLES.map((r) => (
-                              <option key={r} value={r}>{WAGE_ROLE_LABEL[r]}</option>
-                            ))}
-                          </select>
-                        )}
-                      </td>
-                      <td className="py-1.5 px-4 text-right font-medium text-foreground tabular-nums align-top">
-                        {fmtEuro(e.amount)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-border bg-muted/20">
-                  <td className="py-2 px-4 font-semibold text-foreground" colSpan={2}>
-                    Total ({g.employees.length} {g.employees.length === 1 ? "line" : "lines"})
-                  </td>
-                  <td className="py-2 px-4 text-right font-bold text-foreground tabular-nums">{fmtEuro(g.total)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </Card>
-        ))}
-      </div>
-
-      {/* Monthly salary pivot table */}
       <SalaryBreakdown />
-
-      {/* Reconciliation footnote */}
-      {groups.length > 0 && (
-        <p className="text-[11px] text-muted-foreground">
-          Sourced from <code className="text-[10px]">/api/finance/ebitda-aggregated</code> (category{" "}
-          <code className="text-[10px]">wages</code>) — the venue subtotals above sum to the Wages &amp; Salaries row
-          on the EBITDA cockpit for the same period. &ldquo;Salary&rdquo; is the amount counted into EBITDA; on full
-          calendar-month periods this is the literal Zoho figure.
-        </p>
-      )}
     </div>
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  PAGE                                                               */
-/* ------------------------------------------------------------------ */
-
 export default function EmployeeMappingPage() {
   return (
-    <DashboardShell hideDatePicker>
+    <DashboardShell>
       {() => <EmployeeMappingContent />}
     </DashboardShell>
   );
