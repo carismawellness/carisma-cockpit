@@ -1288,6 +1288,60 @@ async function handleGet(req: NextRequest): Promise<NextResponse> {
     void orgParam;
   }
 
+  // ── Post-pass: SPA wage estimates for partial periods ────────────────────────
+  // When May 1–7 is selected and payroll hasn't been posted yet, spa_ebitda_daily
+  // wages = 0 for all venues. The guarantee-row fallback mechanism can't reliably
+  // find TTM data, so we apply the previous-month estimate directly here.
+  if (!periodIsFullCalendarMonths) {
+    const SPA_SLUGS_BY_ID: Record<number, string> = {
+      1: "inter", 2: "hugos", 3: "hyatt", 4: "ramla",
+      5: "labranda", 6: "odycy", 7: "excelsior", 8: "novotel",
+    };
+    // Find SPA venues that have no wages (missing or zero).
+    const spaVenuesMissingWages = Object.entries(venueTotals.SPA)
+      .filter(([, cats]) => !cats.wages || cats.wages.value === 0)
+      .map(([slug]) => slug);
+
+    if (spaVenuesMissingWages.length > 0) {
+      // Fetch previous calendar month's wages from spa_ebitda_daily.
+      const prevMo = previousCalendarMonth(dateFrom);
+      const prevWages = await sbFetch<{ location_id: number; wages: string }>(
+        "spa_ebitda_daily",
+        [
+          ["select", "location_id,wages"],
+          ["date",   `gte.${prevMo.from}`],
+          ["date",   `lte.${prevMo.to}`],
+          ["Range",  "0-9999"],
+        ],
+      ).catch(() => [] as { location_id: number; wages: string }[]);
+
+      // Sum wages per location_id over the previous month.
+      const prevByLoc: Record<number, number> = {};
+      for (const r of prevWages) {
+        prevByLoc[r.location_id] = (prevByLoc[r.location_id] ?? 0)
+          + parseFloat(r.wages || "0");
+      }
+
+      for (const [locId, prevTotal] of Object.entries(prevByLoc)) {
+        const slug = SPA_SLUGS_BY_ID[Number(locId)];
+        if (!slug || !spaVenuesMissingWages.includes(slug)) continue;
+        if (prevTotal <= 0) continue;
+        const estimate = +(prevTotal * (daysInPeriod / prevMo.days)).toFixed(2);
+        const cell: CellTotal = { value: estimate, has_fallback: true, fallback_account_count: 1 };
+        if (!venueTotals.SPA[slug]) venueTotals.SPA[slug] = {};
+        venueTotals.SPA[slug].wages = cell;
+        seenBrands.add("SPA");
+        seenCategories.add("wages");
+        // Roll into SPA brand total.
+        const bt = totals.SPA.wages ?? { value: 0, has_fallback: false, fallback_account_count: 0 };
+        bt.value += estimate;
+        bt.has_fallback = true;
+        bt.fallback_account_count += 1;
+        totals.SPA.wages = bt;
+      }
+    }
+  }
+
   // Post-pass: roll every granular sga_* category into the brand-level
   // "sga" parent, so existing consumers (the BrandAggregatedSummary hook,
   // the EBITDA arithmetic, the parent SG&A row on /finance/ebitda) keep
