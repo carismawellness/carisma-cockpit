@@ -22,6 +22,7 @@ import {
   WAGE_ROLE_ORDER, WAGE_ROLE_LABEL, type WageRole,
 } from "@/lib/hooks/useWageRoles";
 import { useWageSplitByVenue } from "@/lib/hooks/useWageSplitByVenue";
+import { useAdChannelBreakdown } from "@/lib/hooks/useAdChannelBreakdown";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine, Cell,
@@ -442,35 +443,69 @@ function EBITDAOverviewContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
     hq:       number;
     total:    number;
   };
+  // Ad-channel breakdown from transactions_raw (has real Meta/Google/Klaviyo contacts).
+  // agg.lineItems has contact="" for Supabase data so all advertising goes to Misc there.
+  // Instead, fetch channel shares from transactions_raw and apply proportionally per venue.
+  const { adChannelData } = useAdChannelBreakdown(dateFrom, dateTo);
+
   const adChannelRows = useMemo((): AdChannelRow[] => {
     const order = ["Meta", "Google", "Klaviyo", "Misc"] as const;
     const byLabel: Record<string, AdChannelRow> = {};
     for (const label of order) {
       byLabel[label] = { label, perVenue: {}, hq: 0, total: 0 };
     }
-    for (const li of agg.lineItems) {
-      if (li.ebitda_category !== "advertising") continue;
-      const v = li.period_value;
-      if (v === 0) continue;
-      const label = (li.ad_channel && order.includes(li.ad_channel as typeof order[number]))
-        ? li.ad_channel
-        : "Misc";
-      const row = byLabel[label];
-      if (li.brand === "HQ") {
-        row.hq += v;
-      } else if (li.brand === "SPA") {
-        const slug = spaVenueDisplayMeta[li.venue.toLowerCase()]?.slug
-                  ?? (li.venue || "spa-other");
-        row.perVenue[slug] = (row.perVenue[slug] ?? 0) + v;
-      } else if (li.brand === "AES") {
-        row.perVenue["aesthetics"] = (row.perVenue["aesthetics"] ?? 0) + v;
-      } else if (li.brand === "SLIM") {
-        row.perVenue["slimming"] = (row.perVenue["slimming"] ?? 0) + v;
+
+    if (adChannelData && adChannelData.grandTotal > 0) {
+      // Use channel shares from transactions_raw, apply proportionally to each venue's ad total.
+      const shares = adChannelData.channelShares;
+      for (const li of agg.lineItems) {
+        if (li.ebitda_category !== "advertising") continue;
+        const v = li.period_value;
+        if (v === 0) continue;
+        for (const label of order) {
+          const share = shares[label] ?? (label === "Misc" ? 1 : 0);
+          const amt = v * share;
+          if (amt === 0) continue;
+          const row = byLabel[label];
+          if (li.brand === "HQ") {
+            row.hq += amt;
+          } else if (li.brand === "SPA") {
+            const slug = spaVenueDisplayMeta[li.venue.toLowerCase()]?.slug
+                      ?? (li.venue || "spa-other");
+            row.perVenue[slug] = (row.perVenue[slug] ?? 0) + amt;
+          } else if (li.brand === "AES") {
+            row.perVenue["aesthetics"] = (row.perVenue["aesthetics"] ?? 0) + amt;
+          } else if (li.brand === "SLIM") {
+            row.perVenue["slimming"] = (row.perVenue["slimming"] ?? 0) + amt;
+          }
+          row.total += amt;
+        }
       }
-      row.total += v;
+    } else {
+      // Fallback: use agg.lineItems ad_channel (works when contact data exists)
+      for (const li of agg.lineItems) {
+        if (li.ebitda_category !== "advertising") continue;
+        const v = li.period_value;
+        if (v === 0) continue;
+        const label = (li.ad_channel && order.includes(li.ad_channel as typeof order[number]))
+          ? li.ad_channel : "Misc";
+        const row = byLabel[label];
+        if (li.brand === "HQ") {
+          row.hq += v;
+        } else if (li.brand === "SPA") {
+          const slug = spaVenueDisplayMeta[li.venue.toLowerCase()]?.slug
+                    ?? (li.venue || "spa-other");
+          row.perVenue[slug] = (row.perVenue[slug] ?? 0) + v;
+        } else if (li.brand === "AES") {
+          row.perVenue["aesthetics"] = (row.perVenue["aesthetics"] ?? 0) + v;
+        } else if (li.brand === "SLIM") {
+          row.perVenue["slimming"] = (row.perVenue["slimming"] ?? 0) + v;
+        }
+        row.total += v;
+      }
     }
     return order.map(l => byLabel[l]);
-  }, [agg.lineItems, spaVenueDisplayMeta]);
+  }, [adChannelData, agg.lineItems, spaVenueDisplayMeta]);
 
   // Sum spa-venue keys into a single value for the spa-aggregate column.
   // Used when SPA is collapsed (displayedVenues includes {id: "spa-aggregate"}).
