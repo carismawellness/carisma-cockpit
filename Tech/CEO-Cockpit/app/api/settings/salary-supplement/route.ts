@@ -70,7 +70,10 @@ async function lookupTalexioName(empNo: number): Promise<string | null> {
 }
 
 // GET ?month=2026-03-01  — list all rows for a month.
-// Auto-copies role from the prior month for any employee that has no role yet.
+// Auto-copies role from the nearest month that has role data:
+//   • Prefers the closest prior month (normal forward-propagation).
+//   • Falls back to the closest future month (handles historical months
+//     like Jan 2025 that pre-date the first role assignments in Apr 2026).
 export async function GET(req: NextRequest) {
   const supabase = getAdminClient();
   const month = req.nextUrl.searchParams.get("month");
@@ -84,33 +87,48 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Auto-copy roles from prior month for rows that have no role assigned yet.
+  // Auto-copy roles for any employee that has no role yet.
   const rows = (data ?? []) as Array<Record<string, unknown>>;
   const noRole = rows.filter((r) => !r.role);
   if (noRole.length > 0) {
-    const [y, m] = (month as string).split("-").map(Number);
-    const priorDate = new Date(y, m - 2, 1); // one month back
-    const priorMonth = `${priorDate.getFullYear()}-${String(priorDate.getMonth() + 1).padStart(2, "0")}-01`;
-
+    // 1. Look for the most recent prior month that has role assignments.
     const { data: priorRows } = await supabase
       .from("salary_supplement_monthly")
       .select("employee_name, role")
-      .eq("month", priorMonth)
-      .not("role", "is", null);
+      .not("role", "is", null)
+      .lt("month", month)
+      .order("month", { ascending: false })
+      .limit(500);
 
-    if (priorRows?.length) {
-      const priorRoleMap = new Map(
-        (priorRows as Array<{ employee_name: string; role: string }>)
-          .map((r) => [r.employee_name, r.role]),
-      );
+    // 2. If nothing prior has roles, look forward to the earliest future month
+    //    that does (e.g. Apr 2026 is the first month with assignments;
+    //    Jan 2025–Mar 2026 fall back here).
+    const sourceRows: Array<{ employee_name: string; role: string }> =
+      priorRows?.length
+        ? (priorRows as Array<{ employee_name: string; role: string }>)
+        : await supabase
+            .from("salary_supplement_monthly")
+            .select("employee_name, role")
+            .not("role", "is", null)
+            .gt("month", month)
+            .order("month", { ascending: true })
+            .limit(500)
+            .then(({ data: d }) => (d ?? []) as Array<{ employee_name: string; role: string }>);
+
+    if (sourceRows.length) {
+      // Build map: employee_name → role (first entry = closest month, wins)
+      const roleMap = new Map<string, string>();
+      for (const r of sourceRows) {
+        if (!roleMap.has(r.employee_name)) roleMap.set(r.employee_name, r.role);
+      }
       for (const row of noRole) {
-        const role = priorRoleMap.get(row.employee_name as string);
+        const role = roleMap.get(row.employee_name as string);
         if (role) {
           await supabase
             .from("salary_supplement_monthly")
             .update({ role })
             .eq("id", row.id);
-          row.role = role; // reflect in response
+          row.role = role;
         }
       }
     }
