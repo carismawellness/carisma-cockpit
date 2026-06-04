@@ -50,10 +50,12 @@ export async function GET(req: NextRequest) {
       (roleRows ?? []).map((r: { contact_key: string; role: string }) => [r.contact_key, r.role]),
     );
 
-    // 2. Load salary_supplement_monthly for months overlapping the date range
+    // 2. Load salary_supplement_monthly for months overlapping the date range.
+    // Prefer the row's own `role` column (set directly in the UI).
+    // Fall back to wage_role_mapping name-match for rows that pre-date the column.
     const { data: salaryRows, error: salErr } = await supabase
       .from("salary_supplement_monthly")
-      .select("employee_name, spa_slug, amount, month")
+      .select("employee_name, spa_slug, amount, month, role")
       .eq("is_frozen", true)
       .gte("month", monthStart(dateFrom))
       .lte("month", monthStart(dateTo));
@@ -68,8 +70,9 @@ export async function GET(req: NextRequest) {
       const amount      = Number(row.amount ?? 0);
       if (!venue || !amount) continue;
 
+      // Direct role takes priority; fall back to name-match for legacy rows
       const contactKey  = normalizeContact(row.employee_name);
-      const role        = roleByContact.get(contactKey) ?? "unassigned";
+      const role        = (row.role as string | null) ?? roleByContact.get(contactKey) ?? "unassigned";
       const contactName = (row.employee_name || "").trim() || "(no name)";
 
       // byVenueRole

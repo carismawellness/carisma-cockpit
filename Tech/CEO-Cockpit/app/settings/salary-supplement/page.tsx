@@ -15,6 +15,7 @@ interface SupplementRow {
   talexio_name: string | null;
   amount: number;
   spa_slug: string | null;
+  role: string | null;
   is_frozen: boolean;
   synced_at: string;
 }
@@ -37,6 +38,18 @@ const SPA_OPTIONS = [
 
 const SPA_LABEL: Record<string, string> = Object.fromEntries(
   SPA_OPTIONS.map((s) => [s.slug, s.label])
+);
+
+const ROLE_OPTIONS = [
+  { value: "manager",      label: "Manager" },
+  { value: "reception",    label: "Reception" },
+  { value: "practitioner", label: "Practitioner" },
+  { value: "therapist",    label: "Therapist" },
+  { value: "crm",          label: "CRM" },
+];
+
+const ROLE_LABEL: Record<string, string> = Object.fromEntries(
+  ROLE_OPTIONS.map((r) => [r.value, r.label])
 );
 
 // Generate list of months from Jan 2025 to current month + 2 ahead
@@ -95,6 +108,7 @@ export default function SalarySupplement() {
 
   const isFrozen = rows.length > 0 && rows.every((r) => r.is_frozen);
   const unassigned = rows.filter((r) => !r.spa_slug);
+  const unassignedRole = rows.filter((r) => !r.role);
   const total = rows.reduce((s, r) => s + Number(r.amount), 0);
 
   // ── Spa totals ──────────────────────────────────────────────────────────────
@@ -130,6 +144,16 @@ export default function SalarySupplement() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["salary-supplement", month] }),
   });
 
+  // ── Role update mutation ────────────────────────────────────────────────────
+  const updateRole = useMutation({
+    mutationFn: ({ id, role }: { id: number; role: string | null }) =>
+      apiFetch("/api/settings/salary-supplement", {
+        method: "PATCH",
+        body: JSON.stringify({ id, role }),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["salary-supplement", month] }),
+  });
+
   // ── Freeze mutation ─────────────────────────────────────────────────────────
   const freezeMutation = useMutation({
     mutationFn: () =>
@@ -155,6 +179,13 @@ export default function SalarySupplement() {
       updateSpa.mutate({ id, spa_slug: slug || null });
     },
     [updateSpa]
+  );
+
+  const handleRoleChange = useCallback(
+    (id: number, role: string) => {
+      updateRole.mutate({ id, role: role || null });
+    },
+    [updateRole]
   );
 
   return (
@@ -252,6 +283,7 @@ export default function SalarySupplement() {
                     <th className="text-left py-2.5 px-4 font-semibold text-muted-foreground">Employee</th>
                     <th className="text-right py-2.5 px-4 font-semibold text-muted-foreground">Amount</th>
                     <th className="text-left py-2.5 px-4 font-semibold text-muted-foreground">Allocated To</th>
+                    <th className="text-left py-2.5 px-4 font-semibold text-muted-foreground">Designation</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -263,6 +295,7 @@ export default function SalarySupplement() {
                       <td className="py-2 px-4 text-right font-medium text-foreground">
                         {fmtCurrency(row.amount)}
                       </td>
+                      {/* Allocated To (venue) */}
                       <td className="py-2 px-4">
                         {isFrozen ? (
                           <span className={row.spa_slug ? "text-foreground" : "text-red-500"}>
@@ -285,6 +318,29 @@ export default function SalarySupplement() {
                           </select>
                         )}
                       </td>
+                      {/* Designation (role) */}
+                      <td className="py-2 px-4">
+                        {isFrozen ? (
+                          <span className={row.role ? "text-foreground" : "text-muted-foreground"}>
+                            {row.role ? ROLE_LABEL[row.role] : "—"}
+                          </span>
+                        ) : (
+                          <select
+                            value={row.role ?? ""}
+                            onChange={(e) => handleRoleChange(row.id, e.target.value)}
+                            className={`text-sm border rounded px-2 py-1 bg-background ${
+                              !row.role
+                                ? "border-amber-400 text-amber-700"
+                                : "border-border text-foreground"
+                            }`}
+                          >
+                            <option value="">Unassigned</option>
+                            {ROLE_OPTIONS.map((r) => (
+                              <option key={r.value} value={r.value}>{r.label}</option>
+                            ))}
+                          </select>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -298,7 +354,12 @@ export default function SalarySupplement() {
                     </td>
                     <td className="py-2.5 px-4 text-xs text-muted-foreground">
                       {unassigned.length > 0 && (
-                        <span className="text-amber-600">⚠ {unassigned.length} unassigned</span>
+                        <span className="text-amber-600">⚠ {unassigned.length} unassigned venue</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-4 text-xs text-muted-foreground">
+                      {unassignedRole.length > 0 && (
+                        <span className="text-amber-600">⚠ {unassignedRole.length} no designation</span>
                       )}
                     </td>
                   </tr>

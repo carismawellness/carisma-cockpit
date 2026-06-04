@@ -69,7 +69,8 @@ async function lookupTalexioName(empNo: number): Promise<string | null> {
   }
 }
 
-// GET ?month=2026-03-01  — list all rows for a month
+// GET ?month=2026-03-01  — list all rows for a month.
+// Auto-copies role from the prior month for any employee that has no role yet.
 export async function GET(req: NextRequest) {
   const supabase = getAdminClient();
   const month = req.nextUrl.searchParams.get("month");
@@ -82,7 +83,40 @@ export async function GET(req: NextRequest) {
     .order("employee_name");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+
+  // Auto-copy roles from prior month for rows that have no role assigned yet.
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  const noRole = rows.filter((r) => !r.role);
+  if (noRole.length > 0) {
+    const [y, m] = (month as string).split("-").map(Number);
+    const priorDate = new Date(y, m - 2, 1); // one month back
+    const priorMonth = `${priorDate.getFullYear()}-${String(priorDate.getMonth() + 1).padStart(2, "0")}-01`;
+
+    const { data: priorRows } = await supabase
+      .from("salary_supplement_monthly")
+      .select("employee_name, role")
+      .eq("month", priorMonth)
+      .not("role", "is", null);
+
+    if (priorRows?.length) {
+      const priorRoleMap = new Map(
+        (priorRows as Array<{ employee_name: string; role: string }>)
+          .map((r) => [r.employee_name, r.role]),
+      );
+      for (const row of noRole) {
+        const role = priorRoleMap.get(row.employee_name as string);
+        if (role) {
+          await supabase
+            .from("salary_supplement_monthly")
+            .update({ role })
+            .eq("id", row.id);
+          row.role = role; // reflect in response
+        }
+      }
+    }
+  }
+
+  return NextResponse.json(rows);
 }
 
 // PATCH  — freeze a month or update a single row's spa_slug
@@ -109,6 +143,7 @@ export async function PATCH(req: NextRequest) {
   if (body.id !== undefined) {
     const updates: Record<string, unknown> = {};
     if (body.spa_slug !== undefined) updates.spa_slug = body.spa_slug || null;
+    if (body.role !== undefined) updates.role = body.role || null;
     if ("talexio_id" in body) {
       const empNo = body.talexio_id ? parseInt(String(body.talexio_id), 10) : null;
       updates.talexio_id = empNo;
