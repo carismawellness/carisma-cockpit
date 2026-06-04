@@ -1060,9 +1060,14 @@ async function handleGet(req: NextRequest): Promise<NextResponse> {
       // not the post-override brand, so the rules table key stays correct
       // for HQ-venue rows that physically live in the SPA org.
       const zohoOrg: ZohoOrg = orgParam === "SPA" ? "spa" : "aesthetics";
+      // Supabase-sourced rows carry pseudo account_code = ebitda_category slug
+      // (e.g. "wages", "advertising"). Real Zoho rows carry actual codes like
+      // "30001". Try the specific account code first; fall back to the category
+      // slug so category-level rules (e.g. spa|wages) apply to Supabase rows.
       const rule = row.account_code
-        ? rules.get(`${zohoOrg}|${row.account_code}`)
-        : undefined;
+        ? (rules.get(`${zohoOrg}|${row.account_code}`)
+           ?? rules.get(`${zohoOrg}|${row.ebitda_category}`))
+        : rules.get(`${zohoOrg}|${row.ebitda_category}`);
 
       let periodValue = literalSum;
       let usedFallback = false;
