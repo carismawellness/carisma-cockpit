@@ -14,6 +14,7 @@ interface TopBarProps {
   alertCount?: number;
   onMobileMenuOpen?: () => void;
   sidebarCollapsed?: boolean;
+  hideDatePicker?: boolean;
 }
 
 export function TopBar({
@@ -23,6 +24,7 @@ export function TopBar({
   alertCount = 0,
   onMobileMenuOpen,
   sidebarCollapsed = false,
+  hideDatePicker = false,
 }: TopBarProps) {
   const router = useRouter();
   const supabase = createClient();
@@ -51,7 +53,7 @@ export function TopBar({
         >
           <Menu className="h-5 w-5 text-muted-foreground" />
         </Button>
-        <DateRangePicker from={dateFrom} to={dateTo} onChange={onDateChange} />
+        {!hideDatePicker && <DateRangePicker from={dateFrom} to={dateTo} onChange={onDateChange} />}
       </div>
       <div className="flex items-center gap-1 md:gap-3">
         <Button variant="ghost" size="icon" className="relative h-9 w-9">

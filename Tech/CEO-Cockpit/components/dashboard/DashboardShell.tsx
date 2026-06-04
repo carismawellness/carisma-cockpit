@@ -12,9 +12,10 @@ interface DashboardShellProps {
     dateTo: Date;
     brandFilter: string | null;
   }) => ReactNode;
+  hideDatePicker?: boolean;
 }
 
-export function DashboardShell({ children }: DashboardShellProps) {
+export function DashboardShell({ children, hideDatePicker }: DashboardShellProps) {
   const { from, to, setRange } = useDateRange();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -33,6 +34,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
         onDateChange={setRange}
         onMobileMenuOpen={() => setMobileOpen(true)}
         sidebarCollapsed={collapsed}
+        hideDatePicker={hideDatePicker}
       />
       <main
         className={cn(
