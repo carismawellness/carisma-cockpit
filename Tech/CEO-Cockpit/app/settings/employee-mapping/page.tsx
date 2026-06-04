@@ -242,6 +242,11 @@ function fmtMonth(m: string): string {
   return `${MONTH_NAMES[parseInt(mon, 10) - 1]} ${year.slice(2)}`;
 }
 
+function fmtMonthFull(m: string): string {
+  const [year, mon] = m.split("-");
+  return `${MONTH_NAMES[parseInt(mon, 10) - 1]} ${year}`;
+}
+
 function fmtAmount(n: number): string {
   if (!n) return "";
   return `€${Math.round(n).toLocaleString("en-GB")}`;
@@ -265,16 +270,36 @@ interface SalaryData {
   employees: SalaryEmployee[];
 }
 
+const MONTH_OPTIONS: Array<{ value: string; label: string }> = (() => {
+  const opts = [];
+  for (let y = 2024; y <= 2027; y++) {
+    for (let m = 1; m <= 12; m++) {
+      const mm = String(m).padStart(2, "0");
+      opts.push({ value: `${y}-${mm}`, label: `${MONTH_NAMES[m - 1]} ${y}` });
+    }
+  }
+  return opts;
+})();
+
 function SalaryBreakdown() {
   const [data, setData] = useState<SalaryData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fromMonth, setFromMonth] = useState("2025-01");
+  const [toMonth, setToMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
 
   async function handleLoad() {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/settings/salary-monthly?date_from=2025-01-01&date_to=2026-06-30");
+      const dateFrom = `${fromMonth}-01`;
+      const [toY, toM] = toMonth.split("-").map(Number);
+      const lastDay = new Date(toY, toM, 0).getDate();
+      const dateTo  = `${toMonth}-${String(lastDay).padStart(2, "0")}`;
+      const res = await fetch(`/api/settings/salary-monthly?date_from=${dateFrom}&date_to=${dateTo}`);
       if (!res.ok) {
         const text = await res.text().catch(() => res.statusText);
         throw new Error(`Server error ${res.status}: ${text}`);
@@ -291,26 +316,49 @@ function SalaryBreakdown() {
 
   return (
     <Card className="overflow-hidden">
-      <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
-        <div>
+      <div className="px-4 py-3 border-b border-border flex flex-wrap items-center gap-3">
+        <div className="flex-1 min-w-0">
           <h2 className="text-base font-semibold text-foreground">Salary Breakdown</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Monthly wages per employee by org — Jan 2025 to Jun 2026. Source: transactions_raw (wages COA).
+            Monthly wages + supplements per employee by org — {fmtMonthFull(fromMonth)} to {fmtMonthFull(toMonth)}.
+            Source: Zoho wages (wages COA) + frozen supplements.
           </p>
         </div>
-        <button
-          onClick={handleLoad}
-          disabled={isLoading}
-          className="shrink-0 inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted/50 disabled:opacity-50 transition-colors"
-        >
-          {isLoading && (
-            <svg className="animate-spin h-3.5 w-3.5 text-muted-foreground" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-            </svg>
-          )}
-          {isLoading ? "Loading…" : "Load Salary Breakdown"}
-        </button>
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <label className="text-xs text-muted-foreground">From</label>
+          <select
+            value={fromMonth}
+            onChange={(e) => setFromMonth(e.target.value)}
+            className="text-xs border border-border rounded px-2 py-1 bg-background text-foreground"
+          >
+            {MONTH_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          <label className="text-xs text-muted-foreground">To</label>
+          <select
+            value={toMonth}
+            onChange={(e) => setToMonth(e.target.value)}
+            className="text-xs border border-border rounded px-2 py-1 bg-background text-foreground"
+          >
+            {MONTH_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          <button
+            onClick={handleLoad}
+            disabled={isLoading}
+            className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted/50 disabled:opacity-50 transition-colors"
+          >
+            {isLoading && (
+              <svg className="animate-spin h-3.5 w-3.5 text-muted-foreground" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+              </svg>
+            )}
+            {isLoading ? "Loading…" : "Load Salary Breakdown"}
+          </button>
+        </div>
       </div>
 
       {error && (
