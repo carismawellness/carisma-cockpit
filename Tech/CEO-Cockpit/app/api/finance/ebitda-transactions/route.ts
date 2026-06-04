@@ -256,26 +256,31 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   const SYNTHETIC_PREFIXES = ["LAPIS_REV", "POS_AES_REV", "POS_SLIM_REV", "SUPP_SAL"];
   const isSynthetic = (code: string) => SYNTHETIC_PREFIXES.some((p) => code === p);
 
+  // Pseudo codes are EBITDA category slugs used by Supabase-aggregated rows.
+  // Zoho doesn't know them — query transactions_raw instead of the Zoho API.
+  const PSEUDO_CODES = new Set(["wages", "advertising", "sga", "cogs", "utilities", "rent", "revenue"]);
+  const isPseudo = (code: string) => PSEUDO_CODES.has(code) || code.startsWith("sga_");
+
   // Per (org, account_code) → list of matched line_items (one per venue/contact).
-  // We pull transactions ONCE per (org, code) and then attribute to each
-  // matched line_item's venue using its allocation factor.
   const syntheticRows: DrillResponse["synthetic_rows"] = [];
   const codesByOrg: Record<ZohoOrg, Set<string>> = { spa: new Set(), aesthetics: new Set() };
-  // (org, code) → matched line items needing transactions
   const liByOrgCode = new Map<string, AggLineItem[]>();
+  // Pseudo-code line items — will be served from transactions_raw, not Zoho.
+  const pseudoItems: AggLineItem[] = [];
 
   let hasFallbackContribution = false;
 
   for (const li of matched) {
     if (isSynthetic(li.account_code)) {
+      const sourceLabel = li.account_code.includes("REV")
+        ? "Revenue — spa_revenue_monthly (synced from property Google Sheets)"
+        : "Salary Supplement — salary_supplement_monthly (Cockpit)";
       syntheticRows.push({
         account_code: li.account_code,
         account_name: li.account_name,
         venue:        li.venue || (li.brand === "HQ" ? "HQ" : li.brand),
         period_value: round2(li.period_value),
-        reason:       li.account_code.includes("REV")
-          ? "Revenue sourced from POS (Lapis/Cockpit), not Zoho GL"
-          : "Salary Supplement (Cockpit), not a Zoho posting",
+        reason:       sourceLabel,
       });
       continue;
     }
@@ -286,11 +291,16 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         account_name: li.account_name,
         venue:        li.venue || (li.brand === "HQ" ? "HQ" : li.brand),
         period_value: round2(li.period_value),
-        reason:       `Estimated (${li.rule_type ?? "fallback"}): ${li.method_detail ?? "smoothed value, no 1:1 transactions"}`,
+        reason:       `Estimated (${li.rule_type ?? "fallback"}): ${li.method_detail ?? "smoothed value — no posted transactions in this period"}`,
       });
       continue;
     }
     if (!li.account_code) continue;
+    // Route pseudo codes to transactions_raw, real codes to Zoho.
+    if (isPseudo(li.account_code)) {
+      pseudoItems.push(li);
+      continue;
+    }
     const key = `${li.zoho_org}::${li.account_code}`;
     codesByOrg[li.zoho_org].add(li.account_code);
     const arr = liByOrgCode.get(key) ?? [];
@@ -370,6 +380,85 @@ async function handle(req: NextRequest): Promise<NextResponse> {
           is_split:          isSplit,
           used_fallback:     false,
         });
+      }
+    }
+  }
+
+  // 4b. Pull transactions_raw for pseudo-code line items (Supabase-aggregated rows).
+  //     These have account_code = ebitda category slug ("wages", "sga" etc.) —
+  //     Zoho doesn't know them. transactions_raw has per-contact GL detail from ETL.
+  if (pseudoItems.length > 0) {
+    const SUPABASE_URL = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+    const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+
+    // Group by (org, ebitda_line) to batch queries.
+    const pseudoByOrgLine = new Map<string, { org: string; ebitdaLine: string; subLine: string | null }>();
+    for (const li of pseudoItems) {
+      const ebitdaLine = li.ebitda_category;
+      // sga_prof_services → ebitda_line=sga + sub_line=prof_services filter
+      const isSubLine = ebitdaLine.startsWith("sga_");
+      const baseLine  = isSubLine ? "sga"  : ebitdaLine;
+      const subLine   = isSubLine ? ebitdaLine.replace("sga_", "") : null;
+      const key = `${li.zoho_org}::${baseLine}::${subLine ?? ""}`;
+      pseudoByOrgLine.set(key, { org: li.zoho_org, ebitdaLine: baseLine, subLine });
+    }
+
+    for (const { org, ebitdaLine, subLine } of pseudoByOrgLine.values()) {
+      try {
+        const qs = new URLSearchParams([
+          ["select", "txn_id,date,ebitda_line,ebitda_sub_line,account_code,account_name,contact_name,transaction_type,amount,venue"],
+          ["org",         `eq.${org}`],
+          ["ebitda_line", `eq.${ebitdaLine}`],
+          ["date",        `gte.${dateFrom}`],
+          ["date",        `lte.${dateTo}`],
+          ["order",       "date"],
+          ["limit",       "2000"],
+        ]);
+        if (subLine) qs.append("ebitda_sub_line", `eq.${subLine}`);
+
+        // Venue filter: specific venue → tagged + untagged rows; group/aggregate → all.
+        if (!isGroup && !drillSpaAggregate && wantVenue !== "all") {
+          qs.append("or", `(venue.eq.${wantVenue},venue.is.null)`);
+        }
+
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/transactions_raw?${qs.toString()}`, {
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+          cache: "no-store",
+        });
+        if (!res.ok) {
+          notes.push(`transactions_raw query failed (${org} / ${ebitdaLine}): HTTP ${res.status}`);
+          continue;
+        }
+        const rows = await res.json() as Array<{
+          txn_id: string; date: string; ebitda_line: string; ebitda_sub_line: string;
+          account_code: string; account_name: string; contact_name: string;
+          transaction_type: string; amount: number; venue: string | null;
+        }>;
+
+        for (const row of rows) {
+          transactions.push({
+            account_code:      row.account_code,
+            account_name:      row.account_name,
+            date:              row.date,
+            transaction_type:  row.transaction_type,
+            transaction_id:    row.txn_id,
+            reference:         "",
+            payee:             row.contact_name || "(no payee)",
+            description:       row.ebitda_sub_line || row.ebitda_line,
+            amount:            row.amount,
+            venue:             row.venue ?? venueRaw ?? org,
+            allocation_factor: 1,
+            allocated_amount:  row.amount,
+            is_split:          false,
+            used_fallback:     false,
+          });
+        }
+
+        if (rows.length === 0) {
+          notes.push(`No ${ebitdaLine} transactions in transactions_raw for ${org} / ${wantVenue} — run ETL to populate.`);
+        }
+      } catch (e) {
+        notes.push(`transactions_raw lookup failed: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
   }
