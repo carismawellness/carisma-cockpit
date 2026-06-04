@@ -35,14 +35,16 @@ interface ContactImportSectionProps {
   cacheKey: string;
   emptyMessage: string;
   showDelete?: boolean;
+  noCache?: boolean;   // when true, never auto-restore on page load — require explicit click
   roleByContact: Map<string, WageRole>;
   setRole: ReturnType<typeof useWageRoles>["setRole"];
 }
 
 function ContactImportSection({
-  title, subtitle, apiEndpoint, cacheKey, emptyMessage, showDelete = false, roleByContact, setRole,
+  title, subtitle, apiEndpoint, cacheKey, emptyMessage, showDelete = false, noCache = false, roleByContact, setRole,
 }: ContactImportSectionProps) {
   const [importedContacts, setImportedContacts] = useState<ImportedContact[] | null>(() => {
+    if (noCache) return null;
     try {
       const raw = sessionStorage.getItem(cacheKey);
       return raw ? (JSON.parse(raw) as ImportedContact[]) : null;
@@ -429,6 +431,7 @@ function EmployeeMappingContent() {
       <ContactImportSection
         title="Professional Fees COA"
         showDelete
+        noCache
         subtitle="Contractors and CRM staff from professional fees GL accounts — Jan 2025 to Jun 2026."
         apiEndpoint="/api/settings/prof-fee-contacts"
         cacheKey="prof-fee-contacts-cache"
