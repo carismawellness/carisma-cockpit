@@ -1111,13 +1111,15 @@ async function handleGet(req: NextRequest): Promise<NextResponse> {
       let appliedRuleType: RuleType | null = null;
       let appliedMethodDetail: string | null = null;
 
-      // Fallback rules apply on partial periods. Also apply for wages when the
-      // literal sum is exactly zero on a full calendar month — this happens when
-      // salary entries haven't been posted yet (typically posted ~10 days after
-      // month-end). Zero wages on a closed month is a data-lag issue, not
-      // genuinely zero wages.
+      // Fallback fires ONLY when literal sum is zero (data not yet posted).
+      // Never override real posted data with TTM/previous-month estimates —
+      // if Zoho has actual transactions in the window, use them.
+      //
+      // Special case: wages on a full calendar month with zero data means
+      // salary hasn't been posted yet (posted ~10 days after month-end).
       const wagesUnposted = category === "wages" && literalSum === 0;
-      if ((!periodIsFullCalendarMonths || wagesUnposted) && rule && rule.active && rule.rule_type !== "disabled") {
+      const dataIsMissing  = literalSum === 0;
+      if (((!periodIsFullCalendarMonths && dataIsMissing) || wagesUnposted) && rule && rule.active && rule.rule_type !== "disabled") {
         if (rule.rule_type === "manual_annual") {
           const annual = rule.params?.annual_amount;
           if (typeof annual === "number" && Number.isFinite(annual)) {
