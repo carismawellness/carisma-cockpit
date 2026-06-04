@@ -657,6 +657,39 @@ async function fetchFromSupabase(
     }
   }
 
+  // Guarantee a row exists for wages + utilities for every SPA venue even when
+  // the literal sum is zero (salary not yet posted, or no utility bills in window).
+  // Without this, the fallback loop has no row to operate on and produces nothing.
+  // Collect venues seen in this period from any non-zero line, then ensure wages/utilities.
+  {
+    const seenVenues = new Set<string>();
+    for (const key of rowMap.keys()) {
+      if (key.startsWith("SPA|")) {
+        const venueSlug = key.split("|")[2];
+        if (venueSlug && venueSlug !== "hq") seenVenues.add(venueSlug);
+      }
+    }
+    // Also include hardwired venues in case ALL lines were zero for a venue.
+    for (const s of ["inter","hugos","hyatt","ramla","labranda","odycy","excelsior","novotel"]) seenVenues.add(s);
+    for (const slug of seenVenues) {
+      for (const line of ["wages", "utilities"] as const) {
+        const key = `SPA|${line}|${slug}`;
+        if (!rowMap.has(key)) {
+          rowMap.set(key, {
+            brand: "SPA",
+            line_item: EBITDA_LINE_LABEL[line] ?? line,
+            account_code: line,
+            ebitda_category: line,
+            venue: slug,
+            contact: "",
+            allocation: "",
+            daily: {},
+          });
+        }
+      }
+    }
+  }
+
   // ── 2. SPA revenue (spa_revenue_monthly) — spread per day ─────────────────
 
   for (const r of spaRevenueRaw) {
