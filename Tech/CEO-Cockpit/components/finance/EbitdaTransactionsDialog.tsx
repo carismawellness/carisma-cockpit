@@ -94,6 +94,7 @@ export function EbitdaTransactionsDialog({
     dateTo,
     showContactTab && activeTab === "contacts" && !isWages,
     ebitdaSubLine,
+    target?.venue,   // pass venue so breakdown is filtered to this venue's tagged transactions
   );
   const { data: roleData, isLoading: roleLoading, error: roleError } = useWageRoleBreakdown(
     targetToOrg(target),

@@ -13,6 +13,7 @@ export interface ContactBreakdownData {
   org:             string;
   ebitda_line:     string;
   ebitda_sub_line: string | null;
+  venue:           string | null;
   date_from:       string;
   date_to:         string;
   total:           number;
@@ -30,17 +31,19 @@ export function useContactBreakdown(
   dateTo:        Date,
   enabled:       boolean,
   ebitdaSubLine?: string | null,
+  venue?:        string | null,   // venue slug for venue-specific breakdown
 ) {
   const df = toIso(dateFrom);
   const dt = toIso(dateTo);
 
   return useQuery<ContactBreakdownData>({
-    queryKey: ["contact-breakdown", org, ebitdaLine, df, dt, ebitdaSubLine ?? null],
+    queryKey: ["contact-breakdown", org, ebitdaLine, df, dt, ebitdaSubLine ?? null, venue ?? null],
     enabled:  enabled && org !== null && ebitdaLine !== null,
     staleTime: 60_000,
     queryFn: async () => {
       let url = `/api/finance/contact-breakdown?org=${org}&ebitda_line=${ebitdaLine}&date_from=${df}&date_to=${dt}`;
       if (ebitdaSubLine) url += `&ebitda_sub_line=${ebitdaSubLine}`;
+      if (venue)         url += `&venue=${encodeURIComponent(venue)}`;
       const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) {
         const body = await res.text().catch(() => "");

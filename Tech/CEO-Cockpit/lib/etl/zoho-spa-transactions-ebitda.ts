@@ -408,9 +408,12 @@ export async function runSpaEbitdaMonthFromTransactions(
   await deleteRange("transactions_raw", [["org", "eq.spa"], ["date", `gte.${fromDate}`], ["date", `lte.${toDate}`]]);
   // Deduplicate by (txn_id, account_code, contact_name, ebitda_line) — sum amounts
   // for rows that share the same key (e.g. same employee on two lines of same account).
+  // venue = the Zoho reporting tag slug (e.g. "inter", "hugos", "hq").
+  // null for transactions split by sales_ratio/salary_cost (no single venue).
   const rawMap = new Map<string, Record<string, unknown>>();
   for (const c of classified) {
-    const key = `${c.txn_id}|${c.code}|${c.contact_name}|${c.line}`;
+    const venue = c.tagSlug ?? null;
+    const key = `${c.txn_id}|${c.code}|${c.contact_name}|${c.line}|${venue ?? ""}`;
     const existing = rawMap.get(key);
     if (existing) {
       existing.amount = +((existing.amount as number) + c.amount).toFixed(2);
@@ -420,12 +423,13 @@ export async function runSpaEbitdaMonthFromTransactions(
         ebitda_line: c.line, ebitda_sub_line: c.sub_line,
         account_code: c.code, account_name: c.account_name,
         contact_name: c.contact_name, transaction_type: c.txn_type,
+        venue,
         amount: +c.amount.toFixed(2), synced_at: nowTs,
       });
     }
   }
   const rawRows = Array.from(rawMap.values());
-  const rawCount = await upsert("transactions_raw", rawRows, "org,txn_id,account_code,contact_name,ebitda_line");
+  const rawCount = await upsert("transactions_raw", rawRows, "org,txn_id,account_code,contact_name,ebitda_line,venue");
 
   log.push(`${monthKey}: ${spaCount} spa daily row(s) + ${hqCount} hq daily row(s) + ${rawCount} raw line(s) upserted`);
   return { spaRowsUpserted: spaCount, hqRowsUpserted: hqCount, log };
