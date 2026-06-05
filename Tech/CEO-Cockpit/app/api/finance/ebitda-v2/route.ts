@@ -89,55 +89,79 @@ function emptyVenueData(): VenueData {
   };
 }
 
-// ── Date helpers ─────────────────────────────────────────────────────────────
+// ── Date helpers — ALL use LOCAL-SAFE parsing ─────────────────────────────────
+//
+// IMPORTANT: new Date("YYYY-MM-DD") is parsed as UTC midnight by JavaScript.
+// On Vercel servers running in EDT (UTC-4), "2026-05-01" becomes April 30 local
+// time, causing getMonth() to return 3 (April) instead of 4 (May). This breaks
+// every month-boundary calculation for partial periods.
+//
+// Fix: parse date strings by splitting on "-" and using the 3-argument Date
+// constructor (local time), or use pure string arithmetic for month operations.
+
+function parseLocalDate(s: string): Date {
+  const [y, m, d] = s.slice(0, 10).split("-").map(Number);
+  return new Date(y, m - 1, d);   // local time — not UTC
+}
 
 function daysBetween(a: string, b: string): number {
-  const ms = new Date(b).getTime() - new Date(a).getTime();
+  const ms = parseLocalDate(b).getTime() - parseLocalDate(a).getTime();
   return Math.round(ms / 86_400_000) + 1;
 }
 
 function isFullCalendarMonths(from: string, to: string): boolean {
-  const df = new Date(from);
-  const dt = new Date(to);
-  const startIsFirst  = df.getDate() === 1;
-  const endIsLast     = dt.getDate() === new Date(dt.getFullYear(), dt.getMonth() + 1, 0).getDate();
+  const df = parseLocalDate(from);
+  const dt = parseLocalDate(to);
+  const startIsFirst = df.getDate() === 1;
+  const endIsLast    = dt.getDate() === new Date(dt.getFullYear(), dt.getMonth() + 1, 0).getDate();
   return startIsFirst && endIsLast;
 }
 
-// Months that overlap with [from, to]
+// Months that overlap with [from, to] — pure string arithmetic, no Date parsing
 function overlappingMonths(from: string, to: string): string[] {
   const months: string[] = [];
-  const start = new Date(from.slice(0, 7) + "-01");
-  const end   = new Date(to.slice(0,   7) + "-01");
-  const cur   = new Date(start);
-  while (cur <= end) {
-    months.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-01`);
-    cur.setMonth(cur.getMonth() + 1);
+  let y = parseInt(from.slice(0, 4), 10);
+  let m = parseInt(from.slice(5, 7), 10);
+  const ey = parseInt(to.slice(0, 4), 10);
+  const em = parseInt(to.slice(5, 7), 10);
+  while (y < ey || (y === ey && m <= em)) {
+    months.push(`${y}-${String(m).padStart(2, "0")}-01`);
+    m++;
+    if (m > 12) { m = 1; y++; }
   }
   return months;
 }
 
+// Last day of a given YYYY-MM-01 month string
+function lastDayOfMonth(monthStr: string): string {
+  const y = parseInt(monthStr.slice(0, 4), 10);
+  const m = parseInt(monthStr.slice(5, 7), 10);
+  const last = new Date(y, m, 0).getDate();  // day 0 of next month = last day of this month
+  return `${y}-${String(m).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
+}
+
 // Days in a given calendar month that fall within [from, to]
 function daysOfMonthInRange(monthStr: string, from: string, to: string): number {
-  const mStart = monthStr;
-  const mEnd   = new Date(new Date(monthStr).getFullYear(),
-                           new Date(monthStr).getMonth() + 1, 0)
-                   .toISOString().slice(0, 10);
-  const rangeStart = from > mStart ? from : mStart;
-  const rangeEnd   = to   < mEnd   ? to   : mEnd;
+  const mEnd       = lastDayOfMonth(monthStr);
+  const rangeStart = from > monthStr ? from : monthStr;
+  const rangeEnd   = to   < mEnd    ? to   : mEnd;
+  if (rangeStart > rangeEnd) return 0;
   return daysBetween(rangeStart, rangeEnd);
 }
 
 function totalDaysInMonth(monthStr: string): number {
-  const d = new Date(monthStr);
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  const y = parseInt(monthStr.slice(0, 4), 10);
+  const m = parseInt(monthStr.slice(5, 7), 10);
+  return new Date(y, m, 0).getDate();
 }
 
-// Shift a YYYY-MM-DD date by N calendar months (negative = back)
+// Shift a YYYY-MM-01 string by N calendar months (negative = back)
 function shiftMonth(dateStr: string, n: number): string {
-  const d = new Date(dateStr.slice(0, 7) + "-01");
-  d.setMonth(d.getMonth() + n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  let y = parseInt(dateStr.slice(0, 4), 10);
+  let m = parseInt(dateStr.slice(5, 7), 10) + n;
+  while (m > 12) { m -= 12; y++; }
+  while (m < 1)  { m += 12; y--; }
+  return `${y}-${String(m).padStart(2, "0")}-01`;
 }
 
 // ── Main handler ─────────────────────────────────────────────────────────────
@@ -447,10 +471,9 @@ export async function GET(req: Request) {
     for (const row of rows) {
       if (!row.spa_slug || !venues[row.spa_slug]) continue;
       const amount = row.amount * factor;
-      // Role priority: supplement.role column → wage_role_mapping → "unassigned"
-      const suppRoleRaw = ((row.role as string) || "").toLowerCase().trim()
-                       || wageRoleMap.get(((row.employee_name as string) || "").toLowerCase().trim())
-                       || "unassigned";
+      // Role comes exclusively from the frozen supplement record's role column.
+      // wage_role_mapping is NOT used for supplement — frozen cell is authoritative.
+      const suppRoleRaw = ((row.role as string) || "").toLowerCase().trim() || "unassigned";
       const suppRole: WageRole = (WAGE_ROLES as readonly string[]).includes(suppRoleRaw)
         ? (suppRoleRaw as WageRole)
         : "unassigned";

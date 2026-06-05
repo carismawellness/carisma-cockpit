@@ -95,29 +95,32 @@ export async function GET(req: Request) {
       wageRoleMap.set((r.contact_key as string).toLowerCase().trim(), r.role as string);
     }
 
-    // Build overlapping months
+    // Build overlapping months — pure string arithmetic to avoid UTC/local timezone bugs
     const suppMonths: string[] = [];
-    const cur = new Date(dateFrom.slice(0, 7) + "-01");
-    const end = new Date(dateTo.slice(0, 7) + "-01");
-    while (cur <= end) {
-      suppMonths.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-01`);
-      cur.setMonth(cur.getMonth() + 1);
+    let curY = parseInt(dateFrom.slice(0, 4), 10), curM = parseInt(dateFrom.slice(5, 7), 10);
+    const endY = parseInt(dateTo.slice(0, 4), 10),  endM = parseInt(dateTo.slice(5, 7), 10);
+    while (curY < endY || (curY === endY && curM <= endM)) {
+      suppMonths.push(`${curY}-${String(curM).padStart(2, "0")}-01`);
+      curM++; if (curM > 12) { curM = 1; curY++; }
     }
 
     const { data: sd } = await supabase
       .from("salary_supplement_monthly")
-      .select("month, employee_name, amount, role")   // role = designation from Talexio
+      .select("month, employee_name, amount, role")
       .eq("spa_slug", venue)
       .eq("is_frozen", true)
       .in("month", suppMonths);
 
     for (const s of (sd ?? [])) {
-      const m = (s.month as string).slice(0, 10);
-      const mEnd = new Date(new Date(m).getFullYear(), new Date(m).getMonth() + 1, 0).toISOString().slice(0, 10);
-      const rangeStart = dateFrom > m ? dateFrom : m;
-      const rangeEnd   = dateTo < mEnd ? dateTo : mEnd;
-      const daysInRange = Math.round((new Date(rangeEnd).getTime() - new Date(rangeStart).getTime()) / 86_400_000) + 1;
-      const daysInMonth = new Date(new Date(m).getFullYear(), new Date(m).getMonth() + 1, 0).getDate();
+      const m     = (s.month as string).slice(0, 10);
+      const mY    = parseInt(m.slice(0, 4), 10), mMo = parseInt(m.slice(5, 7), 10);
+      const lastD = new Date(mY, mMo, 0).getDate();
+      const mEnd  = `${mY}-${String(mMo).padStart(2, "0")}-${String(lastD).padStart(2, "0")}`;
+      const rangeStart  = dateFrom! > m    ? dateFrom! : m;
+      const rangeEnd    = dateTo!   < mEnd ? dateTo!   : mEnd;
+      const parseLocal  = (s: string) => { const [y,mo,d] = s.split("-").map(Number); return new Date(y,mo-1,d); };
+      const daysInRange = rangeStart > rangeEnd ? 0 : Math.round((parseLocal(rangeEnd).getTime() - parseLocal(rangeStart).getTime()) / 86_400_000) + 1;
+      const daysInMonth = lastD;
       const prorated = Number(s.amount ?? 0) * (daysInRange / daysInMonth);
       if (prorated > 0) suppRows.push({
         employee_name: s.employee_name as string,
@@ -134,9 +137,8 @@ export async function GET(req: Request) {
         return (wageRoleMap.get(key) ?? "unassigned") === wageRole;
       });
       suppRows = suppRows.filter(s => {
-        const role = s.role
-          || wageRoleMap.get(s.employee_name.toLowerCase().trim())
-          || "unassigned";
+        // Supplement role from frozen record only — not wage_role_mapping
+        const role = (s.role || "unassigned");
         return role === wageRole;
       });
     }
@@ -224,7 +226,12 @@ export async function GET(req: Request) {
     .map(([contact, acc]) => {
       const amount  = acc.zoho + acc.supplement;
       const role    = ebitdaLine === "wages"
-        ? (wageRoleMap.get(contact.toLowerCase().trim()) ?? "unassigned")
+        ? (() => {
+            // For supplement-only contacts, use the supplement's role field
+            const suppRole = suppRows.find(s => s.employee_name === contact)?.role;
+            if (suppRole) return suppRole;
+            return wageRoleMap.get(contact.toLowerCase().trim()) ?? "unassigned";
+          })()
         : undefined;
       const source  = acc.zoho > 0 && acc.supplement > 0 ? "both"
                     : acc.supplement > 0                  ? "salary_supplement"
@@ -250,7 +257,8 @@ export async function GET(req: Request) {
       wageRoleAcc.set(role, (wageRoleAcc.get(role) ?? 0) + Number(r.amount ?? 0));
     }
     for (const s of suppRows) {
-      const role = s.role || wageRoleMap.get(s.employee_name.toLowerCase().trim()) || "unassigned";
+      // Supplement role from frozen record only
+      const role = (s.role || "unassigned");
       wageRoleAcc.set(role, (wageRoleAcc.get(role) ?? 0) + s.amount);
     }
   }
