@@ -76,16 +76,50 @@ export async function GET(req: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const txnRows = (rows ?? []) as Array<Record<string, unknown>>;
-  const total = txnRows.reduce((s, r) => s + Number(r.amount ?? 0), 0);
 
-  // Wage role mapping (only needed for wages)
+  // Wage role mapping + salary supplement (only needed for wages)
+  type SuppRow = { employee_name: string; amount: number; month: string };
+  let suppRows: SuppRow[] = [];
   let wageRoleMap = new Map<string, string>();
+
   if (ebitdaLine === "wages") {
+    // Load wage role mapping
     const { data: roles } = await supabase
       .from("wage_role_mapping")
       .select("contact_key, role");
     for (const r of (roles ?? [])) {
       wageRoleMap.set((r.contact_key as string).toLowerCase().trim(), r.role as string);
+    }
+
+    // Load frozen salary supplement for this venue and the overlapping months
+    // Build month list from dateFrom..dateTo
+    const suppMonths: string[] = [];
+    const cur = new Date(dateFrom!.slice(0, 7) + "-01");
+    const end = new Date(dateTo!.slice(0,  7) + "-01");
+    while (cur <= end) {
+      suppMonths.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-01`);
+      cur.setMonth(cur.getMonth() + 1);
+    }
+
+    const { data: sd } = await supabase
+      .from("salary_supplement_monthly")
+      .select("month, employee_name, amount")
+      .eq("spa_slug", venue)
+      .eq("is_frozen", true)
+      .in("month", suppMonths);
+
+    // Pro-rate each month's supplement into the selected period
+    for (const s of (sd ?? [])) {
+      const m        = (s.month as string).slice(0, 10);
+      const mEnd     = new Date(new Date(m).getFullYear(), new Date(m).getMonth() + 1, 0).toISOString().slice(0, 10);
+      const rangeStart = dateFrom! > m    ? dateFrom! : m;
+      const rangeEnd   = dateTo!   < mEnd ? dateTo!   : mEnd;
+      const daysInRange = Math.round((new Date(rangeEnd).getTime() - new Date(rangeStart).getTime()) / 86_400_000) + 1;
+      const daysInMonth = new Date(new Date(m).getFullYear(), new Date(m).getMonth() + 1, 0).getDate();
+      const prorated    = Number(s.amount ?? 0) * (daysInRange / daysInMonth);
+      if (prorated > 0) {
+        suppRows.push({ employee_name: s.employee_name as string, amount: +prorated.toFixed(2), month: m });
+      }
     }
   }
 
@@ -107,11 +141,18 @@ export async function GET(req: Request) {
     return "misc";
   }
 
-  // ── Contact breakdown ─────────────────────────────────────────────────────
+  const suppTotal = suppRows.reduce((s, r) => s + r.amount, 0);
+  const total = txnRows.reduce((s, r) => s + Number(r.amount ?? 0), 0) + suppTotal;
+
+  // ── Contact breakdown (Zoho txns + supplement) ───────────────────────────
   const contactMap = new Map<string, number>();
   for (const r of txnRows) {
     const c = (r.contact_name as string) || "Unknown";
     contactMap.set(c, (contactMap.get(c) ?? 0) + Number(r.amount ?? 0));
+  }
+  // Add supplement rows into contact map
+  for (const s of suppRows) {
+    contactMap.set(s.employee_name, (contactMap.get(s.employee_name) ?? 0) + s.amount);
   }
   const contacts = Array.from(contactMap.entries())
     .map(([contact, amount]) => ({
@@ -121,13 +162,18 @@ export async function GET(req: Request) {
     }))
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
 
-  // ── Wage role breakdown ───────────────────────────────────────────────────
+  // ── Wage role breakdown (Zoho txns + supplement) ─────────────────────────
   const wageRoleAcc = new Map<string, number>();
   if (ebitdaLine === "wages") {
     for (const r of txnRows) {
       const contact = ((r.contact_name as string) || "").toLowerCase().trim();
       const role = wageRoleMap.get(contact) ?? "unassigned";
       wageRoleAcc.set(role, (wageRoleAcc.get(role) ?? 0) + Number(r.amount ?? 0));
+    }
+    // Supplement rows — look up role for each employee
+    for (const s of suppRows) {
+      const role = wageRoleMap.get(s.employee_name.toLowerCase().trim()) ?? "unassigned";
+      wageRoleAcc.set(role, (wageRoleAcc.get(role) ?? 0) + s.amount);
     }
   }
   const wageRoles = Array.from(wageRoleAcc.entries())
@@ -155,18 +201,32 @@ export async function GET(req: Request) {
     }))
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
 
-  // ── Individual transactions ───────────────────────────────────────────────
-  const transactions = txnRows.map(r => ({
-    txn_id:       r.txn_id,
-    date:         r.date,
-    contact:      r.contact_name || "—",
-    account_code: r.account_code,
-    account_name: r.account_name,
-    txn_type:     r.transaction_type,
-    sub_line:     r.ebitda_sub_line,
-    amount:       +Number(r.amount ?? 0).toFixed(2),
-    source:       "zoho" as string,   // all transactions_raw rows come from Zoho ETL
-  }));
+  // ── Individual transactions (Zoho + salary supplement) ───────────────────
+  const transactions = [
+    ...txnRows.map(r => ({
+      txn_id:       r.txn_id as string,
+      date:         r.date as string,
+      contact:      (r.contact_name as string) || "—",
+      account_code: r.account_code as string,
+      account_name: r.account_name as string,
+      txn_type:     r.transaction_type as string,
+      sub_line:     r.ebitda_sub_line as string,
+      amount:       +Number(r.amount ?? 0).toFixed(2),
+      source:       "zoho",
+    })),
+    // Salary supplement synthetic rows
+    ...suppRows.map(s => ({
+      txn_id:       `supp-${s.month}-${s.employee_name}`,
+      date:         s.month.slice(0, 10),
+      contact:      s.employee_name,
+      account_code: "SUPPLEMENT",
+      account_name: "Salary Supplement",
+      txn_type:     "salary_supplement",
+      sub_line:     "wages",
+      amount:       s.amount,
+      source:       "salary_supplement",
+    })),
+  ];
 
   return NextResponse.json({
     is_fallback:  false,

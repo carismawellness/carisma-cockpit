@@ -158,11 +158,14 @@ export async function GET(req: Request) {
          supplement, wageRoles, adPatterns, fallbackRules, hardwiredRules] =
     await Promise.all([
       // Cost transactions (wages, advertising, sga, cogs, rent, utilities)
+      // .limit(100000) overrides the default 1000-row PostgREST page size —
+      // a single period can have 2000+ rows across all venues.
       supabase
         .from("transactions_raw")
         .select("venue, ebitda_line, ebitda_sub_line, contact_name, amount")
         .gte("date", dateFrom)
-        .lte("date", dateTo),
+        .lte("date", dateTo)
+        .limit(100000),
 
       // SPA revenue per location per month
       supabase
