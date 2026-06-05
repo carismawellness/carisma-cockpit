@@ -472,28 +472,66 @@ export async function runAestheticsEbitdaMonthFromTransactions(
   const deptCount = await upsert("aesthetics_ebitda_daily", deptRows, "date,department");
   const hqCount   = await upsert("hq_ebitda_daily",         hqRows,   "date,source");
 
-  // ── 6. Write raw transaction lines for contact-level drill-down ───────────
+  // ── 6. Write venue-level raw transaction lines (V2) ───────────────────────
+  // Each classified line is written once per department/venue it was allocated to.
+  // Venue values: 'aesthetics', 'slimming', 'hq'.
   await deleteRange("transactions_raw", [["org", "eq.aesthetics"], ["date", `gte.${fromDate}`], ["date", `lte.${toDate}`]]);
+<<<<<<< HEAD
   // venue = Zoho tag dept ("aesthetics" | "slimming" | null for HQ/untagged).
   const rawMap = new Map<string, Record<string, unknown>>();
   for (const c of classified) {
     const venue = c.tagDept ?? (c.isHq ? "hq" : null);
     const key = `${c.txn_id}|${c.code}|${c.contact_name}|${c.line}|${venue ?? ""}`;
     const existing = rawMap.get(key);
+=======
+
+  const venueRawMap = new Map<string, Record<string, unknown>>();
+
+  function addVenueRaw(c: Classified, venue: string, amount: number) {
+    if (amount === 0) return;
+    const key = `${c.txn_id}|${c.code}|${c.contact_name}|${c.line}|${venue}`;
+    const existing = venueRawMap.get(key);
+>>>>>>> 97df7bd (feat(ebitda-v2): EBITDA V2 page, webhook fixes, data sources settings)
     if (existing) {
-      existing.amount = +((existing.amount as number) + c.amount).toFixed(2);
+      existing.amount = +((existing.amount as number) + amount).toFixed(2);
     } else {
-      rawMap.set(key, {
+      venueRawMap.set(key, {
         org: "aesthetics", txn_id: c.txn_id, date: c.date,
         ebitda_line: c.line, ebitda_sub_line: c.sub_line,
         account_code: c.code, account_name: c.account_name,
         contact_name: c.contact_name, transaction_type: c.txn_type,
+<<<<<<< HEAD
         venue,
         amount: +c.amount.toFixed(2), synced_at: nowTs,
       });
     }
   }
   const rawRows = Array.from(rawMap.values());
+=======
+        venue, amount: +amount.toFixed(2), synced_at: nowTs,
+      });
+    }
+  }
+
+  for (const c of classified) {
+    if (c.reclass) {
+      addVenueRaw(c, c.tagDept ?? "aesthetics", c.amount);
+    } else if (c.isHq) {
+      addVenueRaw(c, "hq", c.amount);
+    } else if (c.tagDept) {
+      addVenueRaw(c, c.tagDept, c.amount);
+    } else if (c.nameDept) {
+      addVenueRaw(c, c.nameDept, c.amount);
+    } else if (c.rule === "aesthetics" || c.rule === "slimming") {
+      addVenueRaw(c, c.rule, c.amount);
+    } else {
+      const dist = distribute(c.rule, c.amount, deptRevenue, totalRevenue, deptSalary, totalSalary, deptMarketing, totalMarketing);
+      for (const d of DEPTS) addVenueRaw(c, d, dist[d]);
+    }
+  }
+
+  const rawRows = Array.from(venueRawMap.values());
+>>>>>>> 97df7bd (feat(ebitda-v2): EBITDA V2 page, webhook fixes, data sources settings)
   const rawCount = await upsert("transactions_raw", rawRows, "org,txn_id,account_code,contact_name,ebitda_line,venue");
 
   log.push(`${monthKey}: ${deptCount} aesth daily row(s) + ${hqCount} hq row(s) + ${rawCount} raw line(s) upserted`);

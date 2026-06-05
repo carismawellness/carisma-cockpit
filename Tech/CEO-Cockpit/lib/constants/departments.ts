@@ -66,6 +66,10 @@ export const departments: Department[] = [
     label: "EBITDA",
     icon: TrendingUp,
     path: "/finance/ebitda",
+    children: [
+      { slug: "ebitda-v1",  label: "EBITDA (V1)",  path: "/finance/ebitda",    icon: TrendingUp },
+      { slug: "ebitda-v2",  label: "EBITDA V2",    path: "/finance/ebitda-v2", icon: TrendingUp },
+    ],
   },
   {
     slug: "hr",
@@ -89,8 +93,10 @@ export const departments: Department[] = [
       { slug: "employee-mapping",    label: "Employee Mapping",    path: "/settings/employee-mapping",    icon: Users },
       { slug: "salary-supplement",   label: "Salary Supplement",   path: "/settings/salary-supplement",   icon: BookOpen },
       { slug: "fallback-rules",      label: "Fallback Rules",      path: "/settings/fallback-rules",      icon: BookOpen },
+      { slug: "ebitda-v2-rules",     label: "EBITDA V2 Rules",     path: "/settings/ebitda-v2-rules",     icon: BookOpen },
       { slug: "logic-mapping",       label: "Logic Mapping",       path: "/settings/logic-mapping",       icon: BookOpen },
       { slug: "etl-runner",          label: "ETL Runner",          path: "/settings/etl-runner",          icon: RefreshCw },
+      { slug: "data-sources",        label: "Data Sources",        path: "/settings/data-sources",        icon: Activity },
     ],
   },
 ];

@@ -65,7 +65,6 @@ const WAGES_RECLASS_CONTACT_KEYS: Set<string> = new Set(
 // "upwork" catches "Upwork", "Upwork payments", "Upwork Inc", etc.
 const WAGES_RECLASS_FUZZY = [
   "yamuna", "mandar", "manan", "ruksana", "mellisa", "melissa", "upwork",
-  // Additional contacts confirmed by business owner (Jun 2026):
   "yofana",   // Yofana Virgianne
   "banaban",  // April Joy Banaban (unique surname)
   "veloso",   // Natalia Veloso De Melo (unique surname)
@@ -267,11 +266,18 @@ export async function runSpaEbitdaMonthFromTransactions(
     if (line === "excluded") { droppedExcluded++; continue; }
     if (!VALID_LINES.has(line)) { droppedExcluded++; continue; }
 
+<<<<<<< HEAD
     // Contact-based wages override: certain contacts billed through ANY non-revenue
     // COA must appear under Wages & Salaries. Split by Zoho tag when present;
     // if no tag → HQ (business rule: untagged reclassified contacts → HQ).
     const isWagesReclass = line !== "revenue" && isWagesReclassContact(ln.contact_name);
     if (isWagesReclass) line = "wages";
+=======
+    // Contact-based wages override: contractors billed through SGA/professional
+    // fees that are employment costs. They are always HQ-tagged, so the amount
+    // flows straight to hq_ebitda_daily.wages — no venue split needed.
+    if (line === "sga" && isWagesReclassContact(ln.contact_name)) line = "wages";
+>>>>>>> 97df7bd (feat(ebitda-v2): EBITDA V2 page, webhook fixes, data sources settings)
 
     const tagSlug = tagsToSlug(ln.tags);
     const nameLoc = tagSlug ? null : detectLocation(ln.account_name);
@@ -404,8 +410,12 @@ export async function runSpaEbitdaMonthFromTransactions(
   const spaCount = await upsert("spa_ebitda_daily", spaRows, "date,location_id");
   const hqCount  = await upsert("hq_ebitda_daily",  hqRows,  "date,source");
 
-  // ── 6. Write raw transaction lines for contact-level drill-down ───────────
+  // ── 6. Write venue-level raw transaction lines (V2) ───────────────────────
+  // Each classified line is written once per venue it was allocated to.
+  // Split transactions produce multiple rows (one per venue with allocated amount).
+  // Deduplication key: (org, txn_id, account_code, contact_name, ebitda_line, venue).
   await deleteRange("transactions_raw", [["org", "eq.spa"], ["date", `gte.${fromDate}`], ["date", `lte.${toDate}`]]);
+<<<<<<< HEAD
   // Deduplicate by (txn_id, account_code, contact_name, ebitda_line) — sum amounts
   // for rows that share the same key (e.g. same employee on two lines of same account).
   // venue = the Zoho reporting tag slug (e.g. "inter", "hugos", "hq").
@@ -415,20 +425,56 @@ export async function runSpaEbitdaMonthFromTransactions(
     const venue = c.tagSlug ?? null;
     const key = `${c.txn_id}|${c.code}|${c.contact_name}|${c.line}|${venue ?? ""}`;
     const existing = rawMap.get(key);
+=======
+
+  const LOC_ID_TO_SLUG: Record<number, string> = Object.fromEntries(
+    Object.entries(LOCATION_MAP).map(([slug, id]) => [id, slug]),
+  );
+
+  const venueRawMap = new Map<string, Record<string, unknown>>();
+
+  function addVenueRaw(c: Classified, venue: string, amount: number) {
+    if (amount === 0) return;
+    const key = `${c.txn_id}|${c.code}|${c.contact_name}|${c.line}|${venue}`;
+    const existing = venueRawMap.get(key);
+>>>>>>> 97df7bd (feat(ebitda-v2): EBITDA V2 page, webhook fixes, data sources settings)
     if (existing) {
-      existing.amount = +((existing.amount as number) + c.amount).toFixed(2);
+      existing.amount = +((existing.amount as number) + amount).toFixed(2);
     } else {
-      rawMap.set(key, {
+      venueRawMap.set(key, {
         org: "spa", txn_id: c.txn_id, date: c.date,
         ebitda_line: c.line, ebitda_sub_line: c.sub_line,
         account_code: c.code, account_name: c.account_name,
         contact_name: c.contact_name, transaction_type: c.txn_type,
+<<<<<<< HEAD
         venue,
         amount: +c.amount.toFixed(2), synced_at: nowTs,
       });
     }
   }
   const rawRows = Array.from(rawMap.values());
+=======
+        venue, amount: +amount.toFixed(2), synced_at: nowTs,
+      });
+    }
+  }
+
+  for (const c of classified) {
+    if (c.tagSlug === "hq" || c.rule === "hq") {
+      addVenueRaw(c, "hq", c.amount);
+    } else if (c.tagSlug && c.tagSlug in LOCATION_MAP) {
+      addVenueRaw(c, c.tagSlug, c.amount);
+    } else {
+      const dist = distribute(c.rule, c.amount, locRevenue, totalRevenue, locSalary, totalSalary);
+      for (const [locId, share] of Object.entries(dist)) {
+        const slug = LOC_ID_TO_SLUG[Number(locId)] ?? "unallocated";
+        addVenueRaw(c, slug, share);
+      }
+    }
+  }
+
+  const rawRows = Array.from(venueRawMap.values());
+>>>>>>> 97df7bd (feat(ebitda-v2): EBITDA V2 page, webhook fixes, data sources settings)
   const rawCount = await upsert("transactions_raw", rawRows, "org,txn_id,account_code,contact_name,ebitda_line,venue");
 
   log.push(`${monthKey}: ${spaCount} spa daily row(s) + ${hqCount} hq daily row(s) + ${rawCount} raw line(s) upserted`);

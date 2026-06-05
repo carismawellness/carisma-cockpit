@@ -1,0 +1,471 @@
+/**
+ * /api/finance/ebitda-v2
+ *
+ * EBITDA V2 — reads directly from Supabase (transactions_raw + revenue tables).
+ * No live Zoho calls. Applies COA mapping, employee mapping, and fallback rules
+ * at read time.
+ *
+ * Query params:
+ *   date_from  YYYY-MM-DD (required)
+ *   date_to    YYYY-MM-DD (required, inclusive)
+ */
+
+import { NextResponse } from "next/server";
+import { createServerClient } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
+
+// ── Venue config ─────────────────────────────────────────────────────────────
+
+// Slug → display label + brand
+export const VENUE_CONFIG = [
+  { slug: "hyatt",            label: "hyatt",     brand: "SPA" },
+  { slug: "ramla",            label: "ramla",     brand: "SPA" },
+  { slug: "labranda",         label: "labranda",  brand: "SPA" },
+  { slug: "sunny_coast",      label: "odycy",     brand: "SPA" },
+  { slug: "excelsior",        label: "excelsior", brand: "SPA" },
+  { slug: "novotel",          label: "novotel",   brand: "SPA" },
+  { slug: "intercontinental", label: "inter",     brand: "SPA" },
+  { slug: "hugos",            label: "hugos",     brand: "SPA" },
+  { slug: "aesthetics",       label: "Aesthetics",brand: "AES" },
+  { slug: "slimming",         label: "Slimming",  brand: "SLIM"},
+  { slug: "hq",               label: "HQ",        brand: "HQ"  },
+] as const;
+
+// location_id (in spa_revenue_monthly) → venue slug
+const LOC_ID_TO_SLUG: Record<number, string> = {
+  1: "intercontinental",
+  2: "hugos",
+  3: "hyatt",
+  4: "ramla",
+  5: "labranda",
+  6: "sunny_coast",
+  7: "excelsior",
+  8: "novotel",
+};
+
+// Wage roles (from wage_role_mapping)
+const WAGE_ROLES = ["manager", "reception", "therapist", "crm", "unassigned"] as const;
+type WageRole = typeof WAGE_ROLES[number];
+
+// SG&A sub-lines
+const SGA_SUBS = [
+  "prof_services","fuel","laundry","software","cleaning",
+  "travel","misc","insurance","events","maintenance","telecom",
+] as const;
+
+// Ad channels
+const AD_CHANNELS = ["meta","google","klaviyo","misc"] as const;
+
+type VenueData = {
+  revenue:        number;
+  wages:          number;
+  wage_by_role:   Record<WageRole, number>;
+  advertising:    number;
+  ad_by_channel:  Record<string, number>;
+  sga:            number;
+  sga_by_sub:     Record<string, number>;
+  cogs:           number;
+  rent:           number;
+  utilities:      number;
+  ebitda:         number;
+};
+
+function emptyVenueData(): VenueData {
+  return {
+    revenue:       0,
+    wages:         0,
+    wage_by_role:  Object.fromEntries(WAGE_ROLES.map(r => [r, 0])) as Record<WageRole, number>,
+    advertising:   0,
+    ad_by_channel: Object.fromEntries(AD_CHANNELS.map(c => [c, 0])),
+    sga:           0,
+    sga_by_sub:    Object.fromEntries(SGA_SUBS.map(s => [s, 0])),
+    cogs:          0,
+    rent:          0,
+    utilities:     0,
+    ebitda:        0,
+  };
+}
+
+// ── Date helpers ─────────────────────────────────────────────────────────────
+
+function daysBetween(a: string, b: string): number {
+  const ms = new Date(b).getTime() - new Date(a).getTime();
+  return Math.round(ms / 86_400_000) + 1;
+}
+
+function isFullCalendarMonths(from: string, to: string): boolean {
+  const df = new Date(from);
+  const dt = new Date(to);
+  const startIsFirst  = df.getDate() === 1;
+  const endIsLast     = dt.getDate() === new Date(dt.getFullYear(), dt.getMonth() + 1, 0).getDate();
+  return startIsFirst && endIsLast;
+}
+
+// Months that overlap with [from, to]
+function overlappingMonths(from: string, to: string): string[] {
+  const months: string[] = [];
+  const start = new Date(from.slice(0, 7) + "-01");
+  const end   = new Date(to.slice(0,   7) + "-01");
+  const cur   = new Date(start);
+  while (cur <= end) {
+    months.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-01`);
+    cur.setMonth(cur.getMonth() + 1);
+  }
+  return months;
+}
+
+// Days in a given calendar month that fall within [from, to]
+function daysOfMonthInRange(monthStr: string, from: string, to: string): number {
+  const mStart = monthStr;
+  const mEnd   = new Date(new Date(monthStr).getFullYear(),
+                           new Date(monthStr).getMonth() + 1, 0)
+                   .toISOString().slice(0, 10);
+  const rangeStart = from > mStart ? from : mStart;
+  const rangeEnd   = to   < mEnd   ? to   : mEnd;
+  return daysBetween(rangeStart, rangeEnd);
+}
+
+function totalDaysInMonth(monthStr: string): number {
+  const d = new Date(monthStr);
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+}
+
+// Shift a YYYY-MM-DD date by N calendar months (negative = back)
+function shiftMonth(dateStr: string, n: number): string {
+  const d = new Date(dateStr.slice(0, 7) + "-01");
+  d.setMonth(d.getMonth() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
+// ── Main handler ─────────────────────────────────────────────────────────────
+
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const dateFrom = searchParams.get("date_from");
+  const dateTo   = searchParams.get("date_to");
+
+  if (!dateFrom || !dateTo)
+    return NextResponse.json({ error: "date_from and date_to required" }, { status: 400 });
+
+  const supabase       = await createServerClient();
+  const daysInPeriod   = daysBetween(dateFrom, dateTo);
+  const isFullPeriod   = isFullCalendarMonths(dateFrom, dateTo);
+  const warnings: string[] = [];
+
+  // ── 1. Load all config tables in parallel ─────────────────────────────────
+  const [rawCosts, revenueMonthly, aestheticsSales, slimmingSales,
+         supplement, wageRoles, adPatterns, fallbackRules, hardwiredRules] =
+    await Promise.all([
+      // Cost transactions (wages, advertising, sga, cogs, rent, utilities)
+      supabase
+        .from("transactions_raw")
+        .select("venue, ebitda_line, ebitda_sub_line, contact_name, amount")
+        .gte("date", dateFrom)
+        .lte("date", dateTo),
+
+      // SPA revenue per location per month
+      supabase
+        .from("spa_revenue_monthly")
+        .select("location_id, month, services, product_phytomer, product_purest, product_other, wholesale, sales_discount, sales_refund")
+        .in("month", overlappingMonths(dateFrom, dateTo)),
+
+      // Aesthetics revenue
+      supabase
+        .from("aesthetics_sales_daily")
+        .select("price_ex_vat")
+        .gte("date_of_service", dateFrom)
+        .lte("date_of_service", dateTo),
+
+      // Slimming revenue
+      supabase
+        .from("slimming_sales_daily")
+        .select("price_ex_vat")
+        .gte("date_of_service", dateFrom)
+        .lte("date_of_service", dateTo),
+
+      // Salary supplement — fetch up to 3 months before period start so we can
+      // fall back to the most recent frozen month when the period month has no data.
+      supabase
+        .from("salary_supplement_monthly")
+        .select("month, employee_name, amount, spa_slug")
+        .in("month", [
+          ...overlappingMonths(shiftMonth(dateFrom, -3), dateFrom.slice(0, 7) + "-01"),
+          ...overlappingMonths(dateFrom, dateTo),
+        ].filter((v, i, a) => a.indexOf(v) === i))   // dedupe
+        .eq("is_frozen", true),
+
+      // Wage role mapping: contact_key → role
+      supabase
+        .from("wage_role_mapping")
+        .select("contact_key, role"),
+
+      // Advertising contact patterns: pattern → channel
+      supabase
+        .from("advertising_contact_mapping")
+        .select("pattern, channel, priority")
+        .order("priority"),
+
+      // Fallback rules (for partial periods)
+      supabase
+        .from("ebitda_fallback_rules")
+        .select("account_code, account_name, zoho_org, rule_type, active, params"),
+
+      // Hardwired venue rules
+      supabase
+        .from("ebitda_v2_hardwired_rules")
+        .select("*"),
+    ]);
+
+  // Error checks
+  for (const [label, res] of [
+    ["transactions_raw", rawCosts],
+    ["spa_revenue_monthly", revenueMonthly],
+    ["aesthetics_sales_daily", aestheticsSales],
+    ["slimming_sales_daily", slimmingSales],
+  ] as Array<[string, {error: {message: string} | null}]>) {
+    if (res.error) return NextResponse.json({ error: `${label}: ${res.error.message}` }, { status: 500 });
+  }
+
+  // ── 2. Build lookup structures ────────────────────────────────────────────
+
+  // Wage role lookup: normalized contact name → role
+  const wageRoleMap = new Map<string, WageRole>();
+  for (const row of (wageRoles.data ?? [])) {
+    wageRoleMap.set((row.contact_key as string).toLowerCase().trim(), row.role as WageRole);
+  }
+
+  // Ad channel lookup: contact name → channel
+  const adPatternsArr = (adPatterns.data ?? []) as Array<{ pattern: string; channel: string }>;
+  function resolveAdChannel(contact: string): string {
+    const lower = contact.toLowerCase();
+    for (const p of adPatternsArr) {
+      if (lower.includes(p.pattern.toLowerCase())) return p.channel;
+    }
+    return "misc";
+  }
+
+  // Hardwired rules lookup: venue → { ebitda_line → rule }
+  type HardwiredRule = { rule_type: string; params: Record<string, number>; effective_from: string; effective_to?: string };
+  const hardwiredMap = new Map<string, HardwiredRule>();
+  for (const r of (hardwiredRules.data ?? [])) {
+    const key = `${r.venue}|${r.ebitda_line}`;
+    const from = r.effective_from as string;
+    const to   = r.effective_to  as string | undefined;
+    if (dateTo < from) continue;                    // rule not yet effective
+    if (to && dateFrom > to) continue;              // rule expired
+    hardwiredMap.set(key, {
+      rule_type: r.rule_type as string,
+      params: (r.params ?? {}) as Record<string, number>,
+      effective_from: from,
+      effective_to: to,
+    });
+  }
+
+  // ── 3. Initialise per-venue accumulators ──────────────────────────────────
+  const venues: Record<string, VenueData> = {};
+  for (const vc of VENUE_CONFIG) {
+    venues[vc.slug] = emptyVenueData();
+  }
+
+  // ── 4. Revenue ───────────────────────────────────────────────────────────
+  // 4a. SPA — pro-rate monthly amounts into the selected period
+  const months = overlappingMonths(dateFrom, dateTo);
+  for (const row of (revenueMonthly.data ?? [])) {
+    const slug = LOC_ID_TO_SLUG[row.location_id as number];
+    if (!slug || !venues[slug]) continue;
+    const monthStr   = (row.month as string).slice(0, 10);
+    const daysInMonth  = totalDaysInMonth(monthStr);
+    const daysInRange  = daysOfMonthInRange(monthStr, dateFrom, dateTo);
+    const factor       = daysInRange / daysInMonth;
+    const monthRevenue = (
+      (row.services          as number) +
+      (row.product_phytomer  as number) +
+      (row.product_purest    as number) +
+      (row.product_other     as number) +
+      (row.wholesale         as number) -
+      (row.sales_discount    as number) -
+      (row.sales_refund      as number)
+    ) * factor;
+    venues[slug].revenue += monthRevenue;
+  }
+  // 4b. Aesthetics
+  const aesthTotal = (aestheticsSales.data ?? [])
+    .reduce((s, r) => s + Number(r.price_ex_vat ?? 0), 0);
+  if (venues["aesthetics"]) venues["aesthetics"].revenue = aesthTotal;
+  // 4c. Slimming
+  const slimTotal = (slimmingSales.data ?? [])
+    .reduce((s, r) => s + Number(r.price_ex_vat ?? 0), 0);
+  if (venues["slimming"]) venues["slimming"].revenue = slimTotal;
+
+  // ── 5. Costs from transactions_raw ────────────────────────────────────────
+  const fallbackApplied: Array<{venue: string; ebitda_line: string; rule_type: string; value: number}> = [];
+
+  for (const row of (rawCosts.data ?? [])) {
+    const venue     = (row.venue         as string) ?? "unallocated";
+    const line      = (row.ebitda_line   as string);
+    const sub       = (row.ebitda_sub_line as string) ?? line;
+    const contact   = (row.contact_name  as string) ?? "";
+    const amount    = Number(row.amount  ?? 0);
+
+    if (!venues[venue]) continue;     // unknown venue (e.g. 'unallocated')
+    if (line === "revenue") continue; // revenue handled from google-sheet sources above
+
+    const hwKey = `${venue}|${line}`;
+    if (hardwiredMap.has(hwKey)) continue; // overridden by hardwired rule below
+
+    switch (line) {
+      case "wages": {
+        venues[venue].wages += amount;
+        const roleKey = contact.toLowerCase().trim();
+        const role: WageRole = wageRoleMap.get(roleKey) ?? "unassigned";
+        venues[venue].wage_by_role[role] += amount;
+        break;
+      }
+      case "advertising": {
+        venues[venue].advertising += amount;
+        const ch = resolveAdChannel(contact);
+        venues[venue].ad_by_channel[ch] = (venues[venue].ad_by_channel[ch] ?? 0) + amount;
+        break;
+      }
+      case "sga": {
+        venues[venue].sga += amount;
+        venues[venue].sga_by_sub[sub] = (venues[venue].sga_by_sub[sub] ?? 0) + amount;
+        break;
+      }
+      case "cogs": {
+        venues[venue].cogs += amount;
+        break;
+      }
+      case "rent": {
+        venues[venue].rent += amount;
+        break;
+      }
+      case "utilities": {
+        venues[venue].utilities += amount;
+        break;
+      }
+    }
+  }
+
+  // ── 6. Apply hardwired venue rules ────────────────────────────────────────
+  for (const [key, rule] of hardwiredMap) {
+    const [venue, ebitda_line] = key.split("|");
+    if (!venues[venue]) continue;
+
+    let value = 0;
+    if (rule.rule_type === "fixed_monthly") {
+      value = (rule.params.monthly_amount ?? 0) * (daysInPeriod / 30.4375);
+    } else if (rule.rule_type === "base_plus_revenue_pct") {
+      const pct  = (rule.params.revenue_pct  ?? 0) / 100;
+      const base = (rule.params.base_monthly ?? 0) * (daysInPeriod / 30.4375);
+      value = base + venues[venue].revenue * pct;
+    }
+
+    if (ebitda_line === "rent")      venues[venue].rent      = value;
+    else if (ebitda_line === "utilities") venues[venue].utilities = value;
+
+    fallbackApplied.push({ venue, ebitda_line, rule_type: rule.rule_type, value });
+  }
+
+  // ── 7. Salary supplement → wages (with prior-month fallback) ────────────
+  // Group all fetched supplement rows by month key (YYYY-MM-01).
+  type SuppRow = { spa_slug: string; employee_name: string; amount: number };
+  const suppByMonth = new Map<string, SuppRow[]>();
+  for (const row of (supplement.data ?? [])) {
+    const m = (row.month as string).slice(0, 10);
+    if (!suppByMonth.has(m)) suppByMonth.set(m, []);
+    suppByMonth.get(m)!.push({
+      spa_slug:      (row.spa_slug      as string) ?? "",
+      employee_name: (row.employee_name as string) ?? "",
+      amount:        Number(row.amount  ?? 0),
+    });
+  }
+
+  // Sorted list of months that have frozen data (for fallback lookup).
+  const frozenMonths = Array.from(suppByMonth.keys()).sort();
+
+  for (const targetMonth of overlappingMonths(dateFrom, dateTo)) {
+    let rows = suppByMonth.get(targetMonth);
+    let sourceMonth = targetMonth;
+    let isFallback  = false;
+
+    if (!rows || rows.length === 0) {
+      // Find the most recent prior frozen month (walk backwards from targetMonth).
+      const candidate = [...frozenMonths].reverse().find(m => m < targetMonth);
+      if (candidate) {
+        rows        = suppByMonth.get(candidate)!;
+        sourceMonth = candidate;
+        isFallback  = true;
+      }
+    }
+
+    if (!rows || rows.length === 0) continue;
+
+    // Pro-rate by days of targetMonth that fall in [dateFrom, dateTo].
+    const daysInRange = daysOfMonthInRange(targetMonth, dateFrom, dateTo);
+    const factor      = daysInRange / totalDaysInMonth(targetMonth);
+
+    for (const row of rows) {
+      if (!row.spa_slug || !venues[row.spa_slug]) continue;
+      const amount = row.amount * factor;
+      venues[row.spa_slug].wages                        += amount;
+      venues[row.spa_slug].wage_by_role["unassigned"]   += amount;
+    }
+
+    if (isFallback) {
+      const label = targetMonth.slice(0, 7);
+      const src   = sourceMonth.slice(0, 7);
+      warnings.push(`Salary supplement ${label}: no frozen data — using ${src} as fallback`);
+      fallbackApplied.push({
+        venue:       "all_spa",
+        ebitda_line: "wages_supplement",
+        rule_type:   `prior_month_fallback (${src})`,
+        value:       rows.reduce((s, r) => s + r.amount, 0) * factor,
+      });
+    }
+  }
+
+  // ── 8. Compute EBITDA per venue ───────────────────────────────────────────
+  for (const vc of VENUE_CONFIG) {
+    const v = venues[vc.slug];
+    v.ebitda = v.revenue - v.wages - v.advertising - v.sga - v.cogs - v.rent - v.utilities;
+    // Round to 2dp
+    v.revenue     = +v.revenue.toFixed(2);
+    v.wages       = +v.wages.toFixed(2);
+    v.advertising = +v.advertising.toFixed(2);
+    v.sga         = +v.sga.toFixed(2);
+    v.cogs        = +v.cogs.toFixed(2);
+    v.rent        = +v.rent.toFixed(2);
+    v.utilities   = +v.utilities.toFixed(2);
+    v.ebitda      = +v.ebitda.toFixed(2);
+  }
+
+  // ── 9. Group totals ───────────────────────────────────────────────────────
+  const group = emptyVenueData();
+  for (const vc of VENUE_CONFIG) {
+    const v = venues[vc.slug];
+    group.revenue     += v.revenue;
+    group.wages       += v.wages;
+    group.advertising += v.advertising;
+    group.sga         += v.sga;
+    group.cogs        += v.cogs;
+    group.rent        += v.rent;
+    group.utilities   += v.utilities;
+    for (const r of WAGE_ROLES) group.wage_by_role[r]    += v.wage_by_role[r];
+    for (const c of AD_CHANNELS) group.ad_by_channel[c]  = (group.ad_by_channel[c] ?? 0) + (v.ad_by_channel[c] ?? 0);
+    for (const s of SGA_SUBS)   group.sga_by_sub[s]     = (group.sga_by_sub[s]    ?? 0) + (v.sga_by_sub[s]    ?? 0);
+  }
+  group.ebitda = group.revenue - group.wages - group.advertising - group.sga - group.cogs - group.rent - group.utilities;
+  group.ebitda = +group.ebitda.toFixed(2);
+
+  return NextResponse.json({
+    date_from:        dateFrom,
+    date_to:          dateTo,
+    days_in_period:   daysInPeriod,
+    venues,
+    group,
+    fallback_applied: fallbackApplied,
+    warnings,
+  });
+}

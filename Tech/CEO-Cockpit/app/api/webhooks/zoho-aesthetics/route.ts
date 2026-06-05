@@ -14,10 +14,10 @@ export async function POST(req: NextRequest) {
   }
 
   const entity = (
-    payload.invoice ?? payload.bill ?? payload.expense ??
-    payload.creditnote ?? payload.vendorcredit ?? {}
+    payload.invoice    ?? payload.bill        ?? payload.expense  ??
+    payload.creditnote ?? payload.vendorcredit ?? payload.journalentry ?? payload.journal ?? {}
   ) as Record<string, string>;
-  const txnDate = (entity as Record<string, string>).date;
+  const txnDate = entity.date;
 
   let date_from: string, date_to: string;
   if (txnDate) {
@@ -33,9 +33,7 @@ export async function POST(req: NextRequest) {
     date_to = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
   }
 
-  const base = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "http://localhost:3000";
+  const base = new URL(req.url).origin;
 
   fetch(`${base}/api/etl/zoho-aesthetics-transactions`, {
     method: "POST",
