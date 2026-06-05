@@ -407,7 +407,10 @@ export async function runSpaEbitdaMonthFromTransactions(
   // Each classified line is written once per venue it was allocated to.
   // Split transactions produce multiple rows (one per venue with allocated amount).
   // Deduplication key: (org, txn_id, account_code, contact_name, ebitda_line, venue).
-  await deleteRange("transactions_raw", [["org", "eq.spa"], ["date", `gte.${fromDate}`], ["date", `lte.${toDate}`]]);
+  //
+  // SAFETY: build the rows FIRST, then delete+insert.
+  // If classification produced 0 rows (bug / empty period), skip the write
+  // entirely rather than wiping existing data with nothing to replace it.
 
   const LOC_ID_TO_SLUG: Record<number, string> = Object.fromEntries(
     Object.entries(LOCATION_MAP).map(([slug, id]) => [id, slug]),
@@ -447,7 +450,13 @@ export async function runSpaEbitdaMonthFromTransactions(
   }
 
   const rawRows = Array.from(venueRawMap.values());
-  const rawCount = await upsert("transactions_raw", rawRows, "org,txn_id,account_code,contact_name,ebitda_line,venue");
+  let rawCount = 0;
+  if (rawRows.length === 0) {
+    log.push(`${monthKey}: SKIP transactions_raw write — 0 rows generated (data preserved)`);
+  } else {
+    await deleteRange("transactions_raw", [["org", "eq.spa"], ["date", `gte.${fromDate}`], ["date", `lte.${toDate}`]]);
+    rawCount = await upsert("transactions_raw", rawRows, "org,txn_id,account_code,contact_name,ebitda_line,venue");
+  }
 
   log.push(`${monthKey}: ${spaCount} spa daily row(s) + ${hqCount} hq daily row(s) + ${rawCount} raw line(s) upserted`);
   return { spaRowsUpserted: spaCount, hqRowsUpserted: hqCount, log };

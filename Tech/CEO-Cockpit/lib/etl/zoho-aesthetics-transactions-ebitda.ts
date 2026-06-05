@@ -475,7 +475,7 @@ export async function runAestheticsEbitdaMonthFromTransactions(
   // ── 6. Write venue-level raw transaction lines (V2) ───────────────────────
   // Each classified line is written once per department/venue it was allocated to.
   // Venue values: 'aesthetics', 'slimming', 'hq'.
-  await deleteRange("transactions_raw", [["org", "eq.aesthetics"], ["date", `gte.${fromDate}`], ["date", `lte.${toDate}`]]);
+  // SAFETY: build rows first — only delete+insert if we have data to insert.
 
   const venueRawMap = new Map<string, Record<string, unknown>>();
 
@@ -514,7 +514,13 @@ export async function runAestheticsEbitdaMonthFromTransactions(
   }
 
   const rawRows = Array.from(venueRawMap.values());
-  const rawCount = await upsert("transactions_raw", rawRows, "org,txn_id,account_code,contact_name,ebitda_line,venue");
+  let rawCount = 0;
+  if (rawRows.length === 0) {
+    log.push(`${monthKey}: SKIP transactions_raw write — 0 rows generated (data preserved)`);
+  } else {
+    await deleteRange("transactions_raw", [["org", "eq.aesthetics"], ["date", `gte.${fromDate}`], ["date", `lte.${toDate}`]]);
+    rawCount = await upsert("transactions_raw", rawRows, "org,txn_id,account_code,contact_name,ebitda_line,venue");
+  }
 
   log.push(`${monthKey}: ${deptCount} aesth daily row(s) + ${hqCount} hq row(s) + ${rawCount} raw line(s) upserted`);
   return { rowsUpserted: deptCount + hqCount, log };
