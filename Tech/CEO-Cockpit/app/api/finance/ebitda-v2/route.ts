@@ -184,7 +184,7 @@ export async function GET(req: Request) {
   //       (safely below max_rows) and loop until we receive an EMPTY page.
   //       Never break on a partial page — that would be the last real page.
   //       Safety cap at 500 iterations (~100k rows) prevents infinite loops.
-  type RawRow = { venue: string; ebitda_line: string; ebitda_sub_line: string; contact_name: string; amount: number };
+  type RawRow = { venue: string; ebitda_line: string; ebitda_sub_line: string; contact_name: string; amount: number; account_code?: string };
   async function fetchAllRawCosts(): Promise<RawRow[]> {
     const PAGE = 200;
     const all: RawRow[] = [];
@@ -195,7 +195,7 @@ export async function GET(req: Request) {
     for (let offset = 0; offset < 100_000; offset += PAGE) {
       const { data, error } = await supabase
         .from("transactions_raw")
-        .select("venue, ebitda_line, ebitda_sub_line, contact_name, amount")
+        .select("venue, ebitda_line, ebitda_sub_line, contact_name, amount, account_code")
         .gte("date", dateFrom)
         .lte("date", dateTo)
         .order("date")
@@ -427,6 +427,136 @@ export async function GET(req: Request) {
     else if (ebitda_line === "utilities") venues[venue].utilities = value;
 
     fallbackApplied.push({ venue, ebitda_line, rule_type: rule.rule_type, value });
+  }
+
+  // ── 6b. Apply ebitda_fallback_rules for partial periods ──────────────────
+  // For partial calendar months, lumpy costs (rent, insurance, prof services,
+  // laundry, telecom etc.) may not yet be posted. Apply the configured fallback
+  // rule to provide a pro-rated estimate so the P&L is meaningful mid-month.
+  if (!isFullPeriod && (fallbackRules.data ?? []).length > 0) {
+    // TTM window: 12 months ending the day before the period starts
+    const ttmTo   = dateFrom;
+    const ttmFrom = shiftMonth(dateFrom, -12);
+
+    // Fetch historical costs for all active fallback accounts from transactions_raw
+    // grouped by (account_code, venue) — one query covers all rules at once.
+    const activeCodes = (fallbackRules.data ?? [])
+      .filter((r: Record<string, unknown>) => r.active)
+      .map((r: Record<string, unknown>) => r.account_code as string);
+
+    if (activeCodes.length > 0) {
+      // Historical totals by (account_code, venue) over TTM window
+      const { data: histRows } = await supabase
+        .from("transactions_raw")
+        .select("account_code, venue, amount, ebitda_line, ebitda_sub_line")
+        .in("account_code", activeCodes)
+        .gte("date", ttmFrom)
+        .lt("date", ttmTo);
+
+      // Group historical amounts by account+venue
+      type HistKey = string; // "account_code|venue"
+      const histMap = new Map<HistKey, { ttm: number; ebitda_line: string; ebitda_sub_line: string }>();
+      for (const r of (histRows ?? [])) {
+        const k = `${r.account_code}|${r.venue}`;
+        const existing = histMap.get(k);
+        if (existing) {
+          existing.ttm += Number(r.amount ?? 0);
+        } else {
+          histMap.set(k, {
+            ttm: Number(r.amount ?? 0),
+            ebitda_line:     (r.ebitda_line as string)     || "sga",
+            ebitda_sub_line: (r.ebitda_sub_line as string) || "misc",
+          });
+        }
+      }
+
+      // Also get most recent prior-month for "previous_month" rule
+      const prevMonthFrom = shiftMonth(dateFrom, -1);
+      const { data: prevRows } = await supabase
+        .from("transactions_raw")
+        .select("account_code, venue, amount, ebitda_line, ebitda_sub_line")
+        .in("account_code", activeCodes)
+        .gte("date", prevMonthFrom)
+        .lt("date", dateFrom);
+
+      const prevMap = new Map<HistKey, number>();
+      for (const r of (prevRows ?? [])) {
+        const k = `${r.account_code}|${r.venue}`;
+        prevMap.set(k, (prevMap.get(k) ?? 0) + Number(r.amount ?? 0));
+      }
+
+      // Days in prior month (for previous_month pro-rating)
+      const prevMonthStr = prevMonthFrom + "-01";
+      const daysInPrevMonth = totalDaysInMonth(prevMonthStr.slice(0, 7) + "-01");
+
+      for (const rule of (fallbackRules.data ?? [])) {
+        if (!rule.active) continue;
+        const ruleType   = rule.rule_type as string;
+        const accountCode = rule.account_code as string;
+        const org         = rule.zoho_org as string; // "spa" | "aesthetics"
+
+        // Find all venue+ebitda_line combos for this account in historical data
+        const venueKeys = [...histMap.keys()].filter(k => k.startsWith(accountCode + "|"));
+
+        for (const key of venueKeys) {
+          const [, venue] = key.split("|");
+          if (!venues[venue]) continue;
+          const hist = histMap.get(key)!;
+
+          // Check if there's already real data for this account+venue in the period
+          const alreadyHasData = allRawCosts.some(
+            r => r.venue === venue && (r as unknown as Record<string,unknown>).account_code === accountCode
+          );
+          if (alreadyHasData) continue; // real data trumps fallback
+
+          let fallbackValue = 0;
+          if (ruleType === "ttm_spread") {
+            // Annualise TTM (account for < 12 months of history), pro-rate to period
+            const ttmMonths = 12; // assume full 12 months
+            const annualised = hist.ttm * (12 / ttmMonths);
+            fallbackValue = annualised * (daysInPeriod / 365);
+          } else if (ruleType === "previous_month") {
+            const prev = prevMap.get(key) ?? 0;
+            fallbackValue = prev * (daysInPeriod / daysInPrevMonth);
+          } else if (ruleType === "manual_annual") {
+            const annual = (rule.params as Record<string, number>)?.annual_amount ?? 0;
+            fallbackValue = annual * (daysInPeriod / 365);
+          } else if (ruleType === "quarterly_average") {
+            // Average of last 3 months
+            const q3From = shiftMonth(dateFrom, -3);
+            // Use TTM × 3/12 as approximation
+            fallbackValue = hist.ttm * (3 / 12) / 3 * (daysInPeriod / 30.4375);
+          } else {
+            continue; // "disabled" or unknown
+          }
+
+          if (fallbackValue <= 0) continue;
+
+          const line = hist.ebitda_line;
+          const sub  = hist.ebitda_sub_line;
+
+          // Apply to venue
+          switch (line) {
+            case "wages":       venues[venue].wages       += fallbackValue; break;
+            case "advertising": venues[venue].advertising += fallbackValue; break;
+            case "sga":
+              venues[venue].sga += fallbackValue;
+              venues[venue].sga_by_sub[sub] = (venues[venue].sga_by_sub[sub] ?? 0) + fallbackValue;
+              break;
+            case "cogs":      venues[venue].cogs      += fallbackValue; break;
+            case "rent":      venues[venue].rent      += fallbackValue; break;
+            case "utilities": venues[venue].utilities += fallbackValue; break;
+          }
+
+          fallbackApplied.push({
+            venue,
+            ebitda_line: line,
+            rule_type:   ruleType,
+            value:       +fallbackValue.toFixed(2),
+          });
+        }
+      }
+    }
   }
 
   // ── 7. Salary supplement → wages (with prior-month fallback) ────────────
