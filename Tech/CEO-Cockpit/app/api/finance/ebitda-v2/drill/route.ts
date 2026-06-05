@@ -20,7 +20,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +35,7 @@ export async function GET(req: Request) {
   if (!venue || !ebitdaLine || !dateFrom || !dateTo)
     return NextResponse.json({ error: "venue, ebitda_line, date_from, date_to required" }, { status: 400 });
 
-  const supabase = await createServerClient();
+  const supabase = await createServerSupabaseClient();
 
   // Check if this cell uses a hardwired rule
   const { data: hwRules } = await supabase
@@ -45,7 +45,7 @@ export async function GET(req: Request) {
     .eq("ebitda_line", ebitdaLine)
     .lte("effective_from", dateTo);
 
-  const activeHw = (hwRules ?? []).find(r => !r.effective_to || r.effective_to >= dateFrom);
+  const activeHw = (hwRules ?? []).find((r: Record<string,unknown>) => !r.effective_to || (r.effective_to as string) >= dateFrom!);
   if (activeHw) {
     // Hardwired cell — no individual transactions, show rule summary
     return NextResponse.json({

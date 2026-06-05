@@ -11,7 +11,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -148,7 +148,7 @@ export async function GET(req: Request) {
   if (!dateFrom || !dateTo)
     return NextResponse.json({ error: "date_from and date_to required" }, { status: 400 });
 
-  const supabase       = await createServerClient();
+  const supabase       = await createServerSupabaseClient();
   const daysInPeriod   = daysBetween(dateFrom, dateTo);
   const isFullPeriod   = isFullCalendarMonths(dateFrom, dateTo);
   const warnings: string[] = [];
@@ -291,11 +291,11 @@ export async function GET(req: Request) {
   }
   // 4b. Aesthetics
   const aesthTotal = (aestheticsSales.data ?? [])
-    .reduce((s, r) => s + Number(r.price_ex_vat ?? 0), 0);
+    .reduce((s: number, r: Record<string, unknown>) => s + Number(r.price_ex_vat ?? 0), 0);
   if (venues["aesthetics"]) venues["aesthetics"].revenue = aesthTotal;
   // 4c. Slimming
   const slimTotal = (slimmingSales.data ?? [])
-    .reduce((s, r) => s + Number(r.price_ex_vat ?? 0), 0);
+    .reduce((s: number, r: Record<string, unknown>) => s + Number(r.price_ex_vat ?? 0), 0);
   if (venues["slimming"]) venues["slimming"].revenue = slimTotal;
 
   // ── 5. Costs from transactions_raw ────────────────────────────────────────

@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 // GET /api/settings/ebitda-v2-rules
 // Returns special_persons and hardwired_rules arrays.
 export async function GET() {
-  const supabase = await createServerClient();
+  const supabase = await createServerSupabaseClient();
 
   const [persons, rules] = await Promise.all([
     supabase
@@ -30,7 +30,7 @@ export async function GET() {
 // action = "delete_person" → { id }
 // action = "update_rule"   → { id, params, note }
 export async function POST(req: Request) {
-  const supabase = await createServerClient();
+  const supabase = await createServerSupabaseClient();
   const body: Record<string, unknown> = await req.json();
   const { action } = body;
 

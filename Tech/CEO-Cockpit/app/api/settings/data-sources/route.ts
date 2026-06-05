@@ -7,7 +7,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -125,7 +125,7 @@ type SourceId = typeof DATA_SOURCE_DEFS[number]["id"];
 // ── GET ───────────────────────────────────────────────────────────────────────
 
 export async function GET() {
-  const supabase = await createServerClient();
+  const supabase = await createServerSupabaseClient();
 
   // Last sync per logged source
   const { data: logs } = await supabase
@@ -140,21 +140,7 @@ export async function GET() {
     if (!latestLog.has(row.source_name as string)) latestLog.set(row.source_name as string, row);
   }
 
-  // Data coverage per table
-  const coverageQueries: Array<{ id: SourceId; sql: string }> = DATA_SOURCE_DEFS
-    .filter(d => d.coverage_table && d.coverage_col)
-    .map(d => ({
-      id:  d.id as SourceId,
-      sql: `SELECT MIN(${d.coverage_col}::text) AS from_date, MAX(${d.coverage_col}::text) AS to_date, COUNT(*) AS rows FROM ${d.coverage_table}`,
-    }));
-
-  const coverageResults = await Promise.all(
-    coverageQueries.map(async q => {
-      const { data } = await supabase.rpc("exec_sql" as never, { sql: q.sql }).single().catch(() => ({ data: null }));
-      // Fallback: use direct table query
-      return { id: q.id, data };
-    }),
-  );
+  // Coverage is built via direct per-table queries below
 
   // Build simpler coverage map via direct queries for tables we know
   type Coverage = { from_date: string | null; to_date: string | null; rows: number };
@@ -168,8 +154,8 @@ export async function GET() {
     ["aesthetics_sales_daily", "date_of_service",  "aesthetics_sales_daily"],
     ["slimming_sales_daily",   "date_of_service",  "slimming_sales_daily"],
     ["salary_supplement_monthly","month",          "salary_supplement_monthly"],
-    ["wage_role_mapping",      null,               "wage_role_mapping"],
-    ["coa_mapping",            null,               "coa_mapping"],
+    ["wage_role_mapping",      "" as string,       "wage_role_mapping"],
+    ["coa_mapping",            "" as string,       "coa_mapping"],
   ];
 
   await Promise.all(tableCoverage.map(async ([table, dateCol, key]) => {
