@@ -153,19 +153,33 @@ export async function GET(req: Request) {
   const isFullPeriod   = isFullCalendarMonths(dateFrom, dateTo);
   const warnings: string[] = [];
 
-  // ── 1. Load all config tables in parallel ─────────────────────────────────
-  const [rawCosts, revenueMonthly, aestheticsSales, slimmingSales,
-         supplement, wageRoles, adPatterns, fallbackRules, hardwiredRules] =
-    await Promise.all([
-      // Cost transactions (wages, advertising, sga, cogs, rent, utilities)
-      // .limit(100000) overrides the default 1000-row PostgREST page size —
-      // a single period can have 2000+ rows across all venues.
-      supabase
+  // ── 1a. Paginate transactions_raw — server max_rows cap can be as low as
+  //       1000; paginate in batches of 1000 until all rows are collected.
+  //       For a typical month (~2000 rows) this takes 3 round-trips.
+  type RawRow = { venue: string; ebitda_line: string; ebitda_sub_line: string; contact_name: string; amount: number };
+  async function fetchAllRawCosts(): Promise<RawRow[]> {
+    const PAGE = 1000;
+    const all: RawRow[] = [];
+    for (let offset = 0; ; offset += PAGE) {
+      const { data, error } = await supabase
         .from("transactions_raw")
         .select("venue, ebitda_line, ebitda_sub_line, contact_name, amount")
         .gte("date", dateFrom)
         .lte("date", dateTo)
-        .limit(100000),
+        .range(offset, offset + PAGE - 1);
+      if (error) throw new Error(`transactions_raw page ${offset}: ${error.message}`);
+      if (!data || data.length === 0) break;
+      all.push(...(data as RawRow[]));
+      if (data.length < PAGE) break;  // last page
+    }
+    return all;
+  }
+
+  // ── 1. Load all config tables in parallel ─────────────────────────────────
+  const [allRawCosts, revenueMonthly, aestheticsSales, slimmingSales,
+         supplement, wageRoles, adPatterns, fallbackRules, hardwiredRules] =
+    await Promise.all([
+      fetchAllRawCosts(),
 
       // SPA revenue per location per month
       supabase
@@ -220,9 +234,8 @@ export async function GET(req: Request) {
         .select("*"),
     ]);
 
-  // Error checks
+  // Error checks (rawCosts errors thrown inside fetchAllRawCosts)
   for (const [label, res] of [
-    ["transactions_raw", rawCosts],
     ["spa_revenue_monthly", revenueMonthly],
     ["aesthetics_sales_daily", aestheticsSales],
     ["slimming_sales_daily", slimmingSales],
@@ -304,7 +317,7 @@ export async function GET(req: Request) {
   // ── 5. Costs from transactions_raw ────────────────────────────────────────
   const fallbackApplied: Array<{venue: string; ebitda_line: string; rule_type: string; value: number}> = [];
 
-  for (const row of (rawCosts.data ?? [])) {
+  for (const row of allRawCosts) {
     const venue     = (row.venue         as string) ?? "unallocated";
     const line      = (row.ebitda_line   as string);
     const sub       = (row.ebitda_sub_line as string) ?? line;
