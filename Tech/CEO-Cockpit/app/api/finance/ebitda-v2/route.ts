@@ -448,16 +448,21 @@ export async function GET(req: Request) {
       // Historical totals by (account_code, venue) over TTM window
       const { data: histRows } = await supabase
         .from("transactions_raw")
-        .select("account_code, venue, amount, ebitda_line, ebitda_sub_line")
+        .select("account_code, venue, date, amount, ebitda_line, ebitda_sub_line")
         .in("account_code", activeCodes)
         .gte("date", ttmFrom)
         .lt("date", ttmTo);
 
-      // Group historical amounts by account+venue
+      // Group historical amounts by account+venue AND track distinct months
+      // (needed to correctly annualise when <12 months of SPA history exist)
       type HistKey = string; // "account_code|venue"
-      const histMap = new Map<HistKey, { ttm: number; ebitda_line: string; ebitda_sub_line: string }>();
+      const histMap    = new Map<HistKey, { ttm: number; ebitda_line: string; ebitda_sub_line: string }>();
+      const histMonths = new Map<HistKey, Set<string>>(); // track distinct YYYY-MM per key
       for (const r of (histRows ?? [])) {
         const k = `${r.account_code}|${r.venue}`;
+        const mon = (r.date as string ?? "").slice(0, 7);
+        if (!histMonths.has(k)) histMonths.set(k, new Set());
+        histMonths.get(k)!.add(mon);
         const existing = histMap.get(k);
         if (existing) {
           existing.ttm += Number(r.amount ?? 0);
@@ -512,8 +517,11 @@ export async function GET(req: Request) {
           let fallbackValue = 0;
           if (ruleType === "ttm_spread") {
             // Annualise TTM (account for < 12 months of history), pro-rate to period
-            const ttmMonths = 12; // assume full 12 months
-            const annualised = hist.ttm * (12 / ttmMonths);
+            // TEMP: use actual months in history to annualise correctly.
+            // Once full 2025 SPA backfill is done (12 months available),
+            // actual_months will equal 12 and this reverts to standard TTM.
+            const actualMonths = Math.max(histMonths.get(key)?.size ?? 1, 1);
+            const annualised   = (hist.ttm / actualMonths) * 12;
             fallbackValue = annualised * (daysInPeriod / 365);
           } else if (ruleType === "previous_month") {
             const prev = prevMap.get(key) ?? 0;

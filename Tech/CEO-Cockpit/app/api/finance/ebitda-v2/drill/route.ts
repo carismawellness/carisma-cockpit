@@ -66,6 +66,75 @@ export async function GET(req: Request) {
     });
   }
 
+  // ── Revenue cells: use spa_revenue_monthly (Lapis), not transactions_raw ──
+  // Revenue in V2 comes from the Google Sheet / Lapis system, not from Zoho.
+  // Zoho sales transactions in transactions_raw are double-counting noise that
+  // should be excluded (sales accounts are excluded in COA mapping but the ETL
+  // still writes income-section lines unless explicitly excluded).
+  if (ebitdaLine === "revenue") {
+    // Determine location_id from venue slug
+    const LOC_SLUG_TO_ID: Record<string, number> = {
+      intercontinental: 1, hugos: 2, hyatt: 3, ramla: 4,
+      labranda: 5, sunny_coast: 6, excelsior: 7, novotel: 8,
+    };
+    const locationId = LOC_SLUG_TO_ID[venue];
+    if (!locationId) {
+      return NextResponse.json({ is_fallback: false, total: 0, contacts: [], transactions: [], wage_roles: [], ad_channels: [] });
+    }
+
+    // Months overlapping with the period (pure string arithmetic — no UTC parsing)
+    const months: string[] = [];
+    let y = parseInt(dateFrom!.slice(0, 4), 10), m = parseInt(dateFrom!.slice(5, 7), 10);
+    const ey = parseInt(dateTo!.slice(0, 4), 10), em = parseInt(dateTo!.slice(5, 7), 10);
+    while (y < ey || (y === ey && m <= em)) {
+      months.push(`${y}-${String(m).padStart(2, "0")}-01`);
+      m++; if (m > 12) { m = 1; y++; }
+    }
+
+    const { data: revRows } = await supabase
+      .from("spa_revenue_monthly")
+      .select("month, services, product_phytomer, product_purest, product_other, wholesale, sales_discount, sales_refund")
+      .eq("location_id", locationId)
+      .in("month", months);
+
+    const txns: Array<Record<string, unknown>> = [];
+    let total = 0;
+    for (const r of (revRows ?? [])) {
+      const mStr = (r.month as string).slice(0, 7);
+      const mFull = mStr + "-01";
+      const mY = parseInt(mStr.slice(0, 4), 10), mMo = parseInt(mStr.slice(5, 7), 10);
+      const lastD = new Date(mY, mMo, 0).getDate();
+      const mEnd  = `${mY}-${String(mMo).padStart(2, "0")}-${String(lastD).padStart(2, "0")}`;
+      const rs = dateFrom! > mFull ? dateFrom! : mFull;
+      const re = dateTo!   < mEnd  ? dateTo!   : mEnd;
+      const parseL = (s: string) => { const [py,pm,pd]=s.split("-").map(Number); return new Date(py,pm-1,pd); };
+      const daysInRange = rs > re ? 0 : Math.round((parseL(re).getTime()-parseL(rs).getTime())/86400000)+1;
+      const dim = lastD;
+      const f = daysInRange / dim;
+
+      const svc = Number(r.services ?? 0) * f;
+      const prd = (Number(r.product_phytomer ?? 0) + Number(r.product_purest ?? 0) + Number(r.product_other ?? 0)) * f;
+      const whl = Number(r.wholesale ?? 0) * f;
+      const disc = Number(r.sales_discount ?? 0) * f;
+      const ref  = Number(r.sales_refund ?? 0) * f;
+
+      if (svc  > 0) { txns.push({ txn_id: `rev-svc-${mStr}`,  date: rs, contact: "—", account_code: "LAPIS", account_name: "Services revenue",   txn_type: "lapis", sub_line: "revenue", amount: +svc.toFixed(2),   source: "google_sheet" }); total += svc; }
+      if (prd  > 0) { txns.push({ txn_id: `rev-prd-${mStr}`,  date: rs, contact: "—", account_code: "LAPIS", account_name: "Products revenue",   txn_type: "lapis", sub_line: "revenue", amount: +prd.toFixed(2),   source: "google_sheet" }); total += prd; }
+      if (whl  > 0) { txns.push({ txn_id: `rev-whl-${mStr}`,  date: rs, contact: "—", account_code: "ZOHO",  account_name: "Wholesale",           txn_type: "zoho",  sub_line: "revenue", amount: +whl.toFixed(2),   source: "zoho" });         total += whl; }
+      if (disc > 0) { txns.push({ txn_id: `rev-dsc-${mStr}`,  date: rs, contact: "—", account_code: "ZOHO",  account_name: "Sales discount",      txn_type: "zoho",  sub_line: "revenue", amount: +(-disc).toFixed(2), source: "zoho" });       total -= disc; }
+      if (ref  > 0) { txns.push({ txn_id: `rev-ref-${mStr}`,  date: rs, contact: "—", account_code: "ZOHO",  account_name: "Sales refund",        txn_type: "zoho",  sub_line: "revenue", amount: +(-ref).toFixed(2),  source: "zoho" });       total -= ref; }
+    }
+
+    return NextResponse.json({
+      is_fallback: false,
+      total: +total.toFixed(2),
+      contacts:     [{ contact: "Lapis (Google Sheet)", amount: +total.toFixed(2), share: 100, source: "google_sheet", basis: "Google Sheet" }],
+      transactions: txns,
+      wage_roles:   [],
+      ad_channels:  [],
+    });
+  }
+
   // ── Fetch transactions ────────────────────────────────────────────────────
   let query = supabase
     .from("transactions_raw")
