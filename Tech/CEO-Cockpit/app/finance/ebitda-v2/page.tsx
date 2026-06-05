@@ -23,7 +23,7 @@ const VENUE_CONFIG = [
 
 type VenueSlug = typeof VENUE_CONFIG[number]["slug"];
 const SPA_VENUES   = VENUE_CONFIG.filter(v => v.brand === "SPA").map(v => v.slug);
-const WAGE_ROLES   = ["manager","reception","therapist","crm","unassigned"] as const;
+const WAGE_ROLES   = ["manager","reception","therapist","practitioner","crm","unassigned"] as const;
 const AD_CHANNELS  = ["meta","google","klaviyo","misc"] as const;
 const SGA_SUBS     = [
   "prof_services","fuel","laundry","software","cleaning",

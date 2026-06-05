@@ -45,7 +45,7 @@ const LOC_ID_TO_SLUG: Record<number, string> = {
 };
 
 // Wage roles (from wage_role_mapping)
-const WAGE_ROLES = ["manager", "reception", "therapist", "crm", "unassigned"] as const;
+const WAGE_ROLES = ["manager", "reception", "therapist", "practitioner", "crm", "unassigned"] as const;
 type WageRole = typeof WAGE_ROLES[number];
 
 // SG&A sub-lines
@@ -438,8 +438,13 @@ export async function GET(req: Request) {
     for (const row of rows) {
       if (!row.spa_slug || !venues[row.spa_slug]) continue;
       const amount = row.amount * factor;
-      venues[row.spa_slug].wages                        += amount;
-      venues[row.spa_slug].wage_by_role["unassigned"]   += amount;
+      // Look up the employee's actual role — don't default to 'unassigned'
+      const suppRoleKey  = ((row.employee_name as string) || "").toLowerCase().trim();
+      const suppRole: WageRole = (WAGE_ROLES as readonly string[]).includes(
+        wageRoleMap.get(suppRoleKey) ?? ""
+      ) ? (wageRoleMap.get(suppRoleKey) as WageRole) : "unassigned";
+      venues[row.spa_slug].wages                  += amount;
+      venues[row.spa_slug].wage_by_role[suppRole] += amount;
     }
 
     if (isFallback) {
