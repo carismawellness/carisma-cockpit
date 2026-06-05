@@ -37,7 +37,8 @@ export async function GET(req: Request) {
   const venue         = searchParams.get("venue");
   const ebitdaLine    = searchParams.get("ebitda_line");
   const ebitdaSubLine = searchParams.get("ebitda_sub_line");
-  const wageRole      = searchParams.get("wage_role");   // optional role filter
+  const wageRole      = searchParams.get("wage_role");    // filter wages to one role
+  const adChannel     = searchParams.get("ad_channel");   // filter advertising to one channel
   const dateFrom      = searchParams.get("date_from");
   const dateTo        = searchParams.get("date_to");
 
@@ -80,6 +81,7 @@ export async function GET(req: Request) {
   const { data: rows, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  // mutable — wage_role and ad_channel filters may narrow this later
   let txnRows = (rows ?? []) as Array<Record<string, unknown>>;
 
   // ── Wage role mapping + supplement ─────────────────────────────────────────
@@ -152,6 +154,13 @@ export async function GET(req: Request) {
       }
     }
     return "misc";
+  }
+
+  // ── Ad channel filter — keep only contacts resolving to this channel ───────
+  if (adChannel && ebitdaLine === "advertising") {
+    txnRows = txnRows.filter(r =>
+      resolveAdChannel((r.contact_name as string) || "") === adChannel
+    );
   }
 
   // ── COA mapping → split basis ─────────────────────────────────────────────

@@ -58,7 +58,7 @@ type V2Data = {
 
 type DrillContact = {
   contact: string; amount: number; share: number;
-  role?: string; source: string;
+  role?: string; source: string; basis?: string;
   zoho_amount: number; supplement_amount: number;
 };
 type DrillTxn     = {
@@ -82,7 +82,8 @@ type DrillTarget = {
   venueLabel: string;
   line:       string;
   subLine?:   string;
-  wageRole?:  string;   // when set, drill filters to only this wage role
+  wageRole?:  string;   // filters contacts/transactions to this wage role
+  adChannel?: string;   // filters contacts/transactions to this ad channel
   label:      string;
 };
 
@@ -147,8 +148,9 @@ function DrillDialog({
   useEffect(() => {
     setLoading(true); setError(null); setData(null);
     const qs = new URLSearchParams({ venue: target.venue, ebitda_line: target.line, date_from: dateFrom, date_to: dateTo });
-    if (target.subLine)  qs.set("ebitda_sub_line", target.subLine);
-    if (target.wageRole) qs.set("wage_role",        target.wageRole);
+    if (target.subLine)   qs.set("ebitda_sub_line", target.subLine);
+    if (target.wageRole)  qs.set("wage_role",        target.wageRole);
+    if (target.adChannel) qs.set("ad_channel",       target.adChannel);
     fetch(`/api/finance/ebitda-v2/drill?${qs}`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false); })
@@ -264,6 +266,7 @@ function DrillDialog({
                               <th className="text-left py-1.5 pr-2">{isWages ? "Employee" : "Contact"}</th>
                               {isWages && <th className="text-left py-1.5 pr-2">Role</th>}
                               <th className="text-left py-1.5 pr-2">Source</th>
+                              <th className="text-left py-1.5 pr-2">Basis</th>
                               <th className="text-right py-1.5 pr-2">Amount</th>
                               <th className="text-right py-1.5">%</th>
                             </tr>
@@ -278,6 +281,12 @@ function DrillDialog({
                                 c.source === "salary_supplement" ? "Supplement" :
                                 c.source === "both"              ? "Zoho + Suppl." :
                                 "Zoho";
+                              const basisCls =
+                                (c.basis ?? "").includes("split") || (c.basis ?? "").includes("Split")
+                                  ? "bg-amber-100 text-amber-700"
+                                  : (c.basis ?? "") === "Tag"
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-muted text-muted-foreground";
                               return (
                                 <tr key={c.contact} className="border-b last:border-0 hover:bg-muted/20">
                                   <td className="py-1.5 pr-2 font-medium">{c.contact}</td>
@@ -289,6 +298,11 @@ function DrillDialog({
                                   <td className="py-1.5 pr-2">
                                     <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${srcCls}`}>
                                       {srcLabel}
+                                    </span>
+                                  </td>
+                                  <td className="py-1.5 pr-2">
+                                    <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${basisCls}`}>
+                                      {c.basis ?? "—"}
                                     </span>
                                   </td>
                                   <td className="py-1.5 pr-2 text-right tabular-nums">{formatCurrency(c.amount)}</td>
@@ -406,9 +420,11 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
     return data.venues[slug] ?? emptyVenue();
   }
 
-  function openDrill(slug: string, label: string, line: string, displayLabel: string, subLine?: string) {
+  type DrillOpts = { subLine?: string; wageRole?: string; adChannel?: string };
+
+  function openDrill(slug: string, label: string, line: string, displayLabel: string, opts: DrillOpts = {}) {
     if (slug === "__spa__") return;
-    setDrill({ venue: slug, venueLabel: label, line, label: displayLabel, subLine });
+    setDrill({ venue: slug, venueLabel: label, line, label: displayLabel, ...opts });
   }
 
   function cellCls(slug: string, extra = ""): string {
@@ -418,8 +434,8 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
       ${extra}`;
   }
 
-  function cellClick(slug: string, label: string, line: string, display: string, subLine?: string) {
-    return slug !== "__spa__" ? () => openDrill(slug, label, line, display, subLine) : undefined;
+  function cellClick(slug: string, label: string, line: string, display: string, opts: DrillOpts = {}) {
+    return slug !== "__spa__" ? () => openDrill(slug, label, line, display, opts) : undefined;
   }
 
   const cols = displayedVenues;
@@ -500,7 +516,7 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                       const amt = vd(vc.slug).wage_by_role[role] ?? 0;
                       return (
                         <td key={vc.slug} className={cellCls(vc.slug)}
-                          onClick={cellClick(vc.slug, vc.label, "wages", `Wages – ${role}`)}>
+                          onClick={cellClick(vc.slug, vc.label, "wages", `Wages – ${role}`, { wageRole: role })}>
                           {fmtC(amt)}
                         </td>
                       );
@@ -531,7 +547,7 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                     <td className="px-3 py-1 pl-8 sticky left-0 capitalize">{ch}</td>
                     {cols.map(vc => (
                       <td key={vc.slug} className={cellCls(vc.slug)}
-                        onClick={cellClick(vc.slug, vc.label, "advertising", `Advertising – ${ch}`, ch)}>
+                        onClick={cellClick(vc.slug, vc.label, "advertising", `Advertising – ${ch}`, { adChannel: ch })}>
                         {fmtC(vd(vc.slug).ad_by_channel[ch] ?? 0)}
                       </td>
                     ))}
@@ -565,7 +581,7 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                       <td className="px-3 py-1 pl-8 sticky left-0">{lbl}</td>
                       {cols.map(vc => (
                         <td key={vc.slug} className={cellCls(vc.slug)}
-                          onClick={cellClick(vc.slug, vc.label, "sga", `SG&A – ${lbl}`, sub)}>
+                          onClick={cellClick(vc.slug, vc.label, "sga", `SG&A – ${lbl}`, { subLine: sub })}>
                           {fmtC(vd(vc.slug).sga_by_sub[sub] ?? 0)}
                         </td>
                       ))}
