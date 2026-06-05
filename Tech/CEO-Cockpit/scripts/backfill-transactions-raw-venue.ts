@@ -11,6 +11,9 @@
  *   --dry-run          Print months to process; don't call Zoho or touch data.
  *   --month YYYY-MM    Process a single month only.
  *   --year  YYYY       Process all months in that year up to today (default: 2026).
+ *   --spa-only         Only run the SPA Zoho org ETL (skip Aesthetics). Safe when
+ *                      Aesthetics data is already correct and only SPA needs fixing.
+ *   --aest-only        Only run the Aesthetics Zoho org ETL (skip SPA).
  *
  * Safety guarantees (built into the ETL step 6):
  *   - The ETL builds the replacement rows BEFORE deleting existing data.
@@ -27,6 +30,8 @@ import { runAestheticsEbitdaMonthFromTransactions }   from "../lib/etl/zoho-aest
 
 const args     = process.argv.slice(2);
 const dryRun   = args.includes("--dry-run");
+const spaOnly  = args.includes("--spa-only");   // skip Aesthetics ETL
+const aestOnly = args.includes("--aest-only");  // skip SPA ETL
 const monthArg = args.includes("--month") ? args[args.indexOf("--month") + 1] : null;
 const yearArg  = args.includes("--year")  ? Number(args[args.indexOf("--year")  + 1]) : null;
 const year     = yearArg ?? 2026;
@@ -66,10 +71,17 @@ function pad(n: number) { return String(n).padStart(2, "0"); }
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
   if (dryRun) {
-    console.log(`Dry run — would process ${months.length} month(s):`);
+    console.log(`Dry run — would process ${months.length} month(s) [spa-only=${spaOnly}, aest-only=${aestOnly}]:`);
     months.forEach(({ year, month }) => console.log(`  ${year}-${pad(month)}`));
     return;
   }
+
+  if (spaOnly && aestOnly) {
+    console.error("Cannot use --spa-only and --aest-only together.");
+    process.exit(1);
+  }
+  if (spaOnly)  console.log("SPA-ONLY mode — Aesthetics ETL will be skipped.");
+  if (aestOnly) console.log("AEST-ONLY mode — SPA ETL will be skipped.");
 
   const spaClient   = new ZohoBooksClient("spa");
   const aesthClient = new ZohoBooksClient("aesthetics");
@@ -87,7 +99,7 @@ async function main() {
     console.log(`  [safety] transactions_raw rows BEFORE: ${before}`);
 
     // ── SPA ─────────────────────────────────────────────────────────────────
-    try {
+    if (!aestOnly) try {
       const res = await runSpaEbitdaMonthFromTransactions(spaClient, year, month);
       res.log.slice(-2).forEach(l => console.log("  SPA  ", l));
     } catch (e) {
@@ -95,7 +107,7 @@ async function main() {
     }
 
     // ── Aesthetics ───────────────────────────────────────────────────────────
-    try {
+    if (!spaOnly) try {
       const res = await runAestheticsEbitdaMonthFromTransactions(aesthClient, year, month);
       res.log.slice(-2).forEach(l => console.log("  AEST ", l));
     } catch (e) {
