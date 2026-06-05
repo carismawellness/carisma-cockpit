@@ -171,10 +171,7 @@ const WAGES_RECLASS_CONTACT_KEYS: Set<string> = new Set(
 // Contacts where a substring/token match is sufficient (first name, or a
 // name token that is unique enough). "upwork" catches "Upwork", "Upwork
 // payments", "Upwork Inc", etc.  All matched case-insensitively.
-const WAGES_RECLASS_FUZZY = [
-  "yamuna", "mandar", "manan", "ruksana", "mellisa", "melissa", "upwork",
-  "yofana", "banaban", "veloso", "rana", "veejay", "bast", "juliana", "adeel",
-];
+const WAGES_RECLASS_FUZZY = ["yamuna", "mandar", "manan", "ruksana", "mellisa", "melissa", "upwork"];
 
 function isWagesReclassContact(contactName: string): boolean {
   if (!contactName) return false;

@@ -31,7 +31,7 @@ var APPS_SCRIPT_BUDGET_MS = 5 * 60 * 1000;  // bail before hitting 6-min hard li
 
 var META_COLS  = ["Brand", "Line Item", "Account Code", "EBITDA Category", "Venue", "Contact", "Allocation"];
 var META_COUNT = META_COLS.length;
-var CONTACT_COL_IDX = 5;  // 0-indexed — Meta/Google/Klaviyo/Misc, populated only for Advertising rows
+var CONTACT_COL_IDX = 5;  // 0-indexed — Meta/Google/Klaviyo/GHL/Misc, populated only for Advertising rows
 var ALLOC_COL_IDX   = 6;  // 0-indexed — "tag" if Zoho line tag drove it, else the split rule name
 
 // Sheet layout: row 1 = pull controls, row 2 = spacer, row 3 = header, row 4+ = data

@@ -369,10 +369,6 @@ async function sbFetch<T>(path: string, params: Array<[string, string]> = []): P
       "apikey":        SUPABASE_KEY,
       "Authorization": `Bearer ${SUPABASE_KEY}`,
       "Accept":        "application/json",
-      // PostgREST defaults to 1,000 rows. The TTM window spans ~2,880 rows
-      // (8 venues × 365 days) — without a range header April data is cut off
-      // and the previous_month fallback finds nothing. 50,000 covers years.
-      "Range":         "0-49999",
       "Prefer":        "return=representation",
     },
     cache: "no-store",
@@ -654,39 +650,6 @@ async function fetchFromSupabase(
     for (const [line, raw] of ebitdaLines) {
       const val = parseFloat(raw || "0");
       if (val !== 0) upsertRow("SPA", line, slug, r.date, val);
-    }
-  }
-
-  // Guarantee a row exists for wages + utilities for every SPA venue even when
-  // the literal sum is zero (salary not yet posted, or no utility bills in window).
-  // Without this, the fallback loop has no row to operate on and produces nothing.
-  // Collect venues seen in this period from any non-zero line, then ensure wages/utilities.
-  {
-    const seenVenues = new Set<string>();
-    for (const key of rowMap.keys()) {
-      if (key.startsWith("SPA|")) {
-        const venueSlug = key.split("|")[2];
-        if (venueSlug && venueSlug !== "hq") seenVenues.add(venueSlug);
-      }
-    }
-    // Also include hardwired venues in case ALL lines were zero for a venue.
-    for (const s of ["inter","hugos","hyatt","ramla","labranda","odycy","excelsior","novotel"]) seenVenues.add(s);
-    for (const slug of seenVenues) {
-      for (const line of ["wages", "utilities"] as const) {
-        const key = `SPA|${line}|${slug}`;
-        if (!rowMap.has(key)) {
-          rowMap.set(key, {
-            brand: "SPA",
-            line_item: EBITDA_LINE_LABEL[line] ?? line,
-            account_code: line,
-            ebitda_category: line,
-            venue: slug,
-            contact: "",
-            allocation: "",
-            daily: {},
-          });
-        }
-      }
     }
   }
 
@@ -1097,29 +1060,22 @@ async function handleGet(req: NextRequest): Promise<NextResponse> {
       // not the post-override brand, so the rules table key stays correct
       // for HQ-venue rows that physically live in the SPA org.
       const zohoOrg: ZohoOrg = orgParam === "SPA" ? "spa" : "aesthetics";
-      // Supabase-sourced rows carry pseudo account_code = ebitda_category slug
-      // (e.g. "wages", "advertising"). Real Zoho rows carry actual codes like
-      // "30001". Try the specific account code first; fall back to the category
-      // slug so category-level rules (e.g. spa|wages) apply to Supabase rows.
       const rule = row.account_code
-        ? (rules.get(`${zohoOrg}|${row.account_code}`)
-           ?? rules.get(`${zohoOrg}|${row.ebitda_category}`))
-        : rules.get(`${zohoOrg}|${row.ebitda_category}`);
+        ? rules.get(`${zohoOrg}|${row.account_code}`)
+        : undefined;
 
       let periodValue = literalSum;
       let usedFallback = false;
       let appliedRuleType: RuleType | null = null;
       let appliedMethodDetail: string | null = null;
 
-      // Fallback fires ONLY when literal sum is zero (data not yet posted).
-      // Never override real posted data with TTM/previous-month estimates —
-      // if Zoho has actual transactions in the window, use them.
-      //
-      // Special case: wages on a full calendar month with zero data means
-      // salary hasn't been posted yet (posted ~10 days after month-end).
+      // Fallback rules apply on partial periods. Also apply for wages when the
+      // literal sum is exactly zero on a full calendar month — this happens when
+      // salary entries haven't been posted yet (typically posted ~10 days after
+      // month-end). Zero wages on a closed month is a data-lag issue, not
+      // genuinely zero wages.
       const wagesUnposted = category === "wages" && literalSum === 0;
-      const dataIsMissing  = literalSum === 0;
-      if (((!periodIsFullCalendarMonths && dataIsMissing) || wagesUnposted) && rule && rule.active && rule.rule_type !== "disabled") {
+      if ((!periodIsFullCalendarMonths || wagesUnposted) && rule && rule.active && rule.rule_type !== "disabled") {
         if (rule.rule_type === "manual_annual") {
           const annual = rule.params?.annual_amount;
           if (typeof annual === "number" && Number.isFinite(annual)) {
@@ -1286,60 +1242,6 @@ async function handleGet(req: NextRequest): Promise<NextResponse> {
     // Reference orgParam so TS doesn't flag it as unused even when we don't
     // branch on it (logic above already handles per-row brand routing).
     void orgParam;
-  }
-
-  // ── Post-pass: SPA wage estimates for partial periods ────────────────────────
-  // When May 1–7 is selected and payroll hasn't been posted yet, spa_ebitda_daily
-  // wages = 0 for all venues. The guarantee-row fallback mechanism can't reliably
-  // find TTM data, so we apply the previous-month estimate directly here.
-  if (!periodIsFullCalendarMonths) {
-    const SPA_SLUGS_BY_ID: Record<number, string> = {
-      1: "inter", 2: "hugos", 3: "hyatt", 4: "ramla",
-      5: "labranda", 6: "odycy", 7: "excelsior", 8: "novotel",
-    };
-    // Find SPA venues that have no wages (missing or zero).
-    const spaVenuesMissingWages = Object.entries(venueTotals.SPA)
-      .filter(([, cats]) => !cats.wages || cats.wages.value === 0)
-      .map(([slug]) => slug);
-
-    if (spaVenuesMissingWages.length > 0) {
-      // Fetch previous calendar month's wages from spa_ebitda_daily.
-      const prevMo = previousCalendarMonth(dateFrom);
-      const prevWages = await sbFetch<{ location_id: number; wages: string }>(
-        "spa_ebitda_daily",
-        [
-          ["select", "location_id,wages"],
-          ["date",   `gte.${prevMo.from}`],
-          ["date",   `lte.${prevMo.to}`],
-          ["Range",  "0-9999"],
-        ],
-      ).catch(() => [] as { location_id: number; wages: string }[]);
-
-      // Sum wages per location_id over the previous month.
-      const prevByLoc: Record<number, number> = {};
-      for (const r of prevWages) {
-        prevByLoc[r.location_id] = (prevByLoc[r.location_id] ?? 0)
-          + parseFloat(r.wages || "0");
-      }
-
-      for (const [locId, prevTotal] of Object.entries(prevByLoc)) {
-        const slug = SPA_SLUGS_BY_ID[Number(locId)];
-        if (!slug || !spaVenuesMissingWages.includes(slug)) continue;
-        if (prevTotal <= 0) continue;
-        const estimate = +(prevTotal * (daysInPeriod / prevMo.days)).toFixed(2);
-        const cell: CellTotal = { value: estimate, has_fallback: true, fallback_account_count: 1 };
-        if (!venueTotals.SPA[slug]) venueTotals.SPA[slug] = {};
-        venueTotals.SPA[slug].wages = cell;
-        seenBrands.add("SPA");
-        seenCategories.add("wages");
-        // Roll into SPA brand total.
-        const bt = totals.SPA.wages ?? { value: 0, has_fallback: false, fallback_account_count: 0 };
-        bt.value += estimate;
-        bt.has_fallback = true;
-        bt.fallback_account_count += 1;
-        totals.SPA.wages = bt;
-      }
-    }
   }
 
   // Post-pass: roll every granular sga_* category into the brand-level

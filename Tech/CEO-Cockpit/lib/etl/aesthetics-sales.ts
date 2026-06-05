@@ -97,15 +97,18 @@ async function fetchBestTab(
     return allTabs.find(t => t.toLowerCase().trim() === candidate.toLowerCase().trim()) ?? null;
   }
 
-  // First pass: prefer the tab that has a "price" or "paid" column
+  const PRICE_COLS = new Set(["price", "paid", "price sales", "total price", "amount"]);
+  const hasPriceCol = (headers: string[]) => headers.some(h => PRICE_COLS.has(h));
+
+  // First pass: prefer the tab that has a recognisable price column
   for (const candidate of candidates) {
     const actualTab = findActual(candidate);
     if (!actualTab) continue;
     const result = await fetchTab(actualTab);
     if (!result) continue;
     log.push(`  Found tab '${actualTab}' — columns: [${result.headers.join(", ")}]`);
-    if (result.headers.includes("price") || result.headers.includes("paid")) return { rows: result.rows, tabName: actualTab, headers: result.headers };
-    log.push(`  (tab '${actualTab}' has no price/paid column — checking next candidate)`);
+    if (hasPriceCol(result.headers)) return { rows: result.rows, tabName: actualTab, headers: result.headers };
+    log.push(`  (tab '${actualTab}' has no price column — checking next candidate)`);
   }
 
   // Second pass: fall back to the first matching tab that has any data
@@ -123,10 +126,21 @@ async function fetchBestTab(
 
 function parseDate(raw: string, fallbackYear: number, fallbackMonth: number): string | null {
   raw = raw.trim().replace(/(\d+)(st|nd|rd|th)\b/gi, "$1");
+  if (!raw) return null;
+  // YYYY-MM-DD (ISO)
+  let m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) {
+    try { return new Date(+m[1], +m[2] - 1, +m[3]).toISOString().slice(0, 10); } catch { /* */ }
+  }
   // D/M/YYYY
-  let m = raw.match(/^(\d{1,2})[/\-.\\](\d{1,2})[/\-.\\](\d{4})$/);
+  m = raw.match(/^(\d{1,2})[/\-.\\](\d{1,2})[/\-.\\](\d{4})$/);
   if (m) {
     try { return new Date(+m[3], +m[2] - 1, +m[1]).toISOString().slice(0, 10); } catch { /* */ }
+  }
+  // D/M/YY (two-digit year)
+  m = raw.match(/^(\d{1,2})[/\-.\\](\d{1,2})[/\-.\\](\d{2})$/);
+  if (m) {
+    try { return new Date(2000 + +m[3], +m[2] - 1, +m[1]).toISOString().slice(0, 10); } catch { /* */ }
   }
   // D/M
   m = raw.match(/^(\d{1,2})[/\-.\\](\d{1,2})$/);
@@ -138,12 +152,12 @@ function parseDate(raw: string, fallbackYear: number, fallbackMonth: number): st
   if (m) {
     try { return new Date(fallbackYear, fallbackMonth - 1, +m[1]).toISOString().slice(0, 10); } catch { /* */ }
   }
-  // "5 April" or "April 5"
+  // "5 April [2026]" or "April 5 [2026]" (optional 2- or 4-digit year at end)
   for (let idx = 0; idx < MONTH_NAMES.length; idx++) {
     const mn = MONTH_NAMES[idx];
     const patterns = [
-      new RegExp(`^${mn.slice(0, 3)}\\w*\\s+(\\d{1,2})`, "i"),
-      new RegExp(`^(\\d{1,2})\\s+${mn.slice(0, 3)}\\w*`, "i"),
+      new RegExp(`^${mn.slice(0, 3)}\\w*\\s+(\\d{1,2})(?:\\s+\\d{2,4})?`, "i"),
+      new RegExp(`^(\\d{1,2})\\s+${mn.slice(0, 3)}\\w*(?:\\s+\\d{2,4})?`, "i"),
     ];
     for (const pat of patterns) {
       const mo = raw.match(pat);
@@ -162,16 +176,23 @@ function col(row: Record<string, string>, ...keys: string[]): string {
   return "";
 }
 
+const SUMMARY_PATTERN = /\b(total|totals|subtotal|sub-total|sum|grand total)\b/i;
+
+function isSummaryText(s: string | null): boolean {
+  return !!s && SUMMARY_PATTERN.test(s);
+}
+
 function processTab(tab: string, rawRows: Record<string, string>[], year: number, month: number): Record<string, unknown>[] {
   const monthKey = new Date(year, month - 1, 1).toISOString().slice(0, 10);
   const results: Record<string, unknown>[] = [];
+  let lastDate: string | null = null;
 
   for (const row of rawRows) {
     const invoice     = col(row, "invoice")      || null;
     const customer    = col(row, "costumer", "customer") || null;
     const service     = col(row, "service / products", "service/products") || null;
     const dateRaw     = col(row, "date of service");
-    const priceRaw    = col(row, "price", "paid");
+    const priceRaw    = col(row, "price", "paid", "price sales", "total price", "amount");
     const payment     = col(row, "payment")      || null;
     const salesStaff  = col(row, "sales staf", "sales staff") || null;
     const note        = col(row, "note");
@@ -181,12 +202,17 @@ function processTab(tab: string, rawRows: Record<string, string>[], year: number
     if (!isFinite(priceInc) || priceInc === 0) continue;
 
     const notePerson = note.trim() || null;
-    if (notePerson?.toLowerCase() === "total") continue;
+    // Skip summary/totals rows
+    if (isSummaryText(notePerson) || isSummaryText(customer) || isSummaryText(service)) continue;
     if (!customer && !service && !invoice) continue;
 
     const rate    = (notePerson && LOW_VAT_PERSONS.has(notePerson.toLowerCase())) ? LOW_VAT : DEFAULT_VAT;
     const priceEx = +(priceInc / (1 + rate)).toFixed(2);
-    const svcDate = parseDate(dateRaw, year, month);
+
+    // Carry forward the last parsed date when the cell is blank or unparseable
+    const parsed = parseDate(dateRaw, year, month);
+    if (parsed) lastDate = parsed;
+    const svcDate = lastDate;
 
     results.push({
       sheet_tab:       tab,

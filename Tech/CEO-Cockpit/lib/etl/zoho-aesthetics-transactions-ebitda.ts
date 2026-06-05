@@ -476,14 +476,6 @@ export async function runAestheticsEbitdaMonthFromTransactions(
   // Each classified line is written once per department/venue it was allocated to.
   // Venue values: 'aesthetics', 'slimming', 'hq'.
   await deleteRange("transactions_raw", [["org", "eq.aesthetics"], ["date", `gte.${fromDate}`], ["date", `lte.${toDate}`]]);
-<<<<<<< HEAD
-  // venue = Zoho tag dept ("aesthetics" | "slimming" | null for HQ/untagged).
-  const rawMap = new Map<string, Record<string, unknown>>();
-  for (const c of classified) {
-    const venue = c.tagDept ?? (c.isHq ? "hq" : null);
-    const key = `${c.txn_id}|${c.code}|${c.contact_name}|${c.line}|${venue ?? ""}`;
-    const existing = rawMap.get(key);
-=======
 
   const venueRawMap = new Map<string, Record<string, unknown>>();
 
@@ -491,7 +483,6 @@ export async function runAestheticsEbitdaMonthFromTransactions(
     if (amount === 0) return;
     const key = `${c.txn_id}|${c.code}|${c.contact_name}|${c.line}|${venue}`;
     const existing = venueRawMap.get(key);
->>>>>>> 97df7bd (feat(ebitda-v2): EBITDA V2 page, webhook fixes, data sources settings)
     if (existing) {
       existing.amount = +((existing.amount as number) + amount).toFixed(2);
     } else {
@@ -500,14 +491,6 @@ export async function runAestheticsEbitdaMonthFromTransactions(
         ebitda_line: c.line, ebitda_sub_line: c.sub_line,
         account_code: c.code, account_name: c.account_name,
         contact_name: c.contact_name, transaction_type: c.txn_type,
-<<<<<<< HEAD
-        venue,
-        amount: +c.amount.toFixed(2), synced_at: nowTs,
-      });
-    }
-  }
-  const rawRows = Array.from(rawMap.values());
-=======
         venue, amount: +amount.toFixed(2), synced_at: nowTs,
       });
     }
@@ -531,7 +514,6 @@ export async function runAestheticsEbitdaMonthFromTransactions(
   }
 
   const rawRows = Array.from(venueRawMap.values());
->>>>>>> 97df7bd (feat(ebitda-v2): EBITDA V2 page, webhook fixes, data sources settings)
   const rawCount = await upsert("transactions_raw", rawRows, "org,txn_id,account_code,contact_name,ebitda_line,venue");
 
   log.push(`${monthKey}: ${deptCount} aesth daily row(s) + ${hqCount} hq row(s) + ${rawCount} raw line(s) upserted`);
