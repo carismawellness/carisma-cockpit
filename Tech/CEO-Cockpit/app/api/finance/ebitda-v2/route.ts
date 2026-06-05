@@ -153,14 +153,16 @@ export async function GET(req: Request) {
   const isFullPeriod   = isFullCalendarMonths(dateFrom, dateTo);
   const warnings: string[] = [];
 
-  // ── 1a. Paginate transactions_raw — server max_rows cap can be as low as
-  //       1000; paginate in batches of 1000 until all rows are collected.
-  //       For a typical month (~2000 rows) this takes 3 round-trips.
+  // ── 1a. Paginate transactions_raw — this project's PostgREST max_rows is
+  //       330, so each .range() call returns at most 330 rows. We use PAGE=200
+  //       (safely below max_rows) and loop until we receive an EMPTY page.
+  //       Never break on a partial page — that would be the last real page.
+  //       Safety cap at 500 iterations (~100k rows) prevents infinite loops.
   type RawRow = { venue: string; ebitda_line: string; ebitda_sub_line: string; contact_name: string; amount: number };
   async function fetchAllRawCosts(): Promise<RawRow[]> {
-    const PAGE = 1000;
+    const PAGE = 200;
     const all: RawRow[] = [];
-    for (let offset = 0; ; offset += PAGE) {
+    for (let offset = 0; offset < 100_000; offset += PAGE) {
       const { data, error } = await supabase
         .from("transactions_raw")
         .select("venue, ebitda_line, ebitda_sub_line, contact_name, amount")
@@ -168,9 +170,10 @@ export async function GET(req: Request) {
         .lte("date", dateTo)
         .range(offset, offset + PAGE - 1);
       if (error) throw new Error(`transactions_raw page ${offset}: ${error.message}`);
-      if (!data || data.length === 0) break;
+      if (!data || data.length === 0) break;     // empty page = all rows fetched
       all.push(...(data as RawRow[]));
-      if (data.length < PAGE) break;  // last page
+      // do NOT break on partial page — server max_rows may reduce batch size
+      // without it being the last page; only an empty response is the true end
     }
     return all;
   }
