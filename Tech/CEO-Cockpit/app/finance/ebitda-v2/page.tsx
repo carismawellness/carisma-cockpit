@@ -56,7 +56,11 @@ type V2Data = {
   warnings:         string[];
 };
 
-type DrillContact = { contact: string; amount: number; share: number };
+type DrillContact = {
+  contact: string; amount: number; share: number;
+  role?: string; source: string;
+  zoho_amount: number; supplement_amount: number;
+};
 type DrillTxn     = {
   txn_id: string; date: string; contact: string; account_code: string;
   account_name: string; txn_type: string; sub_line: string; amount: number; source: string;
@@ -252,15 +256,44 @@ function DrillDialog({
                     {data.contacts.length === 0
                       ? <p className="text-xs text-muted-foreground">No data.</p>
                       : (
-                        <table className="w-full text-sm">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-muted-foreground border-b">
+                              <th className="text-left py-1.5 pr-2">{isWages ? "Employee" : "Contact"}</th>
+                              {isWages && <th className="text-left py-1.5 pr-2">Role</th>}
+                              <th className="text-left py-1.5 pr-2">Source</th>
+                              <th className="text-right py-1.5 pr-2">Amount</th>
+                              <th className="text-right py-1.5">%</th>
+                            </tr>
+                          </thead>
                           <tbody>
-                            {data.contacts.map(c => (
-                              <tr key={c.contact} className="border-b last:border-0">
-                                <td className="py-1.5 pr-3 font-medium">{c.contact}</td>
-                                <td className="py-1.5 pr-3 text-right tabular-nums">{formatCurrency(c.amount)}</td>
-                                <td className="py-1.5 text-right text-xs text-muted-foreground">{c.share}%</td>
-                              </tr>
-                            ))}
+                            {data.contacts.map(c => {
+                              const srcCls =
+                                c.source === "salary_supplement" ? "bg-purple-100 text-purple-700" :
+                                c.source === "both"              ? "bg-indigo-100 text-indigo-700" :
+                                "bg-blue-100 text-blue-700";
+                              const srcLabel =
+                                c.source === "salary_supplement" ? "Supplement" :
+                                c.source === "both"              ? "Zoho + Suppl." :
+                                "Zoho";
+                              return (
+                                <tr key={c.contact} className="border-b last:border-0 hover:bg-muted/20">
+                                  <td className="py-1.5 pr-2 font-medium">{c.contact}</td>
+                                  {isWages && (
+                                    <td className="py-1.5 pr-2 capitalize text-muted-foreground">
+                                      {c.role ?? "—"}
+                                    </td>
+                                  )}
+                                  <td className="py-1.5 pr-2">
+                                    <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${srcCls}`}>
+                                      {srcLabel}
+                                    </span>
+                                  </td>
+                                  <td className="py-1.5 pr-2 text-right tabular-nums">{formatCurrency(c.amount)}</td>
+                                  <td className="py-1.5 text-right text-muted-foreground">{c.share}%</td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       )}

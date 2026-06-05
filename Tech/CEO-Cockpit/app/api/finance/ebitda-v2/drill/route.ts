@@ -124,19 +124,24 @@ export async function GET(req: Request) {
   }
 
   // Ad patterns (only needed for advertising)
-  let adPatterns: Array<{ pattern: string; channel: string }> = [];
+  // Column is `canonical` (e.g. "Meta", "Google", "Klaviyo"), not `channel`.
+  let adPatterns: Array<{ pattern: string; canonical: string }> = [];
   if (ebitdaLine === "advertising") {
     const { data: ap } = await supabase
       .from("advertising_contact_mapping")
-      .select("pattern, channel, priority")
+      .select("pattern, canonical, priority")
       .order("priority");
-    adPatterns = (ap ?? []) as Array<{ pattern: string; channel: string }>;
+    adPatterns = (ap ?? []) as Array<{ pattern: string; canonical: string }>;
   }
 
+  const KNOWN_AD_CHANNELS = new Set(["meta", "google", "klaviyo"]);
   function resolveAdChannel(contact: string): string {
     const lower = contact.toLowerCase();
     for (const p of adPatterns) {
-      if (lower.includes(p.pattern.toLowerCase())) return p.channel;
+      if (lower.includes(p.pattern.toLowerCase())) {
+        const ch = (p.canonical ?? "").toLowerCase();
+        return KNOWN_AD_CHANNELS.has(ch) ? ch : "misc";
+      }
     }
     return "misc";
   }
@@ -144,22 +149,42 @@ export async function GET(req: Request) {
   const suppTotal = suppRows.reduce((s, r) => s + r.amount, 0);
   const total = txnRows.reduce((s, r) => s + Number(r.amount ?? 0), 0) + suppTotal;
 
-  // ── Contact breakdown (Zoho txns + supplement) ───────────────────────────
-  const contactMap = new Map<string, number>();
+  // ── Contact breakdown (Zoho txns + supplement) — with source + role ─────
+  type ContactAcc = { zoho: number; supplement: number };
+  const contactMap = new Map<string, ContactAcc>();
+
   for (const r of txnRows) {
     const c = (r.contact_name as string) || "Unknown";
-    contactMap.set(c, (contactMap.get(c) ?? 0) + Number(r.amount ?? 0));
+    const existing = contactMap.get(c) ?? { zoho: 0, supplement: 0 };
+    existing.zoho += Number(r.amount ?? 0);
+    contactMap.set(c, existing);
   }
-  // Add supplement rows into contact map
   for (const s of suppRows) {
-    contactMap.set(s.employee_name, (contactMap.get(s.employee_name) ?? 0) + s.amount);
+    const existing = contactMap.get(s.employee_name) ?? { zoho: 0, supplement: 0 };
+    existing.supplement += s.amount;
+    contactMap.set(s.employee_name, existing);
   }
+
   const contacts = Array.from(contactMap.entries())
-    .map(([contact, amount]) => ({
-      contact,
-      amount: +amount.toFixed(2),
-      share:  total > 0 ? +(amount / total * 100).toFixed(1) : 0,
-    }))
+    .map(([contact, acc]) => {
+      const amount = acc.zoho + acc.supplement;
+      const role   = ebitdaLine === "wages"
+        ? (wageRoleMap.get(contact.toLowerCase().trim()) ?? "unassigned")
+        : undefined;
+      // source tag: both | zoho | supplement
+      const source = acc.zoho > 0 && acc.supplement > 0 ? "both"
+                   : acc.supplement > 0                  ? "salary_supplement"
+                   :                                       "zoho";
+      return {
+        contact,
+        amount:     +amount.toFixed(2),
+        share:      total > 0 ? +(amount / total * 100).toFixed(1) : 0,
+        role,
+        source,
+        zoho_amount:       +acc.zoho.toFixed(2),
+        supplement_amount: +acc.supplement.toFixed(2),
+      };
+    })
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
 
   // ── Wage role breakdown (Zoho txns + supplement) ─────────────────────────

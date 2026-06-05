@@ -162,18 +162,23 @@ export async function GET(req: Request) {
   async function fetchAllRawCosts(): Promise<RawRow[]> {
     const PAGE = 200;
     const all: RawRow[] = [];
+    // IMPORTANT: must ORDER BY to guarantee stable pagination.
+    // Without ORDER BY, offset-based pages can overlap (same row on two pages)
+    // or skip rows as the query planner uses different index scans per request.
+    // We order by (date, txn_id, venue) which is nearly unique per row.
     for (let offset = 0; offset < 100_000; offset += PAGE) {
       const { data, error } = await supabase
         .from("transactions_raw")
         .select("venue, ebitda_line, ebitda_sub_line, contact_name, amount")
         .gte("date", dateFrom)
         .lte("date", dateTo)
+        .order("date")
+        .order("txn_id")
+        .order("venue")
         .range(offset, offset + PAGE - 1);
       if (error) throw new Error(`transactions_raw page ${offset}: ${error.message}`);
-      if (!data || data.length === 0) break;     // empty page = all rows fetched
+      if (!data || data.length === 0) break;
       all.push(...(data as RawRow[]));
-      // do NOT break on partial page — server max_rows may reduce batch size
-      // without it being the last page; only an empty response is the true end
     }
     return all;
   }
@@ -223,7 +228,7 @@ export async function GET(req: Request) {
       // Advertising contact patterns: pattern → channel
       supabase
         .from("advertising_contact_mapping")
-        .select("pattern, channel, priority")
+        .select("pattern, canonical, priority")
         .order("priority"),
 
       // Fallback rules (for partial periods)
@@ -255,11 +260,16 @@ export async function GET(req: Request) {
   }
 
   // Ad channel lookup: contact name → channel
-  const adPatternsArr = (adPatterns.data ?? []) as Array<{ pattern: string; channel: string }>;
+  // Table column is `canonical` (e.g. "Meta", "Google", "Klaviyo") — lowercase to match ad_by_channel keys.
+  const adPatternsArr = (adPatterns.data ?? []) as Array<{ pattern: string; canonical: string }>;
+  const KNOWN_AD_CHANNELS = new Set(["meta", "google", "klaviyo"]);
   function resolveAdChannel(contact: string): string {
     const lower = contact.toLowerCase();
     for (const p of adPatternsArr) {
-      if (lower.includes(p.pattern.toLowerCase())) return p.channel;
+      if (lower.includes(p.pattern.toLowerCase())) {
+        const ch = (p.canonical ?? "").toLowerCase();
+        return KNOWN_AD_CHANNELS.has(ch) ? ch : "misc";
+      }
     }
     return "misc";
   }
