@@ -59,6 +59,7 @@ const AD_CHANNELS = ["meta","google","klaviyo","misc"] as const;
 
 type VenueData = {
   revenue:        number;
+  lapis_revenue:  number;   // services + products only (no wholesale/adjustments) — used for turnover-based rent
   wages:          number;
   wage_by_role:   Record<WageRole, number>;
   advertising:    number;
@@ -74,6 +75,7 @@ type VenueData = {
 function emptyVenueData(): VenueData {
   return {
     revenue:       0,
+    lapis_revenue: 0,
     wages:         0,
     wage_by_role:  Object.fromEntries(WAGE_ROLES.map(r => [r, 0])) as Record<WageRole, number>,
     advertising:   0,
@@ -213,7 +215,7 @@ export async function GET(req: Request) {
       // fall back to the most recent frozen month when the period month has no data.
       supabase
         .from("salary_supplement_monthly")
-        .select("month, employee_name, amount, spa_slug")
+        .select("month, employee_name, amount, spa_slug, role")   // role = designation from Talexio
         .in("month", [
           ...overlappingMonths(shiftMonth(dateFrom, -3), dateFrom.slice(0, 7) + "-01"),
           ...overlappingMonths(dateFrom, dateTo),
@@ -307,16 +309,19 @@ export async function GET(req: Request) {
     const daysInMonth  = totalDaysInMonth(monthStr);
     const daysInRange  = daysOfMonthInRange(monthStr, dateFrom, dateTo);
     const factor       = daysInRange / daysInMonth;
-    const monthRevenue = (
-      (row.services          as number) +
-      (row.product_phytomer  as number) +
-      (row.product_purest    as number) +
-      (row.product_other     as number) +
-      (row.wholesale         as number) -
-      (row.sales_discount    as number) -
-      (row.sales_refund      as number)
+    const lapisSales = (
+      (row.services         as number) +
+      (row.product_phytomer as number) +
+      (row.product_purest   as number) +
+      (row.product_other    as number)
     ) * factor;
-    venues[slug].revenue += monthRevenue;
+    const monthRevenue = (lapisSales +
+      ((row.wholesale      as number) -
+       (row.sales_discount as number) -
+       (row.sales_refund   as number)) * factor
+    );
+    venues[slug].revenue       += monthRevenue;
+    venues[slug].lapis_revenue += lapisSales;   // services+products only — for turnover rent
   }
   // 4b. Aesthetics
   const aesthTotal = (aestheticsSales.data ?? [])
@@ -388,7 +393,10 @@ export async function GET(req: Request) {
     } else if (rule.rule_type === "base_plus_revenue_pct") {
       const pct  = (rule.params.revenue_pct  ?? 0) / 100;
       const base = (rule.params.base_monthly ?? 0) * (daysInPeriod / 30.4375);
-      value = base + venues[venue].revenue * pct;
+      // Use Lapis-only revenue (services + products, no wholesale/adjustments)
+      // for turnover rent — that's the contractual basis for Excelsior.
+      const revenueBase = venues[venue].lapis_revenue || venues[venue].revenue;
+      value = base + revenueBase * pct;
     }
 
     if (ebitda_line === "rent")      venues[venue].rent      = value;
@@ -399,7 +407,7 @@ export async function GET(req: Request) {
 
   // ── 7. Salary supplement → wages (with prior-month fallback) ────────────
   // Group all fetched supplement rows by month key (YYYY-MM-01).
-  type SuppRow = { spa_slug: string; employee_name: string; amount: number };
+  type SuppRow = { spa_slug: string; employee_name: string; amount: number; role?: string };
   const suppByMonth = new Map<string, SuppRow[]>();
   for (const row of (supplement.data ?? [])) {
     const m = (row.month as string).slice(0, 10);
@@ -408,6 +416,7 @@ export async function GET(req: Request) {
       spa_slug:      (row.spa_slug      as string) ?? "",
       employee_name: (row.employee_name as string) ?? "",
       amount:        Number(row.amount  ?? 0),
+      role:          ((row.role as string) || "").toLowerCase().trim() || undefined,
     });
   }
 
@@ -438,11 +447,13 @@ export async function GET(req: Request) {
     for (const row of rows) {
       if (!row.spa_slug || !venues[row.spa_slug]) continue;
       const amount = row.amount * factor;
-      // Look up the employee's actual role — don't default to 'unassigned'
-      const suppRoleKey  = ((row.employee_name as string) || "").toLowerCase().trim();
-      const suppRole: WageRole = (WAGE_ROLES as readonly string[]).includes(
-        wageRoleMap.get(suppRoleKey) ?? ""
-      ) ? (wageRoleMap.get(suppRoleKey) as WageRole) : "unassigned";
+      // Role priority: supplement.role column → wage_role_mapping → "unassigned"
+      const suppRoleRaw = ((row.role as string) || "").toLowerCase().trim()
+                       || wageRoleMap.get(((row.employee_name as string) || "").toLowerCase().trim())
+                       || "unassigned";
+      const suppRole: WageRole = (WAGE_ROLES as readonly string[]).includes(suppRoleRaw)
+        ? (suppRoleRaw as WageRole)
+        : "unassigned";
       venues[row.spa_slug].wages                  += amount;
       venues[row.spa_slug].wage_by_role[suppRole] += amount;
     }

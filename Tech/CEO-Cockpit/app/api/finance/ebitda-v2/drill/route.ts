@@ -85,7 +85,7 @@ export async function GET(req: Request) {
   let txnRows = (rows ?? []) as Array<Record<string, unknown>>;
 
   // ── Wage role mapping + supplement ─────────────────────────────────────────
-  type SuppRow = { employee_name: string; amount: number; month: string };
+  type SuppRow = { employee_name: string; amount: number; month: string; role?: string };
   let suppRows: SuppRow[] = [];
   let wageRoleMap = new Map<string, string>();
 
@@ -106,7 +106,7 @@ export async function GET(req: Request) {
 
     const { data: sd } = await supabase
       .from("salary_supplement_monthly")
-      .select("month, employee_name, amount")
+      .select("month, employee_name, amount, role")   // role = designation from Talexio
       .eq("spa_slug", venue)
       .eq("is_frozen", true)
       .in("month", suppMonths);
@@ -119,7 +119,12 @@ export async function GET(req: Request) {
       const daysInRange = Math.round((new Date(rangeEnd).getTime() - new Date(rangeStart).getTime()) / 86_400_000) + 1;
       const daysInMonth = new Date(new Date(m).getFullYear(), new Date(m).getMonth() + 1, 0).getDate();
       const prorated = Number(s.amount ?? 0) * (daysInRange / daysInMonth);
-      if (prorated > 0) suppRows.push({ employee_name: s.employee_name as string, amount: +prorated.toFixed(2), month: m });
+      if (prorated > 0) suppRows.push({
+        employee_name: s.employee_name as string,
+        amount: +prorated.toFixed(2),
+        month: m,
+        role: ((s.role as string) || "").toLowerCase().trim() || undefined,
+      });
     }
 
     // ── Wage role filter — apply BEFORE any totals ──────────────────────────
@@ -129,8 +134,10 @@ export async function GET(req: Request) {
         return (wageRoleMap.get(key) ?? "unassigned") === wageRole;
       });
       suppRows = suppRows.filter(s => {
-        const key = s.employee_name.toLowerCase().trim();
-        return (wageRoleMap.get(key) ?? "unassigned") === wageRole;
+        const role = s.role
+          || wageRoleMap.get(s.employee_name.toLowerCase().trim())
+          || "unassigned";
+        return role === wageRole;
       });
     }
   }
@@ -243,7 +250,7 @@ export async function GET(req: Request) {
       wageRoleAcc.set(role, (wageRoleAcc.get(role) ?? 0) + Number(r.amount ?? 0));
     }
     for (const s of suppRows) {
-      const role = wageRoleMap.get(s.employee_name.toLowerCase().trim()) ?? "unassigned";
+      const role = s.role || wageRoleMap.get(s.employee_name.toLowerCase().trim()) || "unassigned";
       wageRoleAcc.set(role, (wageRoleAcc.get(role) ?? 0) + s.amount);
     }
   }
