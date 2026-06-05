@@ -1,22 +1,11 @@
 /**
  * /api/finance/ebitda-v2/drill
  *
- * Returns contact-level and transaction-level detail for a single EBITDA V2 cell.
- *
  * Query params:
- *   venue          (required) slug, e.g. "hyatt", "aesthetics", "hq"
- *   ebitda_line    (required) e.g. "wages", "advertising", "sga"
- *   ebitda_sub_line (optional) e.g. "prof_services", "meta"
- *   date_from      YYYY-MM-DD (required)
- *   date_to        YYYY-MM-DD (required)
- *
- * Response: {
- *   is_fallback: boolean,       // true if the cell value came from a fallback/hardwired rule
- *   contacts:  ContactRow[],    // by-contact breakdown
- *   transactions: TxnRow[],     // individual transaction lines
- *   wage_roles: RoleRow[],      // wage-role breakdown (wages cells only)
- *   ad_channels: ChannelRow[],  // ad-channel breakdown (advertising cells only)
- * }
+ *   venue, ebitda_line, date_from, date_to (required)
+ *   ebitda_sub_line  optional — filter to specific SGA sub-category
+ *   wage_role        optional — when set, filter contacts to this role only
+ *                    (e.g. "manager", "therapist", "reception", "crm", "unassigned")
  */
 
 import { NextResponse } from "next/server";
@@ -24,11 +13,31 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function basisLabel(ruleType: string | null, config: Record<string, unknown> | null): string {
+  if (!ruleType) return "Tag";
+  switch (ruleType) {
+    case "equal":       return "Equal split";
+    case "sales_ratio": return "Revenue split";
+    case "salary_cost": return "Salary split";
+    case "custom": {
+      if (!config) return "Custom split";
+      const entries = Object.entries(config).filter(([, v]) => Number(v) > 0);
+      return entries.length === 1 ? "Tag" : "Custom split";
+    }
+    default: return "Tag";
+  }
+}
+
+// ── Main handler ──────────────────────────────────────────────────────────────
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const venue         = searchParams.get("venue");
   const ebitdaLine    = searchParams.get("ebitda_line");
   const ebitdaSubLine = searchParams.get("ebitda_sub_line");
+  const wageRole      = searchParams.get("wage_role");   // optional role filter
   const dateFrom      = searchParams.get("date_from");
   const dateTo        = searchParams.get("date_to");
 
@@ -37,7 +46,7 @@ export async function GET(req: Request) {
 
   const supabase = await createServerSupabaseClient();
 
-  // Check if this cell uses a hardwired rule
+  // ── Hardwired rule check ──────────────────────────────────────────────────
   const { data: hwRules } = await supabase
     .from("ebitda_v2_hardwired_rules")
     .select("rule_type, params, note")
@@ -45,20 +54,18 @@ export async function GET(req: Request) {
     .eq("ebitda_line", ebitdaLine)
     .lte("effective_from", dateTo);
 
-  const activeHw = (hwRules ?? []).find((r: Record<string,unknown>) => !r.effective_to || (r.effective_to as string) >= dateFrom!);
+  const activeHw = (hwRules ?? []).find(
+    (r: Record<string, unknown>) => !r.effective_to || (r.effective_to as string) >= dateFrom!
+  );
   if (activeHw) {
-    // Hardwired cell — no individual transactions, show rule summary
     return NextResponse.json({
-      is_fallback: true,
+      is_fallback:  true,
       fallback_note: `No contact/employee breakdown available — value is based on a hardwired rule (${activeHw.rule_type}). ${activeHw.note ?? ""}`.trim(),
-      contacts: [],
-      transactions: [],
-      wage_roles: [],
-      ad_channels: [],
+      contacts: [], transactions: [], wage_roles: [], ad_channels: [],
     });
   }
 
-  // Build query
+  // ── Fetch transactions ────────────────────────────────────────────────────
   let query = supabase
     .from("transactions_raw")
     .select("txn_id, date, account_code, account_name, contact_name, transaction_type, ebitda_sub_line, amount, venue")
@@ -68,34 +75,28 @@ export async function GET(req: Request) {
     .lte("date", dateTo)
     .order("date", { ascending: false });
 
-  if (ebitdaSubLine) {
-    query = query.eq("ebitda_sub_line", ebitdaSubLine);
-  }
+  if (ebitdaSubLine) query = query.eq("ebitda_sub_line", ebitdaSubLine);
 
   const { data: rows, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const txnRows = (rows ?? []) as Array<Record<string, unknown>>;
+  let txnRows = (rows ?? []) as Array<Record<string, unknown>>;
 
-  // Wage role mapping + salary supplement (only needed for wages)
+  // ── Wage role mapping + supplement ─────────────────────────────────────────
   type SuppRow = { employee_name: string; amount: number; month: string };
   let suppRows: SuppRow[] = [];
   let wageRoleMap = new Map<string, string>();
 
   if (ebitdaLine === "wages") {
-    // Load wage role mapping
-    const { data: roles } = await supabase
-      .from("wage_role_mapping")
-      .select("contact_key, role");
-    for (const r of (roles ?? [])) {
+    const { data: roleData } = await supabase.from("wage_role_mapping").select("contact_key, role");
+    for (const r of (roleData ?? [])) {
       wageRoleMap.set((r.contact_key as string).toLowerCase().trim(), r.role as string);
     }
 
-    // Load frozen salary supplement for this venue and the overlapping months
-    // Build month list from dateFrom..dateTo
+    // Build overlapping months
     const suppMonths: string[] = [];
-    const cur = new Date(dateFrom!.slice(0, 7) + "-01");
-    const end = new Date(dateTo!.slice(0,  7) + "-01");
+    const cur = new Date(dateFrom.slice(0, 7) + "-01");
+    const end = new Date(dateTo.slice(0, 7) + "-01");
     while (cur <= end) {
       suppMonths.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-01`);
       cur.setMonth(cur.getMonth() + 1);
@@ -108,23 +109,31 @@ export async function GET(req: Request) {
       .eq("is_frozen", true)
       .in("month", suppMonths);
 
-    // Pro-rate each month's supplement into the selected period
     for (const s of (sd ?? [])) {
-      const m        = (s.month as string).slice(0, 10);
-      const mEnd     = new Date(new Date(m).getFullYear(), new Date(m).getMonth() + 1, 0).toISOString().slice(0, 10);
-      const rangeStart = dateFrom! > m    ? dateFrom! : m;
-      const rangeEnd   = dateTo!   < mEnd ? dateTo!   : mEnd;
+      const m = (s.month as string).slice(0, 10);
+      const mEnd = new Date(new Date(m).getFullYear(), new Date(m).getMonth() + 1, 0).toISOString().slice(0, 10);
+      const rangeStart = dateFrom > m ? dateFrom : m;
+      const rangeEnd   = dateTo < mEnd ? dateTo : mEnd;
       const daysInRange = Math.round((new Date(rangeEnd).getTime() - new Date(rangeStart).getTime()) / 86_400_000) + 1;
       const daysInMonth = new Date(new Date(m).getFullYear(), new Date(m).getMonth() + 1, 0).getDate();
-      const prorated    = Number(s.amount ?? 0) * (daysInRange / daysInMonth);
-      if (prorated > 0) {
-        suppRows.push({ employee_name: s.employee_name as string, amount: +prorated.toFixed(2), month: m });
-      }
+      const prorated = Number(s.amount ?? 0) * (daysInRange / daysInMonth);
+      if (prorated > 0) suppRows.push({ employee_name: s.employee_name as string, amount: +prorated.toFixed(2), month: m });
+    }
+
+    // ── Wage role filter — apply BEFORE any totals ──────────────────────────
+    if (wageRole) {
+      txnRows  = txnRows.filter(r => {
+        const key = ((r.contact_name as string) || "").toLowerCase().trim();
+        return (wageRoleMap.get(key) ?? "unassigned") === wageRole;
+      });
+      suppRows = suppRows.filter(s => {
+        const key = s.employee_name.toLowerCase().trim();
+        return (wageRoleMap.get(key) ?? "unassigned") === wageRole;
+      });
     }
   }
 
-  // Ad patterns (only needed for advertising)
-  // Column is `canonical` (e.g. "Meta", "Google", "Klaviyo"), not `channel`.
+  // ── Ad channel patterns ────────────────────────────────────────────────────
   let adPatterns: Array<{ pattern: string; canonical: string }> = [];
   if (ebitdaLine === "advertising") {
     const { data: ap } = await supabase
@@ -133,7 +142,6 @@ export async function GET(req: Request) {
       .order("priority");
     adPatterns = (ap ?? []) as Array<{ pattern: string; canonical: string }>;
   }
-
   const KNOWN_AD_CHANNELS = new Set(["meta", "google", "klaviyo"]);
   function resolveAdChannel(contact: string): string {
     const lower = contact.toLowerCase();
@@ -146,87 +154,107 @@ export async function GET(req: Request) {
     return "misc";
   }
 
+  // ── COA mapping → split basis ─────────────────────────────────────────────
+  const uniqueCodes = [...new Set(txnRows.map(r => r.account_code as string).filter(Boolean))];
+  const basisMap = new Map<string, string>(); // account_code → label
+
+  if (uniqueCodes.length > 0) {
+    // Determine org from venue
+    const isAesthetics = ["aesthetics", "slimming"].includes(venue);
+    const org = isAesthetics ? "aesthetics" : "spa";
+
+    const { data: coaRows } = await supabase
+      .from("coa_mapping")
+      .select("account_code, coa_split_rules(rule_type, config)")
+      .in("account_code", uniqueCodes)
+      .eq("zoho_org", org);
+
+    for (const row of (coaRows ?? [])) {
+      const sr = (row as Record<string, unknown>).coa_split_rules as Record<string, unknown> | null;
+      const ruleType = (sr?.rule_type as string) ?? null;
+      const config   = (sr?.config as Record<string, unknown>) ?? null;
+      basisMap.set(row.account_code as string, basisLabel(ruleType, config));
+    }
+  }
+
+  function txnBasis(r: Record<string, unknown>): string {
+    const code = r.account_code as string;
+    return basisMap.get(code) ?? "Tag";
+  }
+
+  // ── Totals ────────────────────────────────────────────────────────────────
   const suppTotal = suppRows.reduce((s, r) => s + r.amount, 0);
   const total = txnRows.reduce((s, r) => s + Number(r.amount ?? 0), 0) + suppTotal;
 
-  // ── Contact breakdown (Zoho txns + supplement) — with source + role ─────
-  type ContactAcc = { zoho: number; supplement: number };
+  // ── Contact breakdown ─────────────────────────────────────────────────────
+  type ContactAcc = { zoho: number; supplement: number; bases: Set<string> };
   const contactMap = new Map<string, ContactAcc>();
 
   for (const r of txnRows) {
     const c = (r.contact_name as string) || "Unknown";
-    const existing = contactMap.get(c) ?? { zoho: 0, supplement: 0 };
+    const existing = contactMap.get(c) ?? { zoho: 0, supplement: 0, bases: new Set() };
     existing.zoho += Number(r.amount ?? 0);
+    existing.bases.add(txnBasis(r));
     contactMap.set(c, existing);
   }
   for (const s of suppRows) {
-    const existing = contactMap.get(s.employee_name) ?? { zoho: 0, supplement: 0 };
+    const existing = contactMap.get(s.employee_name) ?? { zoho: 0, supplement: 0, bases: new Set() };
     existing.supplement += s.amount;
+    existing.bases.add("Supplement");
     contactMap.set(s.employee_name, existing);
   }
 
   const contacts = Array.from(contactMap.entries())
     .map(([contact, acc]) => {
-      const amount = acc.zoho + acc.supplement;
-      const role   = ebitdaLine === "wages"
+      const amount  = acc.zoho + acc.supplement;
+      const role    = ebitdaLine === "wages"
         ? (wageRoleMap.get(contact.toLowerCase().trim()) ?? "unassigned")
         : undefined;
-      // source tag: both | zoho | supplement
-      const source = acc.zoho > 0 && acc.supplement > 0 ? "both"
-                   : acc.supplement > 0                  ? "salary_supplement"
-                   :                                       "zoho";
+      const source  = acc.zoho > 0 && acc.supplement > 0 ? "both"
+                    : acc.supplement > 0                  ? "salary_supplement"
+                    :                                       "zoho";
+      const basesArr = Array.from(acc.bases);
+      const basis   = basesArr.length === 1 ? basesArr[0] : "Mixed";
       return {
-        contact,
-        amount:     +amount.toFixed(2),
-        share:      total > 0 ? +(amount / total * 100).toFixed(1) : 0,
-        role,
-        source,
-        zoho_amount:       +acc.zoho.toFixed(2),
+        contact, amount: +amount.toFixed(2),
+        share: total > 0 ? +(amount / total * 100).toFixed(1) : 0,
+        role, source, basis,
+        zoho_amount: +acc.zoho.toFixed(2),
         supplement_amount: +acc.supplement.toFixed(2),
       };
     })
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
 
-  // ── Wage role breakdown (Zoho txns + supplement) ─────────────────────────
+  // ── Wage roles breakdown ──────────────────────────────────────────────────
   const wageRoleAcc = new Map<string, number>();
   if (ebitdaLine === "wages") {
     for (const r of txnRows) {
-      const contact = ((r.contact_name as string) || "").toLowerCase().trim();
-      const role = wageRoleMap.get(contact) ?? "unassigned";
+      const key  = ((r.contact_name as string) || "").toLowerCase().trim();
+      const role = wageRoleMap.get(key) ?? "unassigned";
       wageRoleAcc.set(role, (wageRoleAcc.get(role) ?? 0) + Number(r.amount ?? 0));
     }
-    // Supplement rows — look up role for each employee
     for (const s of suppRows) {
       const role = wageRoleMap.get(s.employee_name.toLowerCase().trim()) ?? "unassigned";
       wageRoleAcc.set(role, (wageRoleAcc.get(role) ?? 0) + s.amount);
     }
   }
   const wageRoles = Array.from(wageRoleAcc.entries())
-    .map(([role, amount]) => ({
-      role,
-      amount: +amount.toFixed(2),
-      share:  total > 0 ? +(amount / total * 100).toFixed(1) : 0,
-    }))
+    .map(([role, amount]) => ({ role, amount: +amount.toFixed(2), share: total > 0 ? +(amount / total * 100).toFixed(1) : 0 }))
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
 
-  // ── Ad channel breakdown ──────────────────────────────────────────────────
+  // ── Ad channels breakdown ─────────────────────────────────────────────────
   const adChannelAcc = new Map<string, number>();
   if (ebitdaLine === "advertising") {
     for (const r of txnRows) {
-      const contact = (r.contact_name as string) || "";
-      const ch = resolveAdChannel(contact);
+      const ch = resolveAdChannel((r.contact_name as string) || "");
       adChannelAcc.set(ch, (adChannelAcc.get(ch) ?? 0) + Number(r.amount ?? 0));
     }
   }
   const adChannels = Array.from(adChannelAcc.entries())
-    .map(([channel, amount]) => ({
-      channel,
-      amount: +amount.toFixed(2),
-      share:  total > 0 ? +(amount / total * 100).toFixed(1) : 0,
-    }))
+    .map(([channel, amount]) => ({ channel, amount: +amount.toFixed(2), share: total > 0 ? +(amount / total * 100).toFixed(1) : 0 }))
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
 
-  // ── Individual transactions (Zoho + salary supplement) ───────────────────
+  // ── Individual transactions ───────────────────────────────────────────────
   const transactions = [
     ...txnRows.map(r => ({
       txn_id:       r.txn_id as string,
@@ -238,8 +266,8 @@ export async function GET(req: Request) {
       sub_line:     r.ebitda_sub_line as string,
       amount:       +Number(r.amount ?? 0).toFixed(2),
       source:       "zoho",
+      basis:        txnBasis(r),
     })),
-    // Salary supplement synthetic rows
     ...suppRows.map(s => ({
       txn_id:       `supp-${s.month}-${s.employee_name}`,
       date:         s.month.slice(0, 10),
@@ -250,15 +278,14 @@ export async function GET(req: Request) {
       sub_line:     "wages",
       amount:       s.amount,
       source:       "salary_supplement",
+      basis:        "Supplement",
     })),
   ];
 
   return NextResponse.json({
-    is_fallback:  false,
-    total:        +total.toFixed(2),
-    contacts,
-    transactions,
-    wage_roles:   wageRoles,
-    ad_channels:  adChannels,
+    is_fallback: false,
+    total: +total.toFixed(2),
+    wage_role_filter: wageRole ?? null,
+    contacts, transactions, wage_roles: wageRoles, ad_channels: adChannels,
   });
 }

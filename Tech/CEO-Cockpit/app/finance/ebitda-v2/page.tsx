@@ -82,6 +82,7 @@ type DrillTarget = {
   venueLabel: string;
   line:       string;
   subLine?:   string;
+  wageRole?:  string;   // when set, drill filters to only this wage role
   label:      string;
 };
 
@@ -146,7 +147,8 @@ function DrillDialog({
   useEffect(() => {
     setLoading(true); setError(null); setData(null);
     const qs = new URLSearchParams({ venue: target.venue, ebitda_line: target.line, date_from: dateFrom, date_to: dateTo });
-    if (target.subLine) qs.set("ebitda_sub_line", target.subLine);
+    if (target.subLine)  qs.set("ebitda_sub_line", target.subLine);
+    if (target.wageRole) qs.set("wage_role",        target.wageRole);
     fetch(`/api/finance/ebitda-v2/drill?${qs}`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false); })
