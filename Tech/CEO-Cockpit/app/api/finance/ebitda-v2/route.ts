@@ -476,12 +476,13 @@ export async function GET(req: Request) {
   group.ebitda = +group.ebitda.toFixed(2);
 
   return NextResponse.json({
-    date_from:        dateFrom,
-    date_to:          dateTo,
-    days_in_period:   daysInPeriod,
+    date_from:          dateFrom,
+    date_to:            dateTo,
+    days_in_period:     daysInPeriod,
+    debug_raw_row_count: allRawCosts.length,   // temporary: confirms pagination fetched all rows
     venues,
     group,
-    fallback_applied: fallbackApplied,
+    fallback_applied:   fallbackApplied,
     warnings,
   });
 }
