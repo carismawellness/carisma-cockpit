@@ -23,11 +23,18 @@ function basisLabel(ruleType: string | null, config: Record<string, unknown> | n
     case "equal":       return "Equal split";
     case "sales_ratio": return "Revenue split";
     case "salary_cost": return "Salary split";
-    case "custom": {
-      if (!config) return "Custom split";
-      // Show the single venue name if 100% goes to one venue, otherwise "Custom split"
+    case "custom":
+    case "custom_fixed": {
+      if (!config) return "Fixed split";
+      // Entries with a non-zero share
       const entries = Object.entries(config).filter(([, v]) => Number(v) > 0);
-      return entries.length === 1 ? `Custom (${entries[0][0]})` : "Custom split";
+      if (entries.length === 1) {
+        // Single-venue fixed allocation — show the venue
+        return `Fixed (${entries[0][0]})`;
+      }
+      // Multi-venue — show each venue and its %
+      const parts = entries.map(([k, v]) => `${k} ${v}%`).join(", ");
+      return `Fixed: ${parts}`;
     }
     default: return ruleType.replace(/_/g, " ");
   }
