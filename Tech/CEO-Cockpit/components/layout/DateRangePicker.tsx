@@ -84,12 +84,23 @@ function isPresetActive(preset: (typeof presets)[number], from: Date, to: Date) 
 
 export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
   const [open, setOpen] = useState(false);
+  const [pendingFrom, setPendingFrom] = useState<Date | undefined>(from);
+  const [pendingTo, setPendingTo] = useState<Date | undefined>(to);
   const [fromText, setFromText] = useState(format(from, DATE_FMT));
   const [toText, setToText] = useState(format(to, DATE_FMT));
 
   useEffect(() => {
-    setFromText(format(from, DATE_FMT));
-    setToText(format(to, DATE_FMT));
+    if (open) {
+      // Reset pending + text to committed values each time the picker opens
+      setPendingFrom(from);
+      setPendingTo(to);
+      setFromText(format(from, DATE_FMT));
+      setToText(format(to, DATE_FMT));
+    } else {
+      // Sync text display when committed dates change while picker is closed
+      setFromText(format(from, DATE_FMT));
+      setToText(format(to, DATE_FMT));
+    }
   }, [from, to, open]);
 
   const fromValid = parseDmy(fromText);
@@ -105,13 +116,13 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
     onChange(range.from, range.to);
   };
 
-  const commitTyped = () => {
-    if (!fromValid || !toValid) return;
-    const [a, b] =
-      fromValid.getTime() <= toValid.getTime()
-        ? [fromValid, toValid]
-        : [toValid, fromValid];
-    onChange(a, b);
+  // Commit whatever is staged (typed text takes priority; falls back to calendar pending)
+  const commitOK = () => {
+    const a = fromValid ?? pendingFrom;
+    const b = toValid ?? pendingTo;
+    if (!a || !b) return;
+    const [start, end] = a.getTime() <= b.getTime() ? [a, b] : [b, a];
+    onChange(start, end);
     setOpen(false);
   };
 
@@ -186,10 +197,7 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
               <Input
                 value={fromText}
                 onChange={(e) => setFromText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") commitTyped();
-                }}
-                onBlur={commitTyped}
+                onKeyDown={(e) => { if (e.key === "Enter") commitOK(); }}
                 placeholder="DD/MM/YYYY"
                 aria-invalid={!fromValid}
                 className="h-7 w-[7.5rem] text-xs tabular-nums"
@@ -200,10 +208,7 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
               <Input
                 value={toText}
                 onChange={(e) => setToText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") commitTyped();
-                }}
-                onBlur={commitTyped}
+                onKeyDown={(e) => { if (e.key === "Enter") commitOK(); }}
                 placeholder="DD/MM/YYYY"
                 aria-invalid={!toValid}
                 className="h-7 w-[7.5rem] text-xs tabular-nums"
@@ -211,8 +216,8 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
             </label>
             <Button
               size="xs"
-              onClick={commitTyped}
-              disabled={!fromValid || !toValid}
+              onClick={commitOK}
+              disabled={!fromValid && !pendingFrom}
               className="ml-1"
             >
               OK
@@ -220,12 +225,14 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
           </div>
           <Calendar
             mode="range"
-            selected={{ from, to }}
+            selected={{ from: pendingFrom, to: pendingTo }}
             onSelect={(range) => {
-              if (range?.from && range?.to) {
-                onChange(range.from, range.to);
-                setOpen(false);
-              }
+              const pf = range?.from;
+              const pt = range?.to;
+              setPendingFrom(pf);
+              setPendingTo(pt);
+              if (pf) setFromText(format(pf, DATE_FMT));
+              if (pt) setToText(format(pt, DATE_FMT));
             }}
             numberOfMonths={2}
           />

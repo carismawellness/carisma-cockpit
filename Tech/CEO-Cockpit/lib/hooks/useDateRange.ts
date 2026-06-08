@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { startOfYear } from "date-fns";
+import { startOfMonth, endOfMonth, subMonths } from "date-fns";
 
 export function useDateRange() {
-  const [from, setFrom] = useState(() => startOfYear(new Date()));
-  const [to, setTo] = useState(() => new Date());
+  const [from, setFrom] = useState(() => startOfMonth(subMonths(new Date(), 1)));
+  const [to, setTo] = useState(() => endOfMonth(subMonths(new Date(), 1)));
 
   function setRange(newFrom: Date, newTo: Date) {
     setFrom(newFrom);
