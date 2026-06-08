@@ -242,8 +242,8 @@ function DrillDialog({
                     <tr>
                       <th className="text-left px-3 py-2 font-medium">Account</th>
                       <th className="text-left px-3 py-2 font-medium">Method</th>
-                      <th className="text-right px-3 py-2 font-medium">TTM Total</th>
-                      <th className="text-right px-3 py-2 font-medium">Mo. Avg</th>
+                      <th className="text-right px-3 py-2 font-medium">Basis</th>
+                      <th className="text-right px-3 py-2 font-medium">Monthly</th>
                       <th className="text-right px-3 py-2 font-medium text-foreground">Estimated</th>
                     </tr>
                   </thead>
@@ -274,9 +274,14 @@ function DrillDialog({
                   </tfoot>
                 </table>
               </div>
-              <p className="text-xs text-muted-foreground mt-3">
-                Formula: TTM total ÷ months × 12 = annualised → × {data.fallback_breakdown![0].days_in_period}/365 days = period estimate
-              </p>
+              <div className="mt-3 space-y-1">
+                {data.fallback_breakdown!.map(row => (
+                  <p key={row.account_code} className="text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">{row.account_name}:</span>{" "}
+                    {row.formula}
+                  </p>
+                ))}
+              </div>
             </div>
           )}
 

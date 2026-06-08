@@ -69,9 +69,62 @@ export async function GET(req: Request) {
     (r: Record<string, unknown>) => !r.effective_to || (r.effective_to as string) >= dateFrom!
   );
   if (activeHw) {
+    function parseLocalHw(s: string) { const [y,m,d]=s.split("-").map(Number); return new Date(y,m-1,d); }
+    function dipHw(a: string, b: string) { return Math.round((parseLocalHw(b).getTime()-parseLocalHw(a).getTime())/86_400_000)+1; }
+    const dip = dipHw(dateFrom!, dateTo!);
+    const ruleType = activeHw.rule_type as string;
+    const params   = ((activeHw.params ?? {}) as Record<string, number>);
+
+    type BDRow = { account_code:string; account_name:string; rule_type:string; ttm_total:number; ttm_months:number; annualized:number; monthly_avg:number; days_in_period:number; value:number; formula:string };
+    const breakdown: BDRow[] = [];
+
+    if (ruleType === "fixed_monthly") {
+      const monthly = params.monthly_amount ?? 0;
+      const value   = monthly * (dip / 30.4375);
+      breakdown.push({ account_code:"FIXED", account_name:"Fixed monthly rent", rule_type:ruleType, ttm_total:monthly*12, ttm_months:12, annualized:monthly*12, monthly_avg:monthly, days_in_period:dip, value:+value.toFixed(2), formula:`€${monthly.toFixed(0)}/month × ${dip}/30.4375 avg days = €${value.toFixed(0)}` });
+
+    } else if (ruleType === "base_plus_revenue_pct") {
+      const baseMonthly = params.base_monthly  ?? 0;
+      const pct         = params.revenue_pct   ?? 0;
+
+      // Fetch Lapis revenue for this venue+period
+      const LOC_SLUG_TO_ID: Record<string,number> = { intercontinental:1, hugos:2, hyatt:3, ramla:4, labranda:5, sunny_coast:6, excelsior:7, novotel:8 };
+      const locId = LOC_SLUG_TO_ID[venue!];
+      let lapisRevenue = 0;
+      if (locId) {
+        const months: string[] = [];
+        let y=parseInt(dateFrom!.slice(0,4),10), m=parseInt(dateFrom!.slice(5,7),10);
+        const ey=parseInt(dateTo!.slice(0,4),10), em=parseInt(dateTo!.slice(5,7),10);
+        while (y<ey||(y===ey&&m<=em)) { months.push(`${y}-${String(m).padStart(2,"0")}-01`); m++; if(m>12){m=1;y++;} }
+        const { data: revRows } = await supabase.from("spa_revenue_monthly")
+          .select("month, services, product_phytomer, product_purest, product_other")
+          .eq("location_id", locId).in("month", months);
+        for (const r of (revRows ?? [])) {
+          const mStr=(r.month as string).slice(0,10), mY=+mStr.slice(0,4), mMo=+mStr.slice(5,7);
+          const lastD=new Date(mY,mMo,0).getDate(), mEnd=`${mY}-${String(mMo).padStart(2,"0")}-${String(lastD).padStart(2,"0")}`;
+          const rs=dateFrom!>mStr?dateFrom!:mStr, re=dateTo!<mEnd?dateTo!:mEnd;
+          const dr=rs>re?0:Math.round((parseLocalHw(re).getTime()-parseLocalHw(rs).getTime())/86_400_000)+1;
+          lapisRevenue += (Number(r.services??0)+Number(r.product_phytomer??0)+Number(r.product_purest??0)+Number(r.product_other??0))*(dr/lastD);
+        }
+      }
+
+      const baseValue = baseMonthly * (dip / 30.4375);
+      const pctValue  = lapisRevenue * (pct / 100);
+      if (baseMonthly > 0) {
+        breakdown.push({ account_code:"BASE", account_name:"Base rent", rule_type:"fixed_monthly", ttm_total:baseMonthly*12, ttm_months:12, annualized:baseMonthly*12, monthly_avg:baseMonthly, days_in_period:dip, value:+baseValue.toFixed(2), formula:`€${baseMonthly.toFixed(0)}/month × ${dip}/30.4375 avg days = €${baseValue.toFixed(0)}` });
+      }
+      breakdown.push({ account_code:"PCT", account_name:`Revenue share (${pct}% of Lapis)`, rule_type:"revenue_pct", ttm_total:+lapisRevenue.toFixed(2), ttm_months:0, annualized:0, monthly_avg:0, days_in_period:dip, value:+pctValue.toFixed(2), formula:`${pct}% × €${lapisRevenue.toFixed(0)} Lapis revenue = €${pctValue.toFixed(0)}` });
+    }
+
+    if (breakdown.length > 0) {
+      const total = breakdown.reduce((s,r)=>s+r.value,0);
+      return NextResponse.json({ is_fallback:true, total:+total.toFixed(2), fallback_breakdown:breakdown, contacts:[], transactions:[], wage_roles:[], ad_channels:[] });
+    }
+
+    // Unknown hardwired type — keep amber note as fallback
     return NextResponse.json({
       is_fallback:  true,
-      fallback_note: `No contact/employee breakdown available — value is based on a hardwired rule (${activeHw.rule_type}). ${activeHw.note ?? ""}`.trim(),
+      fallback_note: `Value is based on a hardwired rule (${ruleType}). ${activeHw.note ?? ""}`.trim(),
       contacts: [], transactions: [], wage_roles: [], ad_channels: [],
     });
   }
