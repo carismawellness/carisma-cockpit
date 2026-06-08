@@ -25,6 +25,15 @@ type HardwiredRule = {
   note?: string;
 };
 
+type FallbackRule = {
+  id: number;
+  account_code: string;
+  account_name: string;
+  rule_type: string;
+  active: boolean;
+  params: Record<string, unknown>;
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function ruleTypeLabel(rule_type: string): string {
@@ -45,21 +54,32 @@ function paramsDisplay(rule_type: string, params: Record<string, number>): strin
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+function venueLabel(params: Record<string, unknown>): string {
+  if (params.venue) return String(params.venue).replace(/_/g, " ");
+  if (Array.isArray(params.venues)) return (params.venues as string[]).map(v => v.replace(/_/g, " ")).join(", ");
+  return "—";
+}
+
 export default function EbitdaV2RulesPage() {
-  const [persons, setPersons]   = useState<SpecialPerson[]>([]);
-  const [rules, setRules]       = useState<HardwiredRule[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState<string | null>(null);
+  const [persons, setPersons]         = useState<SpecialPerson[]>([]);
+  const [rules, setRules]             = useState<HardwiredRule[]>([]);
+  const [fallback, setFallback]       = useState<FallbackRule[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState<string | null>(null);
 
   // Add-person form
-  const [showAdd, setShowAdd]       = useState(false);
-  const [newKey, setNewKey]         = useState("");
-  const [newName, setNewName]       = useState("");
-  const [saving, setSaving]         = useState(false);
+  const [showAdd, setShowAdd]         = useState(false);
+  const [newKey, setNewKey]           = useState("");
+  const [newName, setNewName]         = useState("");
+  const [saving, setSaving]           = useState(false);
 
-  // Edit-rule state
-  const [editRuleId, setEditRuleId] = useState<string | null>(null);
-  const [editNote, setEditNote]     = useState("");
+  // Edit-hardwired-rule state
+  const [editRuleId, setEditRuleId]   = useState<string | null>(null);
+  const [editNote, setEditNote]       = useState("");
+
+  // Edit-fallback-floor state
+  const [editFloorId, setEditFloorId] = useState<number | null>(null);
+  const [editFloorAmt, setEditFloorAmt] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -69,6 +89,7 @@ export default function EbitdaV2RulesPage() {
     const data = await res.json();
     setPersons(data.special_persons ?? []);
     setRules(data.hardwired_rules ?? []);
+    setFallback(data.fallback_rules ?? []);
     setLoading(false);
   }, []);
 
@@ -116,6 +137,18 @@ export default function EbitdaV2RulesPage() {
     await post({ action: "update_rule", id, note: editNote });
     setEditRuleId(null);
     await load();
+  }
+
+  async function saveFloor(id: number) {
+    const amt = parseFloat(editFloorAmt);
+    if (isNaN(amt) || amt < 0) return;
+    try {
+      await post({ action: "update_fallback_floor", id, monthly_amount: amt });
+      setEditFloorId(null);
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Error");
+    }
   }
 
   if (loading) return <div className="p-8 text-sm text-muted-foreground">Loading…</div>;
@@ -306,6 +339,88 @@ export default function EbitdaV2RulesPage() {
               ))}
             </div>
           )}
+        </Card>
+      </section>
+
+      {/* ── Cost Floor Rules (min_monthly) ──────────────────────────────── */}
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-base font-medium">Cost Floor Rules</h2>
+          <p className="text-xs text-muted-foreground">
+            Minimum monthly amounts per cost account and venue. If actual Zoho spend is below
+            the floor, the deficit is added automatically. Click the pencil to edit any amount.
+          </p>
+        </div>
+        <Card>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-xs text-muted-foreground">
+                <th className="text-left px-4 py-2">Account</th>
+                <th className="text-left px-4 py-2">Name</th>
+                <th className="text-left px-4 py-2">Venue</th>
+                <th className="text-left px-4 py-2">Category</th>
+                <th className="text-right px-4 py-2">Floor / month</th>
+                <th className="px-4 py-2 w-10" />
+              </tr>
+            </thead>
+            <tbody>
+              {fallback.map(r => {
+                const p = r.params;
+                const amt = Number(p.monthly_amount ?? 0);
+                const sub = p.ebitda_sub_line ? ` · ${p.ebitda_sub_line}` : "";
+                return (
+                  <tr key={r.id} className="border-b last:border-0 hover:bg-muted/30">
+                    <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{r.account_code}</td>
+                    <td className="px-4 py-2">{r.account_name}</td>
+                    <td className="px-4 py-2 capitalize text-sm">{venueLabel(p)}</td>
+                    <td className="px-4 py-2 text-xs text-muted-foreground capitalize">
+                      {String(p.ebitda_line ?? "—")}{sub}
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono">
+                      {editFloorId === r.id ? (
+                        <div className="flex gap-1 justify-end items-center">
+                          <span className="text-muted-foreground text-xs">€</span>
+                          <input
+                            className="border rounded px-1 py-0.5 text-xs w-24 text-right"
+                            value={editFloorAmt}
+                            onChange={e => setEditFloorAmt(e.target.value)}
+                            onKeyDown={e => { if (e.key === "Enter") saveFloor(r.id); if (e.key === "Escape") setEditFloorId(null); }}
+                            autoFocus
+                          />
+                          <button onClick={() => saveFloor(r.id)} className="text-green-600 hover:text-green-700">
+                            <Check className="h-3.5 w-3.5" />
+                          </button>
+                          <button onClick={() => setEditFloorId(null)} className="text-muted-foreground hover:text-foreground">
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <span>€{amt.toLocaleString()}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2">
+                      {editFloorId !== r.id && (
+                        <button
+                          onClick={() => { setEditFloorId(r.id); setEditFloorAmt(String(amt)); }}
+                          className="text-muted-foreground hover:text-foreground transition-colors"
+                          title="Edit floor amount"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {fallback.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-6 text-center text-muted-foreground text-xs">
+                    No cost floor rules defined.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </Card>
       </section>
     </div>

@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 // GET /api/settings/ebitda-v2-rules
-// Returns special_persons and hardwired_rules arrays.
+// Returns special_persons, hardwired_rules, and fallback_rules arrays.
 export async function GET() {
   const supabase = await createServerSupabaseClient();
 
-  const [persons, rules] = await Promise.all([
+  const [persons, rules, fallback] = await Promise.all([
     supabase
       .from("ebitda_v2_special_persons")
       .select("*")
@@ -15,12 +15,22 @@ export async function GET() {
       .from("ebitda_v2_hardwired_rules")
       .select("*")
       .order("venue"),
+    supabase
+      .from("ebitda_fallback_rules")
+      .select("id, account_code, account_name, rule_type, active, params")
+      .eq("rule_type", "min_monthly")
+      .order("account_code"),
   ]);
 
-  if (persons.error) return NextResponse.json({ error: persons.error.message }, { status: 500 });
-  if (rules.error)   return NextResponse.json({ error: rules.error.message },   { status: 500 });
+  if (persons.error)  return NextResponse.json({ error: persons.error.message },  { status: 500 });
+  if (rules.error)    return NextResponse.json({ error: rules.error.message },     { status: 500 });
+  if (fallback.error) return NextResponse.json({ error: fallback.error.message },  { status: 500 });
 
-  return NextResponse.json({ special_persons: persons.data, hardwired_rules: rules.data });
+  return NextResponse.json({
+    special_persons: persons.data,
+    hardwired_rules: rules.data,
+    fallback_rules:  fallback.data,
+  });
 }
 
 // POST /api/settings/ebitda-v2-rules
@@ -74,6 +84,29 @@ export async function POST(req: Request) {
     const { error } = await supabase
       .from("ebitda_v2_hardwired_rules")
       .update({ params, note })
+      .eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "update_fallback_floor") {
+    const { id, monthly_amount } = body;
+    const amt = Number(monthly_amount);
+    if (!id || isNaN(amt) || amt < 0)
+      return NextResponse.json({ error: "id and monthly_amount required" }, { status: 400 });
+
+    // Fetch existing params first so we preserve all other fields
+    const { data: existing, error: fetchErr } = await supabase
+      .from("ebitda_fallback_rules")
+      .select("params")
+      .eq("id", id)
+      .single();
+    if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 });
+
+    const updatedParams = { ...(existing?.params ?? {}), monthly_amount: amt };
+    const { error } = await supabase
+      .from("ebitda_fallback_rules")
+      .update({ params: updatedParams })
       .eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true });
