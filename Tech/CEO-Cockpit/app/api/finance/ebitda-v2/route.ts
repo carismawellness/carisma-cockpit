@@ -445,22 +445,45 @@ export async function GET(req: Request) {
       .map((r: Record<string, unknown>) => r.account_code as string);
 
     if (activeCodes.length > 0) {
+      // TTM and previous-month queries can return thousands of rows across 88 codes ×
+      // 12 months × 8 venues — must paginate like fetchAllRawCosts() to avoid the
+      // PostgREST max_rows cap (330) silently dropping most of the history.
+      const HIST_PAGE = 200;
+
+      type HistRawRow = { account_code: string; venue: string; date: string; amount: number; ebitda_line: string; ebitda_sub_line: string };
+      async function fetchHistRows(from: string, to: string): Promise<HistRawRow[]> {
+        const all: HistRawRow[] = [];
+        for (let offset = 0; offset < 500_000; offset += HIST_PAGE) {
+          const { data, error } = await supabase
+            .from("transactions_raw")
+            .select("account_code, venue, date, amount, ebitda_line, ebitda_sub_line")
+            .in("account_code", activeCodes)
+            .gte("date", from)
+            .lt("date", to)
+            .order("date").order("account_code").order("venue")
+            .range(offset, offset + HIST_PAGE - 1);
+          if (error) throw new Error(`histRows page ${offset}: ${error.message}`);
+          if (!data || data.length === 0) break;
+          all.push(...(data as HistRawRow[]));
+        }
+        return all;
+      }
+
       // Historical totals by (account_code, venue) over TTM window
-      const { data: histRows } = await supabase
-        .from("transactions_raw")
-        .select("account_code, venue, date, amount, ebitda_line, ebitda_sub_line")
-        .in("account_code", activeCodes)
-        .gte("date", ttmFrom)
-        .lt("date", ttmTo);
+      const prevMonthFrom = shiftMonth(dateFrom, -1);
+      const [histRows, prevRows] = await Promise.all([
+        fetchHistRows(ttmFrom, ttmTo),
+        fetchHistRows(prevMonthFrom, dateFrom),
+      ]);
 
       // Group historical amounts by account+venue AND track distinct months
       // (needed to correctly annualise when <12 months of SPA history exist)
       type HistKey = string; // "account_code|venue"
       const histMap    = new Map<HistKey, { ttm: number; ebitda_line: string; ebitda_sub_line: string }>();
       const histMonths = new Map<HistKey, Set<string>>(); // track distinct YYYY-MM per key
-      for (const r of (histRows ?? [])) {
+      for (const r of histRows) {
         const k = `${r.account_code}|${r.venue}`;
-        const mon = (r.date as string ?? "").slice(0, 7);
+        const mon = (r.date ?? "").slice(0, 7);
         if (!histMonths.has(k)) histMonths.set(k, new Set());
         histMonths.get(k)!.add(mon);
         const existing = histMap.get(k);
@@ -469,23 +492,14 @@ export async function GET(req: Request) {
         } else {
           histMap.set(k, {
             ttm: Number(r.amount ?? 0),
-            ebitda_line:     (r.ebitda_line as string)     || "sga",
-            ebitda_sub_line: (r.ebitda_sub_line as string) || "misc",
+            ebitda_line:     r.ebitda_line     || "sga",
+            ebitda_sub_line: r.ebitda_sub_line || "misc",
           });
         }
       }
 
-      // Also get most recent prior-month for "previous_month" rule
-      const prevMonthFrom = shiftMonth(dateFrom, -1);
-      const { data: prevRows } = await supabase
-        .from("transactions_raw")
-        .select("account_code, venue, amount, ebitda_line, ebitda_sub_line")
-        .in("account_code", activeCodes)
-        .gte("date", prevMonthFrom)
-        .lt("date", dateFrom);
-
       const prevMap = new Map<HistKey, number>();
-      for (const r of (prevRows ?? [])) {
+      for (const r of prevRows) {
         const k = `${r.account_code}|${r.venue}`;
         prevMap.set(k, (prevMap.get(k) ?? 0) + Number(r.amount ?? 0));
       }
