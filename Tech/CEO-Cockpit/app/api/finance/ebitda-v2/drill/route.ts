@@ -16,6 +16,8 @@ export const dynamic = "force-dynamic";
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function basisLabel(ruleType: string | null, config: Record<string, unknown> | null): string {
+  // "Tag" = transaction came in with a venue tag directly from Zoho (no split rule in zoho_coa_mapping).
+  // Any rule_type means the ETL applied a split — show the rule, never "Tag".
   if (!ruleType) return "Tag";
   switch (ruleType) {
     case "equal":       return "Equal split";
@@ -23,10 +25,11 @@ function basisLabel(ruleType: string | null, config: Record<string, unknown> | n
     case "salary_cost": return "Salary split";
     case "custom": {
       if (!config) return "Custom split";
+      // Show the single venue name if 100% goes to one venue, otherwise "Custom split"
       const entries = Object.entries(config).filter(([, v]) => Number(v) > 0);
-      return entries.length === 1 ? "Tag" : "Custom split";
+      return entries.length === 1 ? `Custom (${entries[0][0]})` : "Custom split";
     }
-    default: return "Tag";
+    default: return ruleType.replace(/_/g, " ");
   }
 }
 
