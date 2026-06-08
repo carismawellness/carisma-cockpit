@@ -251,7 +251,7 @@ export async function GET(req: Request) {
     const org = isAesthetics ? "aesthetics" : "spa";
 
     const { data: coaRows } = await supabase
-      .from("coa_mapping")
+      .from("zoho_coa_mapping")
       .select("account_code, coa_split_rules(rule_type, config)")
       .in("account_code", uniqueCodes)
       .eq("zoho_org", org);
