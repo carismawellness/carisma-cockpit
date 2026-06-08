@@ -418,8 +418,21 @@ export async function GET(req: Request) {
         break;
       }
       case "advertising": {
-        venues[venue].advertising += amount;
         const ch = resolveAdChannel(contact);
+        // Klaviyo billed to HQ → split across 8 SPA venues by lapis_revenue ratio
+        if (ch === "klaviyo" && venue === "hq") {
+          const SPA_SLUGS = ["intercontinental","hugos","hyatt","ramla","labranda","sunny_coast","excelsior","novotel"] as const;
+          const totalSpaRev = SPA_SLUGS.reduce((s, sv) => s + (venues[sv]?.lapis_revenue ?? 0), 0);
+          for (const sv of SPA_SLUGS) {
+            if (!venues[sv]) continue;
+            const ratio = totalSpaRev > 0 ? (venues[sv].lapis_revenue ?? 0) / totalSpaRev : 1 / 8;
+            const share = amount * ratio;
+            venues[sv].advertising += share;
+            venues[sv].ad_by_channel["klaviyo"] = (venues[sv].ad_by_channel["klaviyo"] ?? 0) + share;
+          }
+          break;
+        }
+        venues[venue].advertising += amount;
         venues[venue].ad_by_channel[ch] = (venues[venue].ad_by_channel[ch] ?? 0) + amount;
         break;
       }
@@ -698,7 +711,10 @@ export async function GET(req: Request) {
 
           // Apply to venue
           switch (line) {
-            case "wages":       venues[venue].wages       += fallbackValue; break;
+            case "wages":
+              venues[venue].wages += fallbackValue;
+              venues[venue].wage_by_role["unassigned"] = (venues[venue].wage_by_role["unassigned"] ?? 0) + fallbackValue;
+              break;
             case "advertising": venues[venue].advertising += fallbackValue; break;
             case "sga":
               venues[venue].sga += fallbackValue;
