@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 
 export async function POST(req: NextRequest) {
   const token = req.nextUrl.searchParams.get("token");
@@ -34,11 +35,14 @@ export async function POST(req: NextRequest) {
   }
 
   const base = new URL(req.url).origin;
+  const body = JSON.stringify({ date_from, date_to, force: true });
 
-  fetch(`${base}/api/etl/zoho-aesthetics-transactions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ date_from, date_to, force: true }),
+  after(async () => {
+    await fetch(`${base}/api/etl/zoho-aesthetics-transactions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
   });
 
   return NextResponse.json({ received: true, month: date_from.slice(0, 7) }, { status: 200 });

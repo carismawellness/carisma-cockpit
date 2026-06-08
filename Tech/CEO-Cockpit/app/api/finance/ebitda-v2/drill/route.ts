@@ -339,7 +339,12 @@ export async function GET(req: Request) {
   // ── Fallback breakdown (when no actual transactions found) ────────────────
   // Recomputes the TTM/prev-month estimate for this venue+line so the drill
   // can show exactly how the figure was derived.
-  if (total === 0 && ebitdaLine !== "revenue") {
+  //
+  // Skip fallback when filtering by ad_channel or wage_role: total=0 means
+  // no transactions for THAT channel specifically, not that the line is empty.
+  // Showing advertising-wide TTM estimates on a Klaviyo-specific drill is
+  // misleading — the user needs to see "no data" not "estimated €X".
+  if (total === 0 && ebitdaLine !== "revenue" && !adChannel && !wageRole) {
     function shiftMonthStr(d: string, n: number): string {
       let y = parseInt(d.slice(0, 4), 10), m = parseInt(d.slice(5, 7), 10);
       m += n;

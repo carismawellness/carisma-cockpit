@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 
 export async function POST(req: NextRequest) {
   const token = req.nextUrl.searchParams.get("token");
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
     const lastDay = new Date(year, month, 0).getDate();
     date_to = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
   } else {
-    // Contact or unknown event — re-sync last 12 months
+    // Contact or unknown event (e.g. COA recode) — re-sync last 12 months
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth() - 11, 1);
     date_from = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-01`;
@@ -41,11 +42,18 @@ export async function POST(req: NextRequest) {
   // targets the same deployment that received the webhook (avoids VERCEL_URL
   // pointing to a stale preview deployment).
   const base = new URL(req.url).origin;
+  const body = JSON.stringify({ date_from, date_to, force: true });
 
-  fetch(`${base}/api/etl/zoho-spa-transactions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ date_from, date_to, force: true }),
+  // Use after() so the ETL runs after the 200 response is sent but the
+  // Vercel function instance is kept alive until it completes.
+  // Previously this was fire-and-forget (no await, no waitUntil) which meant
+  // Vercel could terminate the function before the ETL finished.
+  after(async () => {
+    await fetch(`${base}/api/etl/zoho-spa-transactions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
   });
 
   return NextResponse.json({ received: true, month: date_from.slice(0, 7) }, { status: 200 });
