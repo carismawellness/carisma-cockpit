@@ -94,7 +94,6 @@ export const departments: Department[] = [
       { slug: "salary-supplement",   label: "Salary Supplement",   path: "/settings/salary-supplement",   icon: BookOpen },
       { slug: "fallback-rules",      label: "Fallback Rules",      path: "/settings/fallback-rules",      icon: BookOpen },
       { slug: "ebitda-v2-rules",     label: "EBITDA V2 Rules",     path: "/settings/ebitda-v2-rules",     icon: BookOpen },
-      { slug: "logic-mapping",       label: "Logic Mapping",       path: "/settings/logic-mapping",       icon: BookOpen },
       { slug: "etl-runner",          label: "ETL Runner",          path: "/settings/etl-runner",          icon: RefreshCw },
       { slug: "data-sources",        label: "Data Sources",        path: "/settings/data-sources",        icon: Activity },
     ],
