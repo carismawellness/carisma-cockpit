@@ -37,7 +37,8 @@ function round2(n: number): number {
 // ── CRM fuzzy matching (staff-grid names for professional fees contacts) ────
 const CRM_TOKENS = [
   "vj", "nicci", "juli", "abid", "adeel", "april", "nath", "rana",
-  "que", "dori", "melissa", "mandar", "ruksana", "yofana",
+  "que", "dori", "melissa", "mandar", "yofana",
+  // "ruksana" removed — Ruksana Shaikh is a professional fee contractor (is_prof_fee=true in wage_role_mapping)
 ];
 
 function fuzzyRole(contactName: string): string | null {

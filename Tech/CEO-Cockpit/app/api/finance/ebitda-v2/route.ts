@@ -246,10 +246,10 @@ export async function GET(req: Request) {
         ].filter((v, i, a) => a.indexOf(v) === i))   // dedupe
         .eq("is_frozen", true),
 
-      // Wage role mapping: contact_key → role + optional venue_override
+      // Wage role mapping: contact_key → role + optional venue_override + prof fee flags
       supabase
         .from("wage_role_mapping")
-        .select("contact_key, role, venue_override"),
+        .select("contact_key, role, venue_override, is_prof_fee, monthly_floor"),
 
       // Advertising contact patterns: pattern → channel
       supabase
@@ -282,12 +282,19 @@ export async function GET(req: Request) {
   // Wage role lookup: normalized contact name → role
   const wageRoleMap = new Map<string, WageRole>();
   // Venue override: contact whose wages should show in a different venue than posted
-  // (e.g. employee on SPA payroll who works for Aesthetics)
   const wageVenueOverrideMap = new Map<string, string>();
+  // Prof fee contacts: re-routed from wages → sga.prof_services with optional min floor
+  const profFeeMap = new Map<string, { monthly_floor: number; venue: string }>();
   for (const row of (wageRoles.data ?? [])) {
     const key = (row.contact_key as string).toLowerCase().trim();
     wageRoleMap.set(key, row.role as WageRole);
     if (row.venue_override) wageVenueOverrideMap.set(key, row.venue_override as string);
+    if (row.is_prof_fee) {
+      profFeeMap.set(key, {
+        monthly_floor: Number(row.monthly_floor ?? 0),
+        venue: (row.venue_override as string) ?? "hq",
+      });
+    }
   }
 
   // Ad channel lookup: contact name → channel
@@ -380,6 +387,14 @@ export async function GET(req: Request) {
     switch (line) {
       case "wages": {
         const roleKey = contact.toLowerCase().trim();
+        // Prof fee contractors: re-route from wages → sga.prof_services
+        if (profFeeMap.has(roleKey)) {
+          const pfVenue = profFeeMap.get(roleKey)!.venue;
+          if (!venues[pfVenue]) break;
+          venues[pfVenue].sga += amount;
+          venues[pfVenue].sga_by_sub["prof_services"] = (venues[pfVenue].sga_by_sub["prof_services"] ?? 0) + amount;
+          break;
+        }
         // Venue override: re-route SPA-payroll staff who work for another brand
         const effectiveVenue = wageVenueOverrideMap.get(roleKey) ?? venue;
         if (!venues[effectiveVenue]) break;
@@ -492,6 +507,36 @@ export async function GET(req: Request) {
         }
         fallbackApplied.push({ venue, ebitda_line: ebitdaLine, rule_type: "min_monthly", value: Math.round(supplement) });
       }
+    }
+  }
+
+  // ── 6b-pre-2. Prof fee contact min_monthly floors ────────────────────────
+  // Contacts in profFeeMap are re-routed wages → sga.prof_services above.
+  // Apply their monthly_floor as a minimum (deficit only — never discard actual).
+  {
+    for (const [contactKey, pf] of profFeeMap) {
+      if (!pf.monthly_floor) continue;
+      const targetVenue = pf.venue;
+      if (!venues[targetVenue]) continue;
+
+      let floor = 0;
+      for (const monthStr of overlappingMonths(dateFrom, dateTo)) {
+        const daysInMo = totalDaysInMonth(monthStr);
+        const daysOver = daysOfMonthInRange(monthStr, dateFrom, dateTo);
+        floor += pf.monthly_floor * (daysOver / daysInMo);
+      }
+
+      // Actual posted by this contact (regardless of original ebitda_line — we re-routed it)
+      const actual = allRawCosts
+        .filter(r => (r.contact_name ?? "").toLowerCase().trim() === contactKey)
+        .reduce((sum, r) => sum + r.amount, 0);
+
+      const supplement = Math.max(0, floor - actual);
+      if (supplement === 0) continue;
+
+      venues[targetVenue].sga += supplement;
+      venues[targetVenue].sga_by_sub["prof_services"] = (venues[targetVenue].sga_by_sub["prof_services"] ?? 0) + supplement;
+      fallbackApplied.push({ venue: targetVenue, ebitda_line: "prof_services", rule_type: "min_monthly", value: Math.round(supplement) });
     }
   }
 
