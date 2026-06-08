@@ -147,14 +147,16 @@ function DrillDialog({
 
   useEffect(() => {
     setLoading(true); setError(null); setData(null);
+    const controller = new AbortController();
     const qs = new URLSearchParams({ venue: target.venue, ebitda_line: target.line, date_from: dateFrom, date_to: dateTo });
     if (target.subLine)   qs.set("ebitda_sub_line", target.subLine);
     if (target.wageRole)  qs.set("wage_role",        target.wageRole);
     if (target.adChannel) qs.set("ad_channel",       target.adChannel);
-    fetch(`/api/finance/ebitda-v2/drill?${qs}`)
+    fetch(`/api/finance/ebitda-v2/drill?${qs}`, { signal: controller.signal })
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false); })
-      .catch(e => { setError(String(e)); setLoading(false); });
+      .catch(e => { if (e.name !== "AbortError") { setError(String(e)); setLoading(false); } });
+    return () => controller.abort();
   }, [target, dateFrom, dateTo]);
 
   useEffect(() => {
@@ -374,12 +376,13 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
 
   useEffect(() => {
     setLoading(true); setError(null); setData(null);
+    const controller = new AbortController();
     const qs = new URLSearchParams({ date_from: dfStr, date_to: dtStr });
-    fetch(`/api/finance/ebitda-v2?${qs}`)
+    fetch(`/api/finance/ebitda-v2?${qs}`, { signal: controller.signal })
       .then(r => r.json())
-      .then(d => { if (d.error) throw new Error(d.error); setData(d); })
-      .catch(e => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
+      .then(d => { if (d.error) throw new Error(d.error); setData(d); setLoading(false); })
+      .catch(e => { if (e.name !== "AbortError") { setError(e instanceof Error ? e.message : String(e)); setLoading(false); } });
+    return () => controller.abort();
   }, [dfStr, dtStr]);
 
   const displayedVenues = useMemo(() => {
