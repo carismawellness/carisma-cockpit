@@ -246,10 +246,10 @@ export async function GET(req: Request) {
         ].filter((v, i, a) => a.indexOf(v) === i))   // dedupe
         .eq("is_frozen", true),
 
-      // Wage role mapping: contact_key → role
+      // Wage role mapping: contact_key → role + optional venue_override
       supabase
         .from("wage_role_mapping")
-        .select("contact_key, role"),
+        .select("contact_key, role, venue_override"),
 
       // Advertising contact patterns: pattern → channel
       supabase
@@ -281,8 +281,13 @@ export async function GET(req: Request) {
 
   // Wage role lookup: normalized contact name → role
   const wageRoleMap = new Map<string, WageRole>();
+  // Venue override: contact whose wages should show in a different venue than posted
+  // (e.g. employee on SPA payroll who works for Aesthetics)
+  const wageVenueOverrideMap = new Map<string, string>();
   for (const row of (wageRoles.data ?? [])) {
-    wageRoleMap.set((row.contact_key as string).toLowerCase().trim(), row.role as WageRole);
+    const key = (row.contact_key as string).toLowerCase().trim();
+    wageRoleMap.set(key, row.role as WageRole);
+    if (row.venue_override) wageVenueOverrideMap.set(key, row.venue_override as string);
   }
 
   // Ad channel lookup: contact name → channel
@@ -374,10 +379,13 @@ export async function GET(req: Request) {
 
     switch (line) {
       case "wages": {
-        venues[venue].wages += amount;
         const roleKey = contact.toLowerCase().trim();
+        // Venue override: re-route SPA-payroll staff who work for another brand
+        const effectiveVenue = wageVenueOverrideMap.get(roleKey) ?? venue;
+        if (!venues[effectiveVenue]) break;
+        venues[effectiveVenue].wages += amount;
         const role: WageRole = wageRoleMap.get(roleKey) ?? "unassigned";
-        venues[venue].wage_by_role[role] += amount;
+        venues[effectiveVenue].wage_by_role[role] += amount;
         break;
       }
       case "advertising": {
@@ -427,6 +435,64 @@ export async function GET(req: Request) {
     else if (ebitda_line === "utilities") venues[venue].utilities = value;
 
     fallbackApplied.push({ venue, ebitda_line, rule_type: rule.rule_type, value });
+  }
+
+  // ── 6b-pre. Apply min_monthly floor rules (ALL periods) ──────────────────
+  // These guarantee a minimum cost floor regardless of whether actual Zoho
+  // transactions exist. Applied for full months AND partial periods.
+  // Logic: max(actual_in_period, monthly_amount × day_fraction_of_month).
+  // Only the deficit is added — actual data is never discarded.
+  {
+    const minRules = (fallbackRules.data ?? []).filter(
+      (r: Record<string, unknown>) => r.active && r.rule_type === "min_monthly",
+    );
+    for (const rule of minRules) {
+      const params       = (rule.params ?? {}) as Record<string, unknown>;
+      const monthlyAmt   = Number(params.monthly_amount ?? 0);
+      if (!monthlyAmt) continue;
+      const ebitdaLine   = (params.ebitda_line as string)     ?? "sg_and_a";
+      const ebitdaSub    = (params.ebitda_sub_line as string)  ?? "misc";
+      const accountCode  = rule.account_code as string;
+
+      // Venue list: explicit array (for all-spa items) OR single venue
+      const targetVenues: string[] = Array.isArray(params.venues)
+        ? (params.venues as string[])
+        : params.venue ? [params.venue as string] : [];
+      const splitEqual = params.split === "equal";
+      const numVenues  = targetVenues.length || 1;
+
+      // Pro-rate by actual calendar days in each overlapping month
+      let floor = 0;
+      for (const monthStr of overlappingMonths(dateFrom, dateTo)) {
+        const daysInMo   = totalDaysInMonth(monthStr);
+        const daysOver   = daysOfMonthInRange(monthStr, dateFrom, dateTo);
+        floor += monthlyAmt * (daysOver / daysInMo);
+      }
+
+      for (const venue of targetVenues) {
+        if (!venues[venue]) continue;
+        const venueFloor = splitEqual ? floor / numVenues : floor;
+
+        // Actual already accumulated for this account+venue from transactions_raw
+        const actual = allRawCosts
+          .filter(r => r.venue === venue && r.account_code === accountCode)
+          .reduce((sum, r) => sum + r.amount, 0);
+
+        const supplement = Math.max(0, venueFloor - actual);
+        if (supplement === 0) continue;
+
+        if (ebitdaLine === "utilities") {
+          venues[venue].utilities += supplement;
+        } else if (ebitdaLine === "cogs") {
+          venues[venue].cogs += supplement;
+        } else if (ebitdaLine === "sg_and_a") {
+          venues[venue].sga += supplement;
+          const sub = SGA_SUBS.includes(ebitdaSub as typeof SGA_SUBS[number]) ? ebitdaSub : "misc";
+          venues[venue].sga_by_sub[sub] = (venues[venue].sga_by_sub[sub] ?? 0) + supplement;
+        }
+        fallbackApplied.push({ venue, ebitda_line: ebitdaLine, rule_type: "min_monthly", value: Math.round(supplement) });
+      }
+    }
   }
 
   // ── 6b. Apply ebitda_fallback_rules for partial periods ──────────────────
