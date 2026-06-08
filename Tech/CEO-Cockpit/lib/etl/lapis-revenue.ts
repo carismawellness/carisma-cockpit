@@ -99,6 +99,10 @@ function monthKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
+function dateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function stripCol(row: Record<string, string>, key: string): string {
   return (row[key] ?? row[`${key} `] ?? "").trim();
 }
@@ -109,7 +113,7 @@ function safeFloat(val: string): number {
 
 function daysInMonth(year: number, month: number) { return new Date(year, month, 0).getDate(); }
 
-// ── Lapis data fetch ──────────────────────────────────────────────────────────
+// ── Lapis data fetch — monthly aggregation (for Zoho adjustment apportionment) ─
 
 async function fetchLapisServices(
   dateFrom: Date,
@@ -154,6 +158,50 @@ async function fetchLapisProducts(
     if (!totals[locId]) totals[locId] = {};
     if (!totals[locId][mk]) totals[locId][mk] = {};
     totals[locId][mk][col2] = (totals[locId][mk][col2] ?? 0) + amount;
+  }
+  return totals;
+}
+
+// ── Lapis data fetch — daily aggregation (for spa_revenue_daily) ──────────────
+
+type DailyServiceTotals  = Record<number, Record<string, number>>;              // locId → dateStr → exVAT
+type DailyProductTotals  = Record<number, Record<string, Record<string, number>>>; // locId → dateStr → brand → amt
+
+async function fetchLapisServicesByDay(dateFrom: Date, dateTo: Date): Promise<DailyServiceTotals> {
+  const rows   = await fetchLapisCsv(SERVICE_GID);
+  const totals: DailyServiceTotals = {};
+  for (const row of rows) {
+    if (!["Given", "Unplanned"].includes(stripCol(row, "Status"))) continue;
+    const d = parseLapisDate(stripCol(row, "Service Date"));
+    if (!d || d < dateFrom || d > dateTo) continue;
+    const locId = LAPIS_SPA_MAP[stripCol(row, "Sales Point")];
+    if (locId === undefined) continue;
+    const unitPrice = safeFloat(stripCol(row, "Unit Price"));
+    const amountEx  = +(unitPrice / (1 + VAT_RATE)).toFixed(2);
+    const dk        = dateKey(d);
+    if (!totals[locId]) totals[locId] = {};
+    totals[locId][dk] = (totals[locId][dk] ?? 0) + amountEx;
+  }
+  return totals;
+}
+
+async function fetchLapisProductsByDay(dateFrom: Date, dateTo: Date): Promise<DailyProductTotals> {
+  const rows   = await fetchLapisCsv(PRODUCT_GID);
+  const totals: DailyProductTotals = {};
+  for (const row of rows) {
+    const d = parseLapisDate(stripCol(row, "Date"));
+    if (!d || d < dateFrom || d > dateTo) continue;
+    const spa   = stripCol(row, "Point of Sales") || stripCol(row, "Point of Sales ");
+    const locId = LAPIS_SPA_MAP[spa];
+    if (locId === undefined) continue;
+    const amount = safeFloat(stripCol(row, "VAT Exclusive Amount") || stripCol(row, "VAT Exclusive Amount "));
+    if (amount <= 0) continue;
+    const brand = stripCol(row, "Brand").toUpperCase();
+    const col2  = BRAND_MAP[brand] ?? "product_other";
+    const dk    = dateKey(d);
+    if (!totals[locId]) totals[locId] = {};
+    if (!totals[locId][dk]) totals[locId][dk] = {};
+    totals[locId][dk][col2] = (totals[locId][dk][col2] ?? 0) + amount;
   }
   return totals;
 }
@@ -265,6 +313,58 @@ async function runMonth(
   const prodTotal = ALL_LOCATION_IDS.reduce((s, id) => s + Object.values(locProducts[id]).reduce((a, b) => a + b, 0), 0);
   log.push(`  ${mk}: services=€${svcTotal.toFixed(0)} products=€${prodTotal.toFixed(0)} wholesale=€${totalWholesale.toFixed(0)} → ${count} rows upserted`);
   return count;
+}
+
+// ── Daily upsert — spa_revenue_daily ─────────────────────────────────────────
+
+export async function runLapisRevenueDaily(
+  dateFrom: string,
+  dateTo: string,
+): Promise<{ rowsUpserted: number; log: string[] }> {
+  const log: string[] = [];
+  const logger = new ETLLogger("lapis_spa_revenue_daily");
+  await logger.start();
+
+  try {
+    const fromD = new Date(dateFrom);
+    const toD   = new Date(dateTo);
+
+    log.push("Fetching Lapis daily data…");
+    const [svcByDay, prodByDay] = await Promise.all([
+      fetchLapisServicesByDay(fromD, toD),
+      fetchLapisProductsByDay(fromD, toD),
+    ]);
+
+    // Collect all (locId, date) combos that have any data
+    const keys = new Set<string>();
+    for (const [locId, days] of Object.entries(svcByDay))  for (const dk of Object.keys(days))  keys.add(`${locId}|${dk}`);
+    for (const [locId, days] of Object.entries(prodByDay)) for (const dk of Object.keys(days))  keys.add(`${locId}|${dk}`);
+
+    const nowTs = new Date().toISOString();
+    const rows  = Array.from(keys).map(k => {
+      const [locIdStr, dk] = k.split("|");
+      const locId = Number(locIdStr);
+      const cols  = prodByDay[locId]?.[dk] ?? {};
+      return {
+        location_id:      locId,
+        date:             dk,
+        services:         +(svcByDay[locId]?.[dk] ?? 0).toFixed(2),
+        product_phytomer: +(cols.product_phytomer ?? 0).toFixed(2),
+        product_purest:   +(cols.product_purest   ?? 0).toFixed(2),
+        product_other:    +(cols.product_other    ?? 0).toFixed(2),
+        lapis_synced_at:  nowTs,
+      };
+    });
+
+    const count = await upsert("spa_revenue_daily", rows as Record<string, unknown>[], "location_id,date");
+    log.push(`Daily upsert: ${count} rows for ${keys.size} location-days`);
+
+    await logger.complete(count);
+    return { rowsUpserted: count, log };
+  } catch (e) {
+    await logger.fail(String(e));
+    throw e;
+  }
 }
 
 // ── Main run ──────────────────────────────────────────────────────────────────

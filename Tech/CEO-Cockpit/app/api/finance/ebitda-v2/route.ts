@@ -210,15 +210,22 @@ export async function GET(req: Request) {
   }
 
   // ── 1. Load all config tables in parallel ─────────────────────────────────
-  const [allRawCosts, revenueMonthly, aestheticsSales, slimmingSales,
+  const [allRawCosts, revenueDaily, revenueMonthly, aestheticsSales, slimmingSales,
          supplement, wageRoles, adPatterns, fallbackRules, hardwiredRules] =
     await Promise.all([
       fetchAllRawCosts(),
 
-      // SPA revenue per location per month
+      // SPA revenue per location per day — actual amounts, no pro-rating needed
+      supabase
+        .from("spa_revenue_daily")
+        .select("location_id, date, services, product_phytomer, product_purest, product_other")
+        .gte("date", dateFrom)
+        .lte("date", dateTo),
+
+      // SPA revenue monthly — used only for wholesale, discount, refund adjustments
       supabase
         .from("spa_revenue_monthly")
-        .select("location_id, month, services, product_phytomer, product_purest, product_other, wholesale, sales_discount, sales_refund")
+        .select("location_id, month, wholesale, sales_discount, sales_refund")
         .in("month", overlappingMonths(dateFrom, dateTo)),
 
       // Aesthetics revenue
@@ -270,6 +277,7 @@ export async function GET(req: Request) {
 
   // Error checks (rawCosts errors thrown inside fetchAllRawCosts)
   for (const [label, res] of [
+    ["spa_revenue_daily", revenueDaily],
     ["spa_revenue_monthly", revenueMonthly],
     ["aesthetics_sales_daily", aestheticsSales],
     ["slimming_sales_daily", slimmingSales],
@@ -336,28 +344,34 @@ export async function GET(req: Request) {
   }
 
   // ── 4. Revenue ───────────────────────────────────────────────────────────
-  // 4a. SPA — pro-rate monthly amounts into the selected period
+  // 4a. SPA — sum actual daily LAPIS amounts for exact date range (no pro-rating)
   const months = overlappingMonths(dateFrom, dateTo);
-  for (const row of (revenueMonthly.data ?? [])) {
+  for (const row of (revenueDaily.data ?? [])) {
     const slug = LOC_ID_TO_SLUG[row.location_id as number];
     if (!slug || !venues[slug]) continue;
-    const monthStr   = (row.month as string).slice(0, 10);
-    const daysInMonth  = totalDaysInMonth(monthStr);
-    const daysInRange  = daysOfMonthInRange(monthStr, dateFrom, dateTo);
-    const factor       = daysInRange / daysInMonth;
     const lapisSales = (
       (row.services         as number) +
       (row.product_phytomer as number) +
       (row.product_purest   as number) +
       (row.product_other    as number)
-    ) * factor;
-    const monthRevenue = (lapisSales +
+    );
+    venues[slug].revenue       += lapisSales;
+    venues[slug].lapis_revenue += lapisSales;   // services+products only — for turnover rent
+  }
+  // Zoho adjustments (wholesale, discount, refund) are still monthly — pro-rate to period
+  for (const row of (revenueMonthly.data ?? [])) {
+    const slug = LOC_ID_TO_SLUG[row.location_id as number];
+    if (!slug || !venues[slug]) continue;
+    const monthStr  = (row.month as string).slice(0, 10);
+    const daysInMo  = totalDaysInMonth(monthStr);
+    const daysInRange = daysOfMonthInRange(monthStr, dateFrom, dateTo);
+    const factor    = daysInRange / daysInMo;
+    const adj = (
       ((row.wholesale      as number) -
        (row.sales_discount as number) -
        (row.sales_refund   as number)) * factor
     );
-    venues[slug].revenue       += monthRevenue;
-    venues[slug].lapis_revenue += lapisSales;   // services+products only — for turnover rent
+    venues[slug].revenue += adj;
   }
   // 4b. Aesthetics
   const aesthTotal = (aestheticsSales.data ?? [])

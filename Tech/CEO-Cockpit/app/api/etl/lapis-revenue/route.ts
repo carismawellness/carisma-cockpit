@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { runLapisRevenue } from "@/lib/etl/lapis-revenue";
+import { runLapisRevenue, runLapisRevenueDaily } from "@/lib/etl/lapis-revenue";
 
 export const maxDuration = 60;
 
@@ -18,8 +18,16 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await runLapisRevenue(dateFrom, dateTo, force);
-    return NextResponse.json({ status: "ok", rows_upserted: result.rowsUpserted, log: result.log.join("\n") });
+    // Run both monthly (for Zoho adjustments) and daily (for exact revenue by date range)
+    const [monthly, daily] = await Promise.all([
+      runLapisRevenue(dateFrom, dateTo, force),
+      runLapisRevenueDaily(dateFrom, dateTo),
+    ]);
+    return NextResponse.json({
+      status: "ok",
+      rows_upserted: monthly.rowsUpserted + daily.rowsUpserted,
+      log: [...monthly.log, ...daily.log].join("\n"),
+    });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
