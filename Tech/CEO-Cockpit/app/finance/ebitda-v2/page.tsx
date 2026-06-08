@@ -8,14 +8,14 @@ import { formatCurrency } from "@/lib/charts/config";
 // ── Venue config (matches the API) ───────────────────────────────────────────
 
 const VENUE_CONFIG = [
+  { slug: "intercontinental", label: "inter",     brand: "SPA"  },
+  { slug: "hugos",            label: "hugos",     brand: "SPA"  },
   { slug: "hyatt",            label: "hyatt",     brand: "SPA"  },
   { slug: "ramla",            label: "ramla",     brand: "SPA"  },
   { slug: "labranda",         label: "labranda",  brand: "SPA"  },
   { slug: "sunny_coast",      label: "odycy",     brand: "SPA"  },
   { slug: "excelsior",        label: "excelsior", brand: "SPA"  },
   { slug: "novotel",          label: "novotel",   brand: "SPA"  },
-  { slug: "intercontinental", label: "inter",     brand: "SPA"  },
-  { slug: "hugos",            label: "hugos",     brand: "SPA"  },
   { slug: "aesthetics",       label: "Aesthetics",brand: "AES"  },
   { slug: "slimming",         label: "Slimming",  brand: "SLIM" },
   { slug: "hq",               label: "HQ",        brand: "HQ"   },
