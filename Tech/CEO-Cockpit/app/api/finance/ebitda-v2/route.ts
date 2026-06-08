@@ -494,6 +494,11 @@ export async function GET(req: Request) {
       const prevMonthStr = prevMonthFrom + "-01";
       const daysInPrevMonth = totalDaysInMonth(prevMonthStr.slice(0, 7) + "-01");
 
+      // Track which account_code|venue combos have had fallback applied to prevent
+      // duplicate rules (same account_code appearing twice in ebitda_fallback_rules)
+      // from doubling costs.
+      const appliedFallbackKeys = new Set<string>();
+
       for (const rule of (fallbackRules.data ?? [])) {
         if (!rule.active) continue;
         const ruleType   = rule.rule_type as string;
@@ -508,11 +513,17 @@ export async function GET(req: Request) {
           if (!venues[venue]) continue;
           const hist = histMap.get(key)!;
 
+          // Skip if another rule with the same account_code already fired for this venue
+          const dedupKey = `${accountCode}|${venue}`;
+          if (appliedFallbackKeys.has(dedupKey)) continue;
+
           // Check if there's already real data for this account+venue in the period
           const alreadyHasData = allRawCosts.some(
             r => r.venue === venue && (r as unknown as Record<string,unknown>).account_code === accountCode
           );
           if (alreadyHasData) continue; // real data trumps fallback
+
+          appliedFallbackKeys.add(dedupKey);
 
           let fallbackValue = 0;
           if (ruleType === "ttm_spread") {

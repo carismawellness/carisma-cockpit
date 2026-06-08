@@ -373,7 +373,7 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
   const [drill, setDrill]               = useState<DrillTarget | null>(null);
 
   useEffect(() => {
-    setLoading(true); setError(null);
+    setLoading(true); setError(null); setData(null);
     const qs = new URLSearchParams({ date_from: dfStr, date_to: dtStr });
     fetch(`/api/finance/ebitda-v2?${qs}`)
       .then(r => r.json())
