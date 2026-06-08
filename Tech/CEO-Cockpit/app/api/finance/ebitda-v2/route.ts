@@ -531,6 +531,9 @@ export async function GET(req: Request) {
           const dedupKey = `${accountCode}|${venue}`;
           if (appliedFallbackKeys.has(dedupKey)) continue;
 
+          // Don't stack fallback on top of a hardwired rule — hardwired is definitive
+          if (hardwiredMap.has(`${venue}|${hist.ebitda_line}`)) continue;
+
           // Check if there's already real data for this account+venue in the period
           const alreadyHasData = allRawCosts.some(
             r => r.venue === venue && (r as unknown as Record<string,unknown>).account_code === accountCode
