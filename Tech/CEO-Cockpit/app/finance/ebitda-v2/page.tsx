@@ -67,14 +67,27 @@ type DrillTxn     = {
 };
 type DrillRole    = { role: string; amount: number; share: number };
 type DrillChannel = { channel: string; amount: number; share: number };
+type FallbackBreakdownItem = {
+  account_code:  string;
+  account_name:  string;
+  rule_type:     string;
+  ttm_total:     number;
+  ttm_months:    number;
+  annualized:    number;
+  monthly_avg:   number;
+  days_in_period: number;
+  value:         number;
+  formula:       string;
+};
 type DrillData = {
-  is_fallback:   boolean;
-  fallback_note?: string;
-  total:         number;
-  contacts:      DrillContact[];
-  transactions:  DrillTxn[];
-  wage_roles:    DrillRole[];
-  ad_channels:   DrillChannel[];
+  is_fallback:        boolean;
+  fallback_note?:     string;
+  fallback_breakdown?: FallbackBreakdownItem[];
+  total:              number;
+  contacts:           DrillContact[];
+  transactions:       DrillTxn[];
+  wage_roles:         DrillRole[];
+  ad_channels:        DrillChannel[];
 };
 
 type DrillTarget = {
@@ -204,10 +217,66 @@ function DrillDialog({
           {loading && <p className="text-muted-foreground text-sm">Loading…</p>}
           {error   && <p className="text-destructive text-sm">{error}</p>}
 
-          {data?.is_fallback && (
+          {/* Hardwired rule — no employee breakdown possible */}
+          {data?.is_fallback && data.fallback_note && !data.fallback_breakdown && (
             <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800">
               <p className="font-medium mb-1">No breakdown available</p>
               <p>{data.fallback_note}</p>
+            </div>
+          )}
+
+          {/* Fallback estimate — show calculation basis */}
+          {data?.is_fallback && (data.fallback_breakdown?.length ?? 0) > 0 && (
+            <div>
+              <p className="text-xs text-muted-foreground mb-3">
+                Estimated total:{" "}
+                <span className="font-semibold text-foreground">{formatCurrency(data.total)}</span>
+                <span className="ml-2">{dateFrom} – {dateTo} ({data.fallback_breakdown![0].days_in_period} days)</span>
+              </p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+                Calculation Basis
+              </p>
+              <div className="rounded-lg border overflow-hidden text-xs">
+                <table className="w-full">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium">Account</th>
+                      <th className="text-left px-3 py-2 font-medium">Method</th>
+                      <th className="text-right px-3 py-2 font-medium">TTM Total</th>
+                      <th className="text-right px-3 py-2 font-medium">Mo. Avg</th>
+                      <th className="text-right px-3 py-2 font-medium text-foreground">Estimated</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.fallback_breakdown!.map(row => (
+                      <tr key={row.account_code} className="border-t">
+                        <td className="px-3 py-2">
+                          <span className="font-medium">{row.account_name}</span>
+                          <span className="ml-1.5 text-muted-foreground">{row.account_code}</span>
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground capitalize">
+                          {row.rule_type.replace(/_/g, " ")}
+                          {row.rule_type === "ttm_spread" && (
+                            <span className="ml-1">({row.ttm_months}mo)</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(row.ttm_total)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{formatCurrency(row.monthly_avg)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-semibold">{formatCurrency(row.value)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="border-t bg-muted/30">
+                    <tr>
+                      <td colSpan={4} className="px-3 py-2 font-medium">Total estimate</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold">{formatCurrency(data.total)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <p className="text-xs text-muted-foreground mt-3">
+                Formula: TTM total ÷ months × 12 = annualised → × {data.fallback_breakdown![0].days_in_period}/365 days = period estimate
+              </p>
             </div>
           )}
 

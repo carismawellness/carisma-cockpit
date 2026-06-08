@@ -273,6 +273,137 @@ export async function GET(req: Request) {
   const suppTotal = suppRows.reduce((s, r) => s + r.amount, 0);
   const total = txnRows.reduce((s, r) => s + Number(r.amount ?? 0), 0) + suppTotal;
 
+  // ── Fallback breakdown (when no actual transactions found) ────────────────
+  // Recomputes the TTM/prev-month estimate for this venue+line so the drill
+  // can show exactly how the figure was derived.
+  if (total === 0 && ebitdaLine !== "revenue") {
+    function shiftMonthStr(d: string, n: number): string {
+      let y = parseInt(d.slice(0, 4), 10), m = parseInt(d.slice(5, 7), 10);
+      m += n;
+      while (m > 12) { m -= 12; y++; }
+      while (m < 1)  { m += 12; y--; }
+      return `${y}-${String(m).padStart(2, "0")}-${d.slice(8, 10)}`;
+    }
+    function parseLocal(s: string) { const [y, mo, d2] = s.split("-").map(Number); return new Date(y, mo - 1, d2); }
+    function daysBetweenStr(a: string, b: string) { return Math.round((parseLocal(b).getTime() - parseLocal(a).getTime()) / 86_400_000) + 1; }
+
+    const dip = daysBetweenStr(dateFrom!, dateTo!);
+    const ttmFrom = shiftMonthStr(dateFrom!, -12);
+    const prevFrom = shiftMonthStr(dateFrom!, -1);
+    const prevY = parseInt(prevFrom.slice(0, 4), 10), prevM = parseInt(prevFrom.slice(5, 7), 10);
+    const daysInPrevMonth = new Date(prevY, prevM, 0).getDate();
+
+    const { data: fbRules } = await supabase
+      .from("ebitda_fallback_rules")
+      .select("account_code, account_name, rule_type, params, active, zoho_org");
+    const activeRules = ((fbRules ?? []) as Array<Record<string, unknown>>).filter(r => r.active);
+
+    if (activeRules.length > 0) {
+      const activeCodes = activeRules.map(r => r.account_code as string);
+      const PAGE = 200;
+      type HR = { account_code: string; date: string; amount: number };
+
+      // TTM history for this venue + line
+      const histAll: HR[] = [];
+      for (let off = 0; off < 500_000; off += PAGE) {
+        const { data: pg } = await supabase.from("transactions_raw")
+          .select("account_code, date, amount")
+          .eq("venue", venue!).eq("ebitda_line", ebitdaLine!)
+          .in("account_code", activeCodes)
+          .gte("date", ttmFrom).lt("date", dateFrom!)
+          .order("date").order("account_code")
+          .range(off, off + PAGE - 1);
+        if (!pg || pg.length === 0) break;
+        histAll.push(...(pg as HR[]));
+      }
+
+      const codeMap = new Map<string, { ttm: number; months: Set<string> }>();
+      for (const r of histAll) {
+        const ex = codeMap.get(r.account_code) ?? { ttm: 0, months: new Set<string>() };
+        ex.ttm += Number(r.amount ?? 0);
+        ex.months.add(r.date.slice(0, 7));
+        codeMap.set(r.account_code, ex);
+      }
+
+      // Previous month for previous_month rules
+      const prevAll: HR[] = [];
+      if (activeRules.some(r => r.rule_type === "previous_month")) {
+        for (let off = 0; off < 500_000; off += PAGE) {
+          const { data: pg } = await supabase.from("transactions_raw")
+            .select("account_code, date, amount")
+            .eq("venue", venue!).eq("ebitda_line", ebitdaLine!)
+            .in("account_code", activeCodes)
+            .gte("date", prevFrom).lt("date", dateFrom!)
+            .order("date")
+            .range(off, off + PAGE - 1);
+          if (!pg || pg.length === 0) break;
+          prevAll.push(...(pg as HR[]));
+        }
+      }
+      const prevMap = new Map<string, number>();
+      for (const r of prevAll) prevMap.set(r.account_code, (prevMap.get(r.account_code) ?? 0) + Number(r.amount ?? 0));
+
+      // Build per-account breakdown
+      type BDRow = {
+        account_code: string; account_name: string; rule_type: string;
+        ttm_total: number; ttm_months: number; annualized: number;
+        monthly_avg: number; days_in_period: number; value: number; formula: string;
+      };
+      const breakdown: BDRow[] = [];
+      let fbTotal = 0;
+      const applied = new Set<string>();
+
+      for (const rule of activeRules) {
+        const code = rule.account_code as string;
+        if (applied.has(code)) continue;
+        const hist = codeMap.get(code);
+        if (!hist || hist.ttm === 0) continue;
+        applied.add(code);
+
+        const actualMonths = Math.max(hist.months.size, 1);
+        const annualized = (hist.ttm / actualMonths) * 12;
+        const ruleType = rule.rule_type as string;
+        let value = 0, formula = "";
+
+        if (ruleType === "ttm_spread") {
+          value = annualized * (dip / 365);
+          formula = `€${hist.ttm.toFixed(0)} ÷ ${actualMonths}mo × 12 = €${annualized.toFixed(0)}/yr → × ${dip}/365 = €${value.toFixed(0)}`;
+        } else if (ruleType === "previous_month") {
+          const prev = prevMap.get(code) ?? 0;
+          value = prev * (dip / daysInPrevMonth);
+          formula = `Prev month €${prev.toFixed(0)} × ${dip}/${daysInPrevMonth} days = €${value.toFixed(0)}`;
+        } else if (ruleType === "manual_annual") {
+          const annual = ((rule.params ?? {}) as Record<string, number>).annual_amount ?? 0;
+          value = annual * (dip / 365);
+          formula = `Annual €${annual.toFixed(0)} × ${dip}/365 = €${value.toFixed(0)}`;
+        }
+        if (value <= 0) continue;
+        fbTotal += value;
+        breakdown.push({
+          account_code: code,
+          account_name: (rule.account_name as string) || code,
+          rule_type: ruleType,
+          ttm_total: +hist.ttm.toFixed(2),
+          ttm_months: actualMonths,
+          annualized: +annualized.toFixed(2),
+          monthly_avg: +(annualized / 12).toFixed(2),
+          days_in_period: dip,
+          value: +value.toFixed(2),
+          formula,
+        });
+      }
+
+      if (breakdown.length > 0) {
+        return NextResponse.json({
+          is_fallback: true,
+          total: +fbTotal.toFixed(2),
+          fallback_breakdown: breakdown,
+          contacts: [], transactions: [], wage_roles: [], ad_channels: [],
+        });
+      }
+    }
+  }
+
   // ── Contact breakdown ─────────────────────────────────────────────────────
   type ContactAcc = { zoho: number; supplement: number; bases: Set<string> };
   const contactMap = new Map<string, ContactAcc>();
