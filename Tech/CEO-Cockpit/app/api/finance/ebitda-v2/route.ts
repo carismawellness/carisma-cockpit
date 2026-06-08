@@ -24,7 +24,7 @@ export const VENUE_CONFIG = [
   { slug: "hyatt",            label: "hyatt",     brand: "SPA" },
   { slug: "ramla",            label: "ramla",     brand: "SPA" },
   { slug: "labranda",         label: "labranda",  brand: "SPA" },
-  { slug: "sunny_coast",      label: "odycy",     brand: "SPA" },
+  { slug: "sunny_coast",      label: "Sunny Coast", brand: "SPA" },
   { slug: "excelsior",        label: "excelsior", brand: "SPA" },
   { slug: "novotel",          label: "novotel",   brand: "SPA" },
   { slug: "aesthetics",       label: "Aesthetics",brand: "AES" },
