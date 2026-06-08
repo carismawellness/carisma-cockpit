@@ -67,9 +67,24 @@ function parseCSVRow(line: string): string[] {
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
+// Month name → 0-indexed number for explicit "D Month YYYY" parsing
+const MONTH_NAMES: Record<string, number> = {
+  january:0,february:1,march:2,april:3,may:4,june:5,
+  july:6,august:7,september:8,october:9,november:10,december:11,
+  jan:0,feb:1,mar:2,apr:3,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11,
+};
+
 function parseLapisDate(raw: string): Date | null {
   raw = raw.trim();
   if (!raw) return null;
+
+  // "4 June 2026" / "04 Jun 2026" — product sheet format
+  const dmy = raw.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/);
+  if (dmy) {
+    const mo = MONTH_NAMES[dmy[2].toLowerCase()];
+    if (mo !== undefined) return new Date(+dmy[3], mo, +dmy[1]);
+  }
+
   for (const fmt of [
     (s: string) => { const [d, m, y] = s.split("/"); return new Date(+y, +m - 1, +d); },
     (s: string) => { const [d, m, y] = s.split("/"); return new Date(2000 + +y, +m - 1, +d); },

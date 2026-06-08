@@ -77,20 +77,38 @@ BRAND_MAP: dict[str, str] = {
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def fetch_lapis_csv(gid: str) -> list[dict]:
-    """Fetch a Lapis sheet tab as list-of-dicts (no auth required — sheet is public)."""
+    """Fetch a Lapis sheet tab as list-of-dicts (no auth required — sheet is public).
+
+    The Lapis sheets prefix data with a single-cell title row like
+    "Service data is from 1 Jan 2025,,,,," — skip rows with fewer than 3
+    non-empty cells to find the real header row (same logic as TypeScript ETL).
+    """
     url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={gid}"
     r = requests.get(url, timeout=30)
     r.raise_for_status()
-    reader = csv.DictReader(io.StringIO(r.text))
+    lines = r.text.splitlines()
+    # Find the first row with >= 3 non-empty cells — that's the real header
+    header_idx = 0
+    for i, line in enumerate(lines[:5]):
+        cells = next(csv.reader(io.StringIO(line)))
+        if sum(1 for c in cells if c.strip()) >= 3:
+            header_idx = i
+            break
+    reader = csv.DictReader(io.StringIO("\n".join(lines[header_idx:])))
     return list(reader)
 
 
 def parse_lapis_date(raw: str) -> date | None:
-    """Parse d/m/yyyy or d/m/yy Lapis date strings."""
+    """Parse Lapis date strings in multiple formats:
+      - d/m/yyyy  (service sheet:  "4/6/2026")
+      - d/m/yy    (two-digit year: "4/6/26")
+      - m/d/yyyy  (US fallback)
+      - d Month yyyy (product sheet: "4 June 2026")
+    """
     raw = raw.strip()
     if not raw:
         return None
-    for fmt in ("%d/%m/%Y", "%d/%m/%y", "%m/%d/%Y"):
+    for fmt in ("%d/%m/%Y", "%d/%m/%y", "%m/%d/%Y", "%d %B %Y", "%d %b %Y"):
         try:
             return datetime.strptime(raw, fmt).date()
         except ValueError:
