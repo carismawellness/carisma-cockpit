@@ -8,7 +8,7 @@ import { RefreshCw, FileSpreadsheet } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
-  const { byPerson, byService, totals, isFetching, isSyncing, syncError, triggerSync } =
+  const { byPerson, byService, byPaymentMethod, totals, isFetching, isSyncing, syncError, triggerSync } =
     useAestheticsSales(dateFrom, dateTo);
 
   const syncedRef = useRef(false);
@@ -81,11 +81,11 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
         </div>
       </Card>
 
-      {/* ── Revenue by Practitioner ───────────────────────────────────── */}
+      {/* ── Revenue by Employee ───────────────────────────────────────── */}
       <Card className="p-4 md:p-5">
         <div className="flex items-center gap-2 mb-4">
-          <h2 className="text-base font-semibold text-foreground">Revenue by Practitioner</h2>
-          <span className="text-xs text-muted-foreground">(from Note column)</span>
+          <h2 className="text-base font-semibold text-foreground">Revenue by Employee</h2>
+          <span className="text-xs text-muted-foreground">(col H — Employee)</span>
         </div>
         {byPerson.length === 0 ? (
           <p className="text-sm text-muted-foreground py-4 text-center">
@@ -96,7 +96,7 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
-                  <th className="text-left pb-2 font-medium">Practitioner</th>
+                  <th className="text-left pb-2 font-medium">Employee</th>
                   <th className="text-center pb-2 font-medium">VAT Rate</th>
                   <th className="text-right pb-2 font-medium">Transactions</th>
                   <th className="text-right pb-2 font-medium">Revenue ex-VAT</th>
@@ -125,6 +125,57 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
                   <td className="pt-2.5 text-right text-muted-foreground">{totals.tx_count}</td>
                   <td className="pt-2.5 text-right">{formatCurrency(totals.revenue_ex)}</td>
                   <td className="pt-2.5 text-right text-muted-foreground">{formatCurrency(totals.revenue_inc)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* ── Revenue by Payment Type ───────────────────────────────────── */}
+      <Card className="p-4 md:p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="text-base font-semibold text-foreground">Revenue by Payment Type</h2>
+          <span className="text-xs text-muted-foreground">(col E — Payment)</span>
+        </div>
+        {byPaymentMethod.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4 text-center">
+            {isFetching || isSyncing ? "Loading…" : "No data for selected period"}
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
+                  <th className="text-left pb-2 font-medium">Payment Method</th>
+                  <th className="text-right pb-2 font-medium">Transactions</th>
+                  <th className="text-right pb-2 font-medium">Revenue ex-VAT</th>
+                  <th className="text-left pb-2 pl-4 font-medium">Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byPaymentMethod.map((p, i) => (
+                  <tr key={p.method} className={`border-b last:border-0 ${i % 2 === 0 ? "" : "bg-muted/20"}`}>
+                    <td className="py-2.5 font-medium">{p.method}</td>
+                    <td className="py-2.5 text-right text-muted-foreground">{p.tx_count}</td>
+                    <td className="py-2.5 text-right font-medium">{formatCurrency(p.revenue_ex)}</td>
+                    <td className="py-2.5 pl-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-24 h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${p.pct}%`, backgroundColor: chartColors.aesthetics }} />
+                        </div>
+                        <span className="text-xs text-muted-foreground">{p.pct}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 font-semibold">
+                  <td className="pt-2.5">Total</td>
+                  <td className="pt-2.5 text-right text-muted-foreground">{totals.tx_count}</td>
+                  <td className="pt-2.5 text-right">{formatCurrency(totals.revenue_ex)}</td>
+                  <td />
                 </tr>
               </tfoot>
             </table>

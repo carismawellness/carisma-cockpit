@@ -104,7 +104,7 @@ export async function runAestheticsSales(
     const service    = col(row, "service / products", "service/products") || null;
     const payment    = col(row, "payment")                              || null;
     const salesStaff = col(row, "sales staf", "sales staff")           || null;
-    const notePerson = col(row, "note")                                || null;
+    const notePerson = col(row, "employee", "note")                    || null;
 
     if (!priceRaw || priceRaw === "-") continue;
     const priceInc = Math.abs(parseFloat(priceRaw.replace(/[€$,]/g, "").trim()));

@@ -378,32 +378,31 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
             ) : guestChartData.length === 0 ? (
               <p className="text-sm text-muted-foreground">No guest group data for this period.</p>
             ) : (
-              <div style={{ height: guestChartData.length * 52 + 60 }}>
+              <div className="h-[320px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={guestChartData}
-                    layout="vertical"
-                    margin={{ top: 8, right: 60, left: 8, bottom: 8 }}
+                    margin={{ top: 20, right: 12, left: 8, bottom: 32 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
-                    <XAxis type="number" tickFormatter={(v: number) => fmtShort(v)} tick={{ fontSize: 11 }} />
-                    <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={80} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-30} textAnchor="end" interval={0} />
+                    <YAxis tickFormatter={(v: number) => fmtShort(v)} tick={{ fontSize: 11 }} />
                     <Tooltip formatter={(v: unknown, name: unknown) => [fmtShort(Number(v)), String(name)]} />
                     <Legend />
                     <Bar dataKey="Hotel Guests" stackId="a" fill="#1B3A4B">
                       <LabelList
                         dataKey="hotelPct"
-                        position="insideLeft"
+                        position="inside"
                         formatter={(v: unknown) => Number(v) > 15 ? `${v}%` : ""}
                         style={{ fontSize: 10, fontWeight: 700, fill: "#fff" }}
                       />
                     </Bar>
-                    <Bar dataKey="Non-Hotel" stackId="a" fill="#96B2B2" radius={[0, 4, 4, 0]}>
+                    <Bar dataKey="Non-Hotel" stackId="a" fill="#96B2B2" radius={[4, 4, 0, 0]}>
                       <LabelList
                         dataKey="Non-Hotel"
-                        position="right"
+                        position="top"
                         formatter={(v: unknown) => fmtShort(Number(v))}
-                        style={{ fontSize: 10, fontWeight: 600, fill: "#374151" }}
+                        style={{ fontSize: 9, fontWeight: 600, fill: "#374151" }}
                       />
                     </Bar>
                   </BarChart>
@@ -425,16 +424,15 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
             ) : paymentByLocationData.length === 0 ? (
               <p className="text-sm text-muted-foreground">No payment type data for this period.</p>
             ) : (
-              <div style={{ height: paymentByLocationData.length * 52 + 60 }}>
+              <div className="h-[320px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={paymentByLocationData}
-                    layout="vertical"
-                    margin={{ top: 8, right: 16, left: 8, bottom: 8 }}
+                    margin={{ top: 8, right: 12, left: 8, bottom: 32 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
-                    <XAxis type="number" tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11 }} domain={[0, 100]} />
-                    <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={80} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-30} textAnchor="end" interval={0} />
+                    <YAxis tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11 }} domain={[0, 100]} />
                     <Tooltip formatter={(v: unknown, name: unknown) => [`${v}%`, String(name)]} />
                     <Legend />
                     {allPaymentTypes.map((type, idx) => (
@@ -443,8 +441,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                         dataKey={type}
                         stackId="a"
                         fill={PAYMENT_COLORS[type] ?? "#aaa"}
-                        barSize={28}
-                        radius={idx === allPaymentTypes.length - 1 ? [0, 4, 4, 0] : undefined}
+                        radius={idx === allPaymentTypes.length - 1 ? [4, 4, 0, 0] : undefined}
                       />
                     ))}
                   </BarChart>
@@ -469,31 +466,35 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
           ) : discountChartData.length === 0 ? (
             <p className="text-sm text-muted-foreground">No discount data for this period.</p>
           ) : (
-            <div style={{ height: discountChartData.length * 48 + 60 }}>
+            <div className="h-[280px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={discountChartData}
-                  layout="vertical"
-                  margin={{ top: 8, right: 60, left: 8, bottom: 8 }}
+                  margin={{ top: 20, right: 12, left: 8, bottom: 32 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" vertical={false} />
                   <XAxis
-                    type="number"
+                    dataKey="name"
+                    tick={{ fontSize: 11 }}
+                    angle={-30}
+                    textAnchor="end"
+                    interval={0}
+                  />
+                  <YAxis
                     domain={[0, 30]}
                     tickFormatter={(v: number) => `${v}%`}
                     tick={{ fontSize: 11 }}
                   />
-                  <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={80} />
                   <Tooltip
                     formatter={(v: unknown) => [`${Number(v).toFixed(1)}%`, "Discount %"]}
                   />
-                  <Bar dataKey="Discount %" radius={[0, 4, 4, 0]}>
+                  <Bar dataKey="Discount %" radius={[4, 4, 0, 0]}>
                     {discountChartData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                     <LabelList
                       dataKey="Discount %"
-                      position="right"
+                      position="top"
                       formatter={(v: unknown) => `${Number(v).toFixed(1)}%`}
                       style={{ fontSize: 10, fontWeight: 600, fill: "#374151" }}
                     />

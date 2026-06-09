@@ -42,10 +42,17 @@ export const departments: Department[] = [
       { slug: "overview", label: "Overview", path: "/sales", icon: DollarSign },
       { slug: "spa", label: "Spa", path: "/sales/spa", icon: Sparkles },
       { slug: "aesthetics", label: "Aesthetics", path: "/sales/aesthetics", icon: Heart },
-      { slug: "aesthetics-deepa", label: "Aesthetics - Deepa", path: "/sales/aesthetics-deepa", icon: Heart },
       { slug: "slimming", label: "Slimming", path: "/sales/slimming", icon: Activity },
-      { slug: "slimming-deepa", label: "Slimming - Deepa", path: "/sales/slimming-deepa", icon: Activity },
-      { slug: "crm", label: "CRM", path: "/crm", icon: Headphones },
+    ],
+  },
+  {
+    slug: "crm",
+    label: "CRM",
+    icon: Headphones,
+    path: "/crm",
+    children: [
+      { slug: "crm-overview",    label: "Overview",        path: "/crm",            icon: Headphones },
+      { slug: "crm-individual",  label: "Individual KPIs", path: "/crm/individual", icon: Users },
     ],
   },
   {

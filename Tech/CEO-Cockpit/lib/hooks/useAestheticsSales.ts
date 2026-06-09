@@ -39,6 +39,13 @@ export interface ServiceBreakdown {
   pct:        number;
 }
 
+export interface PaymentMethodBreakdown {
+  method:     string;
+  tx_count:   number;
+  revenue_ex: number;
+  pct:        number;
+}
+
 export interface AestheticsSalesTotals {
   revenue_ex:    number;
   revenue_inc:   number;
@@ -48,16 +55,17 @@ export interface AestheticsSalesTotals {
 }
 
 export interface UseAestheticsSalesResult {
-  rows:          AestheticsSaleRow[];
-  byPerson:      PersonBreakdown[];
-  byService:     ServiceBreakdown[];
-  totals:        AestheticsSalesTotals;
-  isFetching:    boolean;
-  isSyncing:     boolean;
-  syncError:     string | null;
-  syncLog:       string[] | null;
-  missingMonths: string[];
-  triggerSync:   () => void;
+  rows:             AestheticsSaleRow[];
+  byPerson:         PersonBreakdown[];
+  byService:        ServiceBreakdown[];
+  byPaymentMethod:  PaymentMethodBreakdown[];
+  totals:           AestheticsSalesTotals;
+  isFetching:       boolean;
+  isSyncing:        boolean;
+  syncError:        string | null;
+  syncLog:          string[] | null;
+  missingMonths:    string[];
+  triggerSync:      () => void;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -321,6 +329,29 @@ export function useAestheticsSales(dateFrom: Date, dateTo: Date): UseAestheticsS
       .sort((a, b) => b.revenue_ex - a.revenue_ex);
   }, [rows]);
 
+  const byPaymentMethod = useMemo<PaymentMethodBreakdown[]>(() => {
+    const map      = new Map<string, { tx_count: number; revenue_ex: number }>();
+    const labelMap = new Map<string, string>();
+    for (const r of rows) {
+      const raw   = r.payment_method?.trim() || "(Unspecified)";
+      const key   = raw.toLowerCase();
+      if (!labelMap.has(key)) labelMap.set(key, raw);
+      if (!map.has(key)) map.set(key, { tx_count: 0, revenue_ex: 0 });
+      const agg = map.get(key)!;
+      agg.tx_count++;
+      agg.revenue_ex += r.price_ex_vat ?? 0;
+    }
+    const totalEx = Array.from(map.values()).reduce((s, v) => s + v.revenue_ex, 0) || 1;
+    return Array.from(map.entries())
+      .map(([key, v]) => ({
+        method:     labelMap.get(key) ?? key,
+        tx_count:   v.tx_count,
+        revenue_ex: Math.round(v.revenue_ex),
+        pct:        Math.round((v.revenue_ex / totalEx) * 1000) / 10,
+      }))
+      .sort((a, b) => b.revenue_ex - a.revenue_ex);
+  }, [rows]);
+
   const totals = useMemo<AestheticsSalesTotals>(() => {
     const ex  = rows.reduce((s, r) => s + (r.price_ex_vat  ?? 0), 0);
     const inc = rows.reduce((s, r) => s + (r.price_inc_vat ?? 0), 0);
@@ -341,6 +372,7 @@ export function useAestheticsSales(dateFrom: Date, dateTo: Date): UseAestheticsS
     rows,
     byPerson,
     byService,
+    byPaymentMethod,
     totals,
     isFetching,
     isSyncing:     syncMutation.isPending,
