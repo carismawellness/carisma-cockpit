@@ -168,7 +168,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
       .map((loc) => {
         const gross = loc.services + loc.product_total;
         return {
-          name:         loc.name.replace("InterContinental", "IC").replace("Sunny Coast", "SC"),
+          name:         loc.name,
           "Services %": gross > 0 ? Math.round((loc.services      / gross) * 100) : 0,
           "Products %": gross > 0 ? Math.round((loc.product_total / gross) * 100) : 0,
         };
@@ -206,7 +206,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
   /* ── Guest group chart data ──────────────────────────────────── */
   const guestChartData = useMemo(() =>
     analytics.guestGroups.map((g) => ({
-      name: g.name.replace("InterContinental", "IC").replace("Sunny Coast", "SC"),
+      name: g.name,
       "Hotel Guests": g.hotel_revenue,
       "Non-Hotel":    g.non_hotel_revenue,
       hotelPct: (g.hotel_revenue + g.non_hotel_revenue) > 0
@@ -221,7 +221,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
     analytics.paymentByLocation.map((loc) => {
       const total = Object.values(loc.payment_types).reduce((s, v) => s + v, 0);
       const result: Record<string, unknown> = {
-        name: loc.name.replace("InterContinental", "IC").replace("Sunny Coast", "SC"),
+        name: loc.name,
       };
       for (const [type, rev] of Object.entries(loc.payment_types)) {
         result[type] = total > 0 ? Math.round((rev / total) * 100) : 0;
@@ -248,7 +248,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
     analytics.discounts
       .filter((d) => d.total_txn_count > 0)
       .map((d) => ({
-        name:           d.name.replace("InterContinental", "IC").replace("Sunny Coast", "SC"),
+        name:           d.name,
         color:          d.color,
         "Discount %":   d.discount_pct,
         discount_amt:   Math.round(d.total_discount * 1.18),
@@ -356,7 +356,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                   <LabelList
                     dataKey="Products %"
                     position="inside"
-                    formatter={(v: unknown) => Number(v) > 10 ? `${v}%` : ""}
+                    formatter={(v: unknown) => Number(v) > 0 ? `${v}%` : ""}
                     style={{ fontSize: 10, fontWeight: 700, fill: "#fff" }}
                   />
                 </Bar>

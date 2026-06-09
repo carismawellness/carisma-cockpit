@@ -23,7 +23,7 @@ function parseCSVRow(line: string): string[] {
 async function fetchLapisCsv(): Promise<Record<string, string>[]> {
   const url = lapisCsvUrl(LAPIS_TABS.SLM_SALES.gid);
   const resp = await fetch(url, { redirect: "follow" });
-  if (!resp.ok) throw new Error(`Lapis SLM_SALES CSV fetch failed: ${resp.status}`);
+  if (!resp.ok) throw new Error(`Corporate Datasheet fetch failed: ${resp.status}`);
   const text = await resp.text();
   const lines = text.split("\n").filter(l => l.trim());
   if (lines.length < 2) return [];
@@ -102,7 +102,7 @@ export async function runSlimmingSales(
     const dateRaw   = col(row, "date");
     const priceRaw  = col(row, "paid");
     const client    = col(row, "client")                                               || null;
-    const therapist = col(row, "sale of", "therapist")                                 || null;
+    const therapist = col(row, "sale of", "therapist", "employee")                     || null;
     const descr     = col(row, "weight loss", "treatments", "medical consultation")    || null;
 
     // Skip totals/commission rows (no client + no programme)

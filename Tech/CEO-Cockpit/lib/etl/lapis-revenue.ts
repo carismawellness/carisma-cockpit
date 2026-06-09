@@ -1,10 +1,10 @@
 import { ZohoBooksClient } from "./zoho-client";
 import { upsert, select } from "./supabase-etl";
 import { ETLLogger } from "./etl-logger";
+import { LAPIS_SHEET_ID, LAPIS_TABS } from "../constants/lapis-sheets";
 
-const SHEET_ID     = "195RvbNuZd-oNL-rziKC3Wz6ndy0cDA_a";
-const SERVICE_GID  = "1979027354";
-const PRODUCT_GID  = "1979027354"; // retail tab removed — product cols will be 0
+const SERVICE_GID  = LAPIS_TABS.SPA_SERVICES.gid;
+const PRODUCT_GID  = LAPIS_TABS.SPA_RETAIL.gid;
 const VAT_RATE     = 0.18;
 
 const LAPIS_SPA_MAP: Record<string, number> = {
@@ -31,9 +31,9 @@ const BRAND_MAP: Record<string, string> = {
 // ── CSV fetch (public Lapis sheet) ────────────────────────────────────────────
 
 async function fetchLapisCsv(gid: string): Promise<Record<string, string>[]> {
-  const url  = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${gid}`;
+  const url  = `https://docs.google.com/spreadsheets/d/${LAPIS_SHEET_ID}/export?format=csv&gid=${gid}`;
   const resp = await fetch(url, { redirect: "follow" });
-  if (!resp.ok) throw new Error(`Lapis CSV fetch failed: ${resp.status}`);
+  if (!resp.ok) throw new Error(`Corporate Datasheet fetch failed: ${resp.status} — check sheet is shared as "Anyone with the link can view"`);
   const text  = await resp.text();
   const lines = text.split("\n").filter(l => l.trim());
   if (lines.length < 2) return [];

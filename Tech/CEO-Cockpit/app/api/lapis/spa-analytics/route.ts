@@ -21,14 +21,14 @@ const LAPIS_SPA_MAP: Record<string, number> = {
 };
 
 const SPA_LOCATION_META: Record<number, { name: string; color: string }> = {
-  1: { name: "InterContinental", color: "#1B3A4B" },
-  2: { name: "Hugos",            color: "#96B2B2" },
-  3: { name: "Hyatt",            color: "#B79E61" },
-  4: { name: "Ramla",            color: "#8EB093" },
-  5: { name: "Labranda",         color: "#E07A5F" },
-  6: { name: "Sunny Coast",      color: "#4A90D9" },
-  7: { name: "Excelsior",        color: "#7C3AED" },
-  8: { name: "Novotel",          color: "#DC2626" },
+  1: { name: "Inter",     color: "#1B3A4B" },
+  2: { name: "Hugos",     color: "#96B2B2" },
+  3: { name: "Hyatt",     color: "#B79E61" },
+  4: { name: "Ramla",     color: "#8EB093" },
+  5: { name: "Riviera",   color: "#E07A5F" },
+  6: { name: "Odycy",     color: "#4A90D9" },
+  7: { name: "Excelsior", color: "#7C3AED" },
+  8: { name: "Novotel",   color: "#DC2626" },
 };
 
 // ── CSV helpers (copied verbatim from lib/etl/lapis-revenue.ts) ───────────────
@@ -86,7 +86,7 @@ function safeFloat(val: string): number {
 async function fetchLapisCsv(gid: string): Promise<Record<string, string>[]> {
   const url  = lapisCsvUrl(gid);
   const resp = await fetch(url, { redirect: "follow" });
-  if (!resp.ok) throw new Error(`Lapis CSV fetch failed: ${resp.status}`);
+  if (!resp.ok) throw new Error(`Corporate Datasheet fetch failed: ${resp.status}`);
   const text  = await resp.text();
   const lines = text.split("\n").filter(l => l.trim());
   if (lines.length < 2) return [];
@@ -202,18 +202,18 @@ function computeAnalytics(
     const d = parseLapisDate(stripCol(row, "Service Date"));
     if (!d || d < dateFrom || d > dateTo) continue;
 
-    const locId = LAPIS_SPA_MAP[stripCol(row, "Sales Point")];
-    if (locId === undefined) continue;
-
     const unitPriceInc = safeFloat(stripCol(row, "Unit Price"));
     if (unitPriceInc <= 0) continue;
     const unitPriceEx = unitPriceInc / (1 + VAT_RATE);
 
-    // Staff service revenue
+    // Staff service revenue — accumulate for all rows regardless of Sales Point
     const soldBy = stripCol(row, "Sold By").replace(/\s+/g, " ").trim();
     if (soldBy) {
       staffServiceRev[soldBy] = (staffServiceRev[soldBy] ?? 0) + unitPriceEx;
     }
+
+    const locId = LAPIS_SPA_MAP[stripCol(row, "Sales Point")];
+    if (locId === undefined) continue;
 
     // Guest group
     const guestGroup = stripCol(row, "Guest Group");

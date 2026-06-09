@@ -6,14 +6,14 @@ import { createClient } from "@/lib/supabase/client";
 
 // ── Location display metadata (shared with useSpaEbitda) ──────────────────────
 export const SPA_LOCATION_META: Record<string, { name: string; color: string }> = {
-  1: { name: "InterContinental", color: "#1B3A4B" },
-  2: { name: "Hugos",            color: "#96B2B2" },
-  3: { name: "Hyatt",            color: "#B79E61" },
-  4: { name: "Ramla",            color: "#8EB093" },
-  5: { name: "Labranda",         color: "#E07A5F" },
-  6: { name: "Sunny Coast",      color: "#4A90D9" },
-  7: { name: "Excelsior",        color: "#7C3AED" },
-  8: { name: "Novotel",          color: "#DC2626" },
+  1: { name: "Inter",     color: "#1B3A4B" },
+  2: { name: "Hugos",     color: "#96B2B2" },
+  3: { name: "Hyatt",     color: "#B79E61" },
+  4: { name: "Ramla",     color: "#8EB093" },
+  5: { name: "Riviera",   color: "#E07A5F" },
+  6: { name: "Odycy",     color: "#4A90D9" },
+  7: { name: "Excelsior", color: "#7C3AED" },
+  8: { name: "Novotel",   color: "#DC2626" },
 };
 
 export interface SpaRevenueLocation {

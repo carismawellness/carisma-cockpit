@@ -25,7 +25,7 @@ function parseCSVRow(line: string): string[] {
 async function fetchLapisCsv(): Promise<Record<string, string>[]> {
   const url = lapisCsvUrl(LAPIS_TABS.AESTHETICS.gid);
   const resp = await fetch(url, { redirect: "follow" });
-  if (!resp.ok) throw new Error(`Lapis Aesthetics CSV fetch failed: ${resp.status}`);
+  if (!resp.ok) throw new Error(`Corporate Datasheet fetch failed: ${resp.status}`);
   const text = await resp.text();
   const lines = text.split("\n").filter(l => l.trim());
   if (lines.length < 2) return [];
@@ -102,7 +102,7 @@ export async function runAestheticsSales(
     const invoice    = col(row, "invoice")                              || null;
     const customer   = col(row, "costumer", "customer")                 || null;
     const service    = col(row, "service / products", "service/products") || null;
-    const payment    = col(row, "payment")                              || null;
+    const payment    = col(row, "payment", "payment type")              || null;
     const salesStaff = col(row, "sales staf", "sales staff")           || null;
     const notePerson = col(row, "employee", "note")                    || null;
 
