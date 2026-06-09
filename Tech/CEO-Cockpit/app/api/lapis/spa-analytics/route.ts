@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { lapisCsvUrl, LAPIS_TABS } from "@/lib/constants/lapis-sheets";
 
 export const maxDuration = 30;
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const SHEET_ID    = "195RvbNuZd-oNL-rziKC3Wz6ndy0cDA_a";
-const SERVICE_GID = "683143306";
-const PRODUCT_GID = "1271322967";
+const SERVICE_GID = LAPIS_TABS.SPA_SERVICES.gid;
+const PRODUCT_GID = LAPIS_TABS.SPA_RETAIL.gid;
 const VAT_RATE    = 0.18;
 
 const LAPIS_SPA_MAP: Record<string, number> = {
@@ -84,7 +84,7 @@ function safeFloat(val: string): number {
 // ── CSV fetch ─────────────────────────────────────────────────────────────────
 
 async function fetchLapisCsv(gid: string): Promise<Record<string, string>[]> {
-  const url  = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${gid}`;
+  const url  = lapisCsvUrl(gid);
   const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) throw new Error(`Lapis CSV fetch failed: ${resp.status}`);
   const text  = await resp.text();
