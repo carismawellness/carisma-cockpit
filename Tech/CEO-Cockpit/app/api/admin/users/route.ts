@@ -4,7 +4,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const maxDuration = 60;
 
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? "contact@mertgulen.com")
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? "contact@mertgulen.com,admin@cockpit.local,123@cockpit.local,mert@carismaspa.com")
   .split(",")
   .map((e) => e.trim().toLowerCase());
 
