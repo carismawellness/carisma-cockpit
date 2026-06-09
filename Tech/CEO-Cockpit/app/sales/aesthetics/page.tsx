@@ -7,7 +7,7 @@ import { chartColors, formatCurrency } from "@/lib/charts/config";
 import { RefreshCw, FileSpreadsheet } from "lucide-react";
 import { useEffect, useRef } from "react";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList,
 } from "recharts";
 
 function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
@@ -128,7 +128,14 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
                 ]}
                 contentStyle={{ fontSize: 12 }}
               />
-              <Bar dataKey="revenue_ex" fill={chartColors.aesthetics} radius={[0, 4, 4, 0]} />
+              <Bar dataKey="revenue_ex" fill={chartColors.aesthetics} radius={[0, 4, 4, 0]}>
+                <LabelList
+                  dataKey="revenue_ex"
+                  position="right"
+                  formatter={(v: number) => `€${(v / 1000).toFixed(1)}k`}
+                  style={{ fontSize: 11, fill: "#64748b", fontWeight: 500 }}
+                />
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         )}

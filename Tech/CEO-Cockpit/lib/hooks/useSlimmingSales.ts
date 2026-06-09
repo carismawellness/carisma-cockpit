@@ -226,13 +226,30 @@ export function useSlimmingSales(dateFrom: Date, dateTo: Date): UseSlimmingSales
 
   // ── 3. By Staff ──────────────────────────────────────────────────────────────
   const byStaff = useMemo<StaffBreakdown[]>(() => {
-    const map = new Map<string, StaffBreakdown>();
+    function lev(a: string, b: string): number {
+      const m = a.length, n = b.length;
+      const row = Array.from({length: n + 1}, (_, i) => i);
+      for (let i = 1; i <= m; i++) {
+        let prev = i;
+        for (let j = 1; j <= n; j++) {
+          const tmp = a[i-1] === b[j-1] ? row[j-1] : 1 + Math.min(prev, row[j], row[j-1]);
+          row[j-1] = prev;
+          prev = tmp;
+        }
+        row[n] = prev;
+      }
+      return row[n];
+    }
+
+    const map      = new Map<string, StaffBreakdown>();
+    const labelMap = new Map<string, string>();
     for (const r of rows) {
       const raw   = r.sales_staff?.trim() ?? "(Unassigned)";
       const key   = raw.toLowerCase();
       const label = raw === "(Unassigned)" ? raw : raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
-      const ex    = r.price_ex_vat  ?? 0;
-      const inc   = r.full_price    ?? 0;
+      const ex    = r.price_ex_vat ?? 0;
+      const inc   = r.full_price   ?? 0;
+      if (!labelMap.has(key)) labelMap.set(key, label);
       if (!map.has(key)) {
         map.set(key, { staff: label, tx_count: 0, revenue_ex: 0, revenue_inc: 0 });
       }
@@ -241,8 +258,39 @@ export function useSlimmingSales(dateFrom: Date, dateTo: Date): UseSlimmingSales
       agg.revenue_ex  += ex;
       agg.revenue_inc += inc;
     }
-    return Array.from(map.values())
-      .map(s => ({ ...s, revenue_ex: Math.round(s.revenue_ex), revenue_inc: Math.round(s.revenue_inc) }))
+
+    // Fuzzy post-merge: collapse near-identical names (e.g. "ivana" vs "ivava")
+    const keys = [...map.keys()];
+    for (let i = 0; i < keys.length; i++) {
+      if (!map.has(keys[i])) continue;
+      if (keys[i] === "(unassigned)") continue;
+      for (let j = i + 1; j < keys.length; j++) {
+        if (!map.has(keys[j])) continue;
+        if (keys[j] === "(unassigned)") continue;
+        const a = keys[i], b = keys[j];
+        const minLen = Math.min(a.length, b.length);
+        if (minLen < 5) continue;
+        if (Math.abs(a.length - b.length) > 3) continue;
+        const threshold = Math.min(2, Math.max(1, Math.floor(minLen * 0.2)));
+        if (lev(a, b) <= threshold) {
+          const [keep, drop] = a.length >= b.length ? [a, b] : [b, a];
+          const kv = map.get(keep)!, dv = map.get(drop)!;
+          kv.tx_count   += dv.tx_count;
+          kv.revenue_ex  += dv.revenue_ex;
+          kv.revenue_inc += dv.revenue_inc;
+          map.delete(drop);
+          labelMap.delete(drop);
+        }
+      }
+    }
+
+    return Array.from(map.entries())
+      .map(([key, s]) => ({
+        ...s,
+        staff:       labelMap.get(key) ?? s.staff,
+        revenue_ex:  Math.round(s.revenue_ex),
+        revenue_inc: Math.round(s.revenue_inc),
+      }))
       .sort((a, b) => b.revenue_ex - a.revenue_ex);
   }, [rows]);
 
