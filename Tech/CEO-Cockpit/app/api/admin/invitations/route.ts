@@ -44,17 +44,18 @@ export async function GET() {
   return NextResponse.json(enriched);
 }
 
-/** POST /api/admin/invitations — invite an email and seed default permissions */
+/** POST /api/admin/invitations — invite an email and seed permissions */
 export async function POST(req: NextRequest) {
   const admin = await requireAdmin();
   if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
 
-  const { email } = await req.json();
+  const { email, permissions } = await req.json();
   if (!email || typeof email !== "string") {
     return NextResponse.json({ error: "Invalid email" }, { status: 400 });
   }
 
   const normalised = email.trim().toLowerCase();
+  const granted = new Set<string>(Array.isArray(permissions) ? permissions : []);
   const db = getAdminClient();
 
   const { error: invErr } = await db
@@ -63,16 +64,16 @@ export async function POST(req: NextRequest) {
 
   if (invErr) return NextResponse.json({ error: invErr.message }, { status: 500 });
 
-  // Seed permission rows (all false by default)
+  // Seed all permission rows — true for selected, false for the rest
   const rows = DASHBOARD_KEYS.map((key) => ({
     email: normalised,
     dashboard_key: key,
-    has_access: false,
+    has_access: granted.has(key),
   }));
 
   const { error: permErr } = await db
     .from("user_dashboard_permissions")
-    .upsert(rows, { onConflict: "email,dashboard_key", ignoreDuplicates: true });
+    .upsert(rows, { onConflict: "email,dashboard_key" });
 
   if (permErr) return NextResponse.json({ error: permErr.message }, { status: 500 });
 
