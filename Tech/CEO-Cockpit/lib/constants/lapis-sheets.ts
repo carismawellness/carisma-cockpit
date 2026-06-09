@@ -17,11 +17,11 @@
 export const LAPIS_SHEET_ID = "195RvbNuZd-oNL-rziKC3Wz6ndy0cDA_a";
 
 export const LAPIS_TABS = {
-  /** Spa service transactions from Lapis POS */
-  SPA_SERVICES: { gid: "683143306", name: "Service - Spa" },
+  /** Spa service transactions (consolidated tab) */
+  SPA_SERVICES: { gid: "1979027354", name: "Spa Services" },
 
-  /** Spa retail / product sales from Lapis POS */
-  SPA_RETAIL: { gid: "1271322967", name: "Retail - Spa" },
+  /** Spa retail / product sales — tab removed; kept for reference */
+  SPA_RETAIL: { gid: "1979027354", name: "Spa Services" },
 
   /** Aesthetics clinic service & product sales */
   AESTHETICS: { gid: "1770739089", name: "Aesthetics" },

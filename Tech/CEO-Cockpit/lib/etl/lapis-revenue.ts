@@ -3,8 +3,8 @@ import { upsert, select } from "./supabase-etl";
 import { ETLLogger } from "./etl-logger";
 
 const SHEET_ID     = "195RvbNuZd-oNL-rziKC3Wz6ndy0cDA_a";
-const SERVICE_GID  = "683143306";
-const PRODUCT_GID  = "1271322967";
+const SERVICE_GID  = "1979027354";
+const PRODUCT_GID  = "1979027354"; // retail tab removed — product cols will be 0
 const VAT_RATE     = 0.18;
 
 const LAPIS_SPA_MAP: Record<string, number> = {
@@ -141,7 +141,8 @@ async function fetchLapisProducts(
   dateFrom: Date,
   dateTo: Date,
 ): Promise<Record<number, Record<string, Record<string, number>>>> {
-  const rows   = await fetchLapisCsv(PRODUCT_GID);
+  let rows: Record<string, string>[];
+  try { rows = await fetchLapisCsv(PRODUCT_GID); } catch { return {}; }
   const totals: Record<number, Record<string, Record<string, number>>> = {};
 
   for (const row of rows) {
@@ -186,7 +187,8 @@ async function fetchLapisServicesByDay(dateFrom: Date, dateTo: Date): Promise<Da
 }
 
 async function fetchLapisProductsByDay(dateFrom: Date, dateTo: Date): Promise<DailyProductTotals> {
-  const rows   = await fetchLapisCsv(PRODUCT_GID);
+  let rows: Record<string, string>[];
+  try { rows = await fetchLapisCsv(PRODUCT_GID); } catch { return {}; }
   const totals: DailyProductTotals = {};
   for (const row of rows) {
     const d = parseLapisDate(stripCol(row, "Date"));

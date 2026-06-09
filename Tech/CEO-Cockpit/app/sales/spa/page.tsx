@@ -14,7 +14,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LabelList, Legend, Cell,
 } from "recharts";
-import { RefreshCw, AlertCircle, TrendingDown, Database, FileSpreadsheet } from "lucide-react";
+import { RefreshCw, AlertCircle, TrendingDown, FileSpreadsheet } from "lucide-react";
 
 const VAT_RATE = 0.18;
 
@@ -151,7 +151,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
 
   const subtitle = useMemo(() => {
     const range = formatDateRangeLabel(dateFrom, dateTo);
-    return `${range} · Source: Lapis + Zoho Books`;
+    return `${range} · Source: Corporate Datasheet + Zoho Books`;
   }, [dateFrom, dateTo]);
 
   /* ── Inc-VAT totals ──────────────────────────────────────────── */
@@ -265,8 +265,8 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
           <p className="text-sm text-muted-foreground">{subtitle}</p>
           <div className="flex flex-wrap gap-2 mt-1">
             <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600">
-              <Database className="h-3 w-3" />
-              Lapis POS — Services &amp; Products
+              <FileSpreadsheet className="h-3 w-3" />
+              Corporate Datasheet — Spa Services
             </span>
             <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600">
               <FileSpreadsheet className="h-3 w-3" />
