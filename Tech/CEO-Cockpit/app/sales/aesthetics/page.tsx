@@ -146,7 +146,7 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
                 <LabelList
                   dataKey="revenue_ex"
                   position="right"
-                  formatter={(v: number) => v >= 1000 ? `€${(v / 1000).toFixed(1)}K` : `€${v}`}
+                  formatter={(v: unknown) => { const n = Number(v); return n >= 1000 ? `€${(n / 1000).toFixed(1)}K` : `€${n}`; }}
                   style={{ fontSize: 11, fill: "#64748b", fontWeight: 600 }}
                 />
               </Bar>
