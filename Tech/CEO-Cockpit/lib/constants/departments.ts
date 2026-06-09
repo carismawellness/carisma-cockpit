@@ -65,10 +65,10 @@ export const departments: Department[] = [
     slug: "finance",
     label: "EBITDA",
     icon: TrendingUp,
-    path: "/finance/ebitda",
+    path: "/finance/ebitda-v2",
     children: [
-      { slug: "ebitda-v1",  label: "EBITDA (V1)",  path: "/finance/ebitda",    icon: TrendingUp },
-      { slug: "ebitda-v2",  label: "EBITDA V2",    path: "/finance/ebitda-v2", icon: TrendingUp },
+      { slug: "ebitda-point-in-time",  label: "Point in Time",  path: "/finance/ebitda-v2",            icon: TrendingUp },
+      { slug: "ebitda-longitudinal",   label: "Longitudinal",   path: "/finance/ebitda-longitudinal",  icon: TrendingUp },
     ],
   },
   {
