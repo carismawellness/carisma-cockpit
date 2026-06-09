@@ -65,20 +65,29 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
 // ── Brand chart data type ─────────────────────────────────────────────────────
 
 interface BrandChartPoint {
-  label:          string;
-  revenue:        number;
-  wages:          number;
-  advertising:    number;
-  rent:           number;
-  sga:            number;
-  cogs:           number;
-  utilities:      number;
-  ebitda:         number;
-  ebitda_pos:     number;
-  ebitda_neg:     number;
-  ebitda_pct:     number;
-  sppyRevenue:    number | null;
-  sppyEbitdaPct:  number | null;
+  label:           string;
+  revenue:         number;
+  revenue_lbl:     string;  // "€297k (+8% vs LY)" or "€297k"
+  wages:           number;
+  wages_lbl:       string;
+  advertising:     number;
+  advertising_lbl: string;
+  rent:            number;
+  rent_lbl:        string;
+  sga:             number;
+  sga_lbl:         string;
+  cogs:            number;
+  cogs_lbl:        string;
+  utilities:       number;
+  utilities_lbl:   string;
+  ebitda:          number;
+  ebitda_pos:      number;
+  ebitda_lbl:      string;
+  ebitda_neg:      number;
+  ebitda_pct:      number;
+  sppyRevenue:     number | null;
+  sppyEbitda:      number | null;
+  sppyEbitdaPct:   number | null;
 }
 
 // ── Custom Tooltip ────────────────────────────────────────────────────────────
@@ -162,9 +171,11 @@ function BrandChart({ points }: { points: BrandChartPoint[] }) {
   const fmtEuro = (v: number) =>
     Math.abs(v) >= 1000 ? "€" + (v / 1000).toFixed(0) + "k" : "€" + v;
 
+  const lblStyle = { fontSize: 9, fill: "#fff", fontWeight: 600 };
+
   return (
-    <ResponsiveContainer width="100%" height={220}>
-      <ComposedChart data={points} margin={{ top: 18, right: 16, bottom: 0, left: 8 }}>
+    <ResponsiveContainer width="100%" height={400}>
+      <ComposedChart data={points} margin={{ top: 28, right: 16, bottom: 0, left: 8 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
         <XAxis
           dataKey="label"
@@ -177,33 +188,38 @@ function BrandChart({ points }: { points: BrandChartPoint[] }) {
           tick={{ fontSize: 10, fill: "#6b7280" }}
           axisLine={false}
           tickLine={false}
-          width={48}
+          width={52}
         />
         <Tooltip content={<BrandTooltip />} />
         <Legend wrapperStyle={{ fontSize: 10, paddingTop: 6 }} iconType="square" />
 
-        {/* Stacked cost bars */}
-        <Bar dataKey="wages"       stackId="costs" fill={COST_COLORS.wages}       name={COST_LABELS.wages}       legendType="square" />
-        <Bar dataKey="advertising" stackId="costs" fill={COST_COLORS.advertising} name={COST_LABELS.advertising} legendType="square" />
-        <Bar dataKey="rent"        stackId="costs" fill={COST_COLORS.rent}        name={COST_LABELS.rent}        legendType="square" />
-        <Bar dataKey="sga"         stackId="costs" fill={COST_COLORS.sga}         name={COST_LABELS.sga}         legendType="square" />
-        <Bar dataKey="cogs"        stackId="costs" fill={COST_COLORS.cogs}        name={COST_LABELS.cogs}        legendType="square" />
-        <Bar dataKey="utilities"   stackId="costs" fill={COST_COLORS.utilities}   name={COST_LABELS.utilities}   legendType="square" />
-
-        {/* EBITDA segment (positive = green, negative = red for overflow) */}
-        <Bar dataKey="ebitda_pos" stackId="costs" fill={COST_COLORS.ebitda_pos} name="EBITDA" legendType="square" radius={[2, 2, 0, 0]}>
-          <LabelList
-            dataKey="revenue"
-            position="top"
-            formatter={(v: unknown) => {
-              const n = Number(v ?? 0);
-              return n >= 1000 ? "€" + Math.round(n / 1000) + "k" : "€" + Math.round(n);
-            }}
-            style={{ fontSize: 10, fill: "#6b7280" }}
-          />
+        {/* Stacked cost bars — each with € (%) label inside */}
+        <Bar dataKey="wages"       stackId="costs" fill={COST_COLORS.wages}       name={COST_LABELS.wages}       legendType="square">
+          <LabelList dataKey="wages_lbl"       position="inside" style={lblStyle} />
+        </Bar>
+        <Bar dataKey="advertising" stackId="costs" fill={COST_COLORS.advertising} name={COST_LABELS.advertising} legendType="square">
+          <LabelList dataKey="advertising_lbl" position="inside" style={lblStyle} />
+        </Bar>
+        <Bar dataKey="rent"        stackId="costs" fill={COST_COLORS.rent}        name={COST_LABELS.rent}        legendType="square">
+          <LabelList dataKey="rent_lbl"        position="inside" style={lblStyle} />
+        </Bar>
+        <Bar dataKey="sga"         stackId="costs" fill={COST_COLORS.sga}         name={COST_LABELS.sga}         legendType="square">
+          <LabelList dataKey="sga_lbl"         position="inside" style={lblStyle} />
+        </Bar>
+        <Bar dataKey="cogs"        stackId="costs" fill={COST_COLORS.cogs}        name={COST_LABELS.cogs}        legendType="square">
+          <LabelList dataKey="cogs_lbl"        position="inside" style={lblStyle} />
+        </Bar>
+        <Bar dataKey="utilities"   stackId="costs" fill={COST_COLORS.utilities}   name={COST_LABELS.utilities}   legendType="square">
+          <LabelList dataKey="utilities_lbl"   position="inside" style={lblStyle} />
         </Bar>
 
-        {/* SPPY dashed line */}
+        {/* EBITDA segment — label inside shows €Xk (Y%), revenue + YoY on top */}
+        <Bar dataKey="ebitda_pos" stackId="costs" fill={COST_COLORS.ebitda_pos} name="EBITDA" legendType="square" radius={[2, 2, 0, 0]}>
+          <LabelList dataKey="ebitda_lbl"  position="inside" style={{ fontSize: 9, fill: "#065f46", fontWeight: 700 }} />
+          <LabelList dataKey="revenue_lbl" position="top"    style={{ fontSize: 9, fill: "#374151", fontWeight: 600 }} />
+        </Bar>
+
+        {/* SPPY Revenue dashed line */}
         <Line
           type="monotone"
           dataKey="sppyRevenue"
@@ -212,6 +228,18 @@ function BrandChart({ points }: { points: BrandChartPoint[] }) {
           dot={false}
           connectNulls={false}
           name="LY Revenue"
+          legendType="plainline"
+        />
+
+        {/* SPPY EBITDA dashed line */}
+        <Line
+          type="monotone"
+          dataKey="sppyEbitda"
+          stroke="#34d399"
+          strokeDasharray="4 2"
+          dot={false}
+          connectNulls={false}
+          name="LY EBITDA"
           legendType="plainline"
         />
       </ComposedChart>
@@ -330,14 +358,18 @@ function LongitudinalContent({
   function buildBrandPoints(
     brand: "spa" | "aes" | "slim",
   ): BrandChartPoint[] {
+    const fmtAmt = (v: number) => {
+      const abs = Math.abs(v);
+      return abs >= 1000 ? `€${(abs / 1000).toFixed(0)}k` : `€${Math.round(abs)}`;
+    };
+
     return visiblePeriods.map((p) => {
       const bt = brand === "spa"  ? p.current.spa
                : brand === "aes"  ? p.current.aes
                : p.current.slim;
 
-      const costs = bt.wages + bt.advertising + bt.rent + bt.sga + bt.cogs + bt.utilities;
-      const ebitda = bt.revenue - costs;
-      // Positive EBITDA forms the top of the stack; negative means costs overflow revenue
+      const costs   = bt.wages + bt.advertising + bt.rent + bt.sga + bt.cogs + bt.utilities;
+      const ebitda  = bt.revenue - costs;
       const ebitdaPos = Math.max(0, ebitda);
 
       const sppyBt = p.sppy
@@ -346,23 +378,54 @@ function LongitudinalContent({
          : p.sppy.slim)
         : null;
 
+      const rev = bt.revenue;
+
+      // Segment label: "€Xk (Y%)" — blank when segment < 4% of revenue or zero
+      const segLbl = (v: number) => {
+        if (!v || rev <= 0) return "";
+        const pct = (v / rev) * 100;
+        if (pct < 4) return "";
+        return `${fmtAmt(v)} (${Math.round(pct)}%)`;
+      };
+
+      // Revenue top label: "€297k (+8% vs LY)" or just "€297k"
+      const sppyRev = sppyBt ? sppyBt.revenue : null;
+      let revLbl = rev > 0 ? fmtAmt(rev) : "";
+      if (sppyRev && sppyRev > 0 && rev > 0) {
+        const delta = Math.round(((rev - sppyRev) / sppyRev) * 100);
+        revLbl += ` (${delta >= 0 ? "+" : ""}${delta}% vs LY)`;
+      }
+
+      // EBITDA segment label: "€Xk (Y%)"
       const ebitdaPct = bt.ebitda_pct;
+      const ebitdaLbl = rev > 0
+        ? `${fmtAmt(ebitda)} (${ebitdaPct.toFixed(0)}%)`
+        : "";
 
       return {
-        label:          p.label,
-        revenue:        bt.revenue,
-        wages:          bt.wages,
-        advertising:    bt.advertising,
-        rent:           bt.rent,
-        sga:            bt.sga,
-        cogs:           bt.cogs,
-        utilities:      bt.utilities,
+        label:           p.label,
+        revenue:         rev,
+        revenue_lbl:     revLbl,
+        wages:           bt.wages,
+        wages_lbl:       segLbl(bt.wages),
+        advertising:     bt.advertising,
+        advertising_lbl: segLbl(bt.advertising),
+        rent:            bt.rent,
+        rent_lbl:        segLbl(bt.rent),
+        sga:             bt.sga,
+        sga_lbl:         segLbl(bt.sga),
+        cogs:            bt.cogs,
+        cogs_lbl:        segLbl(bt.cogs),
+        utilities:       bt.utilities,
+        utilities_lbl:   segLbl(bt.utilities),
         ebitda,
-        ebitda_pos:     ebitdaPos,
-        ebitda_neg:     0, // reserved — costs already overflow naturally when ebitda < 0
-        ebitda_pct:     ebitdaPct,
-        sppyRevenue:    sppyBt ? sppyBt.revenue : null,
-        sppyEbitdaPct:  sppyBt ? sppyBt.ebitda_pct : null,
+        ebitda_pos:      ebitdaPos,
+        ebitda_lbl:      ebitdaLbl,
+        ebitda_neg:      0,
+        ebitda_pct:      ebitdaPct,
+        sppyRevenue:     sppyRev,
+        sppyEbitda:      sppyBt ? sppyBt.ebitda : null,
+        sppyEbitdaPct:   sppyBt ? sppyBt.ebitda_pct : null,
       };
     });
   }
