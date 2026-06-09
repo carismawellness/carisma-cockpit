@@ -138,6 +138,7 @@ interface DiscountEntry {
   discount_pct: number;
   discounted_txn_count: number;
   total_txn_count: number;
+  avg_order_value: number;
 }
 
 interface PaymentTypeByLocation {
@@ -325,9 +326,10 @@ function computeAnalytics(
   const discounts: DiscountEntry[] = Object.entries(SPA_LOCATION_META)
     .map(([idStr, meta]) => {
       const locId = Number(idStr);
-      const acc   = discountAcc[locId] ?? { gross_list_revenue: 0, net_unit_revenue: 0, discounted_txn_count: 0, total_txn_count: 0 };
+      const acc   = discountAcc[locId] ?? { gross_list_revenue: 0, net_unit_revenue: 0, all_net_revenue: 0, discounted_txn_count: 0, total_txn_count: 0 };
       const totalDiscount = acc.gross_list_revenue - acc.net_unit_revenue;
       const discountPct   = acc.all_net_revenue > 0 ? (totalDiscount / acc.all_net_revenue) * 100 : 0;
+      const avgOrderValue = acc.total_txn_count > 0 ? acc.all_net_revenue / acc.total_txn_count : 0;
       return {
         location_id:          locId,
         name:                 meta.name,
@@ -338,6 +340,7 @@ function computeAnalytics(
         discount_pct:         +discountPct.toFixed(2),
         discounted_txn_count: acc.discounted_txn_count,
         total_txn_count:      acc.total_txn_count,
+        avg_order_value:      +avgOrderValue.toFixed(2),
       };
     })
     .sort((a, b) => a.location_id - b.location_id);

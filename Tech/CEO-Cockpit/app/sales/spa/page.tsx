@@ -12,7 +12,7 @@ import { useSpaRevenue } from "@/lib/hooks/useSpaRevenue";
 import { useSpaDeepaAnalytics } from "@/lib/hooks/useSpaDeepaAnalytics";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, LabelList, Legend,
+  ResponsiveContainer, LabelList, Legend, Cell,
 } from "recharts";
 import { RefreshCw, AlertCircle, FileSpreadsheet } from "lucide-react";
 
@@ -144,6 +144,20 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
       return result;
     }),
     [analytics.paymentByLocation]
+  );
+
+  /* ── AOV chart data ─────────────────────────────────────────── */
+  const aovChartData = useMemo(() =>
+    analytics.discounts
+      .filter(d => d.total_txn_count > 0)
+      .map(d => ({
+        name:  d.name,
+        color: d.color,
+        AOV:   Math.round(d.avg_order_value * (1 + VAT_RATE)),
+        txns:  d.total_txn_count,
+      }))
+      .sort((a, b) => b.AOV - a.AOV),
+    [analytics.discounts]
   );
 
   const allPaymentTypes = useMemo(() => {
@@ -419,27 +433,78 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
         </div>
       )}
 
+      {/* ── Average Order Value by Location ──────────────────────── */}
+      {(analytics.isFetching || aovChartData.length > 0) && (
+        <Card className="p-4 md:p-6">
+          <h2 className="text-lg font-semibold text-foreground mb-1">Average Order Value by Location</h2>
+          <p className="text-xs text-muted-foreground mb-5">
+            Average service transaction value per venue · inc-VAT
+          </p>
+          {analytics.isFetching ? (
+            <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
+              Loading analytics…
+            </div>
+          ) : (
+            <div className="h-[260px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={aovChartData} margin={{ top: 20, right: 12, left: 8, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                  <YAxis tickFormatter={(v: number) => fmtShort(v)} tick={{ fontSize: 11 }} />
+                  <Tooltip
+                    formatter={(v: unknown, _name: unknown, props: { payload?: { txns?: number } }) =>
+                      [fmtShort(Number(v)), `Avg Order Value · ${props.payload?.txns ?? 0} txns`]
+                    }
+                  />
+                  <Bar dataKey="AOV" radius={[4, 4, 0, 0]}>
+                    {aovChartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                    <LabelList
+                      dataKey="AOV"
+                      position="top"
+                      formatter={(v: unknown) => fmtShort(Number(v))}
+                      style={{ fontSize: 10, fontWeight: 600, fill: "#374151" }}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </Card>
+      )}
+
       {/* ── Staff Performance ──────────────────────────────────────── */}
-      <Card className="p-4 md:p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-1">Staff Performance</h2>
-        <p className="text-xs text-muted-foreground mb-4">
-          Service + retail revenue per therapist · EUR inc-VAT
-        </p>
-        {analytics.isFetching ? (
+      {analytics.isFetching ? (
+        <Card className="p-4 md:p-6">
           <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
             Loading staff data…
           </div>
-        ) : staffChartData.length === 0 ? (
+        </Card>
+      ) : staffChartData.length === 0 ? (
+        <Card className="p-4 md:p-6">
           <p className="text-sm text-muted-foreground">No staff data for this period.</p>
-        ) : (
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <StaffPerformanceChart
-            title=""
+            title="Service Revenue by Therapist"
+            subtitle="EUR inc-VAT · sorted by service"
             data={staffChartData}
             serviceColor="#1B3A4B"
             retailColor="#B79E61"
+            mode="service"
           />
-        )}
-      </Card>
+          <StaffPerformanceChart
+            title="Retail Revenue by Therapist"
+            subtitle="EUR inc-VAT · sorted by retail"
+            data={staffChartData}
+            serviceColor="#1B3A4B"
+            retailColor="#B79E61"
+            mode="retail"
+          />
+        </div>
+      )}
 
       {!isLoading && locations.length === 0 && (
         <Card className="p-10 text-center text-muted-foreground">

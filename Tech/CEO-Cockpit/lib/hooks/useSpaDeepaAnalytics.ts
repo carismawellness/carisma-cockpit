@@ -44,6 +44,7 @@ export interface DiscountLocation {
   discount_pct: number;
   discounted_txn_count: number;
   total_txn_count: number;
+  avg_order_value: number;
 }
 
 export interface SpaDeepaAnalyticsResult {
