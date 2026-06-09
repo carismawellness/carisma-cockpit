@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { departments, type Department } from "@/lib/constants/departments";
+import { departments, type Department, type SubItem } from "@/lib/constants/departments";
 import { pathToPermissionKey } from "@/lib/constants/dashboards";
 import { cn } from "@/lib/utils";
 import { ChevronsLeft, ChevronsRight, ChevronDown, X, LogOut } from "lucide-react";
@@ -34,6 +34,69 @@ interface SidebarProps {
   onMobileClose: () => void;
 }
 
+function SubNavItem({
+  child,
+  pathname,
+  onMobileClose,
+}: {
+  child: SubItem;
+  pathname: string;
+  onMobileClose: () => void;
+}) {
+  const isActive = pathname === child.path;
+  const isSubActive = child.children?.some((s) => pathname === s.path) ?? false;
+  const [open, setOpen] = useState(isActive || isSubActive);
+  const ChildIcon = child.icon;
+
+  if (isActive || isSubActive) { if (!open) setOpen(true); }
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(!open)}
+        className={cn(
+          "w-full flex items-center gap-2.5 rounded-lg text-[13px] font-medium transition-all px-3 py-2 cursor-pointer",
+          isActive || isSubActive
+            ? "text-gold"
+            : "text-text-secondary hover:bg-warm-gray hover:text-charcoal"
+        )}
+      >
+        {ChildIcon && (
+          <ChildIcon className={cn("h-[15px] w-[15px] shrink-0", isActive || isSubActive ? "text-gold" : "text-text-secondary")} />
+        )}
+        <span className="truncate flex-1 text-left">{child.label}</span>
+        <ChevronDown className={cn("h-3 w-3 transition-transform duration-200", open ? "rotate-0" : "-rotate-90")} />
+      </button>
+      {open && child.children && (
+        <div className="ml-3 pl-3 border-l border-warm-border space-y-0.5 mt-0.5">
+          {child.children.map((sub) => {
+            const subActive = pathname === sub.path;
+            const SubIcon = sub.icon;
+            return (
+              <Link
+                key={sub.slug}
+                href={sub.path}
+                onClick={onMobileClose}
+                className={cn(
+                  "flex items-center gap-2 rounded-lg text-[12px] font-medium transition-all px-2.5 py-1.5",
+                  subActive
+                    ? "bg-gold-bg text-gold"
+                    : "text-text-secondary hover:bg-warm-gray hover:text-charcoal"
+                )}
+              >
+                {SubIcon && (
+                  <SubIcon className={cn("h-[13px] w-[13px] shrink-0", subActive ? "text-gold" : "text-text-secondary")} />
+                )}
+                {sub.label}
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NavItem({
   dept,
   pathname,
@@ -46,7 +109,9 @@ function NavItem({
   onMobileClose: () => void;
 }) {
   const isActive = pathname === dept.path;
-  const isChildActive = dept.children?.some((c) => pathname === c.path) ?? false;
+  const isChildActive = dept.children?.some((c) =>
+    pathname === c.path || c.children?.some((s) => pathname === s.path)
+  ) ?? false;
   const isExpanded = isActive || isChildActive;
   const [open, setOpen] = useState(isExpanded);
 
@@ -108,6 +173,16 @@ function NavItem({
       {!collapsed && open && dept.children && (
         <div className="ml-4 pl-4 border-l border-warm-border space-y-0.5 mt-0.5">
           {dept.children.map((child) => {
+            if (child.children && child.children.length > 0) {
+              return (
+                <SubNavItem
+                  key={child.slug}
+                  child={child}
+                  pathname={pathname}
+                  onMobileClose={onMobileClose}
+                />
+              );
+            }
             const childActive = pathname === child.path;
             const ChildIcon = child.icon;
             return (
