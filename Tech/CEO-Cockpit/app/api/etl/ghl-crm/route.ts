@@ -268,7 +268,7 @@ async function getBrandMap(sb: SupabaseClient): Promise<Record<string, number>> 
   const { data, error } = await sb.from("brands").select("id, slug");
   if (error) throw new Error(`Brand map: ${error.message}`);
   const map: Record<string, number> = {};
-  for (const row of data ?? []) map[row.slug as string] = row.id as number;
+  for (const row of (data ?? []) as { id: number; slug: string }[]) map[row.slug] = row.id;
   return map;
 }
 
@@ -281,9 +281,9 @@ async function upsertRows(
   if (!rows.length) return;
   const CHUNK = 200;
   for (let i = 0; i < rows.length; i += CHUNK) {
-    const { error } = await sb
-      .from(table)
-      .upsert(rows.slice(i, i + CHUNK), { onConflict });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (sb.from(table) as any)
+      .upsert(rows.slice(i, i + CHUNK) as Record<string, unknown>[], { onConflict });
     if (error) throw new Error(`${table} upsert: ${error.message}`);
   }
 }
