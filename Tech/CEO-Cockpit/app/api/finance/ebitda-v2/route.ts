@@ -12,6 +12,7 @@
 
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -216,12 +217,17 @@ export async function GET(req: Request) {
     await Promise.all([
       fetchAllRawCosts(),
 
-      // SPA revenue per location per day — actual amounts, no pro-rating needed
-      supabase
-        .from("spa_revenue_daily")
-        .select("location_id, date, services, product_phytomer, product_purest, product_other")
-        .gte("date", dateFrom)
-        .lte("date", dateTo),
+      // SPA revenue per location per day — paginated to bypass PostgREST max_rows
+      fetchAll(
+        (off, lim) =>
+          supabase
+            .from("spa_revenue_daily")
+            .select("location_id, date, services, product_phytomer, product_purest, product_other")
+            .gte("date", dateFrom)
+            .lte("date", dateTo)
+            .range(off, off + lim - 1),
+        "spa_revenue_daily",
+      ),
 
       // SPA revenue monthly — used only for wholesale, discount, refund adjustments
       supabase
@@ -229,19 +235,29 @@ export async function GET(req: Request) {
         .select("location_id, month, wholesale, sales_discount, sales_refund")
         .in("month", overlappingMonths(dateFrom, dateTo)),
 
-      // Aesthetics revenue
-      supabase
-        .from("aesthetics_sales_daily")
-        .select("price_ex_vat")
-        .gte("date_of_service", dateFrom)
-        .lte("date_of_service", dateTo),
+      // Aesthetics revenue — paginated to bypass PostgREST max_rows
+      fetchAll(
+        (off, lim) =>
+          supabase
+            .from("aesthetics_sales_daily")
+            .select("price_ex_vat")
+            .gte("date_of_service", dateFrom)
+            .lte("date_of_service", dateTo)
+            .range(off, off + lim - 1),
+        "aesthetics_sales_daily",
+      ),
 
-      // Slimming revenue
-      supabase
-        .from("slimming_sales_daily")
-        .select("price_ex_vat")
-        .gte("date_of_service", dateFrom)
-        .lte("date_of_service", dateTo),
+      // Slimming revenue — paginated to bypass PostgREST max_rows
+      fetchAll(
+        (off, lim) =>
+          supabase
+            .from("slimming_sales_daily")
+            .select("price_ex_vat")
+            .gte("date_of_service", dateFrom)
+            .lte("date_of_service", dateTo)
+            .range(off, off + lim - 1),
+        "slimming_sales_daily",
+      ),
 
       // Salary supplement — fetch up to 3 months before period start so we can
       // fall back to the most recent frozen month when the period month has no data.
@@ -276,12 +292,10 @@ export async function GET(req: Request) {
         .select("*"),
     ]);
 
-  // Error checks (rawCosts errors thrown inside fetchAllRawCosts)
+  // Error checks (rawCosts, spa_revenue_daily, aesthetics_sales_daily, slimming_sales_daily
+  // errors thrown inside fetchAll/fetchAllRawCosts; only non-paginated queries need checking here)
   for (const [label, res] of [
-    ["spa_revenue_daily", revenueDaily],
     ["spa_revenue_monthly", revenueMonthly],
-    ["aesthetics_sales_daily", aestheticsSales],
-    ["slimming_sales_daily", slimmingSales],
   ] as Array<[string, {error: {message: string} | null}]>) {
     if (res.error) return NextResponse.json({ error: `${label}: ${res.error.message}` }, { status: 500 });
   }

@@ -30,12 +30,24 @@ export async function GET(req: NextRequest) {
   const payload = JSON.stringify({ date_from, date_to, force: true });
   const headers = { "Content-Type": "application/json" };
 
-  const [revenueRes, spaRes, aestheticsRes, crmAgentsRes, ghlCrmRes] = await Promise.allSettled([
+  // Marketing ETLs use a rolling 30-day window for campaign data
+  const mktFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+  const mktPayload = JSON.stringify({ date_from: fmt(mktFrom), date_to: fmt(now) });
+
+  // Klaviyo syncs yesterday's aggregate snapshot
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  const klaviyoPayload = JSON.stringify({ date: fmt(yesterday) });
+
+  const [revenueRes, spaRes, aestheticsRes, crmAgentsRes, ghlCrmRes,
+         metaCampaignsRes, googleCampaignsRes, klaviyoRes] = await Promise.allSettled([
     fetch(`${BASE_URL}/api/etl/revenue-refresh`,              { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/zoho-spa-transactions`,        { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/zoho-aesthetics-transactions`, { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/crm-agents`,                   { method: "POST", headers }),
     fetch(`${BASE_URL}/api/etl/ghl-crm`,                      { method: "POST", headers, body: payload }),
+    fetch(`${BASE_URL}/api/etl/meta-campaigns`,               { method: "POST", headers, body: mktPayload }),
+    fetch(`${BASE_URL}/api/etl/google-campaigns`,             { method: "POST", headers, body: mktPayload }),
+    fetch(`${BASE_URL}/api/etl/klaviyo-sync`,                 { method: "POST", headers, body: klaviyoPayload }),
   ]);
 
   const outcome = (r: PromiseSettledResult<Response>) =>
@@ -46,11 +58,14 @@ export async function GET(req: NextRequest) {
     date_from,
     date_to,
     results: {
-      revenue:         outcome(revenueRes),
-      zoho_spa:        outcome(spaRes),
-      zoho_aesthetics: outcome(aestheticsRes),
-      crm_agents:      outcome(crmAgentsRes),
-      ghl_crm:         outcome(ghlCrmRes),
+      revenue:          outcome(revenueRes),
+      zoho_spa:         outcome(spaRes),
+      zoho_aesthetics:  outcome(aestheticsRes),
+      crm_agents:       outcome(crmAgentsRes),
+      ghl_crm:          outcome(ghlCrmRes),
+      meta_campaigns:   outcome(metaCampaignsRes),
+      google_campaigns: outcome(googleCampaignsRes),
+      klaviyo:          outcome(klaviyoRes),
     },
   });
 }

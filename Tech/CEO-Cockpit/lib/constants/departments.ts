@@ -49,18 +49,6 @@ export const departments: Department[] = [
     children: [
       { slug: "ceo",        label: "CEO",        path: "/ceo",        icon: LayoutDashboard },
       { slug: "funnel",     label: "Funnel",     path: "/funnel",     icon: Filter },
-      {
-        slug: "marketing",
-        label: "Marketing",
-        path: "/marketing",
-        icon: Megaphone,
-        children: [
-          { slug: "marketing-master",     label: "Master",     path: "/marketing",            icon: Megaphone },
-          { slug: "marketing-spa",        label: "Spa",        path: "/marketing/spa",        icon: Sparkles  },
-          { slug: "marketing-aesthetics", label: "Aesthetics", path: "/marketing/aesthetics", icon: Heart     },
-          { slug: "marketing-slimming",   label: "Slimming",   path: "/marketing/slimming",   icon: Activity  },
-        ],
-      },
       { slug: "hr",         label: "HR",         path: "/hr",         icon: Users },
       { slug: "operations", label: "Operations", path: "/operations", icon: Settings },
     ],
@@ -103,6 +91,18 @@ export const departments: Department[] = [
           { slug: "agent-queenee",  label: "Queenee",  path: "/crm/individual/queenee",  icon: User },
         ],
       },
+    ],
+  },
+  {
+    slug: "marketing",
+    label: "Marketing",
+    icon: Megaphone,
+    path: "/marketing",
+    children: [
+      { slug: "marketing-master",     label: "Master",     path: "/marketing",            icon: Megaphone },
+      { slug: "marketing-spa",        label: "Spa",        path: "/marketing/spa",        icon: Sparkles  },
+      { slug: "marketing-aesthetics", label: "Aesthetics", path: "/marketing/aesthetics", icon: Heart     },
+      { slug: "marketing-slimming",   label: "Slimming",   path: "/marketing/slimming",   icon: Activity  },
     ],
   },
   {
