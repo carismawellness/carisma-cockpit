@@ -6,6 +6,8 @@ import {
 } from "@/lib/utils/lookups";
 import { getAdminClient } from "@/lib/supabase/admin";
 
+export const maxDuration = 120;
+
 /* ------------------------------------------------------------------ */
 /* POST /api/ci/analyze                                                */
 /* Runs the nightly analysis cron — called by Vercel Cron or manual.   */

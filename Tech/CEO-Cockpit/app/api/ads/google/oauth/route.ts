@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+export const maxDuration = 120;
+
 export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get("code");
 

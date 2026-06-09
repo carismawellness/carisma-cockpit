@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { notifySchema } from "@/lib/validations";
 
+export const maxDuration = 60;
+
 /**
  * CI Critical Alert Notification Endpoint
  *

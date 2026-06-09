@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import * as fs from "fs";
 import * as path from "path";
 
+export const maxDuration = 60;
+
 const AUTH_BASE    = "https://accounts.zoho.eu/oauth/v2";
 const API_BASE     = "https://www.zohoapis.eu/books/v3";
 const REDIRECT_URI = "http://localhost:3000/api/callback";

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { AdsApiResponse, BrandSlug, CampaignData } from "@/lib/types/ads";
 
+export const maxDuration = 120;
+
 async function getMetaToken(): Promise<{ token: string | null; expired: boolean }> {
   try {
     const supabaseAdmin = createClient(

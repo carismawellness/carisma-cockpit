@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   const token = req.nextUrl.searchParams.get("token");
   if (token !== process.env.ZOHO_WEBHOOK_SECRET) {

@@ -4,6 +4,8 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { rootCauseSchema, checkRateLimit } from "@/lib/validations";
 import { getAdminClient } from "@/lib/supabase/admin";
 
+export const maxDuration = 120;
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
 const ROOT_CAUSE_PROMPT = `You are Carisma Intelligence (CI). Given a metric that has deviated from its target, perform root cause analysis.

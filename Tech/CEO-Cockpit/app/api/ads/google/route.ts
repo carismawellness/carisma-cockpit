@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { AdsApiResponse, BrandSlug, CampaignData } from "@/lib/types/ads";
 
+export const maxDuration = 120;
+
 const VALID_BRANDS = new Set<string>(["spa", "aesthetics", "slimming"]);
 
 function getCustomerId(brand: BrandSlug): string {

@@ -3,6 +3,8 @@ import { getAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { DASHBOARD_KEYS } from "@/lib/constants/dashboards";
 
+export const maxDuration = 60;
+
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? "contact@mertgulen.com")
   .split(",")
   .map((e) => e.trim().toLowerCase());

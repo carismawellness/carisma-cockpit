@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
+export const maxDuration = 60;
+
 export async function GET() {
   const supabase = await createServerSupabaseClient();
 

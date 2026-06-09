@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { approveSchema } from "@/lib/validations";
 
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   const supabase = await createServerSupabaseClient();
 

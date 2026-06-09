@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminClient } from "@/lib/supabase/admin";
 
+export const maxDuration = 120;
+
 export async function POST(req: NextRequest) {
   const supabaseAdmin = getAdminClient();
   try {

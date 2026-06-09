@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminClient } from "@/lib/supabase/admin";
 
+export const maxDuration = 300;
+
 const ZOHO_AUTH  = "https://accounts.zoho.eu/oauth/v2/token";
 const ZOHO_API   = "https://www.zohoapis.eu/books/v3";
 

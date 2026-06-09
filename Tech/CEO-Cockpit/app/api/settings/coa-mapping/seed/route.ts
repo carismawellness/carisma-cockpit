@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdminClient } from "@/lib/supabase/admin";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+export const maxDuration = 300;
+
 // Full hardcoded COA_MAP: account_code → [split_rule_name, ebitda_line]
 const COA_DEFAULTS: Record<string, [string, string]> = {
   // COGS

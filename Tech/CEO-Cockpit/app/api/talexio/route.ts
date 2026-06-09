@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+export const maxDuration = 60;
+
 const GRAPHQL_URL = "https://api.talexiohr.com/graphql";
 const ORIGIN = "https://carismaspawellness.talexiohr.com";
 

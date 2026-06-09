@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminClient } from "@/lib/supabase/admin";
 
+export const maxDuration = 60;
+
 export async function GET(req: NextRequest) {
   const supabase = getAdminClient();
   const org    = req.nextUrl.searchParams.get("org")    ?? "spa";

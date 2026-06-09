@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type {
+
+export const maxDuration = 300;
   KlaviyoApiResponse,
   KlaviyoCampaignData,
   KlaviyoFlowData,

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
+export const maxDuration = 60;
+
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? "contact@mertgulen.com")
   .split(",")
   .map((e) => e.trim().toLowerCase());

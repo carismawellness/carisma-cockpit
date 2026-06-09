@@ -3,6 +3,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { loadTargets, formatTargetsForPrompt } from "@/lib/utils/lookups";
 import { getAdminClient } from "@/lib/supabase/admin";
 
+export const maxDuration = 120;
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
 /* ------------------------------------------------------------------ */

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
+export const maxDuration = 60;
+
 // GET /api/settings/ebitda-v2-rules
 // Returns special_persons, hardwired_rules, and fallback_rules arrays.
 export async function GET() {

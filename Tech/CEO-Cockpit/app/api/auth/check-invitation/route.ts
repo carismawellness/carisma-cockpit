@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminClient } from "@/lib/supabase/admin";
 
+export const maxDuration = 60;
+
 /** GET /api/auth/check-invitation?email=xxx — public endpoint used during registration */
 export async function GET(req: NextRequest) {
   const email = req.nextUrl.searchParams.get("email");

@@ -17,6 +17,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 const VALID_ORGS   = new Set(["spa", "aesthetics", "both"]);

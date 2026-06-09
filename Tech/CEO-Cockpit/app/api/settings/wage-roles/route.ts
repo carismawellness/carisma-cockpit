@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminClient } from "@/lib/supabase/admin";
 
+export const maxDuration = 60;
+
 // Canonical role keys. Mirrors the CHECK constraint in migration 050.
 const ROLES = ["manager", "reception", "practitioner", "therapist", "crm"] as const;
 type Role = (typeof ROLES)[number];

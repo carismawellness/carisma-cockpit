@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminClient } from "@/lib/supabase/admin";
 
+export const maxDuration = 120;
+
 const TALEXIO_GQL    = "https://api.talexiohr.com/graphql";
 const TALEXIO_ORIGIN = "https://carismaspawellness.talexiohr.com";
 

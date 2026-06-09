@@ -3,6 +3,8 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { auditSchema } from "@/lib/validations";
 import { getAdminClient } from "@/lib/supabase/admin";
 
+export const maxDuration = 60;
+
 export async function GET(request: NextRequest) {
   const serviceSupabase = getAdminClient();
   const authSupabase = await createServerSupabaseClient();

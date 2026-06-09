@@ -4,6 +4,8 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { chatSchema, checkRateLimit } from "@/lib/validations";
 import { getAdminClient } from "@/lib/supabase/admin";
 
+export const maxDuration = 300;
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
 const SYSTEM_PROMPT = `You are Carisma Intelligence (CI), the AI analytics assistant for Carisma Wellness Group.

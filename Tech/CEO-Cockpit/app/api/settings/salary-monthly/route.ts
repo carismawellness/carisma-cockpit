@@ -12,6 +12,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;

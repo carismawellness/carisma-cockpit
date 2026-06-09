@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminClient } from "@/lib/supabase/admin";
 
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 const CHANNEL_PATTERNS: Array<{ patterns: string[]; channel: string }> = [

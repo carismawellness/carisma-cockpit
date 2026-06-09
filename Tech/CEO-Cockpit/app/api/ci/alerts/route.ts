@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
+export const maxDuration = 120;
+
 export async function GET(request: NextRequest) {
   const supabase = await createServerSupabaseClient();
   const { searchParams } = new URL(request.url);
