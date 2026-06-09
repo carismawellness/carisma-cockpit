@@ -85,10 +85,11 @@ function SalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
             </a>
           </div>
         </div>
+        {/* min-h-[44px] ensures button meets Apple/Google 44px touch-target minimum on mobile */}
         <button
           onClick={() => { spa.triggerSync(true); aes.triggerSync(); slim.triggerSync(); }}
           disabled={isLoading}
-          className="flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg border hover:bg-muted transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 text-xs font-medium px-3 min-h-[44px] rounded-lg border hover:bg-muted transition-colors disabled:opacity-50"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`} />
           {isLoading ? "Syncing…" : "Re-Sync All"}
