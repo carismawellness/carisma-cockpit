@@ -8,9 +8,9 @@
  * Can also be triggered manually: POST {} (no body required).
  *
  * Required env vars (set in Vercel dashboard):
- *   GOOGLE_REFRESH_TOKEN       — from ~/.go-google-mcp/token.json
- *   GOOGLE_CLIENT_ID           — from ~/.go-google-mcp/client_secrets.json
- *   GOOGLE_CLIENT_SECRET       — from ~/.go-google-mcp/client_secrets.json
+ *   GOOGLE_SHEETS_REFRESH_TOKEN  — from ~/.go-google-mcp/token.json
+ *   GOOGLE_SHEETS_CLIENT_ID      — from ~/.go-google-mcp/client_secrets.json
+ *   GOOGLE_SHEETS_CLIENT_SECRET  — from ~/.go-google-mcp/client_secrets.json
  *   SUPABASE_SERVICE_ROLE_KEY
  *   NEXT_PUBLIC_SUPABASE_URL
  */
@@ -47,13 +47,13 @@ const CHUNK_SIZE = 200;
 // ── Google OAuth ──────────────────────────────────────────────────────────────
 
 async function getAccessToken(): Promise<string> {
-  const refreshToken  = process.env.GOOGLE_REFRESH_TOKEN;
-  const clientId      = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret  = process.env.GOOGLE_CLIENT_SECRET;
+  const refreshToken  = process.env.GOOGLE_SHEETS_REFRESH_TOKEN;
+  const clientId      = process.env.GOOGLE_SHEETS_CLIENT_ID;
+  const clientSecret  = process.env.GOOGLE_SHEETS_CLIENT_SECRET;
 
   if (!refreshToken || !clientId || !clientSecret) {
     throw new Error(
-      "Missing Google OAuth env vars: GOOGLE_REFRESH_TOKEN, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET"
+      "Missing Google OAuth env vars: GOOGLE_SHEETS_REFRESH_TOKEN, GOOGLE_SHEETS_CLIENT_ID, GOOGLE_SHEETS_CLIENT_SECRET"
     );
   }
 
