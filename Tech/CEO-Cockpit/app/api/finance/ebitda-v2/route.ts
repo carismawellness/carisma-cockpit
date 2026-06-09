@@ -14,6 +14,7 @@ import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 // ── Venue config ─────────────────────────────────────────────────────────────
 
@@ -345,7 +346,7 @@ export async function GET(req: Request) {
 
   // ── 4. Revenue ───────────────────────────────────────────────────────────
   // 4a. SPA — sum actual daily LAPIS amounts for exact date range (no pro-rating)
-  const months = overlappingMonths(dateFrom, dateTo);
+  overlappingMonths(dateFrom, dateTo);
   for (const row of (revenueDaily.data ?? [])) {
     const slug = LOC_ID_TO_SLUG[row.location_id as number];
     if (!slug || !venues[slug]) continue;
@@ -655,7 +656,7 @@ export async function GET(req: Request) {
         if (!rule.active) continue;
         const ruleType   = rule.rule_type as string;
         const accountCode = rule.account_code as string;
-        const org         = rule.zoho_org as string; // "spa" | "aesthetics"
+        // rule.zoho_org available as "spa" | "aesthetics" if needed
 
         // Find all venue+ebitda_line combos for this account in historical data
         const venueKeys = [...histMap.keys()].filter(k => k.startsWith(accountCode + "|"));
@@ -697,8 +698,7 @@ export async function GET(req: Request) {
             fallbackValue = annual * (daysInPeriod / 365);
           } else if (ruleType === "quarterly_average") {
             // Average of last 3 months
-            const q3From = shiftMonth(dateFrom, -3);
-            // Use TTM × 3/12 as approximation
+            // Use TTM × 3/12 as approximation (q3From = shiftMonth(dateFrom, -3) if needed)
             fallbackValue = hist.ttm * (3 / 12) / 3 * (daysInPeriod / 30.4375);
           } else {
             continue; // "disabled" or unknown

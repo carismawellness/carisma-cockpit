@@ -12,6 +12,7 @@ import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
