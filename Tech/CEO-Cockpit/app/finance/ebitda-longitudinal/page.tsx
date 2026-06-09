@@ -72,6 +72,7 @@ interface BrandChartPoint {
   cogs:        number;
   utilities:   number;
   ebitda:      number;
+  ebitda_pos:  number;
   ebitda_neg:  number;
   sppyRevenue: number | null;
 }
