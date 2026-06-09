@@ -2,123 +2,87 @@
 
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
-import { useAestheticsSales } from "@/lib/hooks/useAestheticsSales";
-import { chartColors, formatCurrency } from "@/lib/charts/config";
-import { RefreshCw, FileSpreadsheet } from "lucide-react";
+import { useAesAnalytics } from "@/lib/hooks/useAesAnalytics";
+import { formatCurrency } from "@/lib/charts/config";
+
+const AES_NAVY = "#1B3A4B";
 
 function AestheticsDeepContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
-  const { byPerson, byService, totals, isFetching, isSyncing, syncError, syncLog, triggerSync } =
-    useAestheticsSales(dateFrom, dateTo);
+  const { total_revenue_ex_vat, transaction_count, staff, services, paymentTypes, isFetching, error } =
+    useAesAnalytics(dateFrom, dateTo);
 
+  const totalRev = total_revenue_ex_vat;
+  const empty = (label: string) => (
+    <p className="text-sm text-muted-foreground py-4 text-center">
+      {isFetching ? "Loading…" : label}
+    </p>
+  );
 
   return (
     <>
-      {/* ── Page Header ─────────────────────────────────────────────── */}
       <div className="space-y-1">
-        <h1 className="text-2xl font-bold text-foreground tracking-tight">
-          Aesthetics — Deepa
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          All figures in EUR · ex-VAT and inc-VAT shown
-        </p>
-        <div className="flex flex-wrap gap-2 pt-1">
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600">
-            <FileSpreadsheet className="h-3 w-3" />
-            Google Sheets — Aesthetics Sales (ETL → Supabase)
-          </span>
-        </div>
+        <h1 className="text-2xl font-bold text-foreground tracking-tight">Aesthetics</h1>
+        <p className="text-sm text-muted-foreground">All figures in EUR · ex-VAT · live from Lapis sheet</p>
       </div>
 
-      {/* ── Revenue Summary ──────────────────────────────────────────── */}
-      <Card className="p-4 md:p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-base font-semibold text-foreground">Revenue from Google Sheets</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {totals.last_synced
-                ? `Last synced: ${new Date(totals.last_synced).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" })}`
-                : "Not yet synced"}
-            </p>
-          </div>
-          <button
-            onClick={triggerSync}
-            disabled={isSyncing || isFetching}
-            className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border hover:bg-muted transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin" : ""}`} />
-            {isSyncing ? "Syncing…" : "Sync from Google Sheets"}
-          </button>
-        </div>
-        {syncError && (
-          <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2 mb-3">{syncError}</p>
-        )}
-        {syncLog && (
-          <pre className="text-xs text-slate-600 bg-slate-50 rounded px-3 py-2 mb-3 whitespace-pre-wrap overflow-auto max-h-40">{syncLog.join("\n")}</pre>
-        )}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="p-3 rounded-lg bg-muted/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Revenue ex-VAT</p>
-            <p className="text-xl font-bold text-foreground">{formatCurrency(totals.revenue_ex)}</p>
-          </div>
-          <div className="p-3 rounded-lg bg-muted/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Revenue inc-VAT</p>
-            <p className="text-xl font-bold text-foreground">{formatCurrency(totals.revenue_inc)}</p>
-          </div>
-          <div className="p-3 rounded-lg bg-muted/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">VAT Amount</p>
-            <p className="text-xl font-bold text-foreground">{formatCurrency(totals.vat_amount)}</p>
-          </div>
-          <div className="p-3 rounded-lg bg-muted/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Transactions</p>
-            <p className="text-xl font-bold text-foreground">{totals.tx_count}</p>
-          </div>
-        </div>
-      </Card>
+      {error && (
+        <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2">{error}</p>
+      )}
 
-      {/* ── Revenue by Practitioner ───────────────────────────────────── */}
+      {/* ── KPI Cards ─────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        {[
+          { label: "Revenue ex-VAT", value: formatCurrency(total_revenue_ex_vat) },
+          { label: "Transactions",   value: transaction_count.toLocaleString() },
+          { label: "Avg per Txn",    value: transaction_count > 0 ? formatCurrency(total_revenue_ex_vat / transaction_count) : "—" },
+        ].map(({ label, value }) => (
+          <Card key={label} className="p-4">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">{label}</p>
+            <p className="text-2xl font-bold text-foreground">{value}</p>
+          </Card>
+        ))}
+      </div>
+
+      {/* ── Staff Performance ─────────────────────────────────────────── */}
       <Card className="p-4 md:p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <h2 className="text-base font-semibold text-foreground">Revenue by Practitioner</h2>
-          <span className="text-xs text-muted-foreground">(from Note column)</span>
-        </div>
-        {byPerson.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">
-            {isFetching || isSyncing ? "Loading…" : "No data for selected period"}
-          </p>
-        ) : (
+        <h2 className="text-base font-semibold text-foreground mb-4">Staff Performance</h2>
+        {staff.length === 0 ? empty("No data for selected period") : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
-                  <th className="text-left pb-2 font-medium">Practitioner</th>
-                  <th className="text-center pb-2 font-medium">VAT Rate</th>
-                  <th className="text-right pb-2 font-medium">Transactions</th>
+                  <th className="text-left pb-2 font-medium">Staff</th>
+                  <th className="text-right pb-2 font-medium">Txns</th>
                   <th className="text-right pb-2 font-medium">Revenue ex-VAT</th>
-                  <th className="text-right pb-2 font-medium">Revenue inc-VAT</th>
+                  <th className="text-left pb-2 pl-4 font-medium">Share</th>
                 </tr>
               </thead>
               <tbody>
-                {byPerson.map((p, i) => (
-                  <tr key={p.person} className={`border-b last:border-0 ${i % 2 === 0 ? "" : "bg-muted/20"}`}>
-                    <td className="py-2.5 font-medium">{p.person}</td>
-                    <td className="py-2.5 text-center">
-                      <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-full ${p.vat_rate === 0.12 ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700"}`}>
-                        {(p.vat_rate * 100).toFixed(0)}%
-                      </span>
-                    </td>
-                    <td className="py-2.5 text-right text-muted-foreground">{p.tx_count}</td>
-                    <td className="py-2.5 text-right font-medium">{formatCurrency(p.revenue_ex)}</td>
-                    <td className="py-2.5 text-right text-muted-foreground">{formatCurrency(p.revenue_inc)}</td>
-                  </tr>
-                ))}
+                {staff.map((s, i) => {
+                  const pct = totalRev > 0 ? (s.revenue / totalRev) * 100 : 0;
+                  return (
+                    <tr key={s.name} className={`border-b last:border-0 ${i % 2 === 1 ? "bg-muted/20" : ""}`}>
+                      <td className="py-2.5 font-medium">{s.name}</td>
+                      <td className="py-2.5 text-right text-muted-foreground">{s.count}</td>
+                      <td className="py-2.5 text-right font-medium">{formatCurrency(s.revenue)}</td>
+                      <td className="py-2.5 pl-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-24 h-2 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${pct.toFixed(1)}%`, backgroundColor: AES_NAVY }} />
+                          </div>
+                          <span className="text-xs text-muted-foreground">{pct.toFixed(1)}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 font-semibold">
                   <td className="pt-2.5">Total</td>
+                  <td className="pt-2.5 text-right text-muted-foreground">{transaction_count}</td>
+                  <td className="pt-2.5 text-right">{formatCurrency(totalRev)}</td>
                   <td />
-                  <td className="pt-2.5 text-right text-muted-foreground">{totals.tx_count}</td>
-                  <td className="pt-2.5 text-right">{formatCurrency(totals.revenue_ex)}</td>
-                  <td className="pt-2.5 text-right text-muted-foreground">{formatCurrency(totals.revenue_inc)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -126,43 +90,78 @@ function AestheticsDeepContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
         )}
       </Card>
 
-      {/* ── Revenue by Service ────────────────────────────────────────── */}
+      {/* ── Service Breakdown ─────────────────────────────────────────── */}
       <Card className="p-4 md:p-5">
-        <h2 className="text-base font-semibold text-foreground mb-4">Revenue by Service / Product</h2>
-        {byService.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">
-            {isFetching || isSyncing ? "Loading…" : "No data for selected period"}
-          </p>
-        ) : (
+        <h2 className="text-base font-semibold text-foreground mb-4">Revenue by Service</h2>
+        {services.length === 0 ? empty("No data for selected period") : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
                   <th className="text-left pb-2 font-medium">Service / Product</th>
-                  <th className="text-right pb-2 font-medium">Transactions</th>
+                  <th className="text-right pb-2 font-medium">Txns</th>
                   <th className="text-right pb-2 font-medium">Revenue ex-VAT</th>
                   <th className="text-left pb-2 pl-4 font-medium">Share</th>
                 </tr>
               </thead>
               <tbody>
-                {byService.map((s, i) => (
-                  <tr key={s.service} className={`border-b last:border-0 ${i % 2 === 0 ? "" : "bg-muted/20"}`}>
-                    <td className="py-2.5 font-medium">{s.service}</td>
-                    <td className="py-2.5 text-right text-muted-foreground">{s.tx_count}</td>
-                    <td className="py-2.5 text-right font-medium">{formatCurrency(s.revenue_ex)}</td>
-                    <td className="py-2.5 pl-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-24 h-2 bg-gray-100 rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full"
-                            style={{ width: `${s.pct}%`, backgroundColor: chartColors.aesthetics }}
-                          />
+                {services.map((s, i) => {
+                  const pct = totalRev > 0 ? (s.revenue / totalRev) * 100 : 0;
+                  return (
+                    <tr key={s.service} className={`border-b last:border-0 ${i % 2 === 1 ? "bg-muted/20" : ""}`}>
+                      <td className="py-2.5 font-medium">{s.service}</td>
+                      <td className="py-2.5 text-right text-muted-foreground">{s.count}</td>
+                      <td className="py-2.5 text-right font-medium">{formatCurrency(s.revenue)}</td>
+                      <td className="py-2.5 pl-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-24 h-2 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${pct.toFixed(1)}%`, backgroundColor: AES_NAVY }} />
+                          </div>
+                          <span className="text-xs text-muted-foreground">{pct.toFixed(1)}%</span>
                         </div>
-                        <span className="text-xs text-muted-foreground">{s.pct}%</span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* ── Payment Types ─────────────────────────────────────────────── */}
+      <Card className="p-4 md:p-5">
+        <h2 className="text-base font-semibold text-foreground mb-4">Payment Types</h2>
+        {paymentTypes.length === 0 ? empty("No data for selected period") : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
+                  <th className="text-left pb-2 font-medium">Type</th>
+                  <th className="text-right pb-2 font-medium">Txns</th>
+                  <th className="text-right pb-2 font-medium">Revenue ex-VAT</th>
+                  <th className="text-left pb-2 pl-4 font-medium">Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paymentTypes.map((p, i) => {
+                  const pct = totalRev > 0 ? (p.revenue / totalRev) * 100 : 0;
+                  return (
+                    <tr key={p.type} className={`border-b last:border-0 ${i % 2 === 1 ? "bg-muted/20" : ""}`}>
+                      <td className="py-2.5 font-medium">{p.type}</td>
+                      <td className="py-2.5 text-right text-muted-foreground">{p.count}</td>
+                      <td className="py-2.5 text-right font-medium">{formatCurrency(p.revenue)}</td>
+                      <td className="py-2.5 pl-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-24 h-2 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${pct.toFixed(1)}%`, backgroundColor: AES_NAVY }} />
+                          </div>
+                          <span className="text-xs text-muted-foreground">{pct.toFixed(1)}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
