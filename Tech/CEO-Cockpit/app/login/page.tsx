@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -11,31 +11,56 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const supabase = createClient();
+
+  useEffect(() => {
+    const saved = localStorage.getItem("rememberMe");
+    if (saved !== null) setRememberMe(saved === "true");
+  }, []);
 
   async function handleLogin(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
     setError("");
 
-    // Resolve shorthand username → full cockpit.local credentials
-    const raw = email.trim().toLowerCase();
-    const resolvedEmail = raw.includes("@") ? raw : `${raw}@cockpit.local`;
-    // Short passwords (< 6 chars) are below Supabase's minimum — expand them internally
-    const resolvedPassword = password === "123" && resolvedEmail === "123@cockpit.local"
-      ? "carisma123"
-      : password;
-    const { error } = await supabase.auth.signInWithPassword({ email: resolvedEmail, password: resolvedPassword });
+    try {
+      const supabase = createClient();
 
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-    } else {
+      const raw = email.trim().toLowerCase();
+      const resolvedEmail = raw.includes("@") ? raw : `${raw}@cockpit.local`;
+      const resolvedPassword =
+        password === "123" && resolvedEmail === "123@cockpit.local"
+          ? "carisma123"
+          : password;
+
+      const { error } = await supabase.auth.signInWithPassword({
+        email: resolvedEmail,
+        password: resolvedPassword,
+      });
+
+      if (error) {
+        setError(error.message);
+        return;
+      }
+
+      localStorage.setItem("rememberMe", String(rememberMe));
+
+      if (!rememberMe) {
+        // Clear session when tab closes if "remember me" is off
+        sessionStorage.setItem("sessionOnly", "true");
+      } else {
+        sessionStorage.removeItem("sessionOnly");
+      }
+
       router.push("/ceo");
       router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -66,6 +91,18 @@ export default function LoginPage() {
               required
               className="border-warm-border focus-visible:ring-gold/30 rounded-lg h-11"
             />
+            <div className="flex items-center gap-2">
+              <input
+                id="rememberMe"
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="w-4 h-4 rounded border-warm-border accent-[#B8943E] cursor-pointer"
+              />
+              <label htmlFor="rememberMe" className="text-sm text-text-secondary cursor-pointer select-none">
+                Remember me
+              </label>
+            </div>
             {error && <p className="text-red-500 text-sm">{error}</p>}
             <Button
               type="submit"
