@@ -4,9 +4,28 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { departments, type Department } from "@/lib/constants/departments";
+import { pathToPermissionKey } from "@/lib/constants/dashboards";
 import { cn } from "@/lib/utils";
 import { ChevronsLeft, ChevronsRight, ChevronDown, X, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+
+function filterDepartments(depts: Department[], keys: Set<string>, isAdmin: boolean): Department[] {
+  if (isAdmin) return depts;
+  return depts
+    .map((dept) => {
+      if (!dept.children || dept.children.length === 0) {
+        const key = pathToPermissionKey(dept.path);
+        return key && keys.has(key) ? dept : null;
+      }
+      const visibleChildren = dept.children.filter((child) => {
+        const key = pathToPermissionKey(child.path);
+        return key && keys.has(key);
+      });
+      if (visibleChildren.length === 0) return null;
+      return { ...dept, children: visibleChildren };
+    })
+    .filter(Boolean) as Department[];
+}
 
 interface SidebarProps {
   collapsed: boolean;
@@ -121,10 +140,20 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
   const router = useRouter();
   const supabase = createClient();
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [visibleDepts, setVisibleDepts] = useState<Department[]>(departments);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUserEmail(data.user?.email ?? null));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    fetch("/api/me/permissions")
+      .then((r) => r.json())
+      .then(({ isAdmin, keys }: { isAdmin: boolean; keys: string[] }) => {
+        setVisibleDepts(filterDepartments(departments, new Set(keys), isAdmin));
+      })
+      .catch(() => setVisibleDepts(departments));
+  }, []);
 
   async function handleSignOut() {
     await supabase.auth.signOut();
@@ -173,7 +202,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
 
       {/* Navigation */}
       <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
-        {departments.map((dept) => (
+        {visibleDepts.map((dept) => (
           <NavItem
             key={dept.slug}
             dept={dept}
