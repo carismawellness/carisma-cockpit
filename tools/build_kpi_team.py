@@ -96,9 +96,20 @@ SDR_COLS  = {"sales": "O", "booked": "P", "messages": "S", "deposits": "Q"}
 # ── Formula builders ──────────────────────────────────────────────────────────
 
 def _im(tab: str, col: str, date_ref: str) -> str:
-    """Single IFERROR(INDEX(…!$C:$C,MATCH(date_ref,…!$A:$A,0)),0) fragment."""
-    t = tab.replace("'", "''")   # escape single quotes in sheet name
-    return f"IFERROR(INDEX('{t}'!${col}:${col},MATCH({date_ref},'{t}'!$A:$A,0)),0)"
+    """
+    IFERROR(INDEX(tab!col, MATCH(DATEVALUE(date_ref),
+                                  IFERROR(DATEVALUE(tab!A:A),0), 0)), 0)
+
+    Uses DATEVALUE on both sides so the lookup is format-agnostic —
+    agent tabs may store dates as "1/5/2026" or "01/05/2026" or a date
+    serial; all resolve to the same numeric value.
+    """
+    t = tab.replace("'", "''")
+    return (
+        f"IFERROR(INDEX('{t}'!${col}:${col},"
+        f"MATCH(DATEVALUE({date_ref}),"
+        f"IFERROR(DATEVALUE('{t}'!$A:$A),0),0)),0)"
+    )
 
 
 def sum_formula(metric: str, date_ref: str) -> str:
@@ -116,7 +127,11 @@ def active_agents_formula(date_ref: str) -> str:
     for _, tab, fmt in AGENTS:
         col = CHAT_COLS["sales"] if fmt == "chat" else SDR_COLS["sales"]
         t = tab.replace("'", "''")
-        parts.append(f"(IFERROR(INDEX('{t}'!${col}:${col},MATCH({date_ref},'{t}'!$A:$A,0)),0)>0)*1")
+        parts.append(
+            f"(IFERROR(INDEX('{t}'!${col}:${col},"
+            f"MATCH(DATEVALUE({date_ref}),"
+            f"IFERROR(DATEVALUE('{t}'!$A:$A),0),0)),0)>0)*1"
+        )
     return "=" + "+".join(parts)
 
 
