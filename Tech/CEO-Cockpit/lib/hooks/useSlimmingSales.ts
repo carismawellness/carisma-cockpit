@@ -3,6 +3,7 @@
 import { useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -163,14 +164,17 @@ export function useSlimmingSales(dateFrom: Date, dateTo: Date, { skipSync = fals
   const { data: rows = [], isFetching } = useQuery({
     queryKey: ["slimming-sales", fromDateStr, toDateStr_],
     queryFn:  async () => {
-      const { data, error } = await supabase
-        .from("slimming_sales_daily")
-        .select("*")
-        .gte("month", fromMonth)
-        .lte("month", toMonth)
-        .order("date_of_service", { ascending: true });
-      if (error) throw error;
-      const all = (data ?? []) as SlimmingSaleRow[];
+      const all = await fetchAll(
+        (off, lim) =>
+          supabase
+            .from("slimming_sales_daily")
+            .select("*")
+            .gte("month", fromMonth)
+            .lte("month", toMonth)
+            .order("date_of_service", { ascending: true })
+            .range(off, off + lim - 1),
+        "slimming_sales_daily",
+      ) as SlimmingSaleRow[];
       return all.filter(r =>
         !r.date_of_service ||
         (r.date_of_service >= fromDateStr && r.date_of_service <= toDateStr_)

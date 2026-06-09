@@ -17,6 +17,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 
 export const dynamic = "force-dynamic";
 
@@ -166,22 +167,18 @@ export async function GET(request: NextRequest) {
 
   const supabase = createClient(supabaseUrl, supabaseKey);
 
-  // Fetch all rows for the date range across all agents
-  const { data, error } = await supabase
-    .from("crm_agent_daily")
-    .select("*")
-    .gte("date", from)
-    .lte("date", to)
-    .order("date", { ascending: true });
-
-  if (error) {
-    return NextResponse.json(
-      { error: `Supabase query failed: ${error.message}` },
-      { status: 500 }
-    );
-  }
-
-  const allRows = (data ?? []) as CrmAgentRow[];
+  // Fetch all rows for the date range across all agents — paginated to bypass PostgREST max_rows
+  const allRows = await fetchAll(
+    (off, lim) =>
+      supabase
+        .from("crm_agent_daily")
+        .select("*")
+        .gte("date", from)
+        .lte("date", to)
+        .order("date", { ascending: true })
+        .range(off, off + lim - 1),
+    "crm_agent_daily",
+  ) as CrmAgentRow[];
 
   // Group rows by agent slug
   const rowsBySlug = new Map<string, CrmAgentRow[]>();

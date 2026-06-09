@@ -361,7 +361,7 @@ export async function GET(req: Request) {
   // ── 4. Revenue ───────────────────────────────────────────────────────────
   // 4a. SPA — sum actual daily LAPIS amounts for exact date range (no pro-rating)
   overlappingMonths(dateFrom, dateTo);
-  for (const row of (revenueDaily.data ?? [])) {
+  for (const row of revenueDaily) {
     const slug = LOC_ID_TO_SLUG[row.location_id as number];
     if (!slug || !venues[slug]) continue;
     const lapisSales = (
@@ -389,11 +389,11 @@ export async function GET(req: Request) {
     venues[slug].revenue += adj;
   }
   // 4b. Aesthetics
-  const aesthTotal = (aestheticsSales.data ?? [])
+  const aesthTotal = aestheticsSales
     .reduce((s: number, r: Record<string, unknown>) => s + Number(r.price_ex_vat ?? 0), 0);
   if (venues["aesthetics"]) venues["aesthetics"].revenue = aesthTotal;
   // 4c. Slimming
-  const slimTotal = (slimmingSales.data ?? [])
+  const slimTotal = slimmingSales
     .reduce((s: number, r: Record<string, unknown>) => s + Number(r.price_ex_vat ?? 0), 0);
   if (venues["slimming"]) venues["slimming"].revenue = slimTotal;
 
