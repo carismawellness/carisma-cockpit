@@ -209,7 +209,7 @@ function CEOContent({
   return (
     <>
       {/* Page header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl md:text-2xl font-bold text-foreground">
             Morning Pulse
@@ -374,7 +374,7 @@ function CEOContent({
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
           Early Warning System
         </h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
           {/* Speed to Lead */}
           <Card className={`p-3 md:p-4 border ${stlStatus !== "green" ? "border-amber-300" : "border-border"}`}>
             <p className="text-[11px] text-muted-foreground mb-1">Speed to Lead</p>

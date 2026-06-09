@@ -26,23 +26,56 @@ To get your Location ID: log into GHL → select sub-account → URL will show `
 
 Carisma runs three brands, each as a separate GHL sub-account (location):
 
-| Brand | Location Name | Location ID |
-|-------|--------------|-------------|
-| Carisma Aesthetics | Carisma Aesthetics | *(run `mcp__ghl__search_locations` to confirm)* |
-| Carisma Spa | Carisma Spa & Wellness | *(run `mcp__ghl__search_locations` to confirm)* |
-| Carisma Slimming | Carisma Slimming | *(run `mcp__ghl__search_locations` to confirm)* |
+| Brand | Location Name | Location ID | MCP Server Name |
+|-------|--------------|-------------|-----------------|
+| Carisma Spa | Carisma Spa & Wellness | `TrtSnBSSKBOkVVNxJ3AM` | `ghl` |
+| Carisma Aesthetics | Carisma Aesthetics | `Goi7kzVK7iwe2woxUHkT` | `ghl-aesthetics` |
+| Carisma Slimming | Carisma Slimming | `imWIWDcnmOfijW0lltPq` | `ghl-slimming` |
 
-**To look up IDs:**
-```
-ToolSearch → mcp__ghl__search_locations
-mcp__ghl__search_locations(query="Carisma")
-```
+Each sub-account has its own Private Integration Token (PIT) in `.env`:
+- Spa → `GHL_API_KEY`
+- Aesthetics → `GHL_API_KEY_AESTHETICS`
+- Slimming → `GHL_API_KEY_SLIMMING`
+
+Agency-level access (`search_locations`) returns 403 on these PITs — each
+token is location-scoped. Use the brand-specific MCP server when working with
+a non-Spa brand.
 
 ---
 
 ## Pipelines
 
-### Aesthetics Pipeline
+Each brand's Call Pipeline mirrors the same 7-stage funnel. IDs below.
+
+### Call Pipeline IDs
+
+| Brand | Pipeline ID | 🌱 New Leads | ❌ Booking Lost | ✅ Booking Won |
+|-------|------------|--------------|----------------|----------------|
+| Spa | `4vgVsqiN12VGdloyzyxD` | `188e01d4-99aa-43e2-8b9a-8997a2557568` | `5bb020b3-8f55-43d9-9778-4ba14d331fc1` | `aa3b53ac-dc6e-47e2-bc05-4cfe8e65251c` |
+| Aesthetics | `PaSsbcOAeRURF2Hc2V3F` | `8a5da633-c150-43a6-8bad-c40934caafa8` | `afafed98-adff-4c3d-9d3d-50f72506fa00` | `e4209bea-82d7-4802-ac5d-54fae9523360` |
+| Slimming | `N3usvWAkWpUppJj1ggtM` | `e2321215-3f53-47ee-b90c-444b632557a1` | `889cb211-7c69-466e-88e8-deda84b2f073` | `e74d873e-001e-4746-8d55-35787a796ce0` |
+
+### Warm Leads AI Pipeline (Carisma Aesthetics)
+
+**Pipeline ID:** `EUX0sSe7GjR8OJApVZXA`
+**Location:** Carisma Aesthetics (`Goi7kzVK7iwe2woxUHkT`)
+**Created:** 2026-04-23
+
+| Position | Stage Name | Stage ID |
+|----------|-----------|---------|
+| 0 | ❄️ COLD Leads (AI Engaged) | `256196ea-8088-46d6-b0ff-ea1cd2206dce` |
+| 1 | 👋 Warm Leads | `a2dfd504-1996-4595-b90c-07c0e0eb242c` |
+| 2 | 🔥 HOT Leads | `aa975624-1268-414b-9164-46c84d655d18` |
+| 3 | ✍️ Manual Followup | `d4d0d1af-c57f-49af-ac87-50edcdda553a` |
+| 4 | ✨ AI Followup | `a8dc7c67-fbe6-4ed1-8bf7-23afdb243af4` |
+| 5 | ♻️ Recycle List | `2af4da53-14ab-4df2-8911-de04b06903ef` |
+| 6 | 📆 Appt Booked | `063614cb-8aa8-44d3-8747-c712f9aaa03e` |
+| 7 | ❌ Cancel/No-Show | `f5e59ab8-bea9-4709-ada2-3fff4159d0f5` |
+| 8 | ✅ Showed | `c7dd9b75-8a4a-484c-8be4-e5f7d27ce4fe` |
+
+---
+
+### Aesthetics Pipeline (Legacy Spanish Setter System)
 
 Pipeline stages (Spanish — must match exactly in code):
 

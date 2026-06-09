@@ -181,9 +181,10 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
             </p>
           )}
         </div>
+        {/* min 44px touch target on mobile (Apple/Google guideline) */}
         <button
           onClick={onMobileClose}
-          className="lg:hidden h-7 w-7 rounded-lg flex items-center justify-center text-text-secondary hover:bg-warm-gray hover:text-charcoal transition-colors"
+          className="lg:hidden min-h-[44px] min-w-[44px] rounded-lg flex items-center justify-center text-text-secondary hover:bg-warm-gray hover:text-charcoal transition-colors"
           aria-label="Close sidebar"
         >
           <X className="h-4 w-4" />
@@ -222,10 +223,11 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
           {!collapsed && (
             <p className="text-xs text-charcoal truncate flex-1 min-w-0">{userEmail ?? "…"}</p>
           )}
+          {/* min 44px touch target on mobile (Apple/Google guideline); desktop keeps 28px */}
           <button
             onClick={handleSignOut}
             title="Sign out"
-            className="h-7 w-7 rounded-md flex items-center justify-center text-text-secondary hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
+            className="min-h-[44px] min-w-[44px] lg:min-h-0 lg:min-w-0 lg:h-7 lg:w-7 rounded-md flex items-center justify-center text-text-secondary hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
           >
             <LogOut className="h-3.5 w-3.5" />
           </button>
@@ -258,9 +260,10 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
                   Cockpit
                 </p>
               </div>
+              {/* min 44px touch target on mobile */}
               <button
                 onClick={onMobileClose}
-                className="h-7 w-7 rounded-lg flex items-center justify-center text-text-secondary hover:bg-warm-gray hover:text-charcoal transition-colors"
+                className="min-h-[44px] min-w-[44px] rounded-lg flex items-center justify-center text-text-secondary hover:bg-warm-gray hover:text-charcoal transition-colors"
                 aria-label="Close sidebar"
               >
                 <X className="h-4 w-4" />
@@ -287,10 +290,11 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
                   {initials}
                 </div>
                 <p className="text-xs text-charcoal truncate flex-1 min-w-0">{userEmail ?? "…"}</p>
+                {/* min 44px touch target on mobile */}
                 <button
                   onClick={handleSignOut}
                   title="Sign out"
-                  className="h-7 w-7 rounded-md flex items-center justify-center text-text-secondary hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
+                  className="min-h-[44px] min-w-[44px] rounded-md flex items-center justify-center text-text-secondary hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
                 >
                   <LogOut className="h-3.5 w-3.5" />
                 </button>

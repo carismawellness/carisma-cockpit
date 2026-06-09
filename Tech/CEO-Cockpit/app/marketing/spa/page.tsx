@@ -447,7 +447,7 @@ function SpaMarketingContent({
         const totalRevenue = [...metaCampaigns, ...googleCampaigns].reduce((s, c) => s + c.attributedRevenue, 0);
         const conversionRate = totalLeads > 0 ? ((totalLeads * 0.65 * 0.55) / totalLeads * 100) : 0;
         return (
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
             <HeroKPICard label="Revenue" value={formatCurrency(totalRevenue)} lastYear="—" yoyLabel="—" positive />
             <HeroKPICard label="Total Marketing Spend" value={formatCurrency(totalSpend)} lastYear="—" yoyLabel="—" positive={false} />
             <HeroKPICard label="Meta Blended CPL" value={`€${metaBlendedCpl.toFixed(1)}`} lastYear="—" yoyLabel="—" positive />

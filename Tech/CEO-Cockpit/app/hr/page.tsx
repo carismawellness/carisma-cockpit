@@ -380,14 +380,14 @@ function HRContent() {
 
   return (
     <>
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Human Resources</h1>
+          <h1 className="text-xl md:text-2xl font-bold text-foreground">Human Resources</h1>
           <p className="text-sm text-muted-foreground mt-1">
             March 2026 — 75 active employees across 8 locations
           </p>
         </div>
-        <span className="inline-flex items-center gap-1.5 text-xs text-green-700 bg-green-50 rounded-full px-3 py-1">
+        <span className="inline-flex items-center gap-1.5 text-xs text-green-700 bg-green-50 rounded-full px-3 py-1 shrink-0">
           <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
           Live from Talexio
         </span>

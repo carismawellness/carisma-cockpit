@@ -86,7 +86,7 @@ function safeFloat(val: string): number {
 async function fetchLapisCsv(gid: string): Promise<Record<string, string>[]> {
   const url  = lapisCsvUrl(gid);
   const resp = await fetch(url, { redirect: "follow" });
-  if (!resp.ok) throw new Error(`Corporate Datasheet fetch failed: ${resp.status}`);
+  if (!resp.ok) throw new Error(`Cockpit Datasheet fetch failed: ${resp.status}`);
   const text  = await resp.text();
   const lines = text.split("\n").filter(l => l.trim());
   if (lines.length < 2) return [];

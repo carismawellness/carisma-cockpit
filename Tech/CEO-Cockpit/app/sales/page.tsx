@@ -56,7 +56,7 @@ function SalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
       {/* ── Page Header ─────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">Sales Overview</h1>
+          <h1 className="text-xl md:text-2xl font-bold text-foreground tracking-tight">Sales Overview</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             {formatDateRangeLabel(dateFrom, dateTo)} · Company-wide performance across all brands
           </p>
@@ -67,7 +67,7 @@ function SalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
               className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors"
             >
               <FileSpreadsheet className="h-3 w-3" />
-              Corporate Datasheet — Spa ↗
+              Cockpit Datasheet — Spa ↗
             </a>
             <a
               href="https://docs.google.com/spreadsheets/d/195RvbNuZd-oNL-rziKC3Wz6ndy0cDA_a/edit#gid=1770739089"
@@ -75,7 +75,7 @@ function SalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
               className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors"
             >
               <FileSpreadsheet className="h-3 w-3" />
-              Corporate Datasheet — Aesthetics ↗
+              Cockpit Datasheet — Aesthetics ↗
             </a>
             <a
               href="https://docs.google.com/spreadsheets/d/195RvbNuZd-oNL-rziKC3Wz6ndy0cDA_a/edit#gid=506676479"
@@ -83,7 +83,7 @@ function SalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
               className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors"
             >
               <FileSpreadsheet className="h-3 w-3" />
-              Corporate Datasheet — Slimming ↗
+              Cockpit Datasheet — Slimming ↗
             </a>
           </div>
         </div>
@@ -179,7 +179,7 @@ function SalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
       <Card className="p-3 md:p-6">
         <h2 className="text-lg font-semibold text-foreground mb-1">Revenue by Brand</h2>
         <p className="text-xs text-muted-foreground mb-5">
-          Total revenue per brand · inc-VAT · Corporate Datasheet
+          Total revenue per brand · inc-VAT · Cockpit Datasheet
         </p>
         <div className="h-[260px] md:h-[320px]">
           <ResponsiveContainer width="100%" height="100%">

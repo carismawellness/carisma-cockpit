@@ -61,7 +61,7 @@ export function SalesKPICard({
       </div>
 
       {/* Value */}
-      <p className="mt-1.5 text-2xl font-bold text-foreground leading-tight">
+      <p className="mt-1.5 text-xl md:text-2xl font-bold text-foreground leading-tight">
         {value}
       </p>
 

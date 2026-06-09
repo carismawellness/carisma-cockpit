@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 60" width="280" height="60" role="img" aria-label="Salvatore Pizza wordmark">
+  <!-- Cornicione crescent mark in red -->
+  <g transform="translate(8 14)">
+    <path d="M2 24 a 14 14 0 0 1 28 0" fill="none" stroke="#C8102E" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M2 24 q 14 6 28 0" fill="none" stroke="#C8102E" stroke-width="1.6" stroke-linecap="round" opacity="0.8"/>
+    <circle cx="16" cy="22" r="1.6" fill="#F4C430"/>
+  </g>
+  <!-- Wordmark -->
+  <text x="50" y="32" font-family="Playfair Display, Times New Roman, serif" font-weight="900" font-size="22" fill="#0E2A47" letter-spacing="-0.5">Salvatore</text>
+  <text x="50" y="50" font-family="Playfair Display, Times New Roman, serif" font-weight="400" font-style="italic" font-size="14" fill="#0E2A47" letter-spacing="0.5">Pizza · Sofia</text>
+</svg>

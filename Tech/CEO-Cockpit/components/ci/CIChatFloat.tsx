@@ -30,7 +30,8 @@ export function CIChatFloat() {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full bg-gold text-white shadow-lg hover:bg-gold-dark transition-all hover:scale-105 flex items-center justify-center"
+        className="fixed bottom-6 right-6 pb-safe z-50 h-14 w-14 rounded-full bg-gold text-white shadow-lg hover:bg-gold-dark transition-all hover:scale-105 flex items-center justify-center"
+        style={{ bottom: "calc(1.5rem + env(safe-area-inset-bottom, 0px))" }}
         aria-label="Open Carisma Intelligence"
       >
         <Bot className="h-6 w-6" />
@@ -43,9 +44,14 @@ export function CIChatFloat() {
       className={cn(
         "fixed z-50 flex flex-col bg-white shadow-2xl border border-warm-border overflow-hidden transition-all",
         minimized
-          ? "bottom-6 right-6 w-72 h-14 rounded-2xl"
-          : "bottom-0 right-0 w-full h-[70vh] rounded-t-2xl sm:bottom-6 sm:right-6 sm:w-[420px] sm:h-[520px] sm:rounded-2xl"
+          ? "right-6 w-72 h-14 rounded-2xl"
+          : "bottom-0 right-0 w-full h-[70vh] rounded-t-2xl sm:right-6 sm:w-[420px] sm:h-[520px] sm:rounded-2xl"
       )}
+      style={
+        minimized
+          ? { bottom: "calc(1.5rem + env(safe-area-inset-bottom, 0px))" }
+          : { paddingBottom: "env(safe-area-inset-bottom, 0px)" }
+      }
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 h-14 border-b border-warm-border bg-warm-white shrink-0">
@@ -56,16 +62,17 @@ export function CIChatFloat() {
           <span className="text-sm font-semibold text-charcoal">Carisma Intelligence</span>
         </div>
         <div className="flex items-center gap-1">
+          {/* min 44px touch targets on mobile; reset to 28px on md+ */}
           <button
             onClick={() => setMinimized(!minimized)}
-            className="h-7 w-7 rounded-lg flex items-center justify-center text-text-secondary hover:bg-warm-gray hover:text-charcoal transition-colors"
+            className="min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 md:h-7 md:w-7 rounded-lg flex items-center justify-center text-text-secondary hover:bg-warm-gray hover:text-charcoal transition-colors"
             aria-label={minimized ? "Expand" : "Minimize"}
           >
             <Minus className="h-4 w-4" />
           </button>
           <button
             onClick={() => { setOpen(false); setMinimized(false); }}
-            className="h-7 w-7 rounded-lg flex items-center justify-center text-text-secondary hover:bg-warm-gray hover:text-charcoal transition-colors"
+            className="min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 md:h-7 md:w-7 rounded-lg flex items-center justify-center text-text-secondary hover:bg-warm-gray hover:text-charcoal transition-colors"
             aria-label="Close"
           >
             <X className="h-4 w-4" />

@@ -151,7 +151,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
 
   const subtitle = useMemo(() => {
     const range = formatDateRangeLabel(dateFrom, dateTo);
-    return `${range} · Source: Corporate Datasheet + Zoho Books`;
+    return `${range} · Source: Cockpit Datasheet + Zoho Books`;
   }, [dateFrom, dateTo]);
 
   /* ── Inc-VAT totals ──────────────────────────────────────────── */
@@ -261,7 +261,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
       {/* ── Header ─────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="space-y-1">
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">Spa</h1>
+          <h1 className="text-xl md:text-2xl font-bold text-foreground tracking-tight">Spa</h1>
           <p className="text-sm text-muted-foreground">{subtitle}</p>
           <div className="flex flex-wrap gap-2 mt-1">
             <a
@@ -270,7 +270,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
               className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors"
             >
               <FileSpreadsheet className="h-3 w-3" />
-              Corporate Datasheet — Spa Services ↗
+              Cockpit Datasheet — Spa Services ↗
             </a>
             <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600">
               <FileSpreadsheet className="h-3 w-3" />

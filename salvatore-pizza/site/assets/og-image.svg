@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="Salvatore Pizza — The crust is the secret.">
+  <!-- Off-white background -->
+  <rect width="1200" height="630" fill="#F7F1E3"/>
+
+  <!-- Subtle texture: faint leopard spots in crust cream -->
+  <g opacity="0.08" fill="#3A1F1A">
+    <circle cx="120" cy="90" r="22"/>
+    <circle cx="260" cy="540" r="34"/>
+    <circle cx="940" cy="120" r="28"/>
+    <circle cx="1080" cy="490" r="18"/>
+    <circle cx="540" cy="40" r="14"/>
+    <circle cx="80" cy="380" r="16"/>
+  </g>
+
+  <!-- Large red cornicione crescent mark, bottom-right -->
+  <g transform="translate(820 320)">
+    <path d="M0 220 a 200 200 0 0 1 400 0" fill="none" stroke="#C8102E" stroke-width="32" stroke-linecap="round"/>
+    <path d="M0 220 q 200 80 400 0" fill="none" stroke="#C8102E" stroke-width="20" stroke-linecap="round" opacity="0.6"/>
+    <circle cx="200" cy="200" r="14" fill="#F4C430"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="90" y="240" font-family="Playfair Display, Times New Roman, serif" font-weight="900" font-size="120" fill="#0E2A47" letter-spacing="-3">Salvatore</text>
+  <text x="92" y="320" font-family="Playfair Display, Times New Roman, serif" font-weight="700" font-size="56" fill="#0E2A47" letter-spacing="-1">Pizza · Sofia</text>
+
+  <!-- Tagline -->
+  <text x="92" y="470" font-family="Playfair Display, Times New Roman, serif" font-style="italic" font-weight="400" font-size="48" fill="#0E2A47" opacity="0.85">The crust is the secret.</text>
+
+  <!-- Eyebrow -->
+  <text x="92" y="540" font-family="Inter, system-ui, sans-serif" font-weight="500" font-size="20" fill="#C8102E" letter-spacing="3.6">NEAPOLITAN, MADE IN SOFIA</text>
+</svg>

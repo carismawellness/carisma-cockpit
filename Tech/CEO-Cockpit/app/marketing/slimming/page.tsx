@@ -361,11 +361,11 @@ function SlimmingMarketingContent({
 
       {/* Section 1: Hero KPIs with "New Brand" badges */}
       {isLoading ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
           {Array.from({ length: 7 }).map((_, i) => <SkeletonCard key={i} />)}
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
           {heroCards.map((kpi) => (
             <Card key={kpi.label} className="p-4">
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{kpi.label}</p>

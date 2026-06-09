@@ -83,5 +83,7 @@ Massages · Facials · Body treatments · Spa packages · Couples experiences ·
 - Never use aggressive urgency language ("ACT NOW", "LIMITED TIME ONLY!!!")
 - Never be clinical or transactional
 - Never use industry jargon without sensory grounding
-- Never boast — let the experience speak
-- Never rush the reader — every sentence should have space
+- Never boast. Let the experience speak.
+- Never rush the reader. Every sentence should have space.
+- Never use em dashes (—). They interrupt flow and feel editorial, not personal. Replace with a period, comma, or colon depending on the sentence. Example: "I tried calling you. I'd love to connect." not "I tried calling you — I'd love to connect."
+- Never use emojis. They undermine the brand's refined, elegant register.

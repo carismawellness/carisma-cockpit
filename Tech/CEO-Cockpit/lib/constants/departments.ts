@@ -16,11 +16,19 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+export interface SubSubItem {
+  slug: string;
+  label: string;
+  path: string;
+  icon?: LucideIcon;
+}
+
 export interface SubItem {
   slug: string;
   label: string;
   path: string;
   icon?: LucideIcon;
+  children?: SubSubItem[];
 }
 
 export interface Department {
@@ -40,7 +48,18 @@ export const departments: Department[] = [
     children: [
       { slug: "ceo",        label: "CEO",        path: "/ceo",        icon: LayoutDashboard },
       { slug: "funnel",     label: "Funnel",     path: "/funnel",     icon: Filter },
-      { slug: "marketing",  label: "Marketing",  path: "/marketing",  icon: Megaphone },
+      {
+        slug: "marketing",
+        label: "Marketing",
+        path: "/marketing",
+        icon: Megaphone,
+        children: [
+          { slug: "marketing-master",     label: "Master",     path: "/marketing",            icon: Megaphone },
+          { slug: "marketing-spa",        label: "Spa",        path: "/marketing/spa",        icon: Sparkles  },
+          { slug: "marketing-aesthetics", label: "Aesthetics", path: "/marketing/aesthetics", icon: Heart     },
+          { slug: "marketing-slimming",   label: "Slimming",   path: "/marketing/slimming",   icon: Activity  },
+        ],
+      },
       { slug: "hr",         label: "HR",         path: "/hr",         icon: Users },
       { slug: "operations", label: "Operations", path: "/operations", icon: Settings },
     ],

@@ -43,20 +43,25 @@ export function TopBar({
         sidebarCollapsed ? "lg:left-[4.5rem]" : "lg:left-60"
       )}
     >
-      <div className="flex items-center gap-2 shrink min-w-0">
+      <div className="flex items-center gap-2 min-w-0 overflow-hidden">
         <Button
           variant="ghost"
           size="icon"
-          className="lg:hidden shrink-0"
+          className="lg:hidden shrink-0 min-h-[44px] min-w-[44px]"
           onClick={onMobileMenuOpen}
           aria-label="Open menu"
         >
           <Menu className="h-5 w-5 text-muted-foreground" />
         </Button>
-        {!hideDatePicker && <DateRangePicker from={dateFrom} to={dateTo} onChange={onDateChange} />}
+        {!hideDatePicker && (
+          <div className="min-w-0 overflow-hidden">
+            <DateRangePicker from={dateFrom} to={dateTo} onChange={onDateChange} />
+          </div>
+        )}
       </div>
-      <div className="flex items-center gap-1 md:gap-3">
-        <Button variant="ghost" size="icon" className="relative h-9 w-9">
+      <div className="flex items-center gap-1 md:gap-3 shrink-0">
+        {/* min 44px touch target on mobile, reset to 36px on md+ */}
+        <Button variant="ghost" size="icon" className="relative min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 md:h-9 md:w-9">
           <Bell className="h-[18px] w-[18px] text-muted-foreground" />
           {alertCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] rounded-full h-4 w-4 flex items-center justify-center">
@@ -64,7 +69,7 @@ export function TopBar({
             </span>
           )}
         </Button>
-        <Button variant="ghost" size="icon" className="h-9 w-9" onClick={handleLogout}>
+        <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 md:h-9 md:w-9" onClick={handleLogout}>
           <LogOut className="h-[18px] w-[18px] text-muted-foreground" />
         </Button>
       </div>

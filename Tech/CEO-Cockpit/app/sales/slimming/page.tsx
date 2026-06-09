@@ -38,7 +38,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
             className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors"
           >
             <FileSpreadsheet className="h-3 w-3" />
-            Corporate Datasheet — Slimming Sales ↗
+            Cockpit Datasheet — Slimming Sales ↗
           </a>
           <a
             href="https://docs.google.com/spreadsheets/d/195RvbNuZd-oNL-rziKC3Wz6ndy0cDA_a/edit#gid=1735295211"
@@ -46,7 +46,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
             className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors"
           >
             <FileSpreadsheet className="h-3 w-3" />
-            Corporate Datasheet — Slimming Treatments ↗
+            Cockpit Datasheet — Slimming Treatments ↗
           </a>
         </div>
       </div>

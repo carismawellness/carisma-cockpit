@@ -37,7 +37,7 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
             className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors"
           >
             <FileSpreadsheet className="h-3 w-3" />
-            Corporate Datasheet — Aesthetics ↗
+            Cockpit Datasheet — Aesthetics ↗
           </a>
         </div>
       </div>

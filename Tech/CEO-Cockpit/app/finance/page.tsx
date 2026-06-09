@@ -593,7 +593,7 @@ function FinanceContent({
   /* --- Render ------------------------------------------------------- */
   return (
     <>
-      <h1 className="text-2xl font-bold text-foreground">Finance Dashboard</h1>
+      <h1 className="text-xl md:text-2xl font-bold text-foreground">Finance Dashboard</h1>
       <p className="text-sm text-muted-foreground -mt-2 mb-2">
         {subtitle}
       </p>
@@ -602,7 +602,7 @@ function FinanceContent({
       <KPICardRow kpis={kpis} />
 
       {/* Sparkline summary row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="p-4">
           <div className="flex items-center justify-between">
             <div>

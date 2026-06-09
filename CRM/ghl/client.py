@@ -80,13 +80,26 @@ class GHLClient:
         data = self.get(f"/contacts/{contact_id}")
         return data.get("contact", data)
 
-    def search_contacts(self, query: str = "", limit: int = 100, start_after_id: Optional[str] = None) -> dict:
-        """Returns full response dict (contacts + meta)."""
+    def search_contacts(
+        self,
+        query: str = "",
+        limit: int = 100,
+        start_after_id: Optional[str] = None,
+        start_after: Optional[int] = None,
+    ) -> dict:
+        """Returns full response dict (contacts + meta).
+
+        GHL cursor pagination requires BOTH startAfterId AND startAfter (Unix ms
+        timestamp). Pass both from meta.startAfterId and meta.startAfter of the
+        previous response to advance to the next page.
+        """
         params: dict[str, Any] = {"locationId": self.location_id, "limit": limit}
         if query:
             params["query"] = query
         if start_after_id:
             params["startAfterId"] = start_after_id
+        if start_after is not None:
+            params["startAfter"] = start_after
         return self.get("/contacts/", params=params)
 
     def update_contact(self, contact_id: str, fields: dict) -> dict:

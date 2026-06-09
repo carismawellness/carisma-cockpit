@@ -477,7 +477,7 @@ export function EmployeeTable({
         </div>
       </Card>
 
-      <Card className="p-6">
+      <Card className="p-3 md:p-6">
         <DataTable
           columns={columns}
           data={tableData as unknown as Record<string, unknown>[]}
@@ -490,7 +490,7 @@ export function EmployeeTable({
 
       {/* Agent Detail */}
       {selectedAgent !== null && agentDailyData.length > 0 && (
-        <Card className="p-6">
+        <Card className="p-3 md:p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-base font-semibold text-foreground">
               {selectedAgent} — Daily Breakdown

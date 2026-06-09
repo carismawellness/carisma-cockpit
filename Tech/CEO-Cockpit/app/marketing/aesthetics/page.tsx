@@ -323,7 +323,7 @@ function AestheticsMarketingContent({
           </h1>
           <p className="text-sm text-text-secondary mt-1">Loading data…</p>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
           {Array.from({ length: 7 }).map((_, i) => (
             <SkeletonCard key={i} />
           ))}
@@ -401,7 +401,7 @@ function AestheticsMarketingContent({
         }
 
         return (
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
             {heroKpis.map((kpi) => (
               <Card key={kpi.label} className="p-4">
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{kpi.label}</p>

@@ -1,0 +1,56 @@
+# Meta Ads CLI — Carisma Spa Campaign Template
+# Usage:
+#   meta-ads validate --config campaign-template-spa.yaml   (dry run, no API calls)
+#   meta-ads create  --config campaign-template-spa.yaml    (creates PAUSED campaign)
+#   meta-ads status <campaign-id>
+#   meta-ads pause  <campaign-id>
+#
+# Requires env vars: META_ACCESS_TOKEN, META_AD_ACCOUNT_ID, META_PAGE_ID
+# (all set in .env — run: source .env before executing commands)
+
+campaign:
+  name: "CS | TOF | Traffic | Spa Day | Apr 2026"
+  objective: OUTCOME_TRAFFIC   # OUTCOME_TRAFFIC | OUTCOME_LEADS | OUTCOME_AWARENESS | OUTCOME_ENGAGEMENT | OUTCOME_SALES
+  status: PAUSED               # Always start PAUSED — human activates
+  special_ad_categories: []
+
+ad_set:
+  name: "CS | TOF | Traffic | Women 25-55 | Malta"
+  daily_budget: 2000           # in cents → 2000 = €20/day
+  optimization_goal: LINK_CLICKS  # LINK_CLICKS | LANDING_PAGE_VIEWS | IMPRESSIONS | REACH | LEAD_GENERATION
+  targeting:
+    countries: ["MT"]
+    age_min: 25
+    age_max: 55
+    genders: [2]               # 1 = male, 2 = female
+    interests:
+      - "Spa"
+      - "Wellness"
+      - "Massage"
+      - "Self-care"
+      - "Luxury lifestyle"
+    placements:
+      - facebook_feed
+      - instagram_feed
+      - instagram_stories
+
+ads:
+  - name: "CS | Spa Day | Image A | Unwind"
+    image: "../../.tmp/ads/spa-day-image-a.jpg"
+    primary_text: |
+      Life moves fast. Your body remembers every moment you didn't pause.
+      Treat yourself to a full Spa Day at Carisma — and come back to yourself.
+    headline: "A Day Just for You"
+    description: "Book your Carisma Spa Day experience in Malta."
+    cta: BOOK_NOW
+    link: "https://www.carismaspa.com/spa-day"
+
+  - name: "CS | Spa Day | Image B | Gift"
+    image: "../../.tmp/ads/spa-day-image-b.jpg"
+    primary_text: |
+      Looking for the perfect gift? Give someone you love a full day of bliss.
+      Carisma Spa gift vouchers — delivered instantly, remembered forever.
+    headline: "Gift the Perfect Day"
+    description: "Carisma Spa gift vouchers. Book online."
+    cta: SHOP_NOW
+    link: "https://www.carismaspa.com/gift-vouchers"
