@@ -3,8 +3,6 @@
 import { useMemo } from "react";
 import { CIChat } from "@/components/ci/CIChat";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
-import { SalesKPICard } from "@/components/sales/SalesKPICard";
-import { SalesKPIGrid } from "@/components/sales/SalesKPIGrid";
 import { Card } from "@/components/ui/card";
 import { chartColors, formatCurrency } from "@/lib/charts/config";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
@@ -116,27 +114,8 @@ function SalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
         </div>
       )}
 
-      {/* ── Company-wide KPIs ──────────────────────────────────── */}
-      <SalesKPIGrid columns={3}>
-        <SalesKPICard
-          label="Total Net Revenue"
-          value={formatCurrency(totalNet)}
-          subtitle="All brands combined · inc-VAT"
-        />
-        <SalesKPICard
-          label="Spa Revenue"
-          value={formatCurrency(spaNet)}
-          subtitle={spa.totals.net_revenue > 0 ? `${formatCurrency(spa.totals.net_revenue)} ex-VAT` : isLoading ? "Loading…" : "No data"}
-        />
-        <SalesKPICard
-          label="Aesthetics + Slimming"
-          value={formatCurrency(aesTotal + slimTotal)}
-          subtitle={`${aes.totals.tx_count + slim.totals.tx_count} transactions`}
-        />
-      </SalesKPIGrid>
-
       {/* ── Brand Snapshot ─────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="p-3 md:p-5 border-l-4" style={{ borderLeftColor: chartColors.spa }}>
           <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium mb-1">
             Spa
@@ -172,6 +151,11 @@ function SalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
               ? `${slim.totals.tx_count} transactions`
               : (slim.isFetching || slim.isSyncing) ? "Loading…" : "No data"}
           </p>
+        </Card>
+        <Card className="p-3 md:p-5 border-l-4 border-l-foreground/30">
+          <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium mb-1">Group</p>
+          <p className="text-xl md:text-2xl font-bold text-foreground">{formatCurrency(totalNet)}</p>
+          <p className="text-xs text-muted-foreground mt-1">All brands · inc-VAT</p>
         </Card>
       </div>
 
