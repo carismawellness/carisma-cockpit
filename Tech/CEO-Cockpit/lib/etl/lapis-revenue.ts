@@ -279,7 +279,14 @@ async function runMonth(
   }
 
   const allTarget = new Set([...WHOLESALE_ACCOUNTS, ...DISCOUNT_ACCOUNTS, ...REFUND_ACCOUNTS]);
-  const zohoTotals = await fetchZohoRevenueAccounts(zohoClient, year, month, allTarget);
+  let zohoTotals: Record<string, number> = {};
+  let zohoOk = false;
+  try {
+    zohoTotals = await fetchZohoRevenueAccounts(zohoClient, year, month, allTarget);
+    zohoOk = true;
+  } catch (e) {
+    log.push(`  ${mk}: Zoho unavailable (${String(e).slice(0, 80)}), using 0 for wholesale/discount/refund`);
+  }
 
   const totalWholesale = [...WHOLESALE_ACCOUNTS].reduce((s, c) => s + Math.abs(zohoTotals[c] ?? 0), 0);
   const totalDiscount  = Math.abs(zohoTotals["20000"]  ?? 0);
@@ -304,7 +311,7 @@ async function runMonth(
       sales_discount:   +(totalDiscount * ratio).toFixed(2),
       sales_refund:     +(totalRefund   * ratio).toFixed(2),
       lapis_synced_at:  nowTs,
-      zoho_synced_at:   nowTs,
+      zoho_synced_at:   zohoOk ? nowTs : null,
     };
   });
 
