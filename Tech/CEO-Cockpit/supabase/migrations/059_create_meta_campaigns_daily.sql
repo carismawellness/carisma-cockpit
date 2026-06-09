@@ -4,7 +4,7 @@
 CREATE TABLE IF NOT EXISTS meta_campaigns_daily (
     id                  BIGSERIAL PRIMARY KEY,
     date                DATE           NOT NULL,
-    brand_id            UUID           NOT NULL REFERENCES brands(id),
+    brand_id            INTEGER        NOT NULL REFERENCES brands(id),
     campaign_id         TEXT           NOT NULL,
     campaign_name       TEXT           NOT NULL,
     adset_name          TEXT,

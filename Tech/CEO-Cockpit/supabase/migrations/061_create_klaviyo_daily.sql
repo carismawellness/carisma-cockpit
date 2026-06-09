@@ -3,7 +3,7 @@
 CREATE TABLE IF NOT EXISTS klaviyo_daily (
     id                      BIGSERIAL PRIMARY KEY,
     date                    DATE        NOT NULL,
-    brand_id                UUID        NOT NULL REFERENCES brands(id),
+    brand_id                INTEGER     NOT NULL REFERENCES brands(id),
     total_subscribers       BIGINT      NOT NULL DEFAULT 0,
     active_subscribers      BIGINT      NOT NULL DEFAULT 0,
     campaigns_sent          INT         NOT NULL DEFAULT 0,
