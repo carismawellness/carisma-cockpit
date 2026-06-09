@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, X, Database } from "lucide-react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { formatCurrency } from "@/lib/charts/config";
-import { EbitdaSummaryHeader, SummaryData } from "@/components/finance/EbitdaSummaryHeader";
+import { EbitdaSummaryHeader, SummaryData, SppyData } from "@/components/finance/EbitdaSummaryHeader";
 
 // ── Venue config (matches the API) ───────────────────────────────────────────
 
@@ -440,6 +440,7 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
   const dtStr = toIso(dateTo);
 
   const [data, setData]         = useState<V2Data | null>(null);
+  const [sppyData, setSppyData] = useState<V2Data | null>(null);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState<string | null>(null);
   const [spaCollapsed, setSpaCollapsed] = useState(false);
@@ -450,12 +451,21 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
   const [drill, setDrill]               = useState<DrillTarget | null>(null);
 
   useEffect(() => {
-    setLoading(true); setError(null); setData(null);
+    setLoading(true); setError(null); setData(null); setSppyData(null);
     const controller = new AbortController();
-    const qs = new URLSearchParams({ date_from: dfStr, date_to: dtStr });
-    fetch(`/api/finance/ebitda-v2?${qs}`, { signal: controller.signal })
-      .then(r => r.json())
-      .then(d => { if (d.error) throw new Error(d.error); setData(d); setLoading(false); })
+    const qs     = new URLSearchParams({ date_from: dfStr,                       date_to: dtStr });
+    const sppyQs = new URLSearchParams({ date_from: dfStr.slice(0,4-0).replace(/^(\d{4})/, y => String(+y-1)),
+                                         date_to:   dtStr.replace(/^(\d{4})/, y => String(+y-1)) });
+    Promise.all([
+      fetch(`/api/finance/ebitda-v2?${qs}`,     { signal: controller.signal }).then(r => r.json()),
+      fetch(`/api/finance/ebitda-v2?${sppyQs}`, { signal: controller.signal }).then(r => r.json()).catch(() => null),
+    ])
+      .then(([d, s]) => {
+        if (d.error) throw new Error(d.error);
+        setData(d);
+        setSppyData(s?.error ? null : (s ?? null));
+        setLoading(false);
+      })
       .catch(e => { if (e.name !== "AbortError") { setError(e instanceof Error ? e.message : String(e)); setLoading(false); } });
     return () => controller.abort();
   }, [dfStr, dtStr]);
@@ -494,15 +504,34 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
 
   const summaryData: SummaryData | null = useMemo(() => {
     if (!data) return null;
-    const spa  = spaAggregate;
-    const aes  = data.venues["aesthetics"] ?? emptyVenue();
-    const slim = data.venues["slimming"]   ?? emptyVenue();
+    const spa   = spaAggregate;
+    const aes   = data.venues["aesthetics"] ?? emptyVenue();
+    const slim  = data.venues["slimming"]   ?? emptyVenue();
     const group = data.group;
-    const days = data.days_in_period;
+    const days  = data.days_in_period;
     const periodLabel = days <= 31 ? "1 month"
       : days <= 92  ? `${Math.round(days / 30)} months`
       : days <= 366 ? `${Math.round(days / 30)} months`
       : `${Math.round(days / 365)} year`;
+
+    let sppy: SppyData | null = null;
+    if (sppyData) {
+      const sppySpa = SPA_VENUES.reduce((acc, slug) => {
+        const v = sppyData.venues[slug] ?? emptyVenue();
+        acc.revenue += v.revenue; acc.ebitda += v.ebitda; return acc;
+      }, { revenue: 0, ebitda: 0 });
+      sppy = {
+        groupRevenue: sppyData.group.revenue,
+        groupEbitda:  sppyData.group.ebitda,
+        spaRevenue:   sppySpa.revenue,
+        spaEbitda:    sppySpa.ebitda,
+        aesRevenue:   (sppyData.venues["aesthetics"] ?? emptyVenue()).revenue,
+        aesEbitda:    (sppyData.venues["aesthetics"] ?? emptyVenue()).ebitda,
+        slimRevenue:  (sppyData.venues["slimming"]   ?? emptyVenue()).revenue,
+        slimEbitda:   (sppyData.venues["slimming"]   ?? emptyVenue()).ebitda,
+      };
+    }
+
     return {
       groupRevenue: group.revenue,
       groupEbitda:  group.ebitda,
@@ -513,8 +542,9 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
       slimRevenue:  slim.revenue,
       slimEbitda:   slim.ebitda,
       periodLabel,
+      sppy,
     };
-  }, [data, spaAggregate]);
+  }, [data, spaAggregate, sppyData]);
 
   function vd(slug: string): VenueData {
     if (!data) return emptyVenue();

@@ -5,6 +5,17 @@ import { formatCurrency } from "@/lib/charts/config";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export interface SppyData {
+  groupRevenue: number;
+  groupEbitda:  number;
+  spaRevenue:   number;
+  spaEbitda:    number;
+  aesRevenue:   number;
+  aesEbitda:    number;
+  slimRevenue:  number;
+  slimEbitda:   number;
+}
+
 export interface SummaryData {
   groupRevenue: number;
   groupEbitda:  number;
@@ -15,6 +26,7 @@ export interface SummaryData {
   slimRevenue:  number;
   slimEbitda:   number;
   periodLabel:  string;
+  sppy?:        SppyData | null;
 }
 
 export interface EbitdaSummaryHeaderProps {
@@ -57,6 +69,25 @@ function marginColor(margin: number): string {
   return "text-red-600";
 }
 
+function yoyDelta(current: number, prior: number): { pct: number; positive: boolean } | null {
+  if (!prior) return null;
+  const pct = ((current - prior) / Math.abs(prior)) * 100;
+  return { pct, positive: pct >= 0 };
+}
+
+function YoyBadge({ current, prior, label }: { current: number; prior: number; label?: string }) {
+  const delta = yoyDelta(current, prior);
+  if (!delta) return null;
+  const arrow = delta.positive ? "↑" : "↓";
+  const cls   = delta.positive ? "text-emerald-700" : "text-red-600";
+  return (
+    <span className={`text-[11px] font-medium tabular-nums ${cls}`}>
+      {arrow} {Math.abs(delta.pct).toFixed(1)}% vs LY
+      {label ? ` · LY ${label}` : ""}
+    </span>
+  );
+}
+
 // ── Skeleton placeholder ──────────────────────────────────────────────────────
 
 function Skeleton({ className }: { className?: string }) {
@@ -68,15 +99,30 @@ function Skeleton({ className }: { className?: string }) {
 // ── Brand mini-card ───────────────────────────────────────────────────────────
 
 interface BrandCardProps {
-  name:     string;
-  revenue:  number;
-  ebitda:   number;
-  border:   string;
-  loading:  boolean;
+  name:        string;
+  revenue:     number;
+  ebitda:      number;
+  border:      string;
+  loading:     boolean;
+  sppyRevenue?: number | null;
+  sppyEbitda?:  number | null;
 }
 
-function BrandCard({ name, revenue, ebitda, border, loading }: BrandCardProps) {
-  const margin = safeMargin(ebitda, revenue);
+function DeltaChip({ current, prior }: { current: number; prior: number }) {
+  const delta = yoyDelta(current, prior);
+  if (!delta) return null;
+  const cls   = delta.positive ? "text-emerald-600" : "text-red-500";
+  const arrow = delta.positive ? "↑" : "↓";
+  return (
+    <span className={`text-[10px] font-medium tabular-nums ${cls}`}>
+      {arrow}{Math.abs(delta.pct).toFixed(1)}%
+    </span>
+  );
+}
+
+function BrandCard({ name, revenue, ebitda, border, loading, sppyRevenue, sppyEbitda }: BrandCardProps) {
+  const margin     = safeMargin(ebitda, revenue);
+  const sppyMargin = (sppyRevenue && sppyEbitda != null) ? safeMargin(sppyEbitda, sppyRevenue) : null;
 
   return (
     <div className={`flex-1 min-w-0 bg-card rounded-lg border border-border p-3 ${border}`}>
@@ -92,20 +138,40 @@ function BrandCard({ name, revenue, ebitda, border, loading }: BrandCardProps) {
           <p className="text-xs font-bold text-foreground mb-2">{name}</p>
           <div className="flex justify-between items-center text-xs">
             <span className="text-muted-foreground">Revenue</span>
-            <span className="tabular-nums font-medium">{formatCurrency(revenue)}</span>
+            <span className="flex items-center gap-1.5 tabular-nums font-medium">
+              {sppyRevenue != null && <DeltaChip current={revenue} prior={sppyRevenue} />}
+              {formatCurrency(revenue)}
+            </span>
           </div>
+          {sppyRevenue != null && (
+            <div className="flex justify-end text-[10px] text-muted-foreground/60 tabular-nums -mt-0.5 mb-0.5">
+              LY {formatCurrency(sppyRevenue)}
+            </div>
+          )}
           <div className="flex justify-between items-center text-xs mt-0.5">
             <span className="text-muted-foreground">EBITDA</span>
-            <span className={`tabular-nums font-medium ${ebitdaValueColor(ebitda)}`}>
+            <span className={`flex items-center gap-1.5 tabular-nums font-medium ${ebitdaValueColor(ebitda)}`}>
+              {sppyEbitda != null && <DeltaChip current={ebitda} prior={sppyEbitda} />}
               {formatCurrency(ebitda)}
             </span>
           </div>
+          {sppyEbitda != null && (
+            <div className="flex justify-end text-[10px] text-muted-foreground/60 tabular-nums -mt-0.5 mb-0.5">
+              LY {formatCurrency(sppyEbitda)}
+            </div>
+          )}
           <div className="flex justify-between items-center text-xs mt-0.5">
             <span className="text-muted-foreground">Margin</span>
-            <span className={`tabular-nums font-semibold ${marginColor(margin)}`}>
+            <span className={`flex items-center gap-1.5 tabular-nums font-semibold ${marginColor(margin)}`}>
+              {sppyMargin != null && <DeltaChip current={margin} prior={sppyMargin} />}
               {margin.toFixed(1)}%
             </span>
           </div>
+          {sppyMargin != null && (
+            <div className="flex justify-end text-[10px] text-muted-foreground/60 tabular-nums -mt-0.5">
+              LY {sppyMargin.toFixed(1)}%
+            </div>
+          )}
         </>
       )}
     </div>
@@ -171,6 +237,11 @@ export function EbitdaSummaryHeader({ data, loading }: EbitdaSummaryHeaderProps)
                 {"  "}
                 Slim {formatCurrency(d.slimRevenue)}
               </p>
+              {d.sppy && (
+                <p className="mt-1">
+                  <YoyBadge current={d.groupRevenue} prior={d.sppy.groupRevenue} label={formatCurrency(d.sppy.groupRevenue)} />
+                </p>
+              )}
             </>
           )}
         </div>
@@ -208,6 +279,11 @@ export function EbitdaSummaryHeader({ data, loading }: EbitdaSummaryHeaderProps)
                 <span className="text-gray-400">·</span>
                 <span className="text-gray-400">Target 30%</span>
               </div>
+              {d.sppy && (
+                <p className="mt-1">
+                  <YoyBadge current={d.groupEbitda} prior={d.sppy.groupEbitda} label={formatCurrency(d.sppy.groupEbitda)} />
+                </p>
+              )}
             </>
           )}
         </div>
@@ -221,6 +297,8 @@ export function EbitdaSummaryHeader({ data, loading }: EbitdaSummaryHeaderProps)
           ebitda={d.spaEbitda}
           border="border-l-4 border-l-emerald-500"
           loading={loading}
+          sppyRevenue={d.sppy?.spaRevenue ?? null}
+          sppyEbitda={d.sppy?.spaEbitda ?? null}
         />
         <BrandCard
           name="Aesthetics"
@@ -228,6 +306,8 @@ export function EbitdaSummaryHeader({ data, loading }: EbitdaSummaryHeaderProps)
           ebitda={d.aesEbitda}
           border="border-l-4 border-l-purple-500"
           loading={loading}
+          sppyRevenue={d.sppy?.aesRevenue ?? null}
+          sppyEbitda={d.sppy?.aesEbitda ?? null}
         />
         <BrandCard
           name="Slimming"
@@ -235,6 +315,8 @@ export function EbitdaSummaryHeader({ data, loading }: EbitdaSummaryHeaderProps)
           ebitda={d.slimEbitda}
           border="border-l-4 border-l-amber-500"
           loading={loading}
+          sppyRevenue={d.sppy?.slimRevenue ?? null}
+          sppyEbitda={d.sppy?.slimEbitda ?? null}
         />
       </div>
     </div>

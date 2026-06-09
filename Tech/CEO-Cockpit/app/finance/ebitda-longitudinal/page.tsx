@@ -18,6 +18,7 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import {
   EbitdaSummaryHeader,
   SummaryData,
+  SppyData,
 } from "@/components/finance/EbitdaSummaryHeader";
 import type {
   LongitudinalResponse,
@@ -173,6 +174,18 @@ function LongitudinalContent({
       : n <= 12 ? `${n} months`
       : `${Math.round(n / 12)} year`;
 
+    const s = last.sppy;
+    const sppy: SppyData | null = s ? {
+      groupRevenue: s.revenue,
+      groupEbitda:  s.ebitda,
+      spaRevenue:   s.spa.revenue,
+      spaEbitda:    s.spa.ebitda,
+      aesRevenue:   s.aes.revenue,
+      aesEbitda:    s.aes.ebitda,
+      slimRevenue:  s.slim.revenue,
+      slimEbitda:   s.slim.ebitda,
+    } : null;
+
     return {
       groupRevenue: c.revenue,
       groupEbitda:  c.ebitda,
@@ -183,6 +196,7 @@ function LongitudinalContent({
       slimRevenue:  c.slim.revenue,
       slimEbitda:   c.slim.ebitda,
       periodLabel,
+      sppy,
     };
   }, [data]);
 
