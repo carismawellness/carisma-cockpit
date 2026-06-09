@@ -11,9 +11,10 @@ import { Card } from "@/components/ui/card";
 import { chartColors, formatCurrency } from "@/lib/charts/config";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useSpaRevenue, SpaRevenueLocation } from "@/lib/hooks/useSpaRevenue";
+import { useSpaDeepaAnalytics } from "@/lib/hooks/useSpaDeepaAnalytics";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, LabelList, Legend,
+  ResponsiveContainer, LabelList, Legend, Cell,
 } from "recharts";
 import { RefreshCw, AlertCircle, TrendingDown, Database, FileSpreadsheet } from "lucide-react";
 
@@ -31,41 +32,8 @@ function pct(part: number, whole: number): string {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   MOCK DATA (staff & service breakdown — pending Lapis category pipeline)
-   ═══════════════════════════════════════════════════════════════════════ */
-
-const MOCK_STAFF = [
-  { name: "Maria Grech",     serviceRevenue: 38200, retailRevenue: 2800 },
-  { name: "Anna Camilleri",  serviceRevenue: 35600, retailRevenue: 2400 },
-  { name: "Sarah Farrugia",  serviceRevenue: 32100, retailRevenue: 3200 },
-  { name: "Leanne Attard",   serviceRevenue: 29400, retailRevenue: 2900 },
-  { name: "Claire Vella",    serviceRevenue: 27200, retailRevenue: 2200 },
-  { name: "Jessica Borg",    serviceRevenue: 24800, retailRevenue: 3600 },
-  { name: "Michelle Zammit", serviceRevenue: 22600, retailRevenue: 2600 },
-  { name: "Rachel Gauci",    serviceRevenue: 20300, retailRevenue: 1900 },
-];
-
-const MOCK_SERVICES = [
-  { service: "Massage Therapy",  revenue: 58200, pct: 38.2 },
-  { service: "Facials",          revenue: 29400, pct: 19.3 },
-  { service: "Body Treatments",  revenue: 21600, pct: 14.2 },
-  { service: "Hydrotherapy",     revenue: 15400, pct: 10.1 },
-  { service: "Couples Packages", revenue: 12200, pct: 8.0  },
-  { service: "Nail Services",    revenue: 9600,  pct: 6.3  },
-  { service: "Other",            revenue: 6400,  pct: 4.2  },
-];
-
-/* ═══════════════════════════════════════════════════════════════════════
    SUB-COMPONENTS
    ═══════════════════════════════════════════════════════════════════════ */
-
-function DemoTag() {
-  return (
-    <span className="inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 ml-2">
-      Demo data
-    </span>
-  );
-}
 
 const COL_HEADERS = [
   { key: "services",         label: "Services",       color: "#1B3A4B" },
@@ -149,6 +117,8 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
   const { locations, totals, isFetching, isSyncing, syncError, missingMonths, triggerSync } =
     useSpaRevenue(dateFrom, dateTo);
 
+  const analytics = useSpaDeepaAnalytics(dateFrom, dateTo);
+
   const isLoading = isFetching || isSyncing;
 
   const subtitle = useMemo(() => {
@@ -217,6 +187,52 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
     [locations]
   );
 
+  /* ── Staff chart data (real data from analytics hook, inc-VAT) ── */
+  const staffChartData = useMemo(() =>
+    analytics.staff.map((s) => ({
+      name: s.name,
+      serviceRevenue: Math.round(s.service_revenue * 1.18),
+      retailRevenue:  Math.round(s.retail_revenue  * 1.18),
+    })),
+    [analytics.staff]
+  );
+
+  /* ── Guest group chart data ──────────────────────────────────── */
+  const guestChartData = useMemo(() =>
+    analytics.guestGroups.map((g) => ({
+      name: g.name.replace("InterContinental", "IC").replace("Sunny Coast", "SC"),
+      "Hotel Guests": g.hotel_revenue,
+      "Non-Hotel":    g.non_hotel_revenue,
+      hotelPct: (g.hotel_revenue + g.non_hotel_revenue) > 0
+        ? Math.round(g.hotel_revenue / (g.hotel_revenue + g.non_hotel_revenue) * 100)
+        : 0,
+    })),
+    [analytics.guestGroups]
+  );
+
+  /* ── Payment type chart data (inc-VAT) ───────────────────────── */
+  const paymentData = useMemo(() =>
+    analytics.paymentTypes.map((p) => ({
+      service: p.type,
+      revenue: Math.round(p.revenue * 1.18),
+      pct:     p.pct,
+    })),
+    [analytics.paymentTypes]
+  );
+
+  /* ── Discount chart data (inc-VAT) ───────────────────────────── */
+  const discountChartData = useMemo(() =>
+    analytics.discounts
+      .filter((d) => d.total_txn_count > 0)
+      .map((d) => ({
+        name:           d.name.replace("InterContinental", "IC").replace("Sunny Coast", "SC"),
+        color:          d.color,
+        "Discount %":   d.discount_pct,
+        discount_amt:   Math.round(d.total_discount * 1.18),
+      })),
+    [analytics.discounts]
+  );
+
   return (
     <>
       {/* ── Header ─────────────────────────────────────────────────── */}
@@ -257,28 +273,29 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
           <span>Fetching data for {missingMonths.length} missing month{missingMonths.length > 1 ? "s" : ""}…</span>
         </div>
       )}
+      {analytics.error && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <AlertCircle className="h-4 w-4 flex-shrink-0" />
+          <span>Analytics error: {analytics.error}</span>
+        </div>
+      )}
 
       {/* ── KPI Row ─────────────────────────────────────────────────── */}
-      <SalesKPIGrid columns={4}>
+      <SalesKPIGrid columns={3}>
         <SalesKPICard
           label="Net Revenue"
           value={fmtShort(incVat.net_revenue)}
           subtitle={`${fmtShort(totals.net_revenue)} ex-VAT · ${locations.length} locations`}
         />
         <SalesKPICard
-          label="Services"
+          label="Service Revenue"
           value={fmtShort(incVat.services)}
           subtitle={`${pct(totals.services, totals.net_revenue)} of net`}
         />
         <SalesKPICard
-          label="Products"
+          label="Retail Revenue"
           value={fmtShort(incVat.product_total)}
           subtitle={`${pct(totals.product_total, totals.net_revenue)} of net`}
-        />
-        <SalesKPICard
-          label="Wholesale"
-          value={fmtShort(incVat.wholesale)}
-          subtitle={`${pct(totals.wholesale, totals.net_revenue)} of net`}
         />
       </SalesKPIGrid>
 
@@ -371,37 +388,145 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
         </Card>
       )}
 
+      {/* ── Guest Revenue Mix — Hotel vs Non-Hotel ─────────────────── */}
+      {(analytics.isFetching || guestChartData.length > 0) && (
+        <Card className="p-4 md:p-6">
+          <h2 className="text-lg font-semibold text-foreground mb-1">Guest Revenue Mix — Hotel vs Non-Hotel</h2>
+          <p className="text-xs text-muted-foreground mb-5">
+            Revenue by guest origin per venue · ex-VAT · EUR
+          </p>
+          {analytics.isFetching ? (
+            <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
+              Loading analytics…
+            </div>
+          ) : guestChartData.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No guest group data for this period.</p>
+          ) : (
+            <div style={{ height: guestChartData.length * 52 + 60 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={guestChartData}
+                  layout="vertical"
+                  margin={{ top: 8, right: 60, left: 8, bottom: 8 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
+                  <XAxis type="number" tickFormatter={(v: number) => fmtShort(v)} tick={{ fontSize: 11 }} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={80} />
+                  <Tooltip
+                    formatter={(v: unknown, name: unknown) => [fmtShort(Number(v)), String(name)]}
+                  />
+                  <Legend />
+                  <Bar dataKey="Hotel Guests" stackId="a" fill="#1B3A4B">
+                    <LabelList
+                      dataKey="hotelPct"
+                      position="insideLeft"
+                      formatter={(v: unknown) => Number(v) > 15 ? `${v}%` : ""}
+                      style={{ fontSize: 10, fontWeight: 700, fill: "#fff" }}
+                    />
+                  </Bar>
+                  <Bar dataKey="Non-Hotel" stackId="a" fill="#96B2B2" radius={[0, 4, 4, 0]}>
+                    <LabelList
+                      dataKey="Non-Hotel"
+                      position="right"
+                      formatter={(v: unknown) => fmtShort(Number(v))}
+                      style={{ fontSize: 10, fontWeight: 600, fill: "#374151" }}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* ── Payment Type Split ─────────────────────────────────────── */}
+      {(analytics.isFetching || paymentData.length > 0) && (
+        analytics.isFetching ? (
+          <Card className="p-4 md:p-6">
+            <h2 className="text-lg font-semibold text-foreground mb-4">Payment Type Split</h2>
+            <div className="h-24 flex items-center justify-center text-sm text-muted-foreground">
+              Loading analytics…
+            </div>
+          </Card>
+        ) : (
+          <ServiceBreakdownChart
+            title="Payment Type Split"
+            data={paymentData}
+            color={chartColors.spa}
+          />
+        )
+      )}
+
+      {/* ── Discount by Location ───────────────────────────────────── */}
+      {(analytics.isFetching || discountChartData.length > 0) && (
+        <Card className="p-4 md:p-6">
+          <h2 className="text-lg font-semibold text-foreground mb-1">Discount by Location</h2>
+          <p className="text-xs text-muted-foreground mb-5">
+            Average discount applied vs list price per venue · inc-VAT
+          </p>
+          {analytics.isFetching ? (
+            <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
+              Loading analytics…
+            </div>
+          ) : discountChartData.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No discount data for this period.</p>
+          ) : (
+            <div style={{ height: discountChartData.length * 48 + 60 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={discountChartData}
+                  layout="vertical"
+                  margin={{ top: 8, right: 60, left: 8, bottom: 8 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
+                  <XAxis
+                    type="number"
+                    domain={[0, 30]}
+                    tickFormatter={(v: number) => `${v}%`}
+                    tick={{ fontSize: 11 }}
+                  />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={80} />
+                  <Tooltip
+                    formatter={(v: unknown) => [`${Number(v).toFixed(1)}%`, "Discount %"]}
+                  />
+                  <Bar dataKey="Discount %" radius={[0, 4, 4, 0]}>
+                    {discountChartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                    <LabelList
+                      dataKey="Discount %"
+                      position="right"
+                      formatter={(v: unknown) => `${Number(v).toFixed(1)}%`}
+                      style={{ fontSize: 10, fontWeight: 600, fill: "#374151" }}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </Card>
+      )}
+
       {/* ── Staff Performance ──────────────────────────────────────── */}
       <Card className="p-4 md:p-6">
-        <div className="flex items-center gap-2 mb-1">
-          <h2 className="text-lg font-semibold text-foreground">Staff Performance</h2>
-          <DemoTag />
-        </div>
+        <h2 className="text-lg font-semibold text-foreground mb-1">Staff Performance</h2>
         <p className="text-xs text-muted-foreground mb-4">
           Service + retail revenue per therapist · EUR inc-VAT
         </p>
-        <StaffPerformanceChart
-          title=""
-          data={MOCK_STAFF}
-          serviceColor={chartColors.spa}
-          retailColor="#B79E61"
-        />
-      </Card>
-
-      {/* ── Service Revenue Breakdown ──────────────────────────────── */}
-      <Card className="p-4 md:p-6">
-        <div className="flex items-center gap-2 mb-1">
-          <h2 className="text-lg font-semibold text-foreground">Service Revenue Breakdown</h2>
-          <DemoTag />
-        </div>
-        <p className="text-xs text-muted-foreground mb-4">
-          Revenue by treatment category · EUR inc-VAT
-        </p>
-        <ServiceBreakdownChart
-          title=""
-          data={MOCK_SERVICES}
-          color={chartColors.spa}
-        />
+        {analytics.isFetching ? (
+          <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
+            Loading staff data…
+          </div>
+        ) : staffChartData.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No staff data for this period.</p>
+        ) : (
+          <StaffPerformanceChart
+            title=""
+            data={staffChartData}
+            serviceColor={chartColors.spa}
+            retailColor="#B79E61"
+          />
+        )}
       </Card>
 
       {/* ── Full Revenue Breakdown (inc-VAT) ───────────────────────── */}
