@@ -12,7 +12,6 @@ export const DASHBOARDS: DashboardDef[] = [
   { key: "crm",                        label: "CRM",                       group: "Sales"      },
   { key: "sales",                      label: "Sales — Overview",          group: "Sales"      },
   { key: "sales/spa",                  label: "Sales — Spa",               group: "Sales"      },
-  { key: "sales/spa-deepa",            label: "Sales — Spa (Deepa)",       group: "Sales"      },
   { key: "sales/aesthetics",           label: "Sales — Aesthetics",        group: "Sales"      },
   { key: "sales/aesthetics-deepa",     label: "Sales — Aesthetics (Deepa)",group: "Sales"      },
   { key: "sales/slimming",             label: "Sales — Slimming",          group: "Sales"      },

@@ -40,7 +40,6 @@ export const departments: Department[] = [
     children: [
       { slug: "overview", label: "Overview", path: "/sales", icon: DollarSign },
       { slug: "spa", label: "Spa", path: "/sales/spa", icon: Sparkles },
-      { slug: "spa-deepa", label: "Spa - Deepa", path: "/sales/spa-deepa", icon: Sparkles },
       { slug: "aesthetics", label: "Aesthetics", path: "/sales/aesthetics", icon: Heart },
       { slug: "aesthetics-deepa", label: "Aesthetics - Deepa", path: "/sales/aesthetics-deepa", icon: Heart },
       { slug: "slimming", label: "Slimming", path: "/sales/slimming", icon: Activity },

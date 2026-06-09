@@ -1,355 +1,558 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { SalesKPICard } from "@/components/sales/SalesKPICard";
 import { SalesKPIGrid } from "@/components/sales/SalesKPIGrid";
-import { ServiceBreakdownChart } from "@/components/sales/ServiceBreakdownChart";
 import { StaffPerformanceChart } from "@/components/sales/StaffPerformanceChart";
 import { CIChat } from "@/components/ci/CIChat";
 import { Card } from "@/components/ui/card";
-import { chartColors, formatCurrency } from "@/lib/charts/config";
-import {
-  weekLabelsToDateObjects,
-  getFilteredIndices,
-  sumFiltered,
-  formatDateRangeLabel,
-  filteredCountLabel,
-} from "@/lib/utils/mock-date-filter";
-import { AlertTriangle, Target } from "lucide-react";
+import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
+import { useSpaRevenue, SpaRevenueLocation } from "@/lib/hooks/useSpaRevenue";
+import { useSpaDeepaAnalytics } from "@/lib/hooks/useSpaDeepaAnalytics";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell, LabelList,
+  ResponsiveContainer, LabelList, Legend, Cell,
 } from "recharts";
+import { RefreshCw, AlertCircle, TrendingDown, Database, FileSpreadsheet } from "lucide-react";
+
+const VAT_RATE = 0.18;
+
+const PAYMENT_COLORS: Record<string, string> = {
+  "Credit Card":        "#1B3A4B",
+  "Cash":               "#B79E61",
+  "Hotel Room Account": "#4A90D9",
+  "Payment Center":     "#8EB093",
+  "Open Account":       "#E07A5F",
+  "Unknown":            "#96B2B2",
+};
+
+function fmtShort(v: number): string {
+  if (Math.abs(v) >= 1_000_000) return `€${(v / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(v) >= 1_000)     return `€${(v / 1_000).toFixed(1)}K`;
+  return `€${v.toFixed(0)}`;
+}
+
+function pct(part: number, whole: number): string {
+  if (!whole) return "—";
+  return `${((part / whole) * 100).toFixed(1)}%`;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════
-   MOCK DATA
+   SUB-COMPONENTS
    ═══════════════════════════════════════════════════════════════════════ */
 
-const MOCK_SPA_WEEKS = [
-  "05-Jan","12-Jan","19-Jan","26-Jan",
-  "02-Feb","09-Feb","16-Feb","23-Feb",
-  "02-Mar","09-Mar","16-Mar","23-Mar",
-  "30-Mar","06-Apr","13-Apr","20-Apr",
-];
-const WEEK_DATES = weekLabelsToDateObjects(MOCK_SPA_WEEKS, 2026);
-
-// Weekly revenue per hotel (EUR, services + products combined)
-const MOCK_IC        = [10500,11200,10800,12500,11000,11500,12200,13000,11200,10500,12000,11500,10200,13500,12000,9491];
-const MOCK_HUGOS     = [12200,13100,12700,14800,13000,13700,14200,15200,13300,12500,14200,13600,12200,15800,14200,10879];
-const MOCK_HYATT     = [6000,6400,6200,7200,6300,6600,7000,7400,6400,6000,6800,6500,5900,7500,6800,5215];
-const MOCK_RAMLA     = [5800,6200,6000,7000,6100,6400,6800,7200,6200,5900,6600,6300,5700,7300,6600,5003];
-const MOCK_LABRANDA  = [3400,3700,3500,4100,3600,3800,4000,4300,3700,3400,3900,3700,3300,4400,3900,2954];
-const MOCK_ODYCY     = [2900,3100,3000,3500,3100,3200,3400,3600,3100,2900,3300,3100,2800,3700,3300,2387];
-
-// Bookings and shows
-const MOCK_BOOKED    = [320,330,315,350,325,340,345,360,335,310,350,340,315,370,355,287];
-const MOCK_SHOWS     = [279,289,276,308,285,298,302,316,293,271,308,298,276,325,311,253];
-
-// Retail and add-on (weekly totals across all hotels)
-const MOCK_RETAIL    = [2300,2400,2200,2700,2400,2500,2700,2900,2500,2300,2700,2500,2300,2900,2600,1993];
-const MOCK_ADDON     = [1400,1500,1400,1700,1500,1600,1700,1800,1600,1500,1700,1600,1400,1900,1700,1260];
-
-const HOTELS = [
-  { id: "ic",       name: "InterContinental", data: MOCK_IC,       color: "#1B3A4B", weeklyTarget: 11000, aov: 165, aovLY: 158 },
-  { id: "hugos",    name: "Hugos",            data: MOCK_HUGOS,    color: "#96B2B2", weeklyTarget: 12000, aov: 178, aovLY: 165 },
-  { id: "hyatt",    name: "Hyatt",            data: MOCK_HYATT,    color: "#B79E61", weeklyTarget: 6000,  aov: 142, aovLY: 148 },
-  { id: "ramla",    name: "Ramla Bay",        data: MOCK_RAMLA,    color: "#8EB093", weeklyTarget: 6000,  aov: 138, aovLY: 132 },
-  { id: "labranda", name: "Labranda",         data: MOCK_LABRANDA, color: "#E07A5F", weeklyTarget: 3500,  aov: 112, aovLY: 105 },
-  { id: "odycy",    name: "Odycy",            data: MOCK_ODYCY,    color: "#4A90D9", weeklyTarget: 3500,  aov: 98,  aovLY: 96  },
+const COL_HEADERS = [
+  { key: "services",         label: "Services",       color: "#1B3A4B" },
+  { key: "product_phytomer", label: "Phytomer",       color: "#4A90D9" },
+  { key: "product_purest",   label: "Purest",         color: "#7C3AED" },
+  { key: "product_other",    label: "Other Products", color: "#96B2B2" },
+  { key: "wholesale",        label: "Wholesale",      color: "#B79E61" },
+  { key: "sales_discount",   label: "Discount",       color: "#dc2626", negative: true },
+  { key: "sales_refund",     label: "Refund",         color: "#dc2626", negative: true },
+  { key: "net_revenue",      label: "Net Revenue",    color: "#059669", bold: true },
 ];
 
-const STAFF_PERFORMANCE = [
-  { name: "Maria Grech",     serviceRevenue: 45200, retailRevenue: 3200 },
-  { name: "Anna Camilleri",  serviceRevenue: 42800, retailRevenue: 2900 },
-  { name: "Sarah Farrugia",  serviceRevenue: 39500, retailRevenue: 4100 },
-  { name: "Leanne Attard",   serviceRevenue: 36800, retailRevenue: 3500 },
-  { name: "Claire Vella",    serviceRevenue: 34500, retailRevenue: 2800 },
-  { name: "Jessica Borg",    serviceRevenue: 31200, retailRevenue: 4600 },
-  { name: "Michelle Zammit", serviceRevenue: 29800, retailRevenue: 3200 },
-  { name: "Rachel Gauci",    serviceRevenue: 27500, retailRevenue: 2400 },
-  { name: "Daniela Mifsud",  serviceRevenue: 25200, retailRevenue: 1900 },
-  { name: "Karen Portelli",  serviceRevenue: 23600, retailRevenue: 2100 },
-];
+function RevenueTable({ locations }: { locations: SpaRevenueLocation[] }) {
+  if (!locations.length) return null;
+  const totals = locations.reduce((acc, loc) => {
+    COL_HEADERS.forEach(({ key }) => {
+      acc[key] = (acc[key] ?? 0) + (loc[key as keyof SpaRevenueLocation] as number);
+    });
+    return acc;
+  }, {} as Record<string, number>);
 
-const SERVICE_BREAKDOWN = [
-  { service: "Massage Therapy",  revenue: 68400, pct: 37.5 },
-  { service: "Facials",          revenue: 34200, pct: 18.7 },
-  { service: "Body Treatments",  revenue: 25600, pct: 14.0 },
-  { service: "Hydrotherapy",     revenue: 18200, pct: 10.0 },
-  { service: "Couples Packages", revenue: 14800, pct: 8.1  },
-  { service: "Nail Services",    revenue: 11400, pct: 6.3  },
-  { service: "Other",            revenue: 10000, pct: 5.5  },
-];
+  return (
+    <div className="overflow-x-auto rounded-lg border">
+      <table className="min-w-full text-sm">
+        <thead>
+          <tr className="bg-muted/50 border-b">
+            <th className="text-left px-3 py-2.5 font-semibold text-foreground sticky left-0 bg-muted/50 min-w-[130px]">Location</th>
+            {COL_HEADERS.map(({ key, label, color, bold }) => (
+              <th key={key} className="text-right px-3 py-2.5 font-semibold whitespace-nowrap"
+                  style={{ color: bold ? color : undefined }}>{label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {locations.map((loc, i) => (
+            <tr key={loc.location_id}
+                className={`border-b last:border-b-0 ${i % 2 === 0 ? "" : "bg-muted/20"} hover:bg-muted/30 transition-colors`}>
+              <td className="px-3 py-2 sticky left-0 font-medium text-foreground" style={{ background: "inherit" }}>
+                <div className="flex items-center gap-2">
+                  <span className="inline-block w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: loc.color }} />
+                  {loc.name}
+                </div>
+              </td>
+              {COL_HEADERS.map(({ key, negative, bold }) => {
+                const val = loc[key as keyof SpaRevenueLocation] as number;
+                return (
+                  <td key={key} className={`px-3 py-2 text-right tabular-nums ${bold ? "font-bold" : ""}`}
+                      style={{ color: negative && val > 0 ? "#dc2626" : bold ? "#059669" : undefined }}>
+                    {val > 0 ? (negative ? `(${fmtShort(val)})` : fmtShort(val)) : "—"}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-t-2 border-border bg-muted/50 font-semibold">
+            <td className="px-3 py-2.5 sticky left-0 bg-muted/50">Total</td>
+            {COL_HEADERS.map(({ key, negative, bold }) => {
+              const val = totals[key] ?? 0;
+              return (
+                <td key={key} className="px-3 py-2.5 text-right tabular-nums font-bold"
+                    style={{ color: negative && val > 0 ? "#dc2626" : bold ? "#059669" : undefined }}>
+                  {val > 0 ? (negative ? `(${fmtShort(val)})` : fmtShort(val)) : "—"}
+                </td>
+              );
+            })}
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
 
-const DEFAULT_TARGETS = { weeklyRevenue: 42000, weeklyBookings: 337, showRatePct: 90 };
 
 /* ═══════════════════════════════════════════════════════════════════════
    MAIN CONTENT
    ═══════════════════════════════════════════════════════════════════════ */
 
-function SpaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
-  const [targets, setTargets]         = useState(DEFAULT_TARGETS);
-  const [editingTargets, setEditing]  = useState(false);
-  const [draftTargets, setDraft]      = useState(DEFAULT_TARGETS);
+function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
+  const { locations, totals, isFetching, isSyncing, syncError, missingMonths, triggerSync } =
+    useSpaRevenue(dateFrom, dateTo);
 
-  const filteredIdx = useMemo(
-    () => getFilteredIndices(WEEK_DATES, dateFrom, dateTo),
-    [dateFrom, dateTo]
+  const analytics = useSpaDeepaAnalytics(dateFrom, dateTo);
+
+  // Prior-year window for YoY badges
+  const priorDateFrom = useMemo(
+    () => new Date(dateFrom.getFullYear() - 1, dateFrom.getMonth(), dateFrom.getDate()),
+    [dateFrom]
   );
-  const L = filteredIdx.length;
-
-  /* ── KPIs ─────────────────────────────────────────────────────── */
-  const hotelTotals = useMemo(
-    () => HOTELS.map((h) => ({ ...h, revenue: sumFiltered(h.data, filteredIdx) })),
-    [filteredIdx]
+  const priorDateTo = useMemo(
+    () => new Date(dateTo.getFullYear() - 1, dateTo.getMonth(), dateTo.getDate()),
+    [dateTo]
   );
-  const totalRev     = useMemo(() => hotelTotals.reduce((s, h) => s + h.revenue, 0), [hotelTotals]);
-  const serviceRev   = Math.round(totalRev * 0.87);
-  const retailRev    = useMemo(() => sumFiltered(MOCK_RETAIL, filteredIdx), [filteredIdx]);
-  const addonRev     = useMemo(() => sumFiltered(MOCK_ADDON,  filteredIdx), [filteredIdx]);
-  const totalBooked  = useMemo(() => sumFiltered(MOCK_BOOKED, filteredIdx), [filteredIdx]);
-  const totalShows   = useMemo(() => sumFiltered(MOCK_SHOWS,  filteredIdx), [filteredIdx]);
-  const showRate     = totalBooked > 0 ? (totalShows / totalBooked) * 100 : 0;
-  const noShows      = totalBooked - totalShows;
-  const avgRevAppt   = totalShows > 0 ? Math.round(totalRev / totalShows) : 0;
-  const revLostNoShow = Math.round(noShows * avgRevAppt);
+  const { totals: priorTotals } = useSpaRevenue(priorDateFrom, priorDateTo);
 
-  /* ── Subtitle ─────────────────────────────────────────────────── */
+  const yoy = useMemo(() => {
+    const calc = (curr: number, prior: number) =>
+      prior > 0 ? ((curr - prior) / prior) * 100 : undefined;
+    return {
+      net:     calc(totals.net_revenue,   priorTotals.net_revenue),
+      service: calc(totals.services,      priorTotals.services),
+      retail:  calc(totals.product_total, priorTotals.product_total),
+    };
+  }, [totals, priorTotals]);
+
+  const isLoading = isFetching || isSyncing;
+
   const subtitle = useMemo(() => {
-    const weekCount = filteredCountLabel(L, "week");
     const range = formatDateRangeLabel(dateFrom, dateTo);
-    return `${range} · ${weekCount} · All figures EUR ex VAT`;
-  }, [L, dateFrom, dateTo]);
+    return `${range} · Source: Lapis + Zoho Books`;
+  }, [dateFrom, dateTo]);
 
-  /* ── Hotel chart data (sorted by revenue desc) ────────────────── */
-  const hotelChartData = useMemo(
-    () => [...hotelTotals].sort((a, b) => b.revenue - a.revenue),
-    [hotelTotals]
+  /* ── Inc-VAT totals ──────────────────────────────────────────── */
+  const incVat = useMemo(() => ({
+    net_revenue:   Math.round(totals.net_revenue   * (1 + VAT_RATE)),
+    services:      Math.round(totals.services      * (1 + VAT_RATE)),
+    product_total: Math.round(totals.product_total * (1 + VAT_RATE)),
+  }), [totals]);
+
+  /* ── Revenue mix per hotel (100% stacked, services vs products) ─ */
+  const hotelChartData = useMemo(() =>
+    [...locations]
+      .sort((a, b) => b.net_revenue - a.net_revenue)
+      .map((loc) => {
+        const gross = loc.services + loc.product_total;
+        return {
+          name:         loc.name.replace("InterContinental", "IC").replace("Sunny Coast", "SC"),
+          "Services %": gross > 0 ? Math.round((loc.services      / gross) * 100) : 0,
+          "Products %": gross > 0 ? Math.round((loc.product_total / gross) * 100) : 0,
+        };
+      }),
+    [locations]
   );
 
-  /* ── AOV chart ────────────────────────────────────────────────── */
-  const aovData = HOTELS.map((h) => ({
-    name:     h.name === "InterContinental" ? "IC" : h.name,
-    "This Year": h.aov,
-    "Last Year": h.aovLY,
-    color:    h.color,
-  }));
+  /* ── Inc-VAT locations for breakdown table ───────────────────── */
+  const incVatLocations = useMemo(() =>
+    locations.map((loc) => ({
+      ...loc,
+      services:         Math.round(loc.services         * (1 + VAT_RATE)),
+      product_phytomer: Math.round(loc.product_phytomer * (1 + VAT_RATE)),
+      product_purest:   Math.round(loc.product_purest   * (1 + VAT_RATE)),
+      product_other:    Math.round(loc.product_other    * (1 + VAT_RATE)),
+      product_total:    Math.round(loc.product_total    * (1 + VAT_RATE)),
+      wholesale:        Math.round(loc.wholesale        * (1 + VAT_RATE)),
+      sales_discount:   Math.round(loc.sales_discount   * (1 + VAT_RATE)),
+      sales_refund:     Math.round(loc.sales_refund     * (1 + VAT_RATE)),
+      net_revenue:      Math.round(loc.net_revenue      * (1 + VAT_RATE)),
+    })),
+    [locations]
+  );
 
-  /* ── Targets ──────────────────────────────────────────────────── */
-  const revenueTarget   = targets.weeklyRevenue * L;
-  const bookingsTarget  = targets.weeklyBookings * L;
-  const locationTargets = hotelTotals.map((h) => ({
-    name:   h.name,
-    color:  h.color,
-    actual: h.revenue,
-    target: h.weeklyTarget * L,
-    pct:    h.weeklyTarget > 0 ? Math.round((h.revenue / (h.weeklyTarget * L)) * 100) : 0,
-  }));
-  const totalTarget = HOTELS.reduce((s, h) => s + h.weeklyTarget * L, 0);
-  const totalTargetPct = totalTarget > 0 ? Math.round((totalRev / totalTarget) * 100) : 0;
+  /* ── Staff chart data (real data from analytics hook, inc-VAT) ── */
+  const staffChartData = useMemo(() =>
+    analytics.staff.map((s) => ({
+      name: s.name,
+      serviceRevenue: Math.round(s.service_revenue * 1.18),
+      retailRevenue:  Math.round(s.retail_revenue  * 1.18),
+    })),
+    [analytics.staff]
+  );
+
+  /* ── Guest group chart data ──────────────────────────────────── */
+  const guestChartData = useMemo(() =>
+    analytics.guestGroups.map((g) => ({
+      name: g.name.replace("InterContinental", "IC").replace("Sunny Coast", "SC"),
+      "Hotel Guests": g.hotel_revenue,
+      "Non-Hotel":    g.non_hotel_revenue,
+      hotelPct: (g.hotel_revenue + g.non_hotel_revenue) > 0
+        ? Math.round(g.hotel_revenue / (g.hotel_revenue + g.non_hotel_revenue) * 100)
+        : 0,
+    })),
+    [analytics.guestGroups]
+  );
+
+  /* ── Payment type by location (100% stacked) ────────────────── */
+  const paymentByLocationData = useMemo(() =>
+    analytics.paymentByLocation.map((loc) => {
+      const total = Object.values(loc.payment_types).reduce((s, v) => s + v, 0);
+      const result: Record<string, unknown> = {
+        name: loc.name.replace("InterContinental", "IC").replace("Sunny Coast", "SC"),
+      };
+      for (const [type, rev] of Object.entries(loc.payment_types)) {
+        result[type] = total > 0 ? Math.round((rev / total) * 100) : 0;
+      }
+      return result;
+    }),
+    [analytics.paymentByLocation]
+  );
+
+  const allPaymentTypes = useMemo(() => {
+    const totals: Record<string, number> = {};
+    analytics.paymentByLocation.forEach((loc) => {
+      Object.entries(loc.payment_types).forEach(([type, rev]) => {
+        totals[type] = (totals[type] ?? 0) + rev;
+      });
+    });
+    return Object.entries(totals)
+      .sort(([, a], [, b]) => b - a)
+      .map(([type]) => type);
+  }, [analytics.paymentByLocation]);
+
+  /* ── Discount chart data (inc-VAT) ───────────────────────────── */
+  const discountChartData = useMemo(() =>
+    analytics.discounts
+      .filter((d) => d.total_txn_count > 0)
+      .map((d) => ({
+        name:           d.name.replace("InterContinental", "IC").replace("Sunny Coast", "SC"),
+        color:          d.color,
+        "Discount %":   d.discount_pct,
+        discount_amt:   Math.round(d.total_discount * 1.18),
+      })),
+    [analytics.discounts]
+  );
 
   return (
     <>
       {/* ── Header ─────────────────────────────────────────────────── */}
-      <div className="space-y-1">
-        <h1 className="text-2xl font-bold text-foreground tracking-tight">
-          Sales Performance — Spa Network
-        </h1>
-        <p className="text-sm text-muted-foreground">{subtitle}</p>
-      </div>
-
-      {/* ── KPI Row 1 ──────────────────────────────────────────────── */}
-      <SalesKPIGrid columns={4}>
-        <SalesKPICard label="Total Revenue"   value={formatCurrency(totalRev)}   subtitle="All hotels combined"        yoyChange={-4.9} />
-        <SalesKPICard label="Service Revenue" value={formatCurrency(serviceRev)} subtitle="Treatments & therapies"      yoyChange={-7.0} />
-        <SalesKPICard label="Retail Revenue"  value={formatCurrency(retailRev)}  subtitle={`${((retailRev/totalRev)*100).toFixed(1)}% of total`} yoyChange={7.2} />
-        <SalesKPICard label="Add-on Revenue"  value={formatCurrency(addonRev)}   subtitle={`${((addonRev/totalRev)*100).toFixed(1)}% of total`}  yoyChange={-8.7} />
-      </SalesKPIGrid>
-
-      {/* ── KPI Row 2 ──────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="p-3 md:p-5 text-center border-l-4" style={{ borderLeftColor: chartColors.spa }}>
-          <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium mb-1">Show Rate</p>
-          <p className="text-3xl font-bold" style={{ color: chartColors.spa }}>{showRate.toFixed(0)}%</p>
-          <p className="text-xs text-muted-foreground mt-1">{totalShows.toLocaleString()} showed of {totalBooked.toLocaleString()} booked</p>
-        </Card>
-        <Card className="p-3 md:p-5 text-center border-l-4 border-emerald-500">
-          <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium mb-1">Avg Revenue / Appointment</p>
-          <p className="text-3xl font-bold text-emerald-600">{formatCurrency(avgRevAppt)}</p>
-          <p className="text-xs text-muted-foreground mt-1">Based on {totalShows.toLocaleString()} appointments</p>
-        </Card>
-        <Card className="p-3 md:p-5 text-center border-l-4 border-red-400 bg-red-50/50">
-          <div className="flex items-center justify-center gap-2 mb-1">
-            <AlertTriangle className="h-4 w-4 text-red-500" />
-            <p className="text-xs uppercase tracking-wider text-red-600 font-medium">Revenue Lost to No-Shows</p>
-          </div>
-          <p className="text-3xl font-bold text-red-600">{formatCurrency(revLostNoShow)}</p>
-          <p className="text-xs text-muted-foreground mt-1">{noShows} no-shows × {formatCurrency(avgRevAppt)} avg per appt</p>
-        </Card>
-      </div>
-
-      {/* ── Revenue by Hotel ───────────────────────────────────────── */}
-      <Card className="p-4 md:p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-1">Revenue by Hotel</h2>
-        <p className="text-xs text-muted-foreground mb-5">
-          Sorted by current total descending · EUR ex VAT
-        </p>
-        <div className="h-[280px] md:h-[360px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={hotelChartData} margin={{ top: 24, right: 12, left: 8, bottom: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" />
-              <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-              <YAxis tickFormatter={(v: number) => v >= 1000 ? `€${(v/1000).toFixed(1)}K` : `€${v.toFixed(1)}`} tick={{ fontSize: 11 }} />
-              <Tooltip formatter={(v) => [formatCurrency(Number(v)), "Revenue"]} />
-              <Bar dataKey="revenue" radius={[4,4,0,0]} barSize={44}>
-                {hotelChartData.map((h) => <Cell key={h.id} fill={h.color} />)}
-                <LabelList dataKey="revenue" content={(props) => {
-                  const { x, width, y, value } = props as Record<string, unknown>;
-                  const w = Number(width);
-                  if (w < 20) return null;
-                  const v = Number(value);
-                  return (
-                    <text x={Number(x)+w/2} y={Number(y)-7} textAnchor="middle" fontSize={10} fontWeight={700} fill="#374151">
-                      {v >= 1000 ? `€${(v/1000).toFixed(1)}K` : `€${v.toFixed(1)}`}
-                    </text>
-                  );
-                }} />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
-
-      {/* ── AOV by Location ────────────────────────────────────────── */}
-      <Card className="p-4 md:p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-1">Average Order Value by Location</h2>
-        <p className="text-xs text-muted-foreground mb-5">Current period AOV vs last year per hotel · EUR</p>
-        <div className="h-[240px] md:h-[300px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={aovData} margin={{ top: 12, right: 12, left: 8, bottom: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" />
-              <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-              <YAxis tickFormatter={(v: number) => `€${v}`} tick={{ fontSize: 11 }} domain={[0, 200]} />
-              <Tooltip formatter={(v) => [`€${Number(v)}`, ""]} />
-              <Bar dataKey="Last Year" fill="#e5e7eb" radius={[3,3,0,0]} barSize={20} />
-              <Bar dataKey="This Year" radius={[3,3,0,0]} barSize={20}>
-                {aovData.map((d) => <Cell key={d.name} fill={d.color} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
-
-      {/* ── Staff Performance ──────────────────────────────────────── */}
-      <StaffPerformanceChart
-        title="Staff Performance"
-        subtitle="Top 10 staff (EUR)"
-        data={STAFF_PERFORMANCE}
-        serviceColor={chartColors.spa}
-        retailColor="#B79E61"
-      />
-
-      {/* ── Service Revenue Breakdown ──────────────────────────────── */}
-      <ServiceBreakdownChart
-        title="Service Revenue Breakdown"
-        data={SERVICE_BREAKDOWN}
-        color={chartColors.spa}
-      />
-
-      {/* ── Targets vs Actual ──────────────────────────────────────── */}
-      <Card className="p-3 md:p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Target className="h-5 w-5" style={{ color: chartColors.spa }} />
-            <h2 className="text-lg font-semibold text-foreground">Targets vs Actual — By Location</h2>
-          </div>
-          <button
-            onClick={() => {
-              if (editingTargets) { setTargets(draftTargets); setEditing(false); }
-              else { setDraft(targets); setEditing(true); }
-            }}
-            className="text-xs font-medium px-3 py-1.5 rounded-lg border hover:bg-muted transition-colors"
-          >
-            {editingTargets ? "Save Targets" : "Edit Targets"}
-          </button>
-        </div>
-
-        {editingTargets && (
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6 p-4 bg-muted/50 rounded-lg">
-            <div>
-              <label className="text-xs text-muted-foreground block mb-1">Weekly Revenue Target</label>
-              <input type="number" value={draftTargets.weeklyRevenue}
-                onChange={(e) => setDraft({ ...draftTargets, weeklyRevenue: Number(e.target.value) })}
-                className="w-full border rounded px-2 py-1 text-sm" />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground block mb-1">Weekly Bookings Target</label>
-              <input type="number" value={draftTargets.weeklyBookings}
-                onChange={(e) => setDraft({ ...draftTargets, weeklyBookings: Number(e.target.value) })}
-                className="w-full border rounded px-2 py-1 text-sm" />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground block mb-1">Show Rate Target %</label>
-              <input type="number" value={draftTargets.showRatePct}
-                onChange={(e) => setDraft({ ...draftTargets, showRatePct: Number(e.target.value) })}
-                className="w-full border rounded px-2 py-1 text-sm" />
-            </div>
-          </div>
-        )}
-
-        <p className="text-xs text-muted-foreground mb-4">
-          Weekly targets × {L} week{L !== 1 ? "s" : ""} selected. Revenue in EUR ex VAT.
-        </p>
-
-        <div className="space-y-3">
-          {locationTargets.map((loc) => {
-            const isGreen  = loc.pct >= 95;
-            const isAmber  = loc.pct >= 80 && loc.pct < 95;
-            const barColor = isGreen ? "#059669" : isAmber ? "#d97706" : "#dc2626";
-            return (
-              <div key={loc.name} className="flex items-center gap-4">
-                <div className="flex items-center gap-2 w-40 flex-shrink-0">
-                  <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: loc.color }} />
-                  <span className="text-sm font-medium truncate">{loc.name}</span>
-                </div>
-                <div className="flex-1">
-                  <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full transition-all"
-                      style={{ width: `${Math.min(loc.pct, 100)}%`, backgroundColor: barColor }} />
-                  </div>
-                </div>
-                <div className="text-right w-28 flex-shrink-0">
-                  <span className="text-sm font-semibold">{formatCurrency(loc.actual)}</span>
-                  <span className="text-xs text-muted-foreground"> / {formatCurrency(loc.target)}</span>
-                </div>
-                <span className={`text-xs font-bold px-1.5 py-0.5 rounded w-12 text-center flex-shrink-0 ${isGreen ? "bg-green-50 text-green-700" : isAmber ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-700"}`}>
-                  {loc.pct}%
-                </span>
-              </div>
-            );
-          })}
-          {/* Total row */}
-          <div className="flex items-center gap-4 border-t pt-3 mt-1">
-            <div className="w-40 flex-shrink-0">
-              <span className="text-sm font-bold">Company Total</span>
-            </div>
-            <div className="flex-1">
-              <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                <div className="h-full rounded-full bg-emerald-500 transition-all"
-                  style={{ width: `${Math.min(totalTargetPct, 100)}%` }} />
-              </div>
-            </div>
-            <div className="text-right w-28 flex-shrink-0">
-              <span className="text-sm font-bold">{formatCurrency(totalRev)}</span>
-              <span className="text-xs text-muted-foreground"> / {formatCurrency(totalTarget)}</span>
-            </div>
-            <span className="text-xs font-bold px-1.5 py-0.5 rounded w-12 text-center flex-shrink-0 bg-green-50 text-green-700">
-              {totalTargetPct}%
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold text-foreground tracking-tight">Spa</h1>
+          <p className="text-sm text-muted-foreground">{subtitle}</p>
+          <div className="flex flex-wrap gap-2 mt-1">
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600">
+              <Database className="h-3 w-3" />
+              Lapis POS — Services &amp; Products
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600">
+              <FileSpreadsheet className="h-3 w-3" />
+              Zoho Books — Wholesale, Discounts &amp; Refunds
             </span>
           </div>
         </div>
+        <button
+          onClick={() => triggerSync(true)}
+          disabled={isLoading}
+          className="flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg border hover:bg-muted transition-colors disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`} />
+          {isSyncing ? "Syncing…" : "Re-Sync"}
+        </button>
+      </div>
+
+      {syncError && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <AlertCircle className="h-4 w-4 flex-shrink-0" />
+          <span>Sync error: {syncError}</span>
+        </div>
+      )}
+      {missingMonths.length > 0 && !isSyncing && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <AlertCircle className="h-4 w-4 flex-shrink-0" />
+          <span>Fetching data for {missingMonths.length} missing month{missingMonths.length > 1 ? "s" : ""}…</span>
+        </div>
+      )}
+      {analytics.error && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <AlertCircle className="h-4 w-4 flex-shrink-0" />
+          <span>Analytics error: {analytics.error}</span>
+        </div>
+      )}
+
+      {/* ── KPI Row ─────────────────────────────────────────────────── */}
+      <SalesKPIGrid columns={3}>
+        <SalesKPICard
+          label="Net Revenue"
+          value={fmtShort(incVat.net_revenue)}
+          subtitle={`${fmtShort(totals.net_revenue)} ex-VAT · ${locations.length} locations`}
+          yoyChange={yoy.net}
+        />
+        <SalesKPICard
+          label="Service Revenue"
+          value={fmtShort(incVat.services)}
+          subtitle={`${pct(totals.services, totals.net_revenue)} of net`}
+          yoyChange={yoy.service}
+        />
+        <SalesKPICard
+          label="Retail Revenue"
+          value={fmtShort(incVat.product_total)}
+          subtitle={`${pct(totals.product_total, totals.net_revenue)} of net`}
+          yoyChange={yoy.retail}
+        />
+      </SalesKPIGrid>
+
+      {/* ── Revenue Mix by Hotel (100% stacked) ───────────────────── */}
+      {locations.length > 0 && (
+        <Card className="p-4 md:p-6">
+          <h2 className="text-lg font-semibold text-foreground mb-1">Revenue Mix by Hotel</h2>
+          <p className="text-xs text-muted-foreground mb-5">
+            Services vs retail share per location · % of gross revenue
+          </p>
+          <div className="h-[280px] md:h-[340px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={hotelChartData} margin={{ top: 12, right: 12, left: 8, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" />
+                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                <YAxis tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11 }} domain={[0, 100]} />
+                <Tooltip formatter={(v: unknown, name: unknown) => [`${v}%`, String(name)]} />
+                <Legend />
+                <Bar dataKey="Services %" stackId="a" fill="#1B3A4B" barSize={40}>
+                  <LabelList
+                    dataKey="Services %"
+                    position="inside"
+                    formatter={(v: unknown) => Number(v) > 10 ? `${v}%` : ""}
+                    style={{ fontSize: 10, fontWeight: 700, fill: "#fff" }}
+                  />
+                </Bar>
+                <Bar dataKey="Products %" stackId="a" fill="#4A90D9" barSize={40} radius={[4, 4, 0, 0]}>
+                  <LabelList
+                    dataKey="Products %"
+                    position="inside"
+                    formatter={(v: unknown) => Number(v) > 10 ? `${v}%` : ""}
+                    style={{ fontSize: 10, fontWeight: 700, fill: "#fff" }}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+      )}
+
+      {/* ── Guest Revenue Mix + Payment Type (side by side) ──────────── */}
+      {(analytics.isFetching || guestChartData.length > 0 || paymentByLocationData.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Guest Revenue Mix */}
+          <Card className="p-4 md:p-6">
+            <h2 className="text-lg font-semibold text-foreground mb-1">Guest Revenue Mix</h2>
+            <p className="text-xs text-muted-foreground mb-5">
+              Hotel vs non-hotel by venue · ex-VAT
+            </p>
+            {analytics.isFetching ? (
+              <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
+                Loading analytics…
+              </div>
+            ) : guestChartData.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No guest group data for this period.</p>
+            ) : (
+              <div style={{ height: guestChartData.length * 52 + 60 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={guestChartData}
+                    layout="vertical"
+                    margin={{ top: 8, right: 60, left: 8, bottom: 8 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
+                    <XAxis type="number" tickFormatter={(v: number) => fmtShort(v)} tick={{ fontSize: 11 }} />
+                    <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={80} />
+                    <Tooltip formatter={(v: unknown, name: unknown) => [fmtShort(Number(v)), String(name)]} />
+                    <Legend />
+                    <Bar dataKey="Hotel Guests" stackId="a" fill="#1B3A4B">
+                      <LabelList
+                        dataKey="hotelPct"
+                        position="insideLeft"
+                        formatter={(v: unknown) => Number(v) > 15 ? `${v}%` : ""}
+                        style={{ fontSize: 10, fontWeight: 700, fill: "#fff" }}
+                      />
+                    </Bar>
+                    <Bar dataKey="Non-Hotel" stackId="a" fill="#96B2B2" radius={[0, 4, 4, 0]}>
+                      <LabelList
+                        dataKey="Non-Hotel"
+                        position="right"
+                        formatter={(v: unknown) => fmtShort(Number(v))}
+                        style={{ fontSize: 10, fontWeight: 600, fill: "#374151" }}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </Card>
+
+          {/* Payment Type by Location */}
+          <Card className="p-4 md:p-6">
+            <h2 className="text-lg font-semibold text-foreground mb-1">Payment Type by Location</h2>
+            <p className="text-xs text-muted-foreground mb-5">
+              Payment method breakdown per venue · % of revenue
+            </p>
+            {analytics.isFetching ? (
+              <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
+                Loading analytics…
+              </div>
+            ) : paymentByLocationData.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No payment type data for this period.</p>
+            ) : (
+              <div style={{ height: paymentByLocationData.length * 52 + 60 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={paymentByLocationData}
+                    layout="vertical"
+                    margin={{ top: 8, right: 16, left: 8, bottom: 8 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
+                    <XAxis type="number" tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11 }} domain={[0, 100]} />
+                    <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={80} />
+                    <Tooltip formatter={(v: unknown, name: unknown) => [`${v}%`, String(name)]} />
+                    <Legend />
+                    {allPaymentTypes.map((type, idx) => (
+                      <Bar
+                        key={type}
+                        dataKey={type}
+                        stackId="a"
+                        fill={PAYMENT_COLORS[type] ?? "#aaa"}
+                        barSize={28}
+                        radius={idx === allPaymentTypes.length - 1 ? [0, 4, 4, 0] : undefined}
+                      />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {/* ── Discount by Location ───────────────────────────────────── */}
+      {(analytics.isFetching || discountChartData.length > 0) && (
+        <Card className="p-4 md:p-6">
+          <h2 className="text-lg font-semibold text-foreground mb-1">Discount by Location</h2>
+          <p className="text-xs text-muted-foreground mb-5">
+            Average discount applied vs list price per venue · inc-VAT
+          </p>
+          {analytics.isFetching ? (
+            <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
+              Loading analytics…
+            </div>
+          ) : discountChartData.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No discount data for this period.</p>
+          ) : (
+            <div style={{ height: discountChartData.length * 48 + 60 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={discountChartData}
+                  layout="vertical"
+                  margin={{ top: 8, right: 60, left: 8, bottom: 8 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
+                  <XAxis
+                    type="number"
+                    domain={[0, 30]}
+                    tickFormatter={(v: number) => `${v}%`}
+                    tick={{ fontSize: 11 }}
+                  />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={80} />
+                  <Tooltip
+                    formatter={(v: unknown) => [`${Number(v).toFixed(1)}%`, "Discount %"]}
+                  />
+                  <Bar dataKey="Discount %" radius={[0, 4, 4, 0]}>
+                    {discountChartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                    <LabelList
+                      dataKey="Discount %"
+                      position="right"
+                      formatter={(v: unknown) => `${Number(v).toFixed(1)}%`}
+                      style={{ fontSize: 10, fontWeight: 600, fill: "#374151" }}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* ── Staff Performance ──────────────────────────────────────── */}
+      <Card className="p-4 md:p-6">
+        <h2 className="text-lg font-semibold text-foreground mb-1">Staff Performance</h2>
+        <p className="text-xs text-muted-foreground mb-4">
+          Service + retail revenue per therapist · EUR inc-VAT
+        </p>
+        {analytics.isFetching ? (
+          <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
+            Loading staff data…
+          </div>
+        ) : staffChartData.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No staff data for this period.</p>
+        ) : (
+          <StaffPerformanceChart
+            title=""
+            data={staffChartData}
+            serviceColor="#1B3A4B"
+            retailColor="#B79E61"
+          />
+        )}
       </Card>
+
+      {/* ── Full Revenue Breakdown (inc-VAT) ───────────────────────── */}
+      {locations.length > 0 && (
+        <Card className="p-4 md:p-6">
+          <h2 className="text-lg font-semibold text-foreground mb-1">
+            Full Revenue Breakdown
+            <span className="text-sm font-normal text-muted-foreground ml-2">(inc-VAT 18%)</span>
+          </h2>
+          <p className="text-xs text-muted-foreground mb-5">
+            All revenue lines per location · deductions shown in (parentheses)
+          </p>
+          <RevenueTable locations={incVatLocations} />
+          {(totals.sales_discount > 0 || totals.sales_refund > 0) && (
+            <div className="mt-3 flex items-start gap-2 text-xs text-muted-foreground">
+              <TrendingDown className="h-3.5 w-3.5 mt-0.5 text-red-400 flex-shrink-0" />
+              <span>Discount and Refund from Zoho Books distributed proportionally to each location&apos;s revenue.</span>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {!isLoading && locations.length === 0 && (
+        <Card className="p-10 text-center text-muted-foreground">
+          <p className="text-sm">No revenue data for the selected period.</p>
+          <button onClick={() => triggerSync(true)} className="mt-3 text-xs underline">Sync now</button>
+        </Card>
+      )}
 
       <CIChat />
     </>
@@ -360,10 +563,10 @@ function SpaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
    PAGE EXPORT
    ═══════════════════════════════════════════════════════════════════════ */
 
-export default function SpaSalesPage() {
+export default function SpaDeepaPage() {
   return (
     <DashboardShell>
-      {({ dateFrom, dateTo }) => <SpaContent dateFrom={dateFrom} dateTo={dateTo} />}
+      {({ dateFrom, dateTo }) => <SpaDeepaContent dateFrom={dateFrom} dateTo={dateTo} />}
     </DashboardShell>
   );
 }
