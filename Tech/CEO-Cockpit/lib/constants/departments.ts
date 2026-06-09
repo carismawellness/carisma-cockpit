@@ -12,6 +12,7 @@ import {
   Filter,
   BookOpen,
   RefreshCw,
+  ClipboardList,
   type LucideIcon,
 } from "lucide-react";
 
@@ -31,8 +32,19 @@ export interface Department {
 }
 
 export const departments: Department[] = [
-  { slug: "ceo", label: "CEO", icon: LayoutDashboard, path: "/ceo" },
-  { slug: "funnel", label: "Funnel", icon: Filter, path: "/funnel" },
+  {
+    slug: "todo",
+    label: "To Do",
+    icon: ClipboardList,
+    path: "",
+    children: [
+      { slug: "ceo",        label: "CEO",        path: "/ceo",        icon: LayoutDashboard },
+      { slug: "funnel",     label: "Funnel",     path: "/funnel",     icon: Filter },
+      { slug: "marketing",  label: "Marketing",  path: "/marketing",  icon: Megaphone },
+      { slug: "hr",         label: "HR",         path: "/hr",         icon: Users },
+      { slug: "operations", label: "Operations", path: "/operations", icon: Settings },
+    ],
+  },
   {
     slug: "sales",
     label: "Sales",
@@ -56,18 +68,6 @@ export const departments: Department[] = [
     ],
   },
   {
-    slug: "marketing",
-    label: "Marketing",
-    icon: Megaphone,
-    path: "/marketing",
-    children: [
-      { slug: "master", label: "Master", path: "/marketing", icon: Megaphone },
-      { slug: "spa", label: "Spa", path: "/marketing/spa", icon: Sparkles },
-      { slug: "aesthetics", label: "Aesthetics", path: "/marketing/aesthetics", icon: Heart },
-      { slug: "slimming", label: "Slimming", path: "/marketing/slimming", icon: Activity },
-    ],
-  },
-  {
     slug: "finance",
     label: "EBITDA",
     icon: TrendingUp,
@@ -76,18 +76,6 @@ export const departments: Department[] = [
       { slug: "ebitda-point-in-time",  label: "Point in Time",  path: "/finance/ebitda-v2",            icon: TrendingUp },
       { slug: "ebitda-longitudinal",   label: "Longitudinal",   path: "/finance/ebitda-longitudinal",  icon: TrendingUp },
     ],
-  },
-  {
-    slug: "hr",
-    label: "HR",
-    icon: Users,
-    path: "/hr",
-  },
-  {
-    slug: "operations",
-    label: "Operations",
-    icon: Settings,
-    path: "/operations",
   },
   {
     slug: "settings",
