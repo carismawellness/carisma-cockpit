@@ -2,8 +2,65 @@ import { NextRequest, NextResponse } from "next/server";
 import { ZohoBooksClient } from "@/lib/etl/zoho-client";
 import { fetchZohoTransactionsDaily, DailyResult } from "@/lib/etl/zoho-transactions-daily";
 import { writeSheet } from "@/lib/integrations/google-sheets";
+import { getAdminClient } from "@/lib/supabase/admin";
 
 export const maxDuration = 300;
+
+// Upserts the daily ETL result into financial_entries.
+// Skips any rows where is_manual_override = true so human edits survive re-syncs.
+async function upsertToFinancialEntries(result: DailyResult): Promise<number> {
+  const supabase = getAdminClient();
+  const syncedAt = new Date().toISOString();
+
+  const allRows = result.rows.flatMap(row =>
+    Object.entries(row.daily)
+      .filter(([, amount]) => amount !== 0)
+      .map(([date, amount]) => ({
+        date,
+        brand:           row.brand,
+        venue:           row.venue,
+        line_item:       row.account_name,
+        account_code:    row.account_code ?? "",
+        ebitda_category: row.ebitda_category,
+        split_rule:      row.split_rule ?? "",
+        contact:         row.contact ?? "",
+        amount,
+        zoho_synced_at:  syncedAt,
+      }))
+  );
+
+  if (allRows.length === 0) return 0;
+
+  // Fetch manual overrides in this date window so we don't clobber them.
+  const { data: overrides } = await supabase
+    .from("financial_entries")
+    .select("date, brand, account_code, venue, contact")
+    .eq("is_manual_override", true)
+    .gte("date", result.period.from_date)
+    .lte("date", result.period.to_date);
+
+  const overrideKeys = new Set(
+    (overrides ?? []).map(r => `${r.date}|${r.brand}|${r.account_code}|${r.venue}|${r.contact}`)
+  );
+
+  const rowsToUpsert = allRows.filter(r =>
+    !overrideKeys.has(`${r.date}|${r.brand}|${r.account_code}|${r.venue}|${r.contact}`)
+  );
+
+  const BATCH = 500;
+  let upserted = 0;
+  for (let i = 0; i < rowsToUpsert.length; i += BATCH) {
+    const { error } = await supabase
+      .from("financial_entries")
+      .upsert(rowsToUpsert.slice(i, i + BATCH), {
+        onConflict: "date,brand,account_code,venue,contact",
+      });
+    if (error) throw new Error(`Supabase upsert failed: ${error.message}`);
+    upserted += BATCH;
+  }
+
+  return upserted;
+}
 
 const EBITDA_SPREADSHEET_ID = "1WWM7W6S5wtSC-5hdlcuJgW3zbYaO7YRgg4_-Bju4-5s";
 const EBIDA_SHEET_NAME      = "EBIDA Layer";
@@ -98,13 +155,25 @@ export async function POST(req: NextRequest) {
     const { updatedRows } = await writeSheet(EBITDA_SPREADSHEET_ID, EBIDA_SHEET_NAME, sheetRows);
     log.push(`Done — ${updatedRows} rows written to Google Sheets.`);
 
+    // Also land data in financial_entries for direct inspection and manual overrides.
+    // Non-fatal: sheet write already succeeded so we log and continue if this fails.
+    let dbRowsUpserted = 0;
+    try {
+      log.push(`Upserting to financial_entries…`);
+      dbRowsUpserted = await upsertToFinancialEntries(result);
+      log.push(`financial_entries: ${dbRowsUpserted} rows upserted.`);
+    } catch (dbErr) {
+      log.push(`Warning: financial_entries upsert failed: ${String(dbErr)}`);
+    }
+
     return NextResponse.json({
-      status:       "ok",
-      rows:         result.rows.length,
-      dates:        result.dates.length,
-      rows_written: updatedRows,
-      period:       result.period,
-      log:          log.join("\n"),
+      status:            "ok",
+      rows:              result.rows.length,
+      dates:             result.dates.length,
+      rows_written:      updatedRows,
+      db_rows_upserted:  dbRowsUpserted,
+      period:            result.period,
+      log:               log.join("\n"),
     });
   } catch (e) {
     const msg = String(e);
