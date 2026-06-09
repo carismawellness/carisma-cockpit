@@ -31,18 +31,23 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const spanDays     = Math.round((dateTo.getTime() - dateFrom.getTime()) / 86400000);
-  const prevDateTo   = useMemo(() => new Date(dateFrom.getTime() - 86400000), [dateFrom]);
-  const prevDateFrom = useMemo(() => new Date(prevDateTo.getTime() - spanDays * 86400000), [prevDateTo, spanDays]);
-  const { totals: prevTotals } = useAestheticsSales(prevDateFrom, prevDateTo, { skipSync: true });
+  const lyDateFrom = useMemo(
+    () => new Date(dateFrom.getFullYear() - 1, dateFrom.getMonth(), dateFrom.getDate()),
+    [dateFrom]
+  );
+  const lyDateTo = useMemo(
+    () => new Date(dateTo.getFullYear() - 1, dateTo.getMonth(), dateTo.getDate()),
+    [dateTo]
+  );
+  const { totals: lyTotals } = useAestheticsSales(lyDateFrom, lyDateTo, { skipSync: true });
 
-  const delta = useMemo(() => {
+  const yoy = useMemo(() => {
     const calc = (curr: number, prior: number) => prior > 0 ? ((curr - prior) / prior) * 100 : undefined;
     return {
-      net:      calc(totals.revenue_inc, prevTotals.revenue_inc),
-      bookings: calc(totals.tx_count,    prevTotals.tx_count),
+      net:      calc(totals.revenue_inc, lyTotals.revenue_inc),
+      bookings: calc(totals.tx_count,    lyTotals.tx_count),
     };
-  }, [totals, prevTotals]);
+  }, [totals, lyTotals]);
 
   return (
     <>
@@ -90,15 +95,13 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
           label="Net Revenue"
           value={fmtK(totals.revenue_inc)}
           subtitle={`${fmtK(totals.revenue_ex)} ex-VAT · ${totals.tx_count} bookings · VAT ${fmtK(totals.vat_amount)}`}
-          yoyChange={delta.net}
-          yoyLabel="vs prev period"
+          yoyChange={yoy.net}
         />
         <SalesKPICard
           label="Bookings"
           value={String(totals.tx_count)}
           subtitle={totals.tx_count > 0 ? `${fmtK(Math.round(totals.revenue_inc / totals.tx_count))} avg per booking` : undefined}
-          yoyChange={delta.bookings}
-          yoyLabel="vs prev period"
+          yoyChange={yoy.bookings}
         />
       </SalesKPIGrid>
 
