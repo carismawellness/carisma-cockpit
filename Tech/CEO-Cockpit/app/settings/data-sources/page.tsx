@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DashboardShell } from "@/components/dashboard/DashboardShell";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -98,7 +99,7 @@ function BrandChip({ brand }: { brand: string }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-export default function DataSourcesPage() {
+function DataSourcesContent() {
   const [data, setData]       = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [triggering, setTriggering] = useState<string | null>(null);
@@ -293,5 +294,13 @@ export default function DataSourcesPage() {
         </p>
       )}
     </div>
+  );
+}
+
+export default function DataSourcesPage() {
+  return (
+    <DashboardShell>
+      {() => <DataSourcesContent />}
+    </DashboardShell>
   );
 }

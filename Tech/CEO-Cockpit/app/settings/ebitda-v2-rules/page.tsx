@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Plus, Trash2, ToggleLeft, ToggleRight, Pencil, Check, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DashboardShell } from "@/components/dashboard/DashboardShell";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -60,7 +61,7 @@ function venueLabel(params: Record<string, unknown>): string {
   return "—";
 }
 
-export default function EbitdaV2RulesPage() {
+function EbitdaV2RulesContent() {
   const [persons, setPersons]         = useState<SpecialPerson[]>([]);
   const [rules, setRules]             = useState<HardwiredRule[]>([]);
   const [fallback, setFallback]       = useState<FallbackRule[]>([]);
@@ -424,5 +425,13 @@ export default function EbitdaV2RulesPage() {
         </Card>
       </section>
     </div>
+  );
+}
+
+export default function EbitdaV2RulesPage() {
+  return (
+    <DashboardShell>
+      {() => <EbitdaV2RulesContent />}
+    </DashboardShell>
   );
 }
