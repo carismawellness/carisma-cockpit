@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
 import { departments, type Department } from "@/lib/constants/departments";
 import { cn } from "@/lib/utils";
-import { ChevronsLeft, ChevronsRight, ChevronDown, X } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, ChevronDown, X, LogOut } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -117,6 +118,20 @@ function NavItem({
 
 export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const supabase = createClient();
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUserEmail(data.user?.email ?? null));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    router.push("/login");
+  }
+
+  const initials = userEmail ? userEmail.slice(0, 2).toUpperCase() : "??";
 
   const sidebarContent = (
     <aside
@@ -170,17 +185,21 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
       </nav>
 
       {/* User section */}
-      <div className={cn("border-t border-warm-border", collapsed ? "p-2" : "p-4")}>
-        <div className={cn("flex items-center", collapsed ? "justify-center" : "gap-3")}>
+      <div className={cn("border-t border-warm-border", collapsed ? "p-2" : "p-3")}>
+        <div className={cn("flex items-center", collapsed ? "flex-col gap-1" : "gap-2")}>
           <div className="h-8 w-8 rounded-full bg-gold/10 flex items-center justify-center text-gold text-xs font-semibold shrink-0">
-            MG
+            {initials}
           </div>
           {!collapsed && (
-            <div className="text-xs">
-              <p className="font-medium text-charcoal">Mert Gulen</p>
-              <p className="text-text-secondary">CEO</p>
-            </div>
+            <p className="text-xs text-charcoal truncate flex-1 min-w-0">{userEmail ?? "…"}</p>
           )}
+          <button
+            onClick={handleSignOut}
+            title="Sign out"
+            className="h-7 w-7 rounded-md flex items-center justify-center text-text-secondary hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
     </aside>
@@ -233,15 +252,19 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
             </nav>
 
             {/* User section */}
-            <div className="border-t border-warm-border p-4">
-              <div className="flex items-center gap-3">
+            <div className="border-t border-warm-border p-3">
+              <div className="flex items-center gap-2">
                 <div className="h-8 w-8 rounded-full bg-gold/10 flex items-center justify-center text-gold text-xs font-semibold shrink-0">
-                  MG
+                  {initials}
                 </div>
-                <div className="text-xs">
-                  <p className="font-medium text-charcoal">Mert Gulen</p>
-                  <p className="text-text-secondary">CEO</p>
-                </div>
+                <p className="text-xs text-charcoal truncate flex-1 min-w-0">{userEmail ?? "…"}</p>
+                <button
+                  onClick={handleSignOut}
+                  title="Sign out"
+                  className="h-7 w-7 rounded-md flex items-center justify-center text-text-secondary hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                </button>
               </div>
             </div>
           </aside>

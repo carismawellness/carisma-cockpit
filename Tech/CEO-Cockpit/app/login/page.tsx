@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,15 +16,12 @@ export default function LoginPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  async function handleLogin(e: React.FormEvent) {
+  async function handleLogin(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
     setError("");
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
       setError(error.message);
@@ -44,29 +42,23 @@ export default function LoginPage() {
         </CardHeader>
         <CardContent className="pb-10">
           <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <Input
-                type="email"
-                placeholder="Email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="border-warm-border focus-visible:ring-gold/30 rounded-lg h-11"
-              />
-            </div>
-            <div>
-              <Input
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="border-warm-border focus-visible:ring-gold/30 rounded-lg h-11"
-              />
-            </div>
-            {error && (
-              <p className="text-red-500 text-sm">{error}</p>
-            )}
+            <Input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="border-warm-border focus-visible:ring-gold/30 rounded-lg h-11"
+            />
+            <Input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="border-warm-border focus-visible:ring-gold/30 rounded-lg h-11"
+            />
+            {error && <p className="text-red-500 text-sm">{error}</p>}
             <Button
               type="submit"
               disabled={loading}
@@ -75,6 +67,12 @@ export default function LoginPage() {
               {loading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
+          <p className="text-center text-xs text-text-secondary mt-6">
+            Need an account?{" "}
+            <Link href="/register" className="text-gold hover:underline font-medium">
+              Create one
+            </Link>
+          </p>
         </CardContent>
       </Card>
     </div>
