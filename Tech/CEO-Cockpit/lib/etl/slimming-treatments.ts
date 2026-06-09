@@ -1,154 +1,130 @@
 import { deleteWhere, insertRows } from "./supabase-etl";
+import { lapisCsvUrl, LAPIS_TABS } from "../constants/lapis-sheets";
 
-const SHEET_ID = "1j6tz8k8TRSulB35Sg4X1xSlcV_JLf-8QKx-32UUkoBc";
 const VAT_RATE = 0.18;
 
-const MONTH_NAMES = [
-  "January","February","March","April","May","June",
-  "July","August","September","October","November","December",
-];
+// ── CSV helpers ───────────────────────────────────────────────────────────────
 
-// ── Tab name candidates ───────────────────────────────────────────────────────
-// Sheet uses "Treatments {Month} {YY}" e.g. "Treatments April 26"
-function tabNamesForMonth(year: number, month: number): string[] {
-  const m  = MONTH_NAMES[month - 1];
-  const yy = String(year).slice(2);
-  return [
-    `Treatments ${m} ${yy}`,
-    `Treatments ${m} ${year}`,
-    `Treatments ${m.toLowerCase()} ${yy}`,
-    `Treatments ${m.toUpperCase()} ${yy}`,
-  ];
+function parseCSVRow(line: string): string[] {
+  const cells: string[] = [];
+  let cur = "", inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQ = !inQ;
+    } else if (ch === "," && !inQ) { cells.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  cells.push(cur);
+  return cells;
 }
 
-// ── Sheet fetch (public gviz CSV) ─────────────────────────────────────────────
-
-async function fetchByName(tabName: string): Promise<{ headers: string[]; dataRows: string[][] } | null> {
-  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}`;
-  try {
-    const resp = await fetch(url);
-    if (!resp.ok) return null;
-    const text = await resp.text();
-    const rows = parseCSV(text);
-    if (!rows.length) return null;
-    const headers = rows[0].map(h => h.trim());
-    const lower   = headers.map(h => h.toLowerCase());
-    // Guard: gviz silently returns first sheet when name doesn't match.
-    // A real Treatments tab has Price + Treatment + Therapist and must NOT have
-    // "Paid" / "Sale of" / "Weight loss" (those are Sales-tab telltales).
-    if (!lower.includes("price")) return null;
-    if (!lower.some(h => h === "treatment" || h === "treatments")) return null;
-    if (!lower.includes("therapist")) return null;
-    if (lower.includes("paid") || lower.includes("sale of") || lower.includes("weight loss")) return null;
-    return { headers, dataRows: rows.slice(1) };
-  } catch {
-    return null;
+async function fetchLapisCsv(): Promise<Record<string, string>[]> {
+  const url = lapisCsvUrl(LAPIS_TABS.SLM_TRANSACTIONS.gid);
+  const resp = await fetch(url, { redirect: "follow" });
+  if (!resp.ok) throw new Error(`Lapis SLM_TRANSACTIONS CSV fetch failed: ${resp.status}`);
+  const text = await resp.text();
+  const lines = text.split("\n").filter(l => l.trim());
+  if (lines.length < 2) return [];
+  let headerIdx = 0;
+  for (let i = 0; i < Math.min(lines.length, 5); i++) {
+    if (parseCSVRow(lines[i]).filter(c => c.trim()).length >= 3) { headerIdx = i; break; }
   }
-}
-
-function parseCSV(text: string): string[][] {
-  const rows: string[][] = [];
-  for (const line of text.split("\n")) {
-    if (!line.trim()) continue;
-    const cells: string[] = [];
-    let cur = "", inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') {
-        if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
-        else inQ = !inQ;
-      } else if (ch === "," && !inQ) {
-        cells.push(cur); cur = "";
-      } else {
-        cur += ch;
-      }
-    }
-    cells.push(cur);
-    rows.push(cells);
-  }
-  return rows;
+  const headers = parseCSVRow(lines[headerIdx]).map(h => h.trim().toLowerCase());
+  return lines.slice(headerIdx + 1).map(line => {
+    const cells = parseCSVRow(line);
+    return Object.fromEntries(headers.map((h, i) => [h, (cells[i] ?? "").trim()]));
+  });
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function parseDate(raw: string): string | null {
   raw = raw.trim().replace(/(\d+)(st|nd|rd|th)\b/gi, "$1");
-  let m = raw.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
-  if (m) { try { return new Date(+m[3], +m[2] - 1, +m[1]).toISOString().slice(0, 10); } catch { /* */ } }
+  if (!raw) return null;
+  let m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = raw.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
+  if (m) {
+    const d = new Date(+m[3], +m[2] - 1, +m[1]);
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  }
   m = raw.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2})$/);
-  if (m) { try { return new Date(2000 + +m[3], +m[2] - 1, +m[1]).toISOString().slice(0, 10); } catch { /* */ } }
+  if (m) {
+    const d = new Date(2000 + +m[3], +m[2] - 1, +m[1]);
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  }
   return null;
+}
+
+function col(row: Record<string, string>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = row[k.toLowerCase()] ?? row[`${k.toLowerCase()} `];
+    if (v?.trim()) return v.trim();
+  }
+  return "";
 }
 
 function parsePrice(raw: string): number | null {
   if (!raw || /^[-—]$/.test(raw.trim())) return null;
-  const cleaned = raw.replace(/[€$£,]/g, "").trim();
-  const val = parseFloat(cleaned);
+  const val = parseFloat(raw.replace(/[€$£,]/g, "").trim());
   return isFinite(val) && val >= 0 ? val : null;
 }
 
-// First-match-wins lookup. Critical because Apr 26 has a duplicate "Therapist"
-// header in column F (pivot summary) — we want column D.
-function findIdx(headers: string[], ...names: string[]): number {
-  const norm = headers.map(h => h.toLowerCase().trim());
-  for (const n of names) {
-    const i = norm.findIndex(h => h === n.toLowerCase().trim());
-    if (i !== -1) return i;
+function monthsInRange(fromDate: string, toDate: string): Set<string> {
+  const months = new Set<string>();
+  const [fy, fm] = fromDate.split("-").map(Number);
+  const [ty, tm] = toDate.split("-").map(Number);
+  let y = fy, m = fm;
+  while (y < ty || (y === ty && m <= tm)) {
+    months.add(`${y}-${String(m).padStart(2, "0")}-01`);
+    if (++m > 12) { m = 1; y++; }
   }
-  return -1;
+  return months;
 }
 
-// ── Row processor ────────────────────────────────────────────────────────────
+// ── Main run ──────────────────────────────────────────────────────────────────
 
-function processRows(
-  tabName: string,
-  headers: string[],
-  dataRows: string[][],
-  year: number,
-  month: number,
-): Record<string, unknown>[] {
-  const dateIdx      = findIdx(headers, "Date");
-  const clientIdx    = findIdx(headers, "Client");
-  const treatmentIdx = findIdx(headers, "Treatment", "Treatments");
-  const priceIdx     = findIdx(headers, "Price");
-  const therapistIdx = findIdx(headers, "Therapist");
+export async function runSlimmingTreatments(
+  dateFrom: string,
+  dateTo: string,
+): Promise<{ rowsInserted: number; log: string[] }> {
+  const log: string[] = [];
+  const allRows = await fetchLapisCsv();
+  log.push(`Fetched ${allRows.length} raw rows from Lapis SLM_TRANSACTIONS tab`);
 
-  if (treatmentIdx === -1 || priceIdx === -1 || therapistIdx === -1) return [];
-
-  const monthKey = new Date(year, month - 1, 1).toISOString().slice(0, 10);
-  const results: Record<string, unknown>[] = [];
+  const validMonths = monthsInRange(dateFrom, dateTo);
+  const buckets = new Map<string, Record<string, unknown>[]>();
   let lastDate: string | null = null;
 
-  for (const row of dataRows) {
-    const get = (i: number) => (i >= 0 && i < row.length ? row[i].trim() : "");
+  for (const row of allRows) {
+    const dateRaw   = col(row, "date");
+    const priceRaw  = col(row, "price");
+    const client    = col(row, "client")                  || null;
+    const treatment = col(row, "treatment", "treatments") || null;
+    const therapist = col(row, "therapist")               || null;
 
-    const treatment = get(treatmentIdx) || null;
-    let therapist   = get(therapistIdx) || null;
-    const priceRaw  = get(priceIdx);
-    const price     = parsePrice(priceRaw);
-    const dateRaw   = get(dateIdx);
-    const client    = clientIdx >= 0 ? (get(clientIdx) || null) : null;
-
-    // Skip pivot/empty rows: no treatment, or therapist is a totals label
     if (!treatment) continue;
     if (therapist && /^(grand\s+)?total\b/i.test(therapist)) continue;
+
+    const price = parsePrice(priceRaw);
     if (price === null) continue;
 
     const parsed = parseDate(dateRaw);
     if (parsed) lastDate = parsed;
-    const svcDate = lastDate;
+    if (!lastDate) continue;
 
-    if (svcDate) {
-      const d = new Date(svcDate);
-      if (d.getFullYear() !== year || d.getMonth() + 1 !== month) continue;
-    }
+    const monthKey = `${lastDate.slice(0, 7)}-01`;
+    if (!validMonths.has(monthKey)) continue;
 
     const priceEx = price > 0 ? +(price / (1 + VAT_RATE)).toFixed(2) : 0;
 
-    results.push({
-      sheet_tab:       tabName,
+    if (!buckets.has(monthKey)) buckets.set(monthKey, []);
+    buckets.get(monthKey)!.push({
+      sheet_tab:       LAPIS_TABS.SLM_TRANSACTIONS.name,
       month:           monthKey,
-      date_of_service: svcDate,
+      date_of_service: lastDate,
       client,
       treatment,
       price_inc_vat:   +price.toFixed(2),
@@ -157,66 +133,16 @@ function processRows(
       therapist,
     });
   }
-  return results;
-}
 
-// ── Date range helpers ───────────────────────────────────────────────────────
-
-function monthsInRange(dateFrom: Date, dateTo: Date): [number, number][] {
-  const months: [number, number][] = [];
-  let y = dateFrom.getFullYear(), m = dateFrom.getMonth() + 1;
-  const ey = dateTo.getFullYear(), em = dateTo.getMonth() + 1;
-  while (y < ey || (y === ey && m <= em)) {
-    months.push([y, m]);
-    if (++m > 12) { m = 1; y++; }
-  }
-  return months;
-}
-
-// ── Main run ─────────────────────────────────────────────────────────────────
-
-export async function runSlimmingTreatments(
-  dateFrom: string,
-  dateTo: string,
-): Promise<{ rowsInserted: number; tabs: string[]; log: string[] }> {
-  const log: string[] = [];
-  const months = monthsInRange(new Date(dateFrom), new Date(dateTo));
   let totalRows = 0;
-  const processed: string[] = [];
-
-  for (const [year, month] of months) {
-    const label      = `${MONTH_NAMES[month - 1]} ${year}`;
-    const candidates = tabNamesForMonth(year, month);
-    let result: Awaited<ReturnType<typeof fetchByName>> = null;
-    let matchedName: string | null = null;
-
-    for (const cand of candidates) {
-      result = await fetchByName(cand);
-      if (result) { matchedName = cand; log.push(`  ${label}: found tab '${cand}'`); break; }
-    }
-
-    if (!matchedName || !result) {
-      log.push(`  ${label}: no Treatments tab found (tried ${candidates.join(", ")}) — skipping`);
-      continue;
-    }
-
-    const rows = processRows(matchedName, result.headers, result.dataRows, year, month);
-    if (!rows.length) { log.push(`  ${label}: 0 usable rows — skipping`); continue; }
-
-    const incTotal = rows.reduce((s, r) => s + Number(r.price_inc_vat), 0);
-    const exTotal  = rows.reduce((s, r) => s + Number(r.price_ex_vat),  0);
-    log.push(`    Price (inc-VAT) total: €${incTotal.toFixed(2)}`);
-    log.push(`    Price ex-VAT:          €${exTotal.toFixed(2)}`);
-    log.push(`    Rows captured:         ${rows.length}`);
-
-    const monthKey = rows[0].month as string;
+  for (const [monthKey, rows] of buckets) {
     await deleteWhere("slimming_treatments_daily", { month: monthKey });
     const n = await insertRows("slimming_treatments_daily", rows);
     totalRows += n;
-    processed.push(matchedName);
-    log.push(`  ${label}: ${n} rows inserted`);
+    const exTotal = rows.reduce((s, r) => s + Number(r.price_ex_vat), 0);
+    log.push(`  ${monthKey}: ${n} rows — €${exTotal.toFixed(2)} ex-VAT`);
   }
 
-  log.push(`Done — ${totalRows} total rows inserted across ${processed.length} tab(s).`);
-  return { rowsInserted: totalRows, tabs: processed, log };
+  log.push(`Done — ${totalRows} total rows across ${buckets.size} month(s).`);
+  return { rowsInserted: totalRows, log };
 }
