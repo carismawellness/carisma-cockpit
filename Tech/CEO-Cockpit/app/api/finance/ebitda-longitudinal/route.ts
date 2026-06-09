@@ -618,6 +618,9 @@ async function aggregateRange(
       case "cogs":      { getVM(acc, period, venue).cogs      += amount; break; }
       case "rent":      { getVM(acc, period, venue).rent      += amount; break; }
       case "utilities": { getVM(acc, period, venue).utilities += amount; break; }
+      default:
+        console.warn(`[ebitda-longitudinal] Unknown ebitda_line: "${line}" (venue: ${venue})`);
+        break;
     }
   }
 

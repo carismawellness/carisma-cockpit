@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ComposedChart,
+  LineChart,
   Bar,
   Line,
   XAxis,
@@ -12,6 +13,7 @@ import {
   Legend,
   ResponsiveContainer,
   LabelList,
+  ReferenceLine,
 } from "recharts";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import {
@@ -63,18 +65,20 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
 // ── Brand chart data type ─────────────────────────────────────────────────────
 
 interface BrandChartPoint {
-  label:       string;
-  revenue:     number;
-  wages:       number;
-  advertising: number;
-  rent:        number;
-  sga:         number;
-  cogs:        number;
-  utilities:   number;
-  ebitda:      number;
-  ebitda_pos:  number;
-  ebitda_neg:  number;
-  sppyRevenue: number | null;
+  label:          string;
+  revenue:        number;
+  wages:          number;
+  advertising:    number;
+  rent:           number;
+  sga:            number;
+  cogs:           number;
+  utilities:      number;
+  ebitda:         number;
+  ebitda_pos:     number;
+  ebitda_neg:     number;
+  ebitda_pct:     number;
+  sppyRevenue:    number | null;
+  sppyEbitdaPct:  number | null;
 }
 
 // ── Custom Tooltip ────────────────────────────────────────────────────────────
@@ -285,17 +289,16 @@ function LongitudinalContent({
   // ── Summary data from LAST visible period ───────────────────────────────────
 
   const summaryData = useMemo((): SummaryData | null => {
-    if (!data || visiblePeriods.length === 0) return null;
+    if (!data || data.periods.length === 0) return null;
 
-    const last = visiblePeriods[visiblePeriods.length - 1];
+    const last = data.periods[data.periods.length - 1];
     const c    = last.current;
     const s    = last.sppy;
 
-    const n = data.periods.length;
-    const periodLabel =
-      n <= 1  ? "1 month"
-      : n <= 12 ? `${n} months`
-      : `${Math.round(n / 12)} year`;
+    const first = data.periods[0];
+    const periodLabel = data.periods.length === 1
+      ? first.label
+      : `${first.label} – ${last.label}`;
 
     const sppy: SppyData | null = s ? {
       groupRevenue: s.revenue,
@@ -320,7 +323,7 @@ function LongitudinalContent({
       periodLabel,
       sppy,
     };
-  }, [data, visiblePeriods]);
+  }, [data]);
 
   // ── Build per-brand chart points ─────────────────────────────────────────────
 
@@ -343,19 +346,23 @@ function LongitudinalContent({
          : p.sppy.slim)
         : null;
 
+      const ebitdaPct = bt.ebitda_pct;
+
       return {
-        label:       p.label,
-        revenue:     bt.revenue,
-        wages:       bt.wages,
-        advertising: bt.advertising,
-        rent:        bt.rent,
-        sga:         bt.sga,
-        cogs:        bt.cogs,
-        utilities:   bt.utilities,
+        label:          p.label,
+        revenue:        bt.revenue,
+        wages:          bt.wages,
+        advertising:    bt.advertising,
+        rent:           bt.rent,
+        sga:            bt.sga,
+        cogs:           bt.cogs,
+        utilities:      bt.utilities,
         ebitda,
-        ebitda_pos:  ebitdaPos,
-        ebitda_neg:  0, // reserved — costs already overflow naturally when ebitda < 0
-        sppyRevenue: sppyBt ? sppyBt.revenue : null,
+        ebitda_pos:     ebitdaPos,
+        ebitda_neg:     0, // reserved — costs already overflow naturally when ebitda < 0
+        ebitda_pct:     ebitdaPct,
+        sppyRevenue:    sppyBt ? sppyBt.revenue : null,
+        sppyEbitdaPct:  sppyBt ? sppyBt.ebitda_pct : null,
       };
     });
   }
@@ -363,6 +370,15 @@ function LongitudinalContent({
   const spaPoints  = useMemo(() => buildBrandPoints("spa"),  [visiblePeriods]); // eslint-disable-line react-hooks/exhaustive-deps
   const aesPoints  = useMemo(() => buildBrandPoints("aes"),  [visiblePeriods]); // eslint-disable-line react-hooks/exhaustive-deps
   const slimPoints = useMemo(() => buildBrandPoints("slim"), [visiblePeriods]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Group-level margin chart data ────────────────────────────────────────────
+  const marginChartData = useMemo(() => {
+    return visiblePeriods.map((p) => ({
+      label:         p.label,
+      ebitda_pct:    p.current.ebitda_pct,
+      sppyEbitdaPct: p.sppy ? p.sppy.ebitda_pct : null,
+    }));
+  }, [visiblePeriods]);
 
   const hasPrev = pageOffset > 0;
   const hasNext = data != null && pageOffset + PAGE_SIZE < data.periods.length;
@@ -448,6 +464,53 @@ function LongitudinalContent({
           {/* Slimming */}
           <ChartCard title="Slimming — Cost Breakdown vs Revenue">
             <BrandChart points={slimPoints} />
+          </ChartCard>
+
+          {/* EBITDA Margin % */}
+          <ChartCard title="EBITDA Margin %">
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={marginChartData} margin={{ top: 18, right: 16, bottom: 0, left: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 10, fill: "#6b7280" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  tickFormatter={(v: number) => `${v}%`}
+                  tick={{ fontSize: 10, fill: "#6b7280" }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={48}
+                />
+                <Tooltip
+                  formatter={(v: unknown) => [`${Number(v).toFixed(1)}%`]}
+                />
+                <Legend wrapperStyle={{ fontSize: 10, paddingTop: 6 }} iconType="plainline" />
+                <ReferenceLine y={30} stroke="#22c55e" strokeDasharray="4 4" label={{ value: "Target 30%", fontSize: 10, fill: "#22c55e", position: "insideTopRight" }} />
+                <ReferenceLine y={0} stroke="#e5e7eb" />
+                <Line
+                  type="monotone"
+                  dataKey="ebitda_pct"
+                  stroke="#475569"
+                  dot={false}
+                  connectNulls={false}
+                  name="EBITDA Margin %"
+                  legendType="plainline"
+                />
+                <Line
+                  type="monotone"
+                  dataKey="sppyEbitdaPct"
+                  stroke="#94a3b8"
+                  strokeDasharray="4 2"
+                  dot={false}
+                  connectNulls={false}
+                  name="LY Margin %"
+                  legendType="plainline"
+                />
+              </LineChart>
+            </ResponsiveContainer>
           </ChartCard>
 
         </div>
