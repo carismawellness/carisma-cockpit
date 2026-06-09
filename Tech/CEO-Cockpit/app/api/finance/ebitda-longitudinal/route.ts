@@ -371,6 +371,27 @@ async function fetchRangeData(
 
   const months = overlappingMonths(dateFrom, dateTo);
 
+  // Paginate sales daily tables — Supabase caps non-paginated reads at 1000 rows,
+  // which silently truncates months with high transaction volumes (400+ rows/month).
+  async function paginateSalesDaily(table: "aesthetics_sales_daily" | "slimming_sales_daily"): Promise<SalesDailyRow[]> {
+    const SALES_PAGE = 1000;
+    const all: SalesDailyRow[] = [];
+    for (let offset = 0; offset < 100_000; offset += SALES_PAGE) {
+      const { data, error } = await supabase
+        .from(table)
+        .select("date_of_service, price_ex_vat")
+        .gte("date_of_service", dateFrom)
+        .lte("date_of_service", dateTo)
+        .order("date_of_service")
+        .range(offset, offset + SALES_PAGE - 1);
+      if (error) throw new Error(`${table} page ${offset}: ${error.message}`);
+      if (!data || data.length === 0) break;
+      all.push(...(data as SalesDailyRow[]));
+      if (data.length < SALES_PAGE) break;
+    }
+    return all;
+  }
+
   const [revDaily, revMonthly, aesSales, slimSales, supplement] = await Promise.all([
     supabase
       .from("spa_revenue_daily")
@@ -383,17 +404,9 @@ async function fetchRangeData(
       .select("location_id, month, wholesale, sales_discount, sales_refund")
       .in("month", months),
 
-    supabase
-      .from("aesthetics_sales_daily")
-      .select("date_of_service, price_ex_vat")
-      .gte("date_of_service", dateFrom)
-      .lte("date_of_service", dateTo),
+    paginateSalesDaily("aesthetics_sales_daily"),
 
-    supabase
-      .from("slimming_sales_daily")
-      .select("date_of_service, price_ex_vat")
-      .gte("date_of_service", dateFrom)
-      .lte("date_of_service", dateTo),
+    paginateSalesDaily("slimming_sales_daily"),
 
     supabase
       .from("salary_supplement_monthly")
@@ -408,8 +421,6 @@ async function fetchRangeData(
   for (const [label, res] of [
     ["spa_revenue_daily",   revDaily],
     ["spa_revenue_monthly", revMonthly],
-    ["aesthetics_sales_daily", aesSales],
-    ["slimming_sales_daily",   slimSales],
     ["salary_supplement_monthly", supplement],
   ] as Array<[string, { error: { message: string } | null }]>) {
     if (res.error) throw new Error(`${label}: ${res.error.message}`);
@@ -419,8 +430,8 @@ async function fetchRangeData(
     allRawCosts,
     revDaily:   (revDaily.data   ?? []) as RevDailyRow[],
     revMonthly: (revMonthly.data ?? []) as RevMonthlyRow[],
-    aesSales:   (aesSales.data   ?? []) as SalesDailyRow[],
-    slimSales:  (slimSales.data  ?? []) as SalesDailyRow[],
+    aesSales,
+    slimSales,
     supplement: (supplement.data ?? []) as SuppRow[],
   };
 }

@@ -97,7 +97,10 @@ export function LeadsPerHour({
   }, [visibleBrands]);
 
   return (
-    <Card className="p-4 md:p-6">
+    <Card className="p-4 md:p-6 relative">
+      <span className="absolute top-4 right-4 text-[10px] uppercase tracking-wider text-text-secondary bg-gray-100 px-1.5 py-0.5 rounded">
+        sample
+      </span>
       <div className="mb-4">
         <h3 className="text-base font-semibold text-foreground">Leads per Hour</h3>
         <p className="text-xs text-muted-foreground mt-0.5">Hourly lead volume distribution by brand</p>

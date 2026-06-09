@@ -11,6 +11,7 @@ import { RepLeaderboard } from "@/components/crm/RepLeaderboard";
 import { LeadReconciliation } from "@/components/crm/LeadReconciliation";
 import { LeadsPerHour } from "@/components/crm/LeadsPerHour";
 import { CIChat } from "@/components/ci/CIChat";
+import { GHLSyncBadge } from "@/components/crm/GHLSyncBadge";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 
 function CRMContent({
@@ -24,11 +25,14 @@ function CRMContent({
 }) {
   return (
     <>
-      <div>
-        <h1 className="text-xl md:text-2xl font-bold text-foreground">CRM Master</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          {formatDateRangeLabel(dateFrom, dateTo)} · Cross-brand CRM performance
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl md:text-2xl font-bold text-foreground">CRM Master</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {formatDateRangeLabel(dateFrom, dateTo)} · Cross-brand CRM performance
+          </p>
+        </div>
+        <GHLSyncBadge />
       </div>
 
       {/* KPI Summary Cards */}

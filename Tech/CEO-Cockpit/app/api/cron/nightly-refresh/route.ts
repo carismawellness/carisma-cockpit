@@ -30,11 +30,12 @@ export async function GET(req: NextRequest) {
   const payload = JSON.stringify({ date_from, date_to, force: true });
   const headers = { "Content-Type": "application/json" };
 
-  const [revenueRes, spaRes, aestheticsRes, crmAgentsRes] = await Promise.allSettled([
+  const [revenueRes, spaRes, aestheticsRes, crmAgentsRes, ghlCrmRes] = await Promise.allSettled([
     fetch(`${BASE_URL}/api/etl/revenue-refresh`,              { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/zoho-spa-transactions`,        { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/zoho-aesthetics-transactions`, { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/crm-agents`,                   { method: "POST", headers }),
+    fetch(`${BASE_URL}/api/etl/ghl-crm`,                      { method: "POST", headers, body: payload }),
   ]);
 
   const outcome = (r: PromiseSettledResult<Response>) =>
@@ -49,6 +50,7 @@ export async function GET(req: NextRequest) {
       zoho_spa:        outcome(spaRes),
       zoho_aesthetics: outcome(aestheticsRes),
       crm_agents:      outcome(crmAgentsRes),
+      ghl_crm:         outcome(ghlCrmRes),
     },
   });
 }

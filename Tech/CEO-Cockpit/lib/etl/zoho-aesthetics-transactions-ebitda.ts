@@ -170,6 +170,7 @@ async function loadRevenueBase(fromDate: string, toDate: string): Promise<Record
         ["select",          "price_ex_vat"],
         ["date_of_service", `gte.${fromDate}`],
         ["date_of_service", `lte.${toDate}`],
+        ["limit",           "10000"],
       ]);
       const resp = await fetch(`${base}/rest/v1/${table}?${qs}`, {
         headers: { apikey: key, Authorization: `Bearer ${key}` },

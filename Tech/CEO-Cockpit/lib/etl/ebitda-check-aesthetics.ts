@@ -39,7 +39,7 @@ async function loadSalesRevenue(fromDate: string, toDate: string): Promise<Recor
   const key  = process.env.SUPABASE_SERVICE_ROLE_KEY!;
   for (const [table, dept] of [["aesthetics_sales_daily", "aesthetics"], ["slimming_sales_daily", "slimming"]] as const) {
     try {
-      const qs = new URLSearchParams([["select", "price_ex_vat"], ["date_of_service", `gte.${fromDate}`], ["date_of_service", `lte.${toDate}`]]);
+      const qs = new URLSearchParams([["select", "price_ex_vat"], ["date_of_service", `gte.${fromDate}`], ["date_of_service", `lte.${toDate}`], ["limit", "10000"]]);
       const resp = await fetch(`${base}/rest/v1/${table}?${qs}`, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
       if (resp.ok) result[dept] = (await resp.json() as Record<string, unknown>[]).reduce((s, r) => s + Number(r.price_ex_vat ?? 0), 0);
     } catch { /* ignore */ }
