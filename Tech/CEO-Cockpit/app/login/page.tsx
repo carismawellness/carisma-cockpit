@@ -21,7 +21,9 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    // Allow short usernames (no @) by resolving to @cockpit.local accounts
+    const resolvedEmail = email.includes("@") ? email : `${email}@cockpit.local`;
+    const { error } = await supabase.auth.signInWithPassword({ email: resolvedEmail, password });
 
     if (error) {
       setError(error.message);
@@ -43,11 +45,12 @@ export default function LoginPage() {
         <CardContent className="pb-10">
           <form onSubmit={handleLogin} className="space-y-4">
             <Input
-              type="email"
-              placeholder="Email"
+              type="text"
+              placeholder="Email or username"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              autoComplete="username"
               className="border-warm-border focus-visible:ring-gold/30 rounded-lg h-11"
             />
             <Input
