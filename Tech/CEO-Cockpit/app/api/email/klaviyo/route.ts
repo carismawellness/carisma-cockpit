@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import type {
-
-export const maxDuration = 300;
   KlaviyoApiResponse,
   KlaviyoCampaignData,
   KlaviyoFlowData,
   KlaviyoOverview,
 } from "@/lib/types/klaviyo";
+
+export const maxDuration = 300;
 
 type BrandSlug = "spa" | "aesthetics" | "slimming";
 
