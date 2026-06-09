@@ -264,10 +264,14 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
           <h1 className="text-2xl font-bold text-foreground tracking-tight">Spa</h1>
           <p className="text-sm text-muted-foreground">{subtitle}</p>
           <div className="flex flex-wrap gap-2 mt-1">
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600">
+            <a
+              href="https://docs.google.com/spreadsheets/d/195RvbNuZd-oNL-rziKC3Wz6ndy0cDA_a/edit#gid=1979027354"
+              target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors"
+            >
               <FileSpreadsheet className="h-3 w-3" />
-              Corporate Datasheet — Spa Services
-            </span>
+              Corporate Datasheet — Spa Services ↗
+            </a>
             <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600">
               <FileSpreadsheet className="h-3 w-3" />
               Zoho Books — Wholesale, Discounts &amp; Refunds

@@ -31,10 +31,14 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
           All figures in EUR · ex-VAT and inc-VAT shown
         </p>
         <div className="flex flex-wrap gap-2 pt-1">
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600">
+          <a
+            href="https://docs.google.com/spreadsheets/d/195RvbNuZd-oNL-rziKC3Wz6ndy0cDA_a/edit#gid=1770739089"
+            target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors"
+          >
             <FileSpreadsheet className="h-3 w-3" />
-            Google Sheets — Aesthetics Sales (ETL → Supabase)
-          </span>
+            Corporate Datasheet — Aesthetics ↗
+          </a>
         </div>
       </div>
 
