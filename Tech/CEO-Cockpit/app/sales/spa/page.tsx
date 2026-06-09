@@ -461,7 +461,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
         <Card className="p-4 md:p-6">
           <h2 className="text-lg font-semibold text-foreground mb-1">Discount by Location</h2>
           <p className="text-xs text-muted-foreground mb-5">
-            Average discount applied vs list price per venue · inc-VAT
+            Total discounts as % of net revenue per venue · inc-VAT
           </p>
           {analytics.isFetching ? (
             <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
@@ -485,7 +485,6 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                     interval={0}
                   />
                   <YAxis
-                    domain={[0, 30]}
                     tickFormatter={(v: number) => `${v}%`}
                     tick={{ fontSize: 11 }}
                   />

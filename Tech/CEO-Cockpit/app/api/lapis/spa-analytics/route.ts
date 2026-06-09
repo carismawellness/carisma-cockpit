@@ -187,10 +187,11 @@ function computeAnalytics(
   // Payment type by location accumulators
   const paymentByLocAcc: Record<number, Record<string, number>> = {};
 
-  // Discount accumulators: locId → { gross_list, net_unit, discounted_cnt, total_cnt }
+  // Discount accumulators: locId → { gross_list, net_unit, all_net, discounted_cnt, total_cnt }
   const discountAcc: Record<number, {
     gross_list_revenue: number;
     net_unit_revenue: number;
+    all_net_revenue: number;
     discounted_txn_count: number;
     total_txn_count: number;
   }> = {};
@@ -239,9 +240,10 @@ function computeAnalytics(
     // Discounts
     const listPriceInc = safeFloat(stripCol(row, "List Price"));
     if (!discountAcc[locId]) {
-      discountAcc[locId] = { gross_list_revenue: 0, net_unit_revenue: 0, discounted_txn_count: 0, total_txn_count: 0 };
+      discountAcc[locId] = { gross_list_revenue: 0, net_unit_revenue: 0, all_net_revenue: 0, discounted_txn_count: 0, total_txn_count: 0 };
     }
-    discountAcc[locId].total_txn_count += 1;
+    discountAcc[locId].total_txn_count  += 1;
+    discountAcc[locId].all_net_revenue  += unitPriceEx;
     if (listPriceInc > unitPriceInc && unitPriceInc > 0) {
       const listPriceEx = listPriceInc / (1 + VAT_RATE);
       discountAcc[locId].gross_list_revenue   += listPriceEx;
@@ -326,7 +328,7 @@ function computeAnalytics(
       const locId = Number(idStr);
       const acc   = discountAcc[locId] ?? { gross_list_revenue: 0, net_unit_revenue: 0, discounted_txn_count: 0, total_txn_count: 0 };
       const totalDiscount = acc.gross_list_revenue - acc.net_unit_revenue;
-      const discountPct   = acc.gross_list_revenue > 0 ? (totalDiscount / acc.gross_list_revenue) * 100 : 0;
+      const discountPct   = acc.all_net_revenue > 0 ? (totalDiscount / acc.all_net_revenue) * 100 : 0;
       return {
         location_id:          locId,
         name:                 meta.name,

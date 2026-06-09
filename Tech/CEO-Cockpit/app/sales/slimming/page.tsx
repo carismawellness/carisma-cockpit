@@ -3,23 +3,141 @@
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
 import { useSlimmingSales } from "@/lib/hooks/useSlimmingSales";
-import { chartColors, formatCurrency } from "@/lib/charts/config";
+import { useSlimmingTreatments } from "@/lib/hooks/useSlimmingTreatments";
+import { formatCurrency } from "@/lib/charts/config";
 import { RefreshCw, FileSpreadsheet } from "lucide-react";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, LabelList,
+  // eslint-disable-next-line @typescript-eslint/no-deprecated
+  Cell,
+} from "recharts";
+
+// ── Colour palette ────────────────────────────────────────────────────────────
+const SLIMMING_GREEN = "#8EB093";
+const NAVY           = "#1B3A4B";
+const BLUE           = "#4A90D9";
+const PURPLE         = "#7C3AED";
+const GOLD           = "#B79E61";
+const TEAL           = "#5BA4A4";
 
 const SERVICE_TYPE_COLORS: Record<string, string> = {
-  weight_loss: "#1B3A4B",
-  treatment:   "#4A90D9",
-  medical:     "#7C3AED",
-  product:     "#B79E61",
+  weight_loss: NAVY,
+  treatment:   BLUE,
+  medical:     PURPLE,
+  product:     GOLD,
+  unknown:     "#9CA3AF",
 };
 
+// Distinct colours for treatment types (cycles if more than palette length)
+const TREATMENT_PALETTE = [SLIMMING_GREEN, NAVY, BLUE, TEAL, GOLD, PURPLE, "#E07A5F", "#059669", "#F59E0B", "#EC4899"];
+
+// ── Formatters ────────────────────────────────────────────────────────────────
+function fmtK(v: number): string {
+  if (Math.abs(v) >= 1_000_000) return `€${(v / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(v) >= 1_000)     return `€${(v / 1_000).toFixed(1)}K`;
+  return `€${v.toFixed(0)}`;
+}
+
+// Recharts v3 formatters — accept unknown then narrow
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const labelFmtK   = (v: any): string => (typeof v === "number" ? fmtK(v)     : "");
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const labelFmtPct = (v: any): string => (typeof v === "number" ? `${v}%`     : "");
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const tooltipFmt  = (value: any, name: any): [string, string] =>
+  [typeof value === "number" ? fmtK(value) : String(value ?? ""), String(name)];
+
+// ── Custom tooltips ───────────────────────────────────────────────────────────
+function StaffTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; fill: string }>; label?: string }) {
+  if (!active || !payload?.length) return null;
+  const inc  = payload.find(p => p.name === "Revenue inc-VAT")?.value ?? 0;
+  const bk   = payload.find(p => p.name === "Bookings")?.value ?? 0;
+  return (
+    <div className="bg-white border rounded-lg shadow-lg p-3 text-xs space-y-1">
+      <p className="font-semibold text-sm">{label}</p>
+      <p style={{ color: SLIMMING_GREEN }}>Revenue inc-VAT: {fmtK(inc)}</p>
+      <p style={{ color: NAVY }}>Bookings: {bk}</p>
+    </div>
+  );
+}
+
+function GenericTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; fill: string }>; label?: string }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-white border rounded-lg shadow-lg p-3 text-xs space-y-1">
+      <p className="font-semibold text-sm">{label}</p>
+      {payload.map(p => (
+        <p key={p.name} style={{ color: p.fill }}>{p.name}: {fmtK(p.value)}</p>
+      ))}
+    </div>
+  );
+}
+
+// ── Shared empty / loading state ──────────────────────────────────────────────
+function EmptyState({ isLoading }: { isLoading: boolean }) {
+  return (
+    <p className="text-sm text-muted-foreground py-6 text-center">
+      {isLoading ? "Loading…" : "No data for selected period"}
+    </p>
+  );
+}
+
+// ── Bar chart height: 48 px per row, min 180 ─────────────────────────────────
+function chartH(n: number) { return Math.max(180, n * 48 + 40); }
+
+// ── Main content ──────────────────────────────────────────────────────────────
 function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const {
     byStaff, byServiceType, byService, totals,
     isFetching, isSyncing, syncError, triggerSync,
   } = useSlimmingSales(dateFrom, dateTo);
 
-  const isLoading = isFetching || isSyncing;
+  const {
+    byStaff: txByStaff,
+    byTreatment,
+    totals: txTotals,
+    isFetching: txFetching,
+    isSyncing: txSyncing,
+  } = useSlimmingTreatments(dateFrom, dateTo);
+
+  const isLoading   = isFetching || isSyncing;
+  const txLoading   = txFetching || txSyncing;
+
+  // Chart data shapes
+  const staffChartData = byStaff.map(s => ({
+    name:            s.staff,
+    "Revenue inc-VAT": s.revenue_inc,
+    "Revenue ex-VAT":  s.revenue_ex,
+    "Bookings":        s.tx_count,
+  }));
+
+  const serviceTypeData = byServiceType.map(t => ({
+    name:      t.label,
+    "Revenue": t.revenue_ex,
+    type:      t.type,
+    pct:       t.pct,
+  }));
+
+  const serviceData = byService.slice(0, 15).map(s => ({
+    name:      s.service,
+    "Revenue": s.revenue_ex,
+    type:      s.type,
+    pct:       s.pct,
+  }));
+
+  const txStaffData = txByStaff.map(s => ({
+    name:      s.staff,
+    "Revenue": s.revenue_ex,
+    "Bookings": s.tx_count,
+  }));
+
+  const txTypeData = byTreatment.map(t => ({
+    name:      t.treatment,
+    "Revenue": t.revenue_ex,
+    count:     t.tx_count,
+    pct:       t.pct,
+  }));
 
   return (
     <>
@@ -29,7 +147,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
           Slimming — Sales
         </h1>
         <p className="text-sm text-muted-foreground">
-          All figures in EUR · ex-VAT and inc-VAT shown · Revenue = services delivered (Full Price)
+          All figures in EUR · inc-VAT and ex-VAT shown · Revenue = services delivered (Full Price)
         </p>
         <div className="flex flex-wrap gap-2 pt-1">
           <a
@@ -46,7 +164,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
             className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors"
           >
             <FileSpreadsheet className="h-3 w-3" />
-            Cockpit Datasheet — Slimming Treatments ↗
+            Cockpit Datasheet — Slimming Treatments (Tx) ↗
           </a>
         </div>
       </div>
@@ -74,160 +192,312 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
         {syncError && (
           <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2 mb-3">{syncError}</p>
         )}
+        {/* inc-VAT first, then ex-VAT */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="p-3 rounded-lg bg-muted/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Revenue ex-VAT</p>
-            <p className="text-xl font-bold text-foreground">{formatCurrency(totals.revenue_ex)}</p>
-          </div>
           <div className="p-3 rounded-lg bg-muted/40">
             <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Revenue inc-VAT</p>
             <p className="text-xl font-bold text-foreground">{formatCurrency(totals.revenue_inc)}</p>
+          </div>
+          <div className="p-3 rounded-lg bg-muted/40">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Revenue ex-VAT</p>
+            <p className="text-xl font-bold text-foreground">{formatCurrency(totals.revenue_ex)}</p>
           </div>
           <div className="p-3 rounded-lg bg-muted/40">
             <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">VAT Amount</p>
             <p className="text-xl font-bold text-foreground">{formatCurrency(totals.vat_amount)}</p>
           </div>
           <div className="p-3 rounded-lg bg-muted/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Transactions</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Bookings</p>
             <p className="text-xl font-bold text-foreground">{totals.tx_count}</p>
           </div>
         </div>
       </Card>
 
-      {/* ── Revenue by Staff ─────────────────────────────────────────── */}
+      {/* ── Revenue inc-VAT & Bookings by Staff ─────────────────────── */}
       <Card className="p-4 md:p-5">
         <div className="flex items-center gap-2 mb-4">
-          <h2 className="text-base font-semibold text-foreground">Revenue by Staff</h2>
-          <span className="text-xs text-muted-foreground">(from Sale of column)</span>
+          <h2 className="text-base font-semibold text-foreground">Revenue inc-VAT &amp; Bookings by Staff</h2>
+          <span className="text-xs text-muted-foreground">(Sale of column)</span>
         </div>
         {byStaff.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">
-            {isLoading ? "Loading…" : "No data for selected period"}
-          </p>
+          <EmptyState isLoading={isLoading} />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
-                  <th className="text-left pb-2 font-medium">Staff Member</th>
-                  <th className="text-right pb-2 font-medium">Transactions</th>
-                  <th className="text-right pb-2 font-medium">Revenue ex-VAT</th>
-                  <th className="text-right pb-2 font-medium">Revenue inc-VAT</th>
-                </tr>
-              </thead>
-              <tbody>
-                {byStaff.map((s, i) => (
-                  <tr key={s.staff} className={`border-b last:border-0 ${i % 2 === 0 ? "" : "bg-muted/20"}`}>
-                    <td className="py-2.5 font-medium">{s.staff}</td>
-                    <td className="py-2.5 text-right text-muted-foreground">{s.tx_count}</td>
-                    <td className="py-2.5 text-right font-medium">{formatCurrency(s.revenue_ex)}</td>
-                    <td className="py-2.5 text-right text-muted-foreground">{formatCurrency(s.revenue_inc)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 font-semibold">
-                  <td className="pt-2.5">Total</td>
-                  <td className="pt-2.5 text-right text-muted-foreground">{totals.tx_count}</td>
-                  <td className="pt-2.5 text-right">{formatCurrency(totals.revenue_ex)}</td>
-                  <td className="pt-2.5 text-right text-muted-foreground">{formatCurrency(totals.revenue_inc)}</td>
-                </tr>
-              </tfoot>
-            </table>
+          <ResponsiveContainer width="100%" height={chartH(byStaff.length)}>
+            <BarChart
+              layout="vertical"
+              data={staffChartData}
+              margin={{ top: 4, right: 80, left: 100, bottom: 4 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis
+                type="number"
+                tickFormatter={fmtK}
+                tick={{ fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={96}
+                tick={{ fontSize: 12 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip content={<StaffTooltip />} />
+              {/* Revenue inc-VAT bar */}
+              <Bar dataKey="Revenue inc-VAT" fill={SLIMMING_GREEN} radius={[0, 4, 4, 0]} maxBarSize={28}>
+                <LabelList
+                  dataKey="Revenue inc-VAT"
+                  position="right"
+                  formatter={(v: number) => fmtK(v)}
+                  style={{ fontSize: 11, fill: "#374151" }}
+                />
+              </Bar>
+              {/* Bookings count bar */}
+              <Bar dataKey="Bookings" fill={NAVY} radius={[0, 4, 4, 0]} maxBarSize={14} opacity={0.65}>
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+        {/* Legend */}
+        {byStaff.length > 0 && (
+          <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: SLIMMING_GREEN }} />Revenue inc-VAT</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: NAVY, opacity: 0.65 }} />Bookings (count scale)</span>
           </div>
         )}
       </Card>
 
       {/* ── Revenue by Service Type ───────────────────────────────────── */}
       <Card className="p-4 md:p-5">
-        <h2 className="text-base font-semibold text-foreground mb-4">Revenue by Service Type</h2>
+        <h2 className="text-base font-semibold text-foreground mb-1">Revenue by Service Type</h2>
+        <p className="text-xs text-muted-foreground mb-4">Weight Loss (col C) vs Treatments (col D) vs Medical</p>
         {byServiceType.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">
-            {isLoading ? "Loading…" : "No data for selected period"}
-          </p>
+          <EmptyState isLoading={isLoading} />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
-                  <th className="text-left pb-2 font-medium">Type</th>
-                  <th className="text-right pb-2 font-medium">Transactions</th>
-                  <th className="text-right pb-2 font-medium">Revenue ex-VAT</th>
-                  <th className="text-left pb-2 pl-4 font-medium">Share</th>
-                </tr>
-              </thead>
-              <tbody>
-                {byServiceType.map((t, i) => (
-                  <tr key={t.type} className={`border-b last:border-0 ${i % 2 === 0 ? "" : "bg-muted/20"}`}>
-                    <td className="py-2.5 font-medium">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-sm inline-block flex-shrink-0"
-                          style={{ backgroundColor: SERVICE_TYPE_COLORS[t.type] ?? "#96B2B2" }} />
-                        {t.label}
-                      </div>
-                    </td>
-                    <td className="py-2.5 text-right text-muted-foreground">{t.tx_count}</td>
-                    <td className="py-2.5 text-right font-medium">{formatCurrency(t.revenue_ex)}</td>
-                    <td className="py-2.5 pl-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-24 h-2 bg-gray-100 rounded-full overflow-hidden">
-                          <div className="h-full rounded-full"
-                            style={{ width: `${t.pct}%`, backgroundColor: SERVICE_TYPE_COLORS[t.type] ?? "#96B2B2" }} />
-                        </div>
-                        <span className="text-xs text-muted-foreground">{t.pct}%</span>
-                      </div>
-                    </td>
-                  </tr>
+          <ResponsiveContainer width="100%" height={chartH(byServiceType.length)}>
+            <BarChart
+              layout="vertical"
+              data={serviceTypeData}
+              margin={{ top: 4, right: 80, left: 120, bottom: 4 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis
+                type="number"
+                tickFormatter={fmtK}
+                tick={{ fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={116}
+                tick={{ fontSize: 12 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip
+                formatter={(value: number, name: string) => [fmtK(value), name]}
+              />
+              <Bar dataKey="Revenue" radius={[0, 4, 4, 0]} maxBarSize={32}>
+                {serviceTypeData.map((entry, i) => (
+                  <Cell key={i} fill={SERVICE_TYPE_COLORS[entry.type] ?? "#9CA3AF"} />
                 ))}
-              </tbody>
-            </table>
+                <LabelList
+                  dataKey="pct"
+                  position="right"
+                  formatter={(v: number) => `${v}%`}
+                  style={{ fontSize: 11, fill: "#374151" }}
+                />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+        {/* Colour legend */}
+        {byServiceType.length > 0 && (
+          <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-muted-foreground">
+            {byServiceType.map(t => (
+              <span key={t.type} className="flex items-center gap-1.5">
+                <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: SERVICE_TYPE_COLORS[t.type] ?? "#9CA3AF" }} />
+                {t.label}
+              </span>
+            ))}
           </div>
         )}
       </Card>
 
       {/* ── Revenue by Service / Product ──────────────────────────────── */}
       <Card className="p-4 md:p-5">
-        <h2 className="text-base font-semibold text-foreground mb-4">Revenue by Service / Product</h2>
+        <h2 className="text-base font-semibold text-foreground mb-1">Revenue by Service / Product</h2>
+        <p className="text-xs text-muted-foreground mb-4">Top 15 services/products by revenue ex-VAT · colour = service type</p>
         {byService.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">
-            {isLoading ? "Loading…" : "No data for selected period"}
-          </p>
+          <EmptyState isLoading={isLoading} />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
-                  <th className="text-left pb-2 font-medium">Service / Product</th>
-                  <th className="text-right pb-2 font-medium">Transactions</th>
-                  <th className="text-right pb-2 font-medium">Revenue ex-VAT</th>
-                  <th className="text-left pb-2 pl-4 font-medium">Share</th>
-                </tr>
-              </thead>
-              <tbody>
-                {byService.map((s, i) => (
-                  <tr key={s.service} className={`border-b last:border-0 ${i % 2 === 0 ? "" : "bg-muted/20"}`}>
-                    <td className="py-2.5">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full inline-block flex-shrink-0"
-                          style={{ backgroundColor: SERVICE_TYPE_COLORS[s.type] ?? "#96B2B2" }} />
-                        <span className="font-medium">{s.service}</span>
-                      </div>
-                    </td>
-                    <td className="py-2.5 text-right text-muted-foreground">{s.tx_count}</td>
-                    <td className="py-2.5 text-right font-medium">{formatCurrency(s.revenue_ex)}</td>
-                    <td className="py-2.5 pl-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-24 h-2 bg-gray-100 rounded-full overflow-hidden">
-                          <div className="h-full rounded-full"
-                            style={{ width: `${s.pct}%`, backgroundColor: chartColors.slimming ?? "#059669" }} />
-                        </div>
-                        <span className="text-xs text-muted-foreground">{s.pct}%</span>
-                      </div>
-                    </td>
-                  </tr>
+          <ResponsiveContainer width="100%" height={chartH(Math.min(byService.length, 15))}>
+            <BarChart
+              layout="vertical"
+              data={serviceData}
+              margin={{ top: 4, right: 80, left: 130, bottom: 4 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis
+                type="number"
+                tickFormatter={fmtK}
+                tick={{ fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={126}
+                tick={{ fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip
+                formatter={(value: number, name: string) => [fmtK(value), name]}
+              />
+              <Bar dataKey="Revenue" radius={[0, 4, 4, 0]} maxBarSize={28}>
+                {serviceData.map((entry, i) => (
+                  <Cell key={i} fill={SERVICE_TYPE_COLORS[entry.type] ?? SLIMMING_GREEN} />
                 ))}
-              </tbody>
-            </table>
+                <LabelList
+                  dataKey="pct"
+                  position="right"
+                  formatter={(v: number) => `${v}%`}
+                  style={{ fontSize: 11, fill: "#374151" }}
+                />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+        {byService.length > 0 && (
+          <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-muted-foreground">
+            {Object.entries(SERVICE_TYPE_COLORS).map(([type, color]) =>
+              byService.some(s => s.type === type) ? (
+                <span key={type} className="flex items-center gap-1.5">
+                  <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: color }} />
+                  {type === "weight_loss" ? "Weight Loss" : type === "treatment" ? "Treatment" : type === "medical" ? "Medical" : "Product"}
+                </span>
+              ) : null
+            )}
+          </div>
+        )}
+      </Card>
+
+      {/* ═══════════════════════════════════════════════════════════
+          Tx Slimming section — from the Treatments (Tx) tab
+         ═══════════════════════════════════════════════════════════ */}
+      <div className="space-y-1 pt-2">
+        <h2 className="text-lg font-bold text-foreground tracking-tight">Tx Slimming — Treatment Breakdown</h2>
+        <p className="text-xs text-muted-foreground">
+          Source: Cockpit Datasheet → Tx Slimming tab ·{" "}
+          {txTotals.last_synced
+            ? `Last synced: ${new Date(txTotals.last_synced).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" })}`
+            : "Not yet synced"}
+        </p>
+      </div>
+
+      {/* ── Treatments by Therapist ───────────────────────────────────── */}
+      <Card className="p-4 md:p-5">
+        <h2 className="text-base font-semibold text-foreground mb-1">Treatments by Therapist</h2>
+        <p className="text-xs text-muted-foreground mb-4">Revenue ex-VAT per therapist from the Tx tab</p>
+        {txByStaff.length === 0 ? (
+          <EmptyState isLoading={txLoading} />
+        ) : (
+          <ResponsiveContainer width="100%" height={chartH(txByStaff.length)}>
+            <BarChart
+              layout="vertical"
+              data={txStaffData}
+              margin={{ top: 4, right: 80, left: 100, bottom: 4 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis
+                type="number"
+                tickFormatter={fmtK}
+                tick={{ fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={96}
+                tick={{ fontSize: 12 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip content={<GenericTooltip />} />
+              <Bar dataKey="Revenue" fill={TEAL} radius={[0, 4, 4, 0]} maxBarSize={28}>
+                <LabelList
+                  dataKey="Revenue"
+                  position="right"
+                  formatter={(v: number) => fmtK(v)}
+                  style={{ fontSize: 11, fill: "#374151" }}
+                />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+        {txByStaff.length > 0 && (
+          <div className="mt-3 text-xs text-muted-foreground">
+            Total: {fmtK(txTotals.revenue_ex)} ex-VAT · {txTotals.tx_count} sessions
+          </div>
+        )}
+      </Card>
+
+      {/* ── Treatments by Type ────────────────────────────────────────── */}
+      <Card className="p-4 md:p-5">
+        <h2 className="text-base font-semibold text-foreground mb-1">Treatments by Type</h2>
+        <p className="text-xs text-muted-foreground mb-4">Revenue ex-VAT per treatment type from the Tx tab</p>
+        {byTreatment.length === 0 ? (
+          <EmptyState isLoading={txLoading} />
+        ) : (
+          <ResponsiveContainer width="100%" height={chartH(byTreatment.length)}>
+            <BarChart
+              layout="vertical"
+              data={txTypeData}
+              margin={{ top: 4, right: 80, left: 140, bottom: 4 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis
+                type="number"
+                tickFormatter={fmtK}
+                tick={{ fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={136}
+                tick={{ fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip
+                formatter={(value: number, name: string) => [fmtK(value), name]}
+              />
+              <Bar dataKey="Revenue" radius={[0, 4, 4, 0]} maxBarSize={28}>
+                {txTypeData.map((_, i) => (
+                  <Cell key={i} fill={TREATMENT_PALETTE[i % TREATMENT_PALETTE.length]} />
+                ))}
+                <LabelList
+                  dataKey="pct"
+                  position="right"
+                  formatter={(v: number) => `${v}%`}
+                  style={{ fontSize: 11, fill: "#374151" }}
+                />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+        {byTreatment.length > 0 && (
+          <div className="mt-3 text-xs text-muted-foreground">
+            Total: {fmtK(txTotals.revenue_ex)} ex-VAT · {txTotals.tx_count} sessions
           </div>
         )}
       </Card>

@@ -101,9 +101,29 @@ export async function runSlimmingSales(
   for (const row of allRows) {
     const dateRaw   = col(row, "date");
     const priceRaw  = col(row, "paid");
-    const client    = col(row, "client")                                               || null;
-    const therapist = col(row, "sale of", "therapist", "employee")                     || null;
-    const descr     = col(row, "weight loss", "treatments", "medical consultation")    || null;
+    const client    = col(row, "client")                       || null;
+    const therapist = col(row, "sale of", "therapist", "employee") || null;
+
+    // Col D = "treatments", Col C = "weight loss"; D takes precedence when non-empty
+    const colTreatments = col(row, "treatments");
+    const colWeightLoss = col(row, "weight loss");
+    const colMedical    = col(row, "medical consultation");
+
+    let serviceType: string;
+    let descr: string | null;
+    if (colTreatments) {
+      serviceType = "treatment";
+      descr = colTreatments;
+    } else if (colWeightLoss) {
+      serviceType = "weight_loss";
+      descr = colWeightLoss;
+    } else if (colMedical) {
+      serviceType = "medical";
+      descr = colMedical;
+    } else {
+      serviceType = "unknown";
+      descr = null;
+    }
 
     // Skip totals/commission rows (no client + no programme)
     if (!client && !descr) continue;
@@ -128,7 +148,7 @@ export async function runSlimmingSales(
       month:               monthKey,
       date_of_service:     lastDate,
       client,
-      service_type:        "treatment",
+      service_type:        serviceType,
       service_description: descr,
       full_price:          +revenue.toFixed(2),
       paid:                +revenue.toFixed(2),

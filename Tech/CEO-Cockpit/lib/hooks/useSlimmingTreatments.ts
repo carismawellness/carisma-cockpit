@@ -27,6 +27,14 @@ export interface TreatmentStaffBreakdown {
   revenue_inc: number;
 }
 
+export interface TreatmentTypeBreakdown {
+  treatment:   string;
+  tx_count:    number;
+  revenue_ex:  number;
+  revenue_inc: number;
+  pct:         number;
+}
+
 export interface SlimmingTreatmentsTotals {
   revenue_ex:  number;
   revenue_inc: number;
@@ -38,6 +46,7 @@ export interface SlimmingTreatmentsTotals {
 export interface UseSlimmingTreatmentsResult {
   rows:          SlimmingTreatmentRow[];
   byStaff:       TreatmentStaffBreakdown[];
+  byTreatment:   TreatmentTypeBreakdown[];
   totals:        SlimmingTreatmentsTotals;
   isFetching:    boolean;
   isSyncing:     boolean;
@@ -162,7 +171,32 @@ export function useSlimmingTreatments(dateFrom: Date, dateTo: Date): UseSlimming
       .sort((a, b) => b.revenue_ex - a.revenue_ex);
   }, [rows]);
 
-  // 5. Totals
+  // 5. By Treatment Type
+  const byTreatment = useMemo<TreatmentTypeBreakdown[]>(() => {
+    const map = new Map<string, { tx_count: number; revenue_ex: number; revenue_inc: number }>();
+    for (const r of rows) {
+      const raw = r.treatment?.trim() || "(Unspecified)";
+      const key = raw.toLowerCase();
+      if (!map.has(key)) map.set(key, { tx_count: 0, revenue_ex: 0, revenue_inc: 0 });
+      const agg = map.get(key)!;
+      agg.tx_count++;
+      agg.revenue_ex  += r.price_ex_vat  ?? 0;
+      agg.revenue_inc += r.price_inc_vat ?? 0;
+    }
+    const totalEx = Array.from(map.values()).reduce((s, v) => s + v.revenue_ex, 0) || 1;
+    return Array.from(map.entries())
+      .map(([key, v]) => ({
+        treatment:   key.charAt(0).toUpperCase() + key.slice(1),
+        tx_count:    v.tx_count,
+        revenue_ex:  Math.round(v.revenue_ex),
+        revenue_inc: Math.round(v.revenue_inc),
+        pct:         Math.round((v.revenue_ex / totalEx) * 1000) / 10,
+      }))
+      .sort((a, b) => b.revenue_ex - a.revenue_ex)
+      .slice(0, 20);
+  }, [rows]);
+
+  // 6. Totals
   const totals = useMemo<SlimmingTreatmentsTotals>(() => {
     const ex  = rows.reduce((s, r) => s + (r.price_ex_vat  ?? 0), 0);
     const inc = rows.reduce((s, r) => s + (r.price_inc_vat ?? 0), 0);
@@ -182,6 +216,7 @@ export function useSlimmingTreatments(dateFrom: Date, dateTo: Date): UseSlimming
   return {
     rows,
     byStaff,
+    byTreatment,
     totals,
     isFetching,
     isSyncing:     syncMutation.isPending,
