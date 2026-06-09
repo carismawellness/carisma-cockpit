@@ -51,6 +51,148 @@ const COST_LABELS: Record<string, string> = {
   utilities:   "Utilities",
 };
 
+// ── Group EBITDA chart ────────────────────────────────────────────────────────
+
+const BRAND_EBITDA_COLORS = {
+  spa:  "#475569",
+  aes:  "#d97706",
+  slim: "#0d9488",
+};
+
+interface GroupChartPoint {
+  label:            string;
+  spa_ebitda:       number;
+  aes_ebitda:       number;
+  slim_ebitda:      number;
+  spa_lbl:          string;
+  aes_lbl:          string;
+  slim_lbl:         string;
+  group_ebitda_pct: number;
+  // tooltip
+  spa_revenue:      number;
+  spa_ebitda_pct:   number;
+  aes_revenue:      number;
+  aes_ebitda_pct:   number;
+  slim_revenue:     number;
+  slim_ebitda_pct:  number;
+  group_revenue:    number;
+  group_ebitda:     number;
+}
+
+function GroupEbitdaTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?:  boolean;
+  payload?: { payload: GroupChartPoint }[];
+  label?:   string;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  const pt = payload[0].payload;
+
+  const fmt = (v: number) => {
+    const abs = Math.abs(v);
+    const s   = v < 0 ? "-" : "";
+    return abs >= 1000 ? `${s}€${(abs / 1000).toFixed(1)}k` : `${s}€${Math.round(abs)}`;
+  };
+
+  const rows: { color: string; label: string; ebitda: number; pct: number; rev: number }[] = [
+    { color: BRAND_EBITDA_COLORS.spa,  label: "Spa",        ebitda: pt.spa_ebitda,  pct: pt.spa_ebitda_pct,  rev: pt.spa_revenue  },
+    { color: BRAND_EBITDA_COLORS.aes,  label: "Aesthetics", ebitda: pt.aes_ebitda,  pct: pt.aes_ebitda_pct,  rev: pt.aes_revenue  },
+    { color: BRAND_EBITDA_COLORS.slim, label: "Slimming",   ebitda: pt.slim_ebitda, pct: pt.slim_ebitda_pct, rev: pt.slim_revenue },
+  ];
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs space-y-1.5 min-w-[210px]">
+      <p className="font-semibold text-gray-800 mb-1">{label}</p>
+      {rows.map((r) => (
+        <div key={r.label} className="flex justify-between gap-4">
+          <span style={{ color: r.color }} className="font-medium">{r.label}</span>
+          <span className="tabular-nums text-gray-700">
+            {fmt(r.ebitda)} <span className="text-gray-400">({r.pct.toFixed(1)}%)</span>
+          </span>
+        </div>
+      ))}
+      <div className="border-t border-gray-100 pt-1 flex justify-between gap-4 font-semibold">
+        <span className="text-gray-600">Group</span>
+        <span className="tabular-nums">
+          {fmt(pt.group_ebitda)} <span className="text-emerald-600">({pt.group_ebitda_pct.toFixed(1)}%)</span>
+        </span>
+      </div>
+      <div className="flex justify-between gap-4 text-gray-400 text-[10px]">
+        <span>Group Revenue</span>
+        <span className="tabular-nums">{fmt(pt.group_revenue)}</span>
+      </div>
+    </div>
+  );
+}
+
+function GroupEbitdaChart({ points }: { points: GroupChartPoint[] }) {
+  const fmtEuro = (v: number) =>
+    Math.abs(v) >= 1000 ? "€" + (v / 1000).toFixed(0) + "k" : "€" + v;
+
+  const lblStyle = { fontSize: 9, fill: "#fff", fontWeight: 700 };
+
+  return (
+    <ResponsiveContainer width="100%" height={340}>
+      <ComposedChart data={points} margin={{ top: 18, right: 48, bottom: 0, left: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+        <XAxis
+          dataKey="label"
+          tick={{ fontSize: 10, fill: "#6b7280" }}
+          axisLine={false}
+          tickLine={false}
+        />
+        <YAxis
+          yAxisId="left"
+          tickFormatter={fmtEuro}
+          tick={{ fontSize: 10, fill: "#6b7280" }}
+          axisLine={false}
+          tickLine={false}
+          width={52}
+        />
+        <YAxis
+          yAxisId="right"
+          orientation="right"
+          tickFormatter={(v: number) => `${v}%`}
+          tick={{ fontSize: 10, fill: "#6b7280" }}
+          axisLine={false}
+          tickLine={false}
+          width={36}
+          domain={[0, "auto"]}
+        />
+        <Tooltip content={<GroupEbitdaTooltip />} />
+        <Legend wrapperStyle={{ fontSize: 10, paddingTop: 6 }} iconType="square" />
+
+        <Bar yAxisId="left" dataKey="spa_ebitda"  stackId="ebitda" fill={BRAND_EBITDA_COLORS.spa}  name="Spa EBITDA"        legendType="square">
+          <LabelList dataKey="spa_lbl"  position="inside" style={lblStyle} />
+        </Bar>
+        <Bar yAxisId="left" dataKey="aes_ebitda"  stackId="ebitda" fill={BRAND_EBITDA_COLORS.aes}  name="Aesthetics EBITDA" legendType="square">
+          <LabelList dataKey="aes_lbl"  position="inside" style={lblStyle} />
+        </Bar>
+        <Bar yAxisId="left" dataKey="slim_ebitda" stackId="ebitda" fill={BRAND_EBITDA_COLORS.slim} name="Slimming EBITDA"   legendType="square" radius={[3, 3, 0, 0]}>
+          <LabelList dataKey="slim_lbl" position="inside" style={lblStyle} />
+        </Bar>
+
+        <Line
+          yAxisId="right"
+          type="monotone"
+          dataKey="group_ebitda_pct"
+          stroke="#22c55e"
+          strokeWidth={2}
+          dot={{ r: 3, fill: "#22c55e" }}
+          connectNulls={false}
+          name="Group Margin %"
+          legendType="plainline"
+        />
+        <ReferenceLine yAxisId="right" y={30} stroke="#22c55e" strokeDasharray="4 4"
+          label={{ value: "Target 30%", fontSize: 9, fill: "#22c55e", position: "insideTopRight" }} />
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+}
+
 // ── ChartCard helper ──────────────────────────────────────────────────────────
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
@@ -435,6 +577,53 @@ function LongitudinalContent({
   const aesPoints  = useMemo(() => buildBrandPoints("aes"),  [visiblePeriods]); // eslint-disable-line react-hooks/exhaustive-deps
   const slimPoints = useMemo(() => buildBrandPoints("slim"), [visiblePeriods]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Group EBITDA stacked chart data ─────────────────────────────────────────
+  const groupPoints = useMemo((): GroupChartPoint[] => {
+    const fmtAmt = (v: number) => {
+      const abs = Math.abs(v);
+      return abs >= 1000 ? `€${(abs / 1000).toFixed(0)}k` : `€${Math.round(abs)}`;
+    };
+
+    return visiblePeriods.map((p) => {
+      const spa  = p.current.spa;
+      const aes  = p.current.aes;
+      const slim = p.current.slim;
+
+      const spaEbitda  = spa.ebitda;
+      const aesEbitda  = aes.ebitda;
+      const slimEbitda = slim.ebitda;
+
+      const segLbl = (ebitda: number, revenue: number, pct: number) => {
+        if (!revenue || !ebitda) return "";
+        const stack = Math.max(0, spaEbitda) + Math.max(0, aesEbitda) + Math.max(0, slimEbitda);
+        if (stack <= 0 || ebitda / stack < 0.06) return "";
+        return `${fmtAmt(ebitda)} (${pct.toFixed(0)}%)`;
+      };
+
+      const groupRev    = p.current.revenue;
+      const groupEbitda = p.current.ebitda;
+
+      return {
+        label:            p.label,
+        spa_ebitda:       Math.max(0, spaEbitda),
+        aes_ebitda:       Math.max(0, aesEbitda),
+        slim_ebitda:      Math.max(0, slimEbitda),
+        spa_lbl:          segLbl(spaEbitda,  spa.revenue,  spa.ebitda_pct),
+        aes_lbl:          segLbl(aesEbitda,  aes.revenue,  aes.ebitda_pct),
+        slim_lbl:         segLbl(slimEbitda, slim.revenue, slim.ebitda_pct),
+        group_ebitda_pct: p.current.ebitda_pct,
+        spa_revenue:      spa.revenue,
+        spa_ebitda_pct:   spa.ebitda_pct,
+        aes_revenue:      aes.revenue,
+        aes_ebitda_pct:   aes.ebitda_pct,
+        slim_revenue:     slim.revenue,
+        slim_ebitda_pct:  slim.ebitda_pct,
+        group_revenue:    groupRev,
+        group_ebitda:     groupEbitda,
+      };
+    });
+  }, [visiblePeriods]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Group-level margin chart data ────────────────────────────────────────────
   const marginChartData = useMemo(() => {
     return visiblePeriods.map((p) => ({
@@ -514,6 +703,11 @@ function LongitudinalContent({
 
       {data && visiblePeriods.length > 0 && (
         <div className="space-y-4">
+
+          {/* Group EBITDA by Brand */}
+          <ChartCard title="Group EBITDA by Brand — Monthly">
+            <GroupEbitdaChart points={groupPoints} />
+          </ChartCard>
 
           {/* Spa */}
           <ChartCard title="Spa — Cost Breakdown vs Revenue">
