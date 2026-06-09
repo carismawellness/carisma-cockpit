@@ -181,16 +181,27 @@ export async function runSpaEbitdaCheck(dateFrom: string, dateTo: string) {
     }
   }
 
-  // Actuals from Supabase
+  // Actuals from spa_ebitda_daily (aggregated over date range)
   let actualEbitda = 0, actualRevenue = 0;
-  for (const mk of monthKeys) {
-    const rows = await select("spa_ebitda_monthly", { month: mk });
-    for (const r of rows) {
-      const rev   = Number(r.revenue ?? 0);
-      const costs = ["cogs", "wages", "advertising", "rent", "utilities", "sga"]
-        .reduce((s, f) => s + Number(r[f] ?? 0), 0);
-      actualEbitda  += rev - costs;
-      actualRevenue += rev;
+  {
+    const base = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const key  = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    const qs = new URLSearchParams([
+      ["select", "revenue,cogs,wages,advertising,rent,utilities,sga"],
+      ["date",   `gte.${dateFrom}`],
+      ["date",   `lte.${dateTo}`],
+    ]);
+    const resp = await fetch(`${base}/rest/v1/spa_ebitda_daily?${qs}`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+    });
+    if (resp.ok) {
+      for (const r of await resp.json() as Record<string, unknown>[]) {
+        const rev   = Number(r.revenue ?? 0);
+        const costs = (["cogs", "wages", "advertising", "rent", "utilities", "sga"] as const)
+          .reduce((s: number, f) => s + Number(r[f] ?? 0), 0);
+        actualEbitda  += rev - costs;
+        actualRevenue += rev;
+      }
     }
   }
 

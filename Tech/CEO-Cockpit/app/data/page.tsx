@@ -178,7 +178,6 @@ const dataSources: DataSource[] = [
       "spa_revenue_daily", "spa_revenue_monthly",
       "aesthetics_sales_daily", "slimming_sales_daily", "slimming_treatments_daily",
       "spa_ebitda_daily", "aesthetics_ebitda_daily", "hq_ebitda_daily",
-      "spa_ebitda_monthly", "aesthetics_ebitda_monthly", "hq_ebitda_monthly",
       "salary_supplement_monthly",
       "etl_sync_log", "ci_alerts", "ci_chat_history", "ci_annotations",
       "ci_audit_log", "ci_summaries", "profiles",

@@ -1,5 +1,4 @@
 import { ZohoBooksClient } from "./zoho-client";
-import { select } from "./supabase-etl";
 import { fetchPlAccounts, PlAccount } from "./zoho-pl-parser";
 import { loadAestheticsCoaMap } from "./aesthetics-ebitda";
 
@@ -95,19 +94,7 @@ function gapAnalysis(
   };
 }
 
-function iterMonthKeys(dateFrom: string, dateTo: string): string[] {
-  const keys: string[] = [];
-  let y = parseInt(dateFrom.slice(0, 4)), m = parseInt(dateFrom.slice(5, 7));
-  const ey = parseInt(dateTo.slice(0, 4)), em = parseInt(dateTo.slice(5, 7));
-  while (y < ey || (y === ey && m <= em)) {
-    keys.push(`${y}-${String(m).padStart(2, "0")}-01`);
-    if (++m > 12) { m = 1; y++; }
-  }
-  return keys;
-}
-
 export async function runAestheticsEbitdaCheck(dateFrom: string, dateTo: string) {
-  const monthKeys = iterMonthKeys(dateFrom, dateTo);
   const client    = new ZohoBooksClient("aesthetics");
   const accounts  = await fetchPlAccounts(client, dateFrom, dateTo);
 
@@ -161,11 +148,22 @@ export async function runAestheticsEbitdaCheck(dateFrom: string, dateTo: string)
     aesthetics: Object.fromEntries(fields.map(f => [f, 0])),
     slimming:   Object.fromEntries(fields.map(f => [f, 0])),
   };
-  for (const mk of monthKeys) {
-    const rows = await select("aesthetics_ebitda_monthly", { month: mk });
-    for (const r of rows) {
-      const dept = String(r.department ?? "aesthetics");
-      if (dept in dbByDept) for (const f of fields) dbByDept[dept][f] += Number(r[f] ?? 0);
+  {
+    const base = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const key  = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    const qs = new URLSearchParams([
+      ["select", "department,revenue,cogs,wages,advertising,rent,utilities,sga"],
+      ["date",   `gte.${dateFrom}`],
+      ["date",   `lte.${dateTo}`],
+    ]);
+    const resp = await fetch(`${base}/rest/v1/aesthetics_ebitda_daily?${qs}`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+    });
+    if (resp.ok) {
+      for (const r of await resp.json() as Record<string, unknown>[]) {
+        const dept = String(r.department ?? "aesthetics");
+        if (dept in dbByDept) for (const f of fields) dbByDept[dept][f] += Number(r[f] ?? 0);
+      }
     }
   }
 
