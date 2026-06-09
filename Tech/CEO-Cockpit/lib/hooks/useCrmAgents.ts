@@ -11,6 +11,7 @@ export interface CrmAgentTotals {
   avg_deposit_pct: number;
   avg_aov: number;
   total_bookings: number;
+  total_deposits: number;
   total_messages: number;
   active_days: number;
 }

@@ -124,10 +124,10 @@ function parsePercent(val: string): number {
 function parseDate(val: string): string | null {
   const v = val.trim();
   if (!v || v.toLowerCase() === "date") return null;
-  // DD/MM/YYYY or D/M/YYYY
+  // CRM sheet uses M/D/YYYY (US format), e.g. "4/14/2026"
   const m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
   if (!m) return null;
-  const [, d, mo, y] = m;
+  const [, mo, d, y] = m;
   const year = y.length === 2 ? `20${y}` : y;
   return `${year}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
 }

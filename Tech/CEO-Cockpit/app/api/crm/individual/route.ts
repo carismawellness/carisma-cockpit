@@ -76,6 +76,7 @@ type AgentTotals = {
   avg_deposit_pct: number;
   avg_aov: number;
   total_bookings: number;
+  total_deposits: number;
   total_messages: number;
   active_days: number;
 };
@@ -100,9 +101,10 @@ function computeTotals(rows: CrmAgentRow[]): AgentTotals {
     (r) => r.total_sales > 0 || r.total_booked > 0
   );
 
-  const total_sales    = rows.reduce((s, r) => s + (r.total_sales    ?? 0), 0);
-  const total_bookings = rows.reduce((s, r) => s + (r.total_booked   ?? 0), 0);
-  const total_messages = rows.reduce((s, r) => s + (r.total_messages ?? 0), 0);
+  const total_sales    = rows.reduce((s, r) => s + (r.total_sales         ?? 0), 0);
+  const total_bookings = rows.reduce((s, r) => s + (r.total_booked        ?? 0), 0);
+  const total_deposits = rows.reduce((s, r) => s + (r.total_deposit_count ?? 0), 0);
+  const total_messages = rows.reduce((s, r) => s + (r.total_messages      ?? 0), 0);
 
   // Averages over active days only, excluding zero values
   const nonZeroConversion = activeDays
@@ -123,6 +125,7 @@ function computeTotals(rows: CrmAgentRow[]): AgentTotals {
     avg_deposit_pct:     +avg(nonZeroDeposit).toFixed(2),
     avg_aov:             +avg(nonZeroAov).toFixed(2),
     total_bookings,
+    total_deposits,
     total_messages,
     active_days:         activeDays.length,
   };

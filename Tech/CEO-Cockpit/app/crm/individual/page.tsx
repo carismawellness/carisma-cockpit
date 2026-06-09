@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
+import { AgentTeamBanner } from "@/components/crm/AgentTeamBanner";
 import { AgentLeaderboardCards } from "@/components/crm/AgentLeaderboardCards";
 import { AgentDetailTabs } from "@/components/crm/AgentDetailTabs";
 import { AgentComparisonTable } from "@/components/crm/AgentComparisonTable";
@@ -98,7 +99,14 @@ function IndividualKPIsContent({
         </div>
       )}
 
-      {/* Section 1: Agent Leaderboard Cards */}
+      {/* Section 1: Team Totals Banner */}
+      {isLoading ? (
+        <div className="h-20 animate-pulse rounded-xl bg-gray-100" />
+      ) : (
+        <AgentTeamBanner agents={agents} />
+      )}
+
+      {/* Section 2: Agent Leaderboard Cards */}
       <section>
         <h2 className="mb-3 text-lg font-semibold text-foreground">
           Agent Leaderboard
@@ -110,7 +118,19 @@ function IndividualKPIsContent({
         )}
       </section>
 
-      {/* Section 2: Agent Detail Drill-Down */}
+      {/* Section 3: Team Performance Table */}
+      <section>
+        <h2 className="mb-3 text-lg font-semibold text-foreground">
+          Team Performance
+        </h2>
+        {isLoading ? (
+          <div className="h-64 animate-pulse rounded-xl bg-gray-100" />
+        ) : (
+          <AgentComparisonTable agents={agents} />
+        )}
+      </section>
+
+      {/* Section 4: Agent Detail Drill-Down */}
       <section>
         <h2 className="mb-3 text-lg font-semibold text-foreground">
           Agent Detail
@@ -119,18 +139,6 @@ function IndividualKPIsContent({
           <div className="h-96 animate-pulse rounded-xl bg-gray-100" />
         ) : (
           <AgentDetailTabs agents={agents} />
-        )}
-      </section>
-
-      {/* Section 3: Cross-Agent Comparison Table */}
-      <section>
-        <h2 className="mb-3 text-lg font-semibold text-foreground">
-          Cross-Agent Comparison
-        </h2>
-        {isLoading ? (
-          <div className="h-64 animate-pulse rounded-xl bg-gray-100" />
-        ) : (
-          <AgentComparisonTable agents={agents} />
         )}
       </section>
     </>
