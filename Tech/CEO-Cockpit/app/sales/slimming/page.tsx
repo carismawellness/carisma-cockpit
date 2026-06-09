@@ -74,6 +74,23 @@ function GenericTooltip({ active, payload, label }: { active?: boolean; payload?
   );
 }
 
+// ── Shared legend for staff charts ────────────────────────────────────────────
+function StaffLegend({ retailColor }: { retailColor?: string }) {
+  const barColor = retailColor ?? SLIMMING_GREEN;
+  return (
+    <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+      <span className="flex items-center gap-1.5">
+        <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: barColor }} />
+        Revenue inc-VAT
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: NAVY, opacity: 0.55 }} />
+        Bookings (count scale)
+      </span>
+    </div>
+  );
+}
+
 // ── Shared empty / loading state ──────────────────────────────────────────────
 function EmptyState({ isLoading }: { isLoading: boolean }) {
   return (
@@ -104,11 +121,21 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
   const isLoading   = isFetching || isSyncing;
   const txLoading   = txFetching || txSyncing;
 
-  // Chart data shapes
-  const staffChartData = byStaff.map(s => ({
-    name:            s.staff,
+  // Split staff: retail (name contains "retail") vs regular
+  const regularStaff = byStaff.filter(s => !/retail/i.test(s.staff));
+  const retailStaff  = byStaff
+    .filter(s => /retail/i.test(s.staff))
+    .map(s => ({ ...s, staff: s.staff.replace(/\s*retail\s*/i, "").trim() }));
+
+  const regularChartData = regularStaff.map(s => ({
+    name:              s.staff,
     "Revenue inc-VAT": s.revenue_inc,
-    "Revenue ex-VAT":  s.revenue_ex,
+    "Bookings":        s.tx_count,
+  }));
+
+  const retailChartData = retailStaff.map(s => ({
+    name:              s.staff,
+    "Revenue inc-VAT": s.revenue_inc,
     "Bookings":        s.tx_count,
   }));
 
@@ -213,61 +240,69 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
         </div>
       </Card>
 
-      {/* ── Revenue inc-VAT & Bookings by Staff ─────────────────────── */}
-      <Card className="p-4 md:p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <h2 className="text-base font-semibold text-foreground">Revenue inc-VAT &amp; Bookings by Staff</h2>
-          <span className="text-xs text-muted-foreground">(Sale of column)</span>
-        </div>
-        {byStaff.length === 0 ? (
-          <EmptyState isLoading={isLoading} />
-        ) : (
-          <ResponsiveContainer width="100%" height={chartH(byStaff.length)}>
-            <BarChart
-              layout="vertical"
-              data={staffChartData}
-              margin={{ top: 4, right: 80, left: 100, bottom: 4 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-              <XAxis
-                type="number"
-                tickFormatter={fmtK}
-                tick={{ fontSize: 11 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                type="category"
-                dataKey="name"
-                width={96}
-                tick={{ fontSize: 12 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <Tooltip content={<StaffTooltip />} />
-              {/* Revenue inc-VAT bar */}
-              <Bar dataKey="Revenue inc-VAT" fill={SLIMMING_GREEN} radius={[0, 4, 4, 0]} maxBarSize={28}>
-                <LabelList
-                  dataKey="Revenue inc-VAT"
-                  position="right"
-                  formatter={(v: number) => fmtK(v)}
-                  style={{ fontSize: 11, fill: "#374151" }}
-                />
-              </Bar>
-              {/* Bookings count bar */}
-              <Bar dataKey="Bookings" fill={NAVY} radius={[0, 4, 4, 0]} maxBarSize={14} opacity={0.65}>
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-        {/* Legend */}
-        {byStaff.length > 0 && (
-          <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: SLIMMING_GREEN }} />Revenue inc-VAT</span>
-            <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: NAVY, opacity: 0.65 }} />Bookings (count scale)</span>
+      {/* ── Revenue by Staff — Regular & Retail (side-by-side) ──────── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+        {/* Regular staff */}
+        <Card className="p-4 md:p-5">
+          <div className="flex items-center gap-2 mb-1">
+            <h2 className="text-base font-semibold text-foreground">Revenue by Staff</h2>
+            <span className="text-xs text-muted-foreground">(Sale of column)</span>
           </div>
-        )}
-      </Card>
+          <p className="text-xs text-muted-foreground mb-4">Services / programmes</p>
+          {regularStaff.length === 0 ? (
+            <EmptyState isLoading={isLoading} />
+          ) : (
+            <ResponsiveContainer width="100%" height={chartH(regularStaff.length)}>
+              <BarChart
+                layout="vertical"
+                data={regularChartData}
+                margin={{ top: 4, right: 72, left: 72, bottom: 4 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tickFormatter={fmtK} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={68} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                <Tooltip content={<StaffTooltip />} />
+                <Bar dataKey="Revenue inc-VAT" fill={SLIMMING_GREEN} radius={[0, 4, 4, 0]} maxBarSize={28}>
+                  <LabelList dataKey="Revenue inc-VAT" position="right" formatter={labelFmtK} style={{ fontSize: 10, fill: "#374151" }} />
+                </Bar>
+                <Bar dataKey="Bookings" fill={NAVY} radius={[0, 4, 4, 0]} maxBarSize={12} opacity={0.55} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+          <StaffLegend />
+        </Card>
+
+        {/* Retail staff */}
+        <Card className="p-4 md:p-5">
+          <div className="flex items-center gap-2 mb-1">
+            <h2 className="text-base font-semibold text-foreground">Revenue by Staff — Retail</h2>
+          </div>
+          <p className="text-xs text-muted-foreground mb-4">Product retail sales</p>
+          {retailStaff.length === 0 ? (
+            <EmptyState isLoading={isLoading} />
+          ) : (
+            <ResponsiveContainer width="100%" height={chartH(retailStaff.length)}>
+              <BarChart
+                layout="vertical"
+                data={retailChartData}
+                margin={{ top: 4, right: 72, left: 72, bottom: 4 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tickFormatter={fmtK} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={68} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                <Tooltip content={<StaffTooltip />} />
+                <Bar dataKey="Revenue inc-VAT" fill={GOLD} radius={[0, 4, 4, 0]} maxBarSize={28}>
+                  <LabelList dataKey="Revenue inc-VAT" position="right" formatter={labelFmtK} style={{ fontSize: 10, fill: "#374151" }} />
+                </Bar>
+                <Bar dataKey="Bookings" fill={NAVY} radius={[0, 4, 4, 0]} maxBarSize={12} opacity={0.55} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+          <StaffLegend retailColor={GOLD} />
+        </Card>
+
+      </div>
 
       {/* ── Revenue by Service Type ───────────────────────────────────── */}
       <Card className="p-4 md:p-5">
@@ -299,7 +334,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                 tickLine={false}
               />
               <Tooltip
-                formatter={(value: number, name: string) => [fmtK(value), name]}
+                formatter={tooltipFmt}
               />
               <Bar dataKey="Revenue" radius={[0, 4, 4, 0]} maxBarSize={32}>
                 {serviceTypeData.map((entry, i) => (
@@ -308,7 +343,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                 <LabelList
                   dataKey="pct"
                   position="right"
-                  formatter={(v: number) => `${v}%`}
+                  formatter={labelFmtPct}
                   style={{ fontSize: 11, fill: "#374151" }}
                 />
               </Bar>
@@ -358,7 +393,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                 tickLine={false}
               />
               <Tooltip
-                formatter={(value: number, name: string) => [fmtK(value), name]}
+                formatter={tooltipFmt}
               />
               <Bar dataKey="Revenue" radius={[0, 4, 4, 0]} maxBarSize={28}>
                 {serviceData.map((entry, i) => (
@@ -367,7 +402,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                 <LabelList
                   dataKey="pct"
                   position="right"
-                  formatter={(v: number) => `${v}%`}
+                  formatter={labelFmtPct}
                   style={{ fontSize: 11, fill: "#374151" }}
                 />
               </Bar>
@@ -435,7 +470,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                 <LabelList
                   dataKey="Revenue"
                   position="right"
-                  formatter={(v: number) => fmtK(v)}
+                  formatter={labelFmtK}
                   style={{ fontSize: 11, fill: "#374151" }}
                 />
               </Bar>
@@ -479,7 +514,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                 tickLine={false}
               />
               <Tooltip
-                formatter={(value: number, name: string) => [fmtK(value), name]}
+                formatter={tooltipFmt}
               />
               <Bar dataKey="Revenue" radius={[0, 4, 4, 0]} maxBarSize={28}>
                 {txTypeData.map((_, i) => (
@@ -488,7 +523,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                 <LabelList
                   dataKey="pct"
                   position="right"
-                  formatter={(v: number) => `${v}%`}
+                  formatter={labelFmtPct}
                   style={{ fontSize: 11, fill: "#374151" }}
                 />
               </Bar>
