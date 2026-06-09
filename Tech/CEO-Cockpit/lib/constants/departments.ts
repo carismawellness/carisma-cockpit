@@ -68,9 +68,8 @@ export const departments: Department[] = [
     slug: "sales",
     label: "Sales",
     icon: DollarSign,
-    path: "/sales",
+    path: "/sales/spa",
     children: [
-      { slug: "overview", label: "Overview", path: "/sales", icon: DollarSign },
       { slug: "spa", label: "Spa", path: "/sales/spa", icon: Sparkles },
       { slug: "aesthetics", label: "Aesthetics", path: "/sales/aesthetics", icon: Heart },
       { slug: "slimming", label: "Slimming", path: "/sales/slimming", icon: Activity },
