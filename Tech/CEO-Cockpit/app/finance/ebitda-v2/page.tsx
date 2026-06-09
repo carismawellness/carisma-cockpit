@@ -34,17 +34,18 @@ const SGA_SUBS     = [
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type VenueData = {
-  revenue:       number;
-  wages:         number;
-  wage_by_role:  Record<string, number>;
-  advertising:   number;
-  ad_by_channel: Record<string, number>;
-  sga:           number;
-  sga_by_sub:    Record<string, number>;
-  cogs:          number;
-  rent:          number;
-  utilities:     number;
-  ebitda:        number;
+  revenue:        number;
+  lapis_revenue?: number;  // pure daily Lapis sales (Spa only); used for revenue QC
+  wages:          number;
+  wage_by_role:   Record<string, number>;
+  advertising:    number;
+  ad_by_channel:  Record<string, number>;
+  sga:            number;
+  sga_by_sub:     Record<string, number>;
+  cogs:           number;
+  rent:           number;
+  utilities:      number;
+  ebitda:         number;
 };
 
 type V2Data = {
@@ -487,17 +488,18 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
     const acc = emptyVenue();
     for (const slug of SPA_VENUES) {
       const v = data.venues[slug] ?? emptyVenue();
-      acc.revenue     += v.revenue;
-      acc.wages       += v.wages;
-      acc.advertising += v.advertising;
-      acc.sga         += v.sga;
-      acc.cogs        += v.cogs;
-      acc.rent        += v.rent;
-      acc.utilities   += v.utilities;
-      acc.ebitda      += v.ebitda;
-      for (const r of WAGE_ROLES)  acc.wage_by_role[r]   = (acc.wage_by_role[r]   ?? 0) + (v.wage_by_role[r]   ?? 0);
-      for (const c of AD_CHANNELS) acc.ad_by_channel[c]  = (acc.ad_by_channel[c]  ?? 0) + (v.ad_by_channel[c]  ?? 0);
-      for (const s of SGA_SUBS)    acc.sga_by_sub[s]     = (acc.sga_by_sub[s]     ?? 0) + (v.sga_by_sub[s]     ?? 0);
+      acc.revenue                  += v.revenue;
+      acc.lapis_revenue             = (acc.lapis_revenue ?? 0) + (v.lapis_revenue ?? 0);
+      acc.wages                    += v.wages;
+      acc.advertising              += v.advertising;
+      acc.sga                      += v.sga;
+      acc.cogs                     += v.cogs;
+      acc.rent                     += v.rent;
+      acc.utilities                += v.utilities;
+      acc.ebitda                   += v.ebitda;
+      for (const r of WAGE_ROLES)  acc.wage_by_role[r]  = (acc.wage_by_role[r]  ?? 0) + (v.wage_by_role[r]  ?? 0);
+      for (const c of AD_CHANNELS) acc.ad_by_channel[c] = (acc.ad_by_channel[c] ?? 0) + (v.ad_by_channel[c] ?? 0);
+      for (const s of SGA_SUBS)    acc.sga_by_sub[s]    = (acc.sga_by_sub[s]    ?? 0) + (v.sga_by_sub[s]    ?? 0);
     }
     return acc;
   }, [data]);
@@ -533,14 +535,15 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
     }
 
     return {
-      groupRevenue: group.revenue,
-      groupEbitda:  group.ebitda,
-      spaRevenue:   spa.revenue,
-      spaEbitda:    spa.ebitda,
-      aesRevenue:   aes.revenue,
-      aesEbitda:    aes.ebitda,
-      slimRevenue:  slim.revenue,
-      slimEbitda:   slim.ebitda,
+      groupRevenue:    group.revenue,
+      groupEbitda:     group.ebitda,
+      spaRevenue:      spa.revenue,
+      spaEbitda:       spa.ebitda,
+      spaLapisRevenue: spa.lapis_revenue ?? 0,
+      aesRevenue:      aes.revenue,
+      aesEbitda:       aes.ebitda,
+      slimRevenue:     slim.revenue,
+      slimEbitda:      slim.ebitda,
       periodLabel,
       sppy,
     };

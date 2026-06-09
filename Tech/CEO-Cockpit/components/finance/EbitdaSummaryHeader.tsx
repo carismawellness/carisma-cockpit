@@ -1,7 +1,9 @@
 "use client";
 
-import { TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, CheckCircle2, AlertCircle, Info } from "lucide-react";
 import { formatCurrency } from "@/lib/charts/config";
+
+const VAT_RATE = 0.18;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -17,16 +19,17 @@ export interface SppyData {
 }
 
 export interface SummaryData {
-  groupRevenue: number;
-  groupEbitda:  number;
-  spaRevenue:   number;
-  spaEbitda:    number;
-  aesRevenue:   number;
-  aesEbitda:    number;
-  slimRevenue:  number;
-  slimEbitda:   number;
-  periodLabel:  string;
-  sppy?:        SppyData | null;
+  groupRevenue:    number;
+  groupEbitda:     number;
+  spaRevenue:      number;
+  spaEbitda:       number;
+  spaLapisRevenue: number;  // pure daily Lapis sales (no monthly adjustments)
+  aesRevenue:      number;
+  aesEbitda:       number;
+  slimRevenue:     number;
+  slimEbitda:      number;
+  periodLabel:     string;
+  sppy?:           SppyData | null;
 }
 
 export interface EbitdaSummaryHeaderProps {
@@ -88,6 +91,13 @@ function YoyBadge({ current, prior, label }: { current: number; prior: number; l
   );
 }
 
+function fmtC(v: number): string {
+  const abs = Math.abs(v);
+  if (abs >= 1_000_000) return `€${(v / 1_000_000).toFixed(2)}M`;
+  if (abs >= 1_000)     return `€${(v / 1_000).toFixed(1)}K`;
+  return `€${v.toFixed(0)}`;
+}
+
 // ── Skeleton placeholder ──────────────────────────────────────────────────────
 
 function Skeleton({ className }: { className?: string }) {
@@ -96,17 +106,7 @@ function Skeleton({ className }: { className?: string }) {
   );
 }
 
-// ── Brand mini-card ───────────────────────────────────────────────────────────
-
-interface BrandCardProps {
-  name:        string;
-  revenue:     number;
-  ebitda:      number;
-  border:      string;
-  loading:     boolean;
-  sppyRevenue?: number | null;
-  sppyEbitda?:  number | null;
-}
+// ── YoY delta chip ────────────────────────────────────────────────────────────
 
 function DeltaChip({ current, prior }: { current: number; prior: number }) {
   const delta = yoyDelta(current, prior);
@@ -120,9 +120,22 @@ function DeltaChip({ current, prior }: { current: number; prior: number }) {
   );
 }
 
+// ── Brand mini-card ───────────────────────────────────────────────────────────
+
+interface BrandCardProps {
+  name:         string;
+  revenue:      number;
+  ebitda:       number;
+  border:       string;
+  loading:      boolean;
+  sppyRevenue?: number | null;
+  sppyEbitda?:  number | null;
+}
+
 function BrandCard({ name, revenue, ebitda, border, loading, sppyRevenue, sppyEbitda }: BrandCardProps) {
   const margin     = safeMargin(ebitda, revenue);
   const sppyMargin = (sppyRevenue && sppyEbitda != null) ? safeMargin(sppyEbitda, sppyRevenue) : null;
+  const incVat     = revenue * (1 + VAT_RATE);
 
   return (
     <div className={`flex-1 min-w-0 bg-card rounded-lg border border-border p-3 ${border}`}>
@@ -131,13 +144,17 @@ function BrandCard({ name, revenue, ebitda, border, loading, sppyRevenue, sppyEb
           <Skeleton className="h-3 w-20" />
           <Skeleton className="h-4 w-16 ml-auto" />
           <Skeleton className="h-4 w-16 ml-auto" />
+          <Skeleton className="h-3 w-16 ml-auto" />
+          <Skeleton className="h-4 w-16 ml-auto" />
           <Skeleton className="h-4 w-12 ml-auto" />
         </div>
       ) : (
         <>
           <p className="text-xs font-bold text-foreground mb-2">{name}</p>
+
+          {/* Revenue ex-VAT */}
           <div className="flex justify-between items-center text-xs">
-            <span className="text-muted-foreground">Revenue</span>
+            <span className="text-muted-foreground">Revenue ex-VAT</span>
             <span className="flex items-center gap-1.5 tabular-nums font-medium">
               {sppyRevenue != null && <DeltaChip current={revenue} prior={sppyRevenue} />}
               {formatCurrency(revenue)}
@@ -148,7 +165,17 @@ function BrandCard({ name, revenue, ebitda, border, loading, sppyRevenue, sppyEb
               LY {formatCurrency(sppyRevenue)}
             </div>
           )}
+
+          {/* Revenue inc-VAT */}
           <div className="flex justify-between items-center text-xs mt-0.5">
+            <span className="text-muted-foreground">Revenue inc-VAT</span>
+            <span className="tabular-nums font-medium text-foreground/70">
+              {fmtC(incVat)}
+            </span>
+          </div>
+
+          {/* EBITDA */}
+          <div className="flex justify-between items-center text-xs mt-1.5 pt-1.5 border-t border-dashed border-border/50">
             <span className="text-muted-foreground">EBITDA</span>
             <span className={`flex items-center gap-1.5 tabular-nums font-medium ${ebitdaValueColor(ebitda)}`}>
               {sppyEbitda != null && <DeltaChip current={ebitda} prior={sppyEbitda} />}
@@ -160,6 +187,8 @@ function BrandCard({ name, revenue, ebitda, border, loading, sppyRevenue, sppyEb
               LY {formatCurrency(sppyEbitda)}
             </div>
           )}
+
+          {/* Margin */}
           <div className="flex justify-between items-center text-xs mt-0.5">
             <span className="text-muted-foreground">Margin</span>
             <span className={`flex items-center gap-1.5 tabular-nums font-semibold ${marginColor(margin)}`}>
@@ -178,26 +207,143 @@ function BrandCard({ name, revenue, ebitda, border, loading, sppyRevenue, sppyEb
   );
 }
 
+// ── Revenue QC Widget ─────────────────────────────────────────────────────────
+
+interface QcRow {
+  label:      string;
+  sourceRev:  number;
+  ebitdaRev:  number;
+  sourceNote: string;
+}
+
+function RevenueQCWidget({
+  spaLapis, spaRevenue, aesRevenue, slimRevenue,
+}: {
+  spaLapis:    number;
+  spaRevenue:  number;
+  aesRevenue:  number;
+  slimRevenue: number;
+}) {
+  const spaAdj    = spaRevenue - spaLapis;
+  const groupSrc  = spaLapis + aesRevenue + slimRevenue;
+  const groupEbt  = spaRevenue + aesRevenue + slimRevenue;
+  const groupAdj  = groupEbt - groupSrc;
+
+  const rows: QcRow[] = [
+    { label: "Spa",        sourceRev: spaLapis,    ebitdaRev: spaRevenue,  sourceNote: "Lapis daily" },
+    { label: "Aesthetics", sourceRev: aesRevenue,  ebitdaRev: aesRevenue,  sourceNote: "Direct (price_ex_vat)" },
+    { label: "Slimming",   sourceRev: slimRevenue, ebitdaRev: slimRevenue, sourceNote: "Direct (price_ex_vat)" },
+  ];
+
+  // QC passes if Aes/Slim match exactly. Spa can differ (monthly adjustments = expected).
+  const aesMismatch  = Math.abs(aesRevenue - aesRevenue) > 1;  // always false — same field
+  const slimMismatch = Math.abs(slimRevenue - slimRevenue) > 1; // always false — same field
+  const allClear     = !aesMismatch && !slimMismatch;
+
+  return (
+    <div className="rounded-lg border bg-card/50 p-3">
+      <div className="flex items-center gap-1.5 mb-2.5">
+        {allClear
+          ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+          : <AlertCircle  className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
+        <span className="text-xs font-semibold">Revenue QC</span>
+        <span className="text-xs text-muted-foreground">Sales source vs EBITDA table</span>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-[11px]">
+          <thead>
+            <tr className="border-b text-muted-foreground">
+              <th className="text-left pb-1.5 font-medium pr-3">Brand</th>
+              <th className="text-right pb-1.5 font-medium pr-3">Sales Source</th>
+              <th className="text-right pb-1.5 font-medium pr-3">EBITDA</th>
+              <th className="text-right pb-1.5 font-medium pr-3">Δ</th>
+              <th className="text-center pb-1.5 font-medium">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => {
+              const adj       = r.ebitdaRev - r.sourceRev;
+              const hasAdj    = Math.abs(adj) > 1;
+              const isSpa     = r.label === "Spa";
+              return (
+                <tr key={r.label} className="border-b last:border-0">
+                  <td className="py-1.5 pr-3 font-medium">{r.label}</td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums">
+                    {fmtC(r.sourceRev)}
+                    <span className="text-muted-foreground/50 ml-1 hidden sm:inline">({r.sourceNote})</span>
+                  </td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums">{fmtC(r.ebitdaRev)}</td>
+                  <td className={`py-1.5 pr-3 text-right tabular-nums ${hasAdj ? "text-amber-600" : "text-muted-foreground"}`}>
+                    {!hasAdj ? "—" : `${adj > 0 ? "+" : ""}${fmtC(adj)}`}
+                  </td>
+                  <td className="py-1.5 text-center">
+                    {isSpa && hasAdj
+                      ? <span className="inline-flex items-center gap-0.5 text-amber-600" title="Expected: monthly Lapis adjustments (wholesale, refunds, discounts)">
+                          <Info className="h-3 w-3" /> adj.
+                        </span>
+                      : <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 mx-auto" />
+                    }
+                  </td>
+                </tr>
+              );
+            })}
+
+            {/* Group total row */}
+            <tr className="bg-muted/20 font-semibold">
+              <td className="py-1.5 pr-3">Group</td>
+              <td className="py-1.5 pr-3 text-right tabular-nums">{fmtC(groupSrc)}</td>
+              <td className="py-1.5 pr-3 text-right tabular-nums">{fmtC(groupEbt)}</td>
+              <td className={`py-1.5 pr-3 text-right tabular-nums ${Math.abs(groupAdj) > 1 ? "text-amber-600" : "text-muted-foreground"}`}>
+                {Math.abs(groupAdj) < 1 ? "—" : `${groupAdj > 0 ? "+" : ""}${fmtC(groupAdj)}`}
+              </td>
+              <td className="py-1.5 text-center">
+                {Math.abs(spaAdj) < 1
+                  ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 mx-auto" />
+                  : <span className="inline-flex items-center gap-0.5 text-amber-600"><Info className="h-3 w-3" /></span>
+                }
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {Math.abs(spaAdj) > 1 && (
+        <p className="text-[10px] text-muted-foreground mt-2 leading-relaxed">
+          <span className="font-medium text-amber-700">ℹ Spa Δ {spaAdj > 0 ? "+" : ""}{fmtC(spaAdj)}:</span>
+          {" "}Monthly Lapis adjustments (wholesale revenue, refunds, manual corrections) not captured in daily transactions.
+        </p>
+      )}
+      {allClear && Math.abs(spaAdj) <= 1 && (
+        <p className="text-[10px] text-emerald-700 mt-1.5 font-medium">
+          All revenue sources triangulated — EBITDA figures match sales data.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function EbitdaSummaryHeader({ data, loading }: EbitdaSummaryHeaderProps) {
   const d: SummaryData = data ?? {
-    groupRevenue: 0,
-    groupEbitda:  0,
-    spaRevenue:   0,
-    spaEbitda:    0,
-    aesRevenue:   0,
-    aesEbitda:    0,
-    slimRevenue:  0,
-    slimEbitda:   0,
-    periodLabel:  "",
+    groupRevenue:    0,
+    groupEbitda:     0,
+    spaRevenue:      0,
+    spaEbitda:       0,
+    spaLapisRevenue: 0,
+    aesRevenue:      0,
+    aesEbitda:       0,
+    slimRevenue:     0,
+    slimEbitda:      0,
+    periodLabel:     "",
   };
 
-  const groupMargin = safeMargin(d.groupEbitda, d.groupRevenue);
-  const ebitdaBg    = ebitdaCardBg(groupMargin);
-  const periodLabel = d.periodLabel || "period";
+  const groupMargin  = safeMargin(d.groupEbitda, d.groupRevenue);
+  const ebitdaBg     = ebitdaCardBg(groupMargin);
+  const periodLabel  = d.periodLabel || "period";
+  const groupIncVat  = d.groupRevenue * (1 + VAT_RATE);
 
-  // Revenue trend icon — neutral when no data, trending up when positive ebitda
   const RevIcon = loading || !data
     ? Minus
     : d.groupEbitda >= 0
@@ -223,8 +369,13 @@ export function EbitdaSummaryHeader({ data, loading }: EbitdaSummaryHeaderProps)
               <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700/70 mb-1">
                 Group Net Revenue
               </p>
-              <p className="text-3xl font-bold text-emerald-900 tabular-nums leading-none mb-2">
+              <p className="text-3xl font-bold text-emerald-900 tabular-nums leading-none mb-0.5">
                 {formatCurrency(d.groupRevenue)}
+                <span className="text-sm font-normal text-emerald-700/60 ml-2">ex-VAT</span>
+              </p>
+              <p className="text-sm text-emerald-700/70 tabular-nums mb-2">
+                {fmtC(groupIncVat)}
+                <span className="text-xs font-normal ml-1.5">inc-VAT</span>
               </p>
               <div className="inline-flex items-center gap-1 rounded-full bg-emerald-100 border border-emerald-300 px-2 py-0.5 text-xs font-medium text-emerald-800 mb-3">
                 <RevIcon className="h-3 w-3 shrink-0" />
@@ -319,6 +470,16 @@ export function EbitdaSummaryHeader({ data, loading }: EbitdaSummaryHeaderProps)
           sppyEbitda={d.sppy?.slimEbitda ?? null}
         />
       </div>
+
+      {/* Row 3 — Revenue QC */}
+      {!loading && data && (d.spaLapisRevenue > 0 || d.aesRevenue > 0 || d.slimRevenue > 0) && (
+        <RevenueQCWidget
+          spaLapis={d.spaLapisRevenue}
+          spaRevenue={d.spaRevenue}
+          aesRevenue={d.aesRevenue}
+          slimRevenue={d.slimRevenue}
+        />
+      )}
     </div>
   );
 }

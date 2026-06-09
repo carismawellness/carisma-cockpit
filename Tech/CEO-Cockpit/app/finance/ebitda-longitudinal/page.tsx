@@ -340,14 +340,15 @@ function LongitudinalContent({
     } : null;
 
     return {
-      groupRevenue: c.revenue,
-      groupEbitda:  c.ebitda,
-      spaRevenue:   c.spa.revenue,
-      spaEbitda:    c.spa.ebitda,
-      aesRevenue:   c.aes.revenue,
-      aesEbitda:    c.aes.ebitda,
-      slimRevenue:  c.slim.revenue,
-      slimEbitda:   c.slim.ebitda,
+      groupRevenue:    c.revenue,
+      groupEbitda:     c.ebitda,
+      spaRevenue:      c.spa.revenue,
+      spaEbitda:       c.spa.ebitda,
+      spaLapisRevenue: 0,  // not available in longitudinal data
+      aesRevenue:      c.aes.revenue,
+      aesEbitda:       c.aes.ebitda,
+      slimRevenue:     c.slim.revenue,
+      slimEbitda:      c.slim.ebitda,
       periodLabel,
       sppy,
     };
