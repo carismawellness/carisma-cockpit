@@ -140,10 +140,18 @@ interface DiscountEntry {
   total_txn_count: number;
 }
 
+interface PaymentTypeByLocation {
+  location_id: number;
+  name: string;
+  color: string;
+  payment_types: Record<string, number>; // payType → revenue (ex-VAT)
+}
+
 interface SpaAnalyticsResponse {
   staff_combined: StaffCombined[];
   guest_groups: GuestGroup[];
   payment_types: PaymentType[];
+  payment_by_location: PaymentTypeByLocation[];
   discounts: DiscountEntry[];
 }
 
@@ -175,6 +183,9 @@ function computeAnalytics(
 
   // Payment type accumulators
   const paymentAcc: Record<string, { revenue: number; count: number }> = {};
+
+  // Payment type by location accumulators
+  const paymentByLocAcc: Record<number, Record<string, number>> = {};
 
   // Discount accumulators: locId → { gross_list, net_unit, discounted_cnt, total_cnt }
   const discountAcc: Record<number, {
@@ -222,6 +233,8 @@ function computeAnalytics(
     if (!paymentAcc[payType]) paymentAcc[payType] = { revenue: 0, count: 0 };
     paymentAcc[payType].revenue += unitPriceEx;
     paymentAcc[payType].count  += 1;
+    if (!paymentByLocAcc[locId]) paymentByLocAcc[locId] = {};
+    paymentByLocAcc[locId][payType] = (paymentByLocAcc[locId][payType] ?? 0) + unitPriceEx;
 
     // Discounts
     const listPriceInc = safeFloat(stripCol(row, "List Price"));
@@ -290,6 +303,23 @@ function computeAnalytics(
   }));
   paymentTypes.sort((a, b) => b.revenue - a.revenue);
 
+  // ── Build payment_by_location ───────────────────────────────────────────────
+  const paymentByLocation: PaymentTypeByLocation[] = Object.entries(SPA_LOCATION_META)
+    .map(([idStr, meta]) => {
+      const locId = Number(idStr);
+      const rawTypes = paymentByLocAcc[locId] ?? {};
+      return {
+        location_id:   locId,
+        name:          meta.name,
+        color:         meta.color,
+        payment_types: Object.fromEntries(
+          Object.entries(rawTypes).map(([t, v]) => [t, +v.toFixed(2)])
+        ),
+      };
+    })
+    .filter((loc) => Object.keys(loc.payment_types).length > 0)
+    .sort((a, b) => a.location_id - b.location_id);
+
   // ── Build discounts ─────────────────────────────────────────────────────────
   const discounts: DiscountEntry[] = Object.entries(SPA_LOCATION_META)
     .map(([idStr, meta]) => {
@@ -312,9 +342,10 @@ function computeAnalytics(
     .sort((a, b) => a.location_id - b.location_id);
 
   return {
-    staff_combined: staffCombinedTop15,
-    guest_groups:   guestGroups,
-    payment_types:  paymentTypes,
+    staff_combined:      staffCombinedTop15,
+    guest_groups:        guestGroups,
+    payment_types:       paymentTypes,
+    payment_by_location: paymentByLocation,
     discounts,
   };
 }

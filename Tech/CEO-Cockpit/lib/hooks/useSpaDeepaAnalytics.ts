@@ -27,6 +27,13 @@ export interface PaymentType {
   pct: number; // computed client-side as revenue / total_revenue * 100
 }
 
+export interface PaymentByLocation {
+  location_id: number;
+  name: string;
+  color: string;
+  payment_types: Record<string, number>;
+}
+
 export interface DiscountLocation {
   location_id: number;
   name: string;
@@ -43,6 +50,7 @@ export interface SpaDeepaAnalyticsResult {
   staff: StaffMember[];
   guestGroups: GuestGroupLocation[];
   paymentTypes: PaymentType[];
+  paymentByLocation: PaymentByLocation[];
   discounts: DiscountLocation[];
   isFetching: boolean;
   error: string | null;
@@ -60,6 +68,7 @@ interface ApiResponse {
   staff_combined: StaffMember[];
   guest_groups: GuestGroupLocation[];
   payment_types: Array<{ type: string; revenue: number; count: number }>;
+  payment_by_location: PaymentByLocation[];
   discounts: DiscountLocation[];
 }
 
@@ -91,11 +100,12 @@ export function useSpaDeepaAnalytics(dateFrom: Date, dateTo: Date): SpaDeepaAnal
   }));
 
   return {
-    staff:        data?.staff_combined ?? [],
-    guestGroups:  data?.guest_groups  ?? [],
+    staff:              data?.staff_combined      ?? [],
+    guestGroups:        data?.guest_groups        ?? [],
     paymentTypes,
-    discounts:    data?.discounts     ?? [],
+    paymentByLocation:  data?.payment_by_location ?? [],
+    discounts:          data?.discounts           ?? [],
     isFetching,
-    error:        error ? (error as Error).message : null,
+    error:              error ? (error as Error).message : null,
   };
 }
