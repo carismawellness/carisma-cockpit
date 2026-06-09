@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, X, Database } from "lucide-react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { formatCurrency } from "@/lib/charts/config";
+import { EbitdaSummaryHeader, SummaryData } from "@/components/finance/EbitdaSummaryHeader";
 
 // ── Venue config (matches the API) ───────────────────────────────────────────
 
@@ -491,6 +492,30 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
     return acc;
   }, [data]);
 
+  const summaryData: SummaryData | null = useMemo(() => {
+    if (!data) return null;
+    const spa  = spaAggregate;
+    const aes  = data.venues["aesthetics"] ?? emptyVenue();
+    const slim = data.venues["slimming"]   ?? emptyVenue();
+    const group = data.group;
+    const days = data.days_in_period;
+    const periodLabel = days <= 31 ? "1 month"
+      : days <= 92  ? `${Math.round(days / 30)} months`
+      : days <= 366 ? `${Math.round(days / 30)} months`
+      : `${Math.round(days / 365)} year`;
+    return {
+      groupRevenue: group.revenue,
+      groupEbitda:  group.ebitda,
+      spaRevenue:   spa.revenue,
+      spaEbitda:    spa.ebitda,
+      aesRevenue:   aes.revenue,
+      aesEbitda:    aes.ebitda,
+      slimRevenue:  slim.revenue,
+      slimEbitda:   slim.ebitda,
+      periodLabel,
+    };
+  }, [data, spaAggregate]);
+
   function vd(slug: string): VenueData {
     if (!data) return emptyVenue();
     if (slug === "__spa__") return spaAggregate;
@@ -519,6 +544,8 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
 
   return (
     <div className="space-y-4">
+      <EbitdaSummaryHeader data={summaryData} loading={loading} />
+
       {/* Toolbar */}
       <div className="flex flex-wrap gap-2 items-center">
         <button onClick={() => setSpaCollapsed(v => !v)}
