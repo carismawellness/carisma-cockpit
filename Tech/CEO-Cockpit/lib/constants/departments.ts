@@ -11,7 +11,6 @@ import {
   Heart,
   Filter,
   BookOpen,
-  RefreshCw,
   type LucideIcon,
 } from "lucide-react";
 
@@ -89,13 +88,9 @@ export const departments: Department[] = [
     icon: Settings,
     path: "/settings",
     children: [
-      { slug: "coa-mapping",         label: "COA Mapping",         path: "/settings/coa-mapping",         icon: BookOpen },
-      { slug: "employee-mapping",    label: "Employee Mapping",    path: "/settings/employee-mapping",    icon: Users },
-      { slug: "salary-supplement",   label: "Salary Supplement",   path: "/settings/salary-supplement",   icon: BookOpen },
-      { slug: "fallback-rules",      label: "Fallback Rules",      path: "/settings/fallback-rules",      icon: BookOpen },
-      { slug: "ebitda-v2-rules",     label: "EBITDA V2 Rules",     path: "/settings/ebitda-v2-rules",     icon: BookOpen },
-      { slug: "etl-runner",          label: "ETL Runner",          path: "/settings/etl-runner",          icon: RefreshCw },
-      { slug: "data-sources",        label: "Data Sources",        path: "/settings/data-sources",        icon: Activity },
+      { slug: "ebitda-rules",   label: "EBITDA Rules",   path: "/settings/ebitda-rules",   icon: BookOpen },
+      { slug: "ebitda-mapping", label: "EBITDA Mapping", path: "/settings/ebitda-mapping", icon: BookOpen },
+      { slug: "data-sources",   label: "Data Sources",   path: "/settings/data-sources",   icon: Activity },
     ],
   },
 ];
