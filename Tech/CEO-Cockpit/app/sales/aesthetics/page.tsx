@@ -1,14 +1,22 @@
 "use client";
 
+import { useEffect, useMemo, useRef } from "react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
+import { SalesKPICard } from "@/components/sales/SalesKPICard";
+import { SalesKPIGrid } from "@/components/sales/SalesKPIGrid";
 import { useAestheticsSales } from "@/lib/hooks/useAestheticsSales";
 import { chartColors, formatCurrency } from "@/lib/charts/config";
 import { RefreshCw, FileSpreadsheet } from "lucide-react";
-import { useEffect, useRef } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList,
 } from "recharts";
+
+function fmtK(v: number): string {
+  if (Math.abs(v) >= 1_000_000) return `€${(v / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(v) >= 1_000)     return `€${(v / 1_000).toFixed(1)}K`;
+  return `€${v.toFixed(0)}`;
+}
 
 function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const { byPerson, byService, totals, isFetching, isSyncing, syncError, triggerSync } =
@@ -22,6 +30,19 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const spanDays     = Math.round((dateTo.getTime() - dateFrom.getTime()) / 86400000);
+  const prevDateTo   = useMemo(() => new Date(dateFrom.getTime() - 86400000), [dateFrom]);
+  const prevDateFrom = useMemo(() => new Date(prevDateTo.getTime() - spanDays * 86400000), [prevDateTo, spanDays]);
+  const { totals: prevTotals } = useAestheticsSales(prevDateFrom, prevDateTo, { skipSync: true });
+
+  const delta = useMemo(() => {
+    const calc = (curr: number, prior: number) => prior > 0 ? ((curr - prior) / prior) * 100 : undefined;
+    return {
+      net:      calc(totals.revenue_inc, prevTotals.revenue_inc),
+      bookings: calc(totals.tx_count,    prevTotals.tx_count),
+    };
+  }, [totals, prevTotals]);
 
   return (
     <>
@@ -46,47 +67,40 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
       </div>
 
       {/* ── Revenue Summary ──────────────────────────────────────────── */}
-      <Card className="p-4 md:p-5">
-        <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
-          <div>
-            <h2 className="text-base font-semibold text-foreground">Revenue from Google Sheets</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {totals.last_synced
-                ? `Last synced: ${new Date(totals.last_synced).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" })}`
-                : "Not yet synced"}
-            </p>
-          </div>
-          <button
-            onClick={triggerSync}
-            disabled={isSyncing || isFetching}
-            className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border hover:bg-muted transition-colors disabled:opacity-50 shrink-0"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin" : ""}`} />
-            {isSyncing ? "Syncing…" : "Sync from Google Sheets"}
-          </button>
-        </div>
-        {syncError && (
-          <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2 mb-3">{syncError}</p>
-        )}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="p-3 rounded-lg bg-muted/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Revenue ex-VAT</p>
-            <p className="text-xl font-bold text-foreground">{formatCurrency(totals.revenue_ex)}</p>
-          </div>
-          <div className="p-3 rounded-lg bg-muted/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Revenue inc-VAT</p>
-            <p className="text-xl font-bold text-foreground">{formatCurrency(totals.revenue_inc)}</p>
-          </div>
-          <div className="p-3 rounded-lg bg-muted/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">VAT Amount</p>
-            <p className="text-xl font-bold text-foreground">{formatCurrency(totals.vat_amount)}</p>
-          </div>
-          <div className="p-3 rounded-lg bg-muted/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Bookings</p>
-            <p className="text-xl font-bold text-foreground">{totals.tx_count}</p>
-          </div>
-        </div>
-      </Card>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-xs text-muted-foreground">
+          {totals.last_synced
+            ? `Last synced: ${new Date(totals.last_synced).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" })}`
+            : "Not yet synced"}
+        </p>
+        <button
+          onClick={triggerSync}
+          disabled={isSyncing || isFetching}
+          className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border hover:bg-muted transition-colors disabled:opacity-50 shrink-0"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin" : ""}`} />
+          {isSyncing ? "Syncing…" : "Sync from Google Sheets"}
+        </button>
+      </div>
+      {syncError && (
+        <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2">{syncError}</p>
+      )}
+      <SalesKPIGrid columns={3}>
+        <SalesKPICard
+          label="Net Revenue"
+          value={fmtK(totals.revenue_inc)}
+          subtitle={`${fmtK(totals.revenue_ex)} ex-VAT · ${totals.tx_count} bookings · VAT ${fmtK(totals.vat_amount)}`}
+          yoyChange={delta.net}
+          yoyLabel="vs prev period"
+        />
+        <SalesKPICard
+          label="Bookings"
+          value={String(totals.tx_count)}
+          subtitle={totals.tx_count > 0 ? `${fmtK(Math.round(totals.revenue_inc / totals.tx_count))} avg per booking` : undefined}
+          yoyChange={delta.bookings}
+          yoyLabel="vs prev period"
+        />
+      </SalesKPIGrid>
 
       {/* ── Revenue by Employee ───────────────────────────────────────── */}
       <Card className="p-4 md:p-5">
@@ -103,7 +117,7 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
             <BarChart
               layout="vertical"
               data={byPerson}
-              margin={{ top: 0, right: 64, left: 0, bottom: 0 }}
+              margin={{ top: 0, right: 72, left: 0, bottom: 0 }}
             >
               <CartesianGrid strokeDasharray="3 3" horizontal={false} />
               <XAxis
@@ -132,8 +146,8 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
                 <LabelList
                   dataKey="revenue_ex"
                   position="right"
-                  formatter={(v: number) => `€${(v / 1000).toFixed(1)}k`}
-                  style={{ fontSize: 11, fill: "#64748b", fontWeight: 500 }}
+                  formatter={(v: number) => v >= 1000 ? `€${(v / 1000).toFixed(1)}K` : `€${v}`}
+                  style={{ fontSize: 11, fill: "#64748b", fontWeight: 600 }}
                 />
               </Bar>
             </BarChart>

@@ -46,11 +46,15 @@ export interface ServiceBreakdown {
 }
 
 export interface SlimmingSalesTotals {
-  revenue_ex:   number;
-  revenue_inc:  number;
-  vat_amount:   number;
-  tx_count:     number;
-  last_synced:  string | null;
+  revenue_ex:          number;
+  revenue_inc:         number;
+  vat_amount:          number;
+  tx_count:            number;
+  service_revenue_ex:  number;
+  service_revenue_inc: number;
+  retail_revenue_ex:   number;
+  retail_revenue_inc:  number;
+  last_synced:         string | null;
 }
 
 export interface UseSlimmingSalesResult {
@@ -145,7 +149,7 @@ function canonicalize(raw: string): string {
 
 // ── Hook ───────────────────────────────────────────────────────────────────────
 
-export function useSlimmingSales(dateFrom: Date, dateTo: Date): UseSlimmingSalesResult {
+export function useSlimmingSales(dateFrom: Date, dateTo: Date, { skipSync = false } = {}): UseSlimmingSalesResult {
   const supabase      = createClient();
   const queryClient   = useQueryClient();
   const lastFiredRef  = useRef("");
@@ -214,7 +218,7 @@ export function useSlimmingSales(dateFrom: Date, dateTo: Date): UseSlimmingSales
   );
 
   const missingKey = missingMonths.join(",");
-  if (!isFetching && !syncMutation.isPending) {
+  if (!skipSync && !isFetching && !syncMutation.isPending) {
     if (missingMonths.length > 0 && missingKey !== lastFiredRef.current) {
       lastFiredRef.current = missingKey;
       setTimeout(() => syncMutation.mutate({}), 0);
@@ -344,18 +348,28 @@ export function useSlimmingSales(dateFrom: Date, dateTo: Date): UseSlimmingSales
 
   // ── 6. Totals ────────────────────────────────────────────────────────────────
   const totals = useMemo<SlimmingSalesTotals>(() => {
-    const ex  = rows.reduce((s, r) => s + (r.price_ex_vat ?? 0), 0);
-    const inc = rows.reduce((s, r) => s + (r.full_price   ?? 0), 0);
+    let ex = 0, inc = 0, svcEx = 0, svcInc = 0, retEx = 0, retInc = 0;
+    for (const r of rows) {
+      const e = r.price_ex_vat ?? 0;
+      const i = r.full_price   ?? 0;
+      ex  += e; inc += i;
+      if (r.service_type === "product") { retEx += e; retInc += i; }
+      else                              { svcEx += e; svcInc += i; }
+    }
     const last = rows.reduce((best, r) => {
       if (!r.synced_at) return best;
       return (!best || r.synced_at > best) ? r.synced_at : best;
     }, null as string | null);
     return {
-      revenue_ex:  Math.round(ex),
-      revenue_inc: Math.round(inc),
-      vat_amount:  Math.round(inc - ex),
-      tx_count:    rows.length,
-      last_synced: last,
+      revenue_ex:          Math.round(ex),
+      revenue_inc:         Math.round(inc),
+      vat_amount:          Math.round(inc - ex),
+      tx_count:            rows.length,
+      service_revenue_ex:  Math.round(svcEx),
+      service_revenue_inc: Math.round(svcInc),
+      retail_revenue_ex:   Math.round(retEx),
+      retail_revenue_inc:  Math.round(retInc),
+      last_synced:         last,
     };
   }, [rows]);
 

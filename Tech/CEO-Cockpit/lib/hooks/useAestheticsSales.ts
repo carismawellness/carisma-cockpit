@@ -91,7 +91,7 @@ function monthsInRange(dateFrom: Date, dateTo: Date): string[] {
 
 // ── Hook ───────────────────────────────────────────────────────────────────────
 
-export function useAestheticsSales(dateFrom: Date, dateTo: Date): UseAestheticsSalesResult {
+export function useAestheticsSales(dateFrom: Date, dateTo: Date, { skipSync = false } = {}): UseAestheticsSalesResult {
   const supabase      = createClient();
   const queryClient   = useQueryClient();
   const lastFiredRef  = useRef("");
@@ -165,7 +165,7 @@ export function useAestheticsSales(dateFrom: Date, dateTo: Date): UseAestheticsS
   );
 
   const missingKey = missingMonths.join(",");
-  if (!isFetching && !syncMutation.isPending) {
+  if (!skipSync && !isFetching && !syncMutation.isPending) {
     if (missingMonths.length > 0 && missingKey !== lastFiredRef.current) {
       lastFiredRef.current = missingKey;
       setTimeout(() => syncMutation.mutate({}), 0);

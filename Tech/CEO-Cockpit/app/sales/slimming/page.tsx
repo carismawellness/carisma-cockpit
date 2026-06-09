@@ -1,10 +1,12 @@
 "use client";
 
+import { useMemo } from "react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
+import { SalesKPICard } from "@/components/sales/SalesKPICard";
+import { SalesKPIGrid } from "@/components/sales/SalesKPIGrid";
 import { useSlimmingSales } from "@/lib/hooks/useSlimmingSales";
 import { useSlimmingTreatments } from "@/lib/hooks/useSlimmingTreatments";
-import { formatCurrency } from "@/lib/charts/config";
 import { RefreshCw, FileSpreadsheet } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -37,6 +39,10 @@ function fmtK(v: number): string {
   if (Math.abs(v) >= 1_000_000) return `€${(v / 1_000_000).toFixed(1)}M`;
   if (Math.abs(v) >= 1_000)     return `€${(v / 1_000).toFixed(1)}K`;
   return `€${v.toFixed(0)}`;
+}
+
+function pct(part: number, total: number): string {
+  return total > 0 ? `${Math.round((part / total) * 100)}%` : "—";
 }
 
 // Recharts v3 formatters — accept unknown then narrow
@@ -109,6 +115,20 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
     byStaff, byServiceType, byService, totals,
     isFetching, isSyncing, syncError, triggerSync,
   } = useSlimmingSales(dateFrom, dateTo);
+
+  const spanDays     = Math.round((dateTo.getTime() - dateFrom.getTime()) / 86400000);
+  const prevDateTo   = useMemo(() => new Date(dateFrom.getTime() - 86400000), [dateFrom]);
+  const prevDateFrom = useMemo(() => new Date(prevDateTo.getTime() - spanDays * 86400000), [prevDateTo, spanDays]);
+  const { totals: prevTotals } = useSlimmingSales(prevDateFrom, prevDateTo, { skipSync: true });
+
+  const delta = useMemo(() => {
+    const calc = (curr: number, prior: number) => prior > 0 ? ((curr - prior) / prior) * 100 : undefined;
+    return {
+      net:     calc(totals.revenue_inc,         prevTotals.revenue_inc),
+      service: calc(totals.service_revenue_inc, prevTotals.service_revenue_inc),
+      retail:  calc(totals.retail_revenue_inc,  prevTotals.retail_revenue_inc),
+    };
+  }, [totals, prevTotals]);
 
   const {
     byStaff: txByStaff,
@@ -197,48 +217,47 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
       </div>
 
       {/* ── Revenue Summary ──────────────────────────────────────────── */}
-      <Card className="p-4 md:p-5">
-        <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
-          <div>
-            <h2 className="text-base font-semibold text-foreground">Revenue Summary</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {totals.last_synced
-                ? `Last synced: ${new Date(totals.last_synced).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" })}`
-                : "Not yet synced"}
-            </p>
-          </div>
-          <button
-            onClick={triggerSync}
-            disabled={isSyncing || isFetching}
-            className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border hover:bg-muted transition-colors disabled:opacity-50 shrink-0"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin" : ""}`} />
-            {isSyncing ? "Syncing…" : "Sync from Google Sheets"}
-          </button>
-        </div>
-        {syncError && (
-          <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2 mb-3">{syncError}</p>
-        )}
-        {/* inc-VAT first, then ex-VAT */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="p-3 rounded-lg bg-muted/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Revenue inc-VAT</p>
-            <p className="text-xl font-bold text-foreground">{formatCurrency(totals.revenue_inc)}</p>
-          </div>
-          <div className="p-3 rounded-lg bg-muted/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Revenue ex-VAT</p>
-            <p className="text-xl font-bold text-foreground">{formatCurrency(totals.revenue_ex)}</p>
-          </div>
-          <div className="p-3 rounded-lg bg-muted/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">VAT Amount</p>
-            <p className="text-xl font-bold text-foreground">{formatCurrency(totals.vat_amount)}</p>
-          </div>
-          <div className="p-3 rounded-lg bg-muted/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Bookings</p>
-            <p className="text-xl font-bold text-foreground">{totals.tx_count}</p>
-          </div>
-        </div>
-      </Card>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-xs text-muted-foreground">
+          {totals.last_synced
+            ? `Last synced: ${new Date(totals.last_synced).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" })}`
+            : "Not yet synced"}
+        </p>
+        <button
+          onClick={triggerSync}
+          disabled={isSyncing || isFetching}
+          className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border hover:bg-muted transition-colors disabled:opacity-50 shrink-0"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin" : ""}`} />
+          {isSyncing ? "Syncing…" : "Sync from Google Sheets"}
+        </button>
+      </div>
+      {syncError && (
+        <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2">{syncError}</p>
+      )}
+      <SalesKPIGrid columns={3}>
+        <SalesKPICard
+          label="Net Revenue"
+          value={fmtK(totals.revenue_inc)}
+          subtitle={`${fmtK(totals.revenue_ex)} ex-VAT · ${totals.tx_count} bookings · VAT ${fmtK(totals.vat_amount)}`}
+          yoyChange={delta.net}
+          yoyLabel="vs prev period"
+        />
+        <SalesKPICard
+          label="Service Revenue"
+          value={fmtK(totals.service_revenue_inc)}
+          subtitle={`${pct(totals.service_revenue_ex, totals.revenue_ex)} of net`}
+          yoyChange={delta.service}
+          yoyLabel="vs prev period"
+        />
+        <SalesKPICard
+          label="Retail Revenue"
+          value={fmtK(totals.retail_revenue_inc)}
+          subtitle={`${pct(totals.retail_revenue_ex, totals.revenue_ex)} of net`}
+          yoyChange={delta.retail}
+          yoyLabel="vs prev period"
+        />
+      </SalesKPIGrid>
 
       {/* ── Revenue by Staff — Regular & Retail (side-by-side) ──────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
