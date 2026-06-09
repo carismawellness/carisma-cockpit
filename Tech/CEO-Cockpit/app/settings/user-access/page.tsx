@@ -61,19 +61,25 @@ export default function UserAccessPage() {
     if (!newEmail.trim()) return;
     setInviting(true);
     setError("");
-    const res = await fetch("/api/admin/invitations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: newEmail.trim().toLowerCase() }),
-    });
-    if (res.ok) {
-      setNewEmail("");
-      await loadInvitations();
-    } else {
-      const body = await res.json();
-      setError(body.error ?? "Failed to invite");
+    try {
+      const res = await fetch("/api/admin/invitations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: newEmail.trim().toLowerCase() }),
+      });
+      if (res.ok) {
+        setNewEmail("");
+        await loadInvitations();
+      } else {
+        let msg = "Failed to invite";
+        try { msg = (await res.json()).error ?? msg; } catch {}
+        setError(msg);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setInviting(false);
     }
-    setInviting(false);
   }
 
   async function toggleActive(inv: Invitation) {

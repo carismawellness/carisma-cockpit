@@ -29,11 +29,12 @@ export async function GET() {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Enrich with Supabase auth user info (registered or pending)
-  const { data: authUsers } = await db.auth.admin.listUsers();
-  const registeredEmails = new Set(
-    (authUsers?.users ?? []).map((u) => u.email?.toLowerCase())
-  );
+  // Enrich with registered status — skip if auth admin call fails (non-blocking)
+  let registeredEmails = new Set<string | undefined>();
+  try {
+    const { data: authUsers } = await db.auth.admin.listUsers();
+    registeredEmails = new Set((authUsers?.users ?? []).map((u) => u.email?.toLowerCase()));
+  } catch {}
 
   const enriched = (data ?? []).map((inv) => ({
     ...inv,
