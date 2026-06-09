@@ -1,15 +1,20 @@
 /**
  * /api/finance/ebitda-longitudinal
  *
- * Returns month-by-month EBITDA for a date range, plus SPPY (same period
- * previous year = exact same calendar months shifted back 1 year).
+ * Returns period-by-period EBITDA for a date range, plus SPPY (same period
+ * previous year).
+ *
+ * Supports two granularities:
+ *   - monthly (default): groups by calendar month, SPPY = same months -12 months
+ *   - weekly:            groups by ISO week,     SPPY = same weeks   -364 days
  *
  * All data is fetched in two wide shots (current range + SPPY range) and
- * aggregated in memory — no per-month round-trips.
+ * aggregated in memory — no per-period round-trips.
  *
  * Query params:
- *   date_from  YYYY-MM-DD (required — first day of first month to show)
- *   date_to    YYYY-MM-DD (required, inclusive — last day of last month to show)
+ *   date_from    YYYY-MM-DD (required — first day of first period to show)
+ *   date_to      YYYY-MM-DD (required, inclusive — last day of last period)
+ *   granularity  "monthly" | "weekly"  (default: "monthly")
  */
 
 import { NextResponse } from "next/server";
@@ -35,16 +40,17 @@ export type MonthTotals = {
 type BrandTotals = MonthTotals & { spa: MonthTotals; aes: MonthTotals; slim: MonthTotals };
 
 export type LongitudinalPeriod = {
-  month:   string;       // "2025-01"
-  label:   string;       // "Jan 2025"
+  period:  string;       // "2025-01" monthly OR "2025-W03" weekly
+  label:   string;       // "Jan '25" or "W3 Jan '25"
   current: BrandTotals;
   sppy:    BrandTotals | null;
 };
 
 export type LongitudinalResponse = {
-  date_from: string;
-  date_to:   string;
-  periods:   LongitudinalPeriod[];
+  date_from:   string;
+  date_to:     string;
+  granularity: "monthly" | "weekly";
+  periods:     LongitudinalPeriod[];
 };
 
 // ── Venue config (mirrors ebitda-v2) ─────────────────────────────────────────
@@ -68,8 +74,6 @@ const VENUE_CONFIG = [
   { slug: "hq",               brand: "HQ"   },
 ] as const;
 
-type VenueSlug = typeof VENUE_CONFIG[number]["slug"];
-
 const LOC_ID_TO_SLUG: Record<number, string> = {
   1: "intercontinental",
   2: "hugos",
@@ -84,11 +88,72 @@ const LOC_ID_TO_SLUG: Record<number, string> = {
 // ── Month label ───────────────────────────────────────────────────────────────
 
 const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
 function monthLabel(m: string): string {
   // m = "2025-01"
   const y  = m.slice(0, 4);
   const mo = parseInt(m.slice(5, 7), 10) - 1;
-  return `${MONTH_NAMES[mo]} ${y}`;
+  return `${MONTH_NAMES[mo]} '${y.slice(2)}`;
+}
+
+// ── ISO week helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Returns "YYYY-Www" e.g. "2025-W03" for a given date string "YYYY-MM-DD".
+ * Uses the ISO 8601 week definition: week 1 contains the first Thursday.
+ */
+function isoWeek(dateStr: string): string {
+  const [y, m, d] = dateStr.slice(0, 10).split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  const dayOfWeek = (date.getDay() + 6) % 7; // Mon=0, Sun=6
+  const thursday = new Date(date);
+  thursday.setDate(date.getDate() - dayOfWeek + 3);
+  const yearStart = new Date(thursday.getFullYear(), 0, 1);
+  const weekNum = Math.ceil(((thursday.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${thursday.getFullYear()}-W${String(weekNum).padStart(2, "0")}`;
+}
+
+/**
+ * "2025-W03" → "W3 Jan '25"
+ * Finds the Monday of the given ISO week and formats as "W{n} {Mon} '{yy}".
+ */
+function weekLabel(weekStr: string): string {
+  const [yearStr, wStr] = weekStr.split("-W");
+  const year = parseInt(yearStr, 10);
+  const week = parseInt(wStr, 10);
+  // Jan 4 is always in ISO week 1
+  const jan4 = new Date(year, 0, 4);
+  const dayOfWeek = (jan4.getDay() + 6) % 7; // Mon=0
+  const monday = new Date(jan4);
+  monday.setDate(jan4.getDate() - dayOfWeek + (week - 1) * 7);
+  return `W${week} ${MONTH_NAMES[monday.getMonth()]} '${String(year).slice(2)}`;
+}
+
+/**
+ * Shift a YYYY-MM-DD date string by n days.
+ */
+function shiftDateByDays(dateStr: string, n: number): string {
+  const [y, m, d] = dateStr.slice(0, 10).split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() + n);
+  const yy  = date.getFullYear();
+  const mm  = String(date.getMonth() + 1).padStart(2, "0");
+  const dd  = String(date.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+/**
+ * Enumerate all unique ISO weeks (sorted) that overlap a date range.
+ * Returns strings like "2025-W03".
+ */
+function overlappingWeeks(from: string, to: string): string[] {
+  const weeks = new Set<string>();
+  let cur = from;
+  while (cur <= to) {
+    weeks.add(isoWeek(cur));
+    cur = shiftDateByDays(cur, 1);
+  }
+  return [...weeks].sort();
 }
 
 // ── Date helpers — all LOCAL-SAFE (copied from ebitda-v2) ─────────────────────
@@ -158,7 +223,29 @@ function shiftDateByMonths(dateStr: string, n: number): string {
   return `${y}-${String(mo).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-// ── Per-venue accumulator for ONE month ──────────────────────────────────────
+/**
+ * For a given ISO week string ("YYYY-Www"), return [mondayDateStr, sundayDateStr].
+ */
+function weekBounds(weekStr: string): [string, string] {
+  const [yearStr, wStr] = weekStr.split("-W");
+  const year = parseInt(yearStr, 10);
+  const week = parseInt(wStr, 10);
+  const jan4 = new Date(year, 0, 4);
+  const dayOfWeek = (jan4.getDay() + 6) % 7;
+  const monday = new Date(jan4);
+  monday.setDate(jan4.getDate() - dayOfWeek + (week - 1) * 7);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const fmt = (d: Date) => {
+    const yy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yy}-${mm}-${dd}`;
+  };
+  return [fmt(monday), fmt(sunday)];
+}
+
+// ── Per-venue accumulator for ONE period ─────────────────────────────────────
 
 type VenueMonth = {
   revenue:      number;
@@ -175,11 +262,11 @@ function emptyVM(): VenueMonth {
   return { revenue: 0, lapis_revenue: 0, wages: 0, advertising: 0, sga: 0, cogs: 0, rent: 0, utilities: 0 };
 }
 
-/** Key: "YYYY-MM|venue" */
+/** Key: "PERIOD|venue"  where PERIOD is "YYYY-MM" (monthly) or "YYYY-Www" (weekly) */
 type PeriodicAccum = Map<string, VenueMonth>;
 
-function getVM(acc: PeriodicAccum, yyyyMM: string, venue: string): VenueMonth {
-  const k = `${yyyyMM}|${venue}`;
+function getVM(acc: PeriodicAccum, period: string, venue: string): VenueMonth {
+  const k = `${period}|${venue}`;
   if (!acc.has(k)) acc.set(k, emptyVM());
   return acc.get(k)!;
 }
@@ -338,12 +425,24 @@ async function fetchRangeData(
   };
 }
 
+// ── Period key resolver ───────────────────────────────────────────────────────
+
+/**
+ * Given a date string and granularity, returns the period key.
+ *   monthly: "2025-01"
+ *   weekly:  "2025-W03"
+ */
+function dateToPeriod(dateStr: string, granularity: "monthly" | "weekly"): string {
+  if (granularity === "weekly") return isoWeek(dateStr);
+  return dateStr.slice(0, 7);
+}
+
 // ── Main aggregator ───────────────────────────────────────────────────────────
 
 const WAGE_ROLES = ["manager","reception","therapist","practitioner","crm","unassigned"] as const;
 
 /**
- * Aggregates fetched data into a PeriodicAccum keyed by "YYYY-MM|venue".
+ * Aggregates fetched data into a PeriodicAccum keyed by "PERIOD|venue".
  * Config tables (wageRoleMap, profFeeMap, adPatternsArr, hardwiredRules,
  * fallbackRules) are shared (same for both ranges).
  */
@@ -351,8 +450,9 @@ async function aggregateRange(
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
   dateFrom:    string,
   dateTo:      string,
+  granularity: "monthly" | "weekly",
   rangeData:   Awaited<ReturnType<typeof fetchRangeData>>,
-  wageRoleMap: Map<string, string>,
+  _wageRoleMap: Map<string, string>,
   wageVenueOverride: Map<string, string>,
   profFeeMap:  Map<string, { monthly_floor: number; venue: string }>,
   adPatternsArr: AdPatternRow[],
@@ -390,43 +490,82 @@ async function aggregateRange(
   for (const row of revDaily) {
     const slug = LOC_ID_TO_SLUG[row.location_id];
     if (!slug) continue;
-    const yyyyMM = (row.date as string).slice(0, 7);
+    const period = dateToPeriod(row.date as string, granularity);
     const lapisSales = (
       Number(row.services         ?? 0) +
       Number(row.product_phytomer ?? 0) +
       Number(row.product_purest   ?? 0) +
       Number(row.product_other    ?? 0)
     );
-    const vm = getVM(acc, yyyyMM, slug);
+    const vm = getVM(acc, period, slug);
     vm.revenue       += lapisSales;
     vm.lapis_revenue += lapisSales;
   }
-  // 1b. SPA monthly adjustments (wholesale, discount, refund) — pro-rated by days
-  for (const row of revMonthly) {
-    const slug = LOC_ID_TO_SLUG[row.location_id];
-    if (!slug) continue;
-    const monthStr   = (row.month as string).slice(0, 10);   // "YYYY-MM-01"
-    const yyyyMM     = monthStr.slice(0, 7);
-    const daysInMo   = totalDaysInMonth(monthStr);
-    const daysInRange = daysOfMonthInRange(monthStr, dateFrom, dateTo);
-    if (daysInRange === 0) continue;
-    const factor = daysInRange / daysInMo;
-    const adj = (
-      (Number(row.wholesale      ?? 0) -
-       Number(row.sales_discount ?? 0) -
-       Number(row.sales_refund   ?? 0)) * factor
-    );
-    getVM(acc, yyyyMM, slug).revenue += adj;
+
+  // 1b. SPA monthly adjustments (wholesale, discount, refund)
+  if (granularity === "monthly") {
+    // Monthly: pro-rate by days-in-range / days-in-month (existing logic)
+    for (const row of revMonthly) {
+      const slug = LOC_ID_TO_SLUG[row.location_id];
+      if (!slug) continue;
+      const monthStr   = (row.month as string).slice(0, 10);   // "YYYY-MM-01"
+      const yyyyMM     = monthStr.slice(0, 7);
+      const daysInMo   = totalDaysInMonth(monthStr);
+      const daysInRange = daysOfMonthInRange(monthStr, dateFrom, dateTo);
+      if (daysInRange === 0) continue;
+      const factor = daysInRange / daysInMo;
+      const adj = (
+        (Number(row.wholesale      ?? 0) -
+         Number(row.sales_discount ?? 0) -
+         Number(row.sales_refund   ?? 0)) * factor
+      );
+      getVM(acc, yyyyMM, slug).revenue += adj;
+    }
+  } else {
+    // Weekly: pro-rate each monthly adjustment into each overlapping ISO week
+    for (const row of revMonthly) {
+      const slug = LOC_ID_TO_SLUG[row.location_id];
+      if (!slug) continue;
+      const monthStr   = (row.month as string).slice(0, 10);   // "YYYY-MM-01"
+      const daysInMo   = totalDaysInMonth(monthStr);
+      const monthEnd   = lastDayOfMonth(monthStr);
+      const totalAdj   = (
+        Number(row.wholesale      ?? 0) -
+        Number(row.sales_discount ?? 0) -
+        Number(row.sales_refund   ?? 0)
+      );
+      if (totalAdj === 0) continue;
+
+      // Find all weeks in our range that overlap this month
+      const weeksInRange = overlappingWeeks(
+        dateFrom > monthStr ? dateFrom : monthStr,
+        dateTo   < monthEnd ? dateTo   : monthEnd,
+      );
+      for (const wk of weeksInRange) {
+        const [wMon, wSun] = weekBounds(wk);
+        // Overlap between this week and this month
+        const overlapStart = wMon > monthStr ? wMon : monthStr;
+        const overlapEnd   = wSun < monthEnd ? wSun : monthEnd;
+        // Also clamp to overall date range
+        const clampedStart = overlapStart > dateFrom ? overlapStart : dateFrom;
+        const clampedEnd   = overlapEnd   < dateTo   ? overlapEnd   : dateTo;
+        if (clampedStart > clampedEnd) continue;
+        const overlapDays = daysBetween(clampedStart, clampedEnd);
+        const factor = overlapDays / daysInMo;
+        getVM(acc, wk, slug).revenue += totalAdj * factor;
+      }
+    }
   }
-  // 1c. Aesthetics daily revenue — group by date month
+
+  // 1c. Aesthetics daily revenue — group by period
   for (const row of aesSales) {
-    const yyyyMM = (row.date_of_service as string).slice(0, 7);
-    getVM(acc, yyyyMM, "aesthetics").revenue += Number(row.price_ex_vat ?? 0);
+    const period = dateToPeriod(row.date_of_service as string, granularity);
+    getVM(acc, period, "aesthetics").revenue += Number(row.price_ex_vat ?? 0);
   }
-  // 1d. Slimming daily revenue — group by date month
+  // 1d. Slimming daily revenue — group by period
   for (const row of slimSales) {
-    const yyyyMM = (row.date_of_service as string).slice(0, 7);
-    getVM(acc, yyyyMM, "slimming").revenue += Number(row.price_ex_vat ?? 0);
+    const period = dateToPeriod(row.date_of_service as string, granularity);
+    getVM(acc, period, "slimming").revenue += Number(row.price_ex_vat ?? 0);
   }
 
   // ── 2. Costs from transactions_raw ───────────────────────────────────────
@@ -435,7 +574,7 @@ async function aggregateRange(
     const line    = row.ebitda_line;
     const contact = row.contact_name ?? "";
     const amount  = Number(row.amount ?? 0);
-    const yyyyMM  = (row.date as string).slice(0, 7);
+    const period  = dateToPeriod(row.date as string, granularity);
 
     if (!allSlugs.has(venue)) continue;
     if (line === "revenue")   continue;
@@ -450,63 +589,105 @@ async function aggregateRange(
           // Prof fee contractor → sga in target venue
           const pfVenue = profFeeMap.get(roleKey)!.venue;
           if (!allSlugs.has(pfVenue)) break;
-          getVM(acc, yyyyMM, pfVenue).sga += amount;
+          getVM(acc, period, pfVenue).sga += amount;
           break;
         }
         const effectiveVenue = wageVenueOverride.get(roleKey) ?? venue;
         if (!allSlugs.has(effectiveVenue)) break;
-        getVM(acc, yyyyMM, effectiveVenue).wages += amount;
+        getVM(acc, period, effectiveVenue).wages += amount;
         break;
       }
       case "advertising": {
         const ch = resolveAdChannel(contact);
         if (ch === "klaviyo" && venue === "hq") {
-          // Klaviyo HQ → split across SPA venues by lapis_revenue ratio for this month
-          // We use the SAME month's lapis_revenue already accumulated above.
-          // Because we process costs after revenue, this is safe.
+          // Klaviyo HQ → split across SPA venues by lapis_revenue ratio for this period
           const totalSpaRev = SPA_SLUGS.reduce(
-            (s, sv) => s + (acc.get(`${yyyyMM}|${sv}`)?.lapis_revenue ?? 0), 0,
+            (s, sv) => s + (acc.get(`${period}|${sv}`)?.lapis_revenue ?? 0), 0,
           );
           for (const sv of SPA_SLUGS) {
-            const spaRev = acc.get(`${yyyyMM}|${sv}`)?.lapis_revenue ?? 0;
+            const spaRev = acc.get(`${period}|${sv}`)?.lapis_revenue ?? 0;
             const ratio  = totalSpaRev > 0 ? spaRev / totalSpaRev : 1 / 8;
-            getVM(acc, yyyyMM, sv).advertising += amount * ratio;
+            getVM(acc, period, sv).advertising += amount * ratio;
           }
           break;
         }
-        getVM(acc, yyyyMM, venue).advertising += amount;
+        getVM(acc, period, venue).advertising += amount;
         break;
       }
-      case "sga":       { getVM(acc, yyyyMM, venue).sga       += amount; break; }
-      case "cogs":      { getVM(acc, yyyyMM, venue).cogs      += amount; break; }
-      case "rent":      { getVM(acc, yyyyMM, venue).rent      += amount; break; }
-      case "utilities": { getVM(acc, yyyyMM, venue).utilities += amount; break; }
+      case "sga":       { getVM(acc, period, venue).sga       += amount; break; }
+      case "cogs":      { getVM(acc, period, venue).cogs      += amount; break; }
+      case "rent":      { getVM(acc, period, venue).rent      += amount; break; }
+      case "utilities": { getVM(acc, period, venue).utilities += amount; break; }
     }
   }
 
-  // ── 3. Hardwired venue rules (applied per calendar month) ────────────────
-  for (const monthStr of overlappingMonths(dateFrom, dateTo)) {
-    const yyyyMM      = monthStr.slice(0, 7);
-    const daysInMo    = totalDaysInMonth(monthStr);
-    const daysInRange = daysOfMonthInRange(monthStr, dateFrom, dateTo);
-    if (daysInRange === 0) continue;
+  // ── 3. Hardwired venue rules ─────────────────────────────────────────────
+  if (granularity === "monthly") {
+    // Monthly: apply per calendar month (existing logic)
+    for (const monthStr of overlappingMonths(dateFrom, dateTo)) {
+      const yyyyMM      = monthStr.slice(0, 7);
+      const daysInMo    = totalDaysInMonth(monthStr);
+      const daysInRange = daysOfMonthInRange(monthStr, dateFrom, dateTo);
+      if (daysInRange === 0) continue;
 
-    for (const [key, rule] of hwMap) {
-      const [hwVenue, hwLine] = key.split("|");
-      const vm = getVM(acc, yyyyMM, hwVenue);
+      for (const [key, rule] of hwMap) {
+        const [hwVenue, hwLine] = key.split("|");
+        const vm = getVM(acc, yyyyMM, hwVenue);
 
-      let value = 0;
-      if (rule.rule_type === "fixed_monthly") {
-        value = (rule.params.monthly_amount ?? 0) * (daysInRange / daysInMo);
-      } else if (rule.rule_type === "base_plus_revenue_pct") {
-        const pct  = (rule.params.revenue_pct  ?? 0) / 100;
-        const base = (rule.params.base_monthly ?? 0) * (daysInRange / daysInMo);
-        const revBase = vm.lapis_revenue || vm.revenue;
-        value = base + revBase * pct;
+        let value = 0;
+        if (rule.rule_type === "fixed_monthly") {
+          value = (rule.params.monthly_amount ?? 0) * (daysInRange / daysInMo);
+        } else if (rule.rule_type === "base_plus_revenue_pct") {
+          const pct  = (rule.params.revenue_pct  ?? 0) / 100;
+          const base = (rule.params.base_monthly ?? 0) * (daysInRange / daysInMo);
+          const revBase = vm.lapis_revenue || vm.revenue;
+          value = base + revBase * pct;
+        }
+
+        if (hwLine === "rent")           vm.rent      = value;
+        else if (hwLine === "utilities") vm.utilities = value;
       }
+    }
+  } else {
+    // Weekly: pro-rate monthly hardwired amounts into weeks
+    for (const wk of overlappingWeeks(dateFrom, dateTo)) {
+      const [wMon, wSun] = weekBounds(wk);
 
-      if (hwLine === "rent")           vm.rent      = value;
-      else if (hwLine === "utilities") vm.utilities = value;
+      for (const [key, rule] of hwMap) {
+        const [hwVenue, hwLine] = key.split("|");
+        const vm = getVM(acc, wk, hwVenue);
+
+        // For each calendar month this week overlaps, accumulate a pro-rated value
+        let totalValue = 0;
+        const monthsForWeek = overlappingMonths(
+          wMon > dateFrom ? wMon : dateFrom,
+          wSun < dateTo   ? wSun : dateTo,
+        );
+        for (const monthStr of monthsForWeek) {
+          const monthEnd    = lastDayOfMonth(monthStr);
+          const daysInMo    = totalDaysInMonth(monthStr);
+          // Overlap of week ∩ month ∩ overall range
+          const overlapStart = (wMon > monthStr ? wMon : monthStr);
+          const overlapEnd   = (wSun < monthEnd ? wSun : monthEnd);
+          const clampedStart = overlapStart > dateFrom ? overlapStart : dateFrom;
+          const clampedEnd   = overlapEnd   < dateTo   ? overlapEnd   : dateTo;
+          if (clampedStart > clampedEnd) continue;
+          const overlapDays = daysBetween(clampedStart, clampedEnd);
+          const factor = overlapDays / daysInMo;
+
+          if (rule.rule_type === "fixed_monthly") {
+            totalValue += (rule.params.monthly_amount ?? 0) * factor;
+          } else if (rule.rule_type === "base_plus_revenue_pct") {
+            const pct  = (rule.params.revenue_pct  ?? 0) / 100;
+            const base = (rule.params.base_monthly ?? 0) * factor;
+            const revBase = vm.lapis_revenue || vm.revenue;
+            totalValue += base + revBase * pct;
+          }
+        }
+
+        if (hwLine === "rent")           vm.rent      = totalValue;
+        else if (hwLine === "utilities") vm.utilities = totalValue;
+      }
     }
   }
 
@@ -524,29 +705,63 @@ async function aggregateRange(
     const splitEqual = params.split === "equal";
     const numVenues  = targetVenues.length || 1;
 
-    for (const monthStr of overlappingMonths(dateFrom, dateTo)) {
-      const yyyyMM      = monthStr.slice(0, 7);
-      const daysInMo    = totalDaysInMonth(monthStr);
-      const daysInRange = daysOfMonthInRange(monthStr, dateFrom, dateTo);
-      if (daysInRange === 0) continue;
-      const monthlyFloor = monthlyAmt * (daysInRange / daysInMo);
+    if (granularity === "monthly") {
+      for (const monthStr of overlappingMonths(dateFrom, dateTo)) {
+        const yyyyMM      = monthStr.slice(0, 7);
+        const daysInMo    = totalDaysInMonth(monthStr);
+        const daysInRange = daysOfMonthInRange(monthStr, dateFrom, dateTo);
+        if (daysInRange === 0) continue;
+        const monthlyFloor = monthlyAmt * (daysInRange / daysInMo);
 
-      for (const venue of targetVenues) {
-        if (!allSlugs.has(venue)) continue;
-        const venueFloor = splitEqual ? monthlyFloor / numVenues : monthlyFloor;
+        for (const venue of targetVenues) {
+          if (!allSlugs.has(venue)) continue;
+          const venueFloor = splitEqual ? monthlyFloor / numVenues : monthlyFloor;
+          const actual = allRawCosts
+            .filter(r => r.venue === venue && r.account_code === accountCode && (r.date ?? "").slice(0, 7) === yyyyMM)
+            .reduce((sum, r) => sum + Number(r.amount), 0);
+          const supp = Math.max(0, venueFloor - actual);
+          if (supp === 0) continue;
+          const vm = getVM(acc, yyyyMM, venue);
+          if      (ebitdaLine === "utilities") vm.utilities += supp;
+          else if (ebitdaLine === "cogs")      vm.cogs      += supp;
+          else                                  vm.sga       += supp;
+        }
+      }
+    } else {
+      // Weekly: pro-rate floor into weeks
+      for (const wk of overlappingWeeks(dateFrom, dateTo)) {
+        const [wMon, wSun] = weekBounds(wk);
+        const monthsForWeek = overlappingMonths(
+          wMon > dateFrom ? wMon : dateFrom,
+          wSun < dateTo   ? wSun : dateTo,
+        );
+        let weekFloor = 0;
+        for (const monthStr of monthsForWeek) {
+          const monthEnd    = lastDayOfMonth(monthStr);
+          const daysInMo    = totalDaysInMonth(monthStr);
+          const overlapStart = (wMon > monthStr ? wMon : monthStr);
+          const overlapEnd   = (wSun < monthEnd ? wSun : monthEnd);
+          const clampedStart = overlapStart > dateFrom ? overlapStart : dateFrom;
+          const clampedEnd   = overlapEnd   < dateTo   ? overlapEnd   : dateTo;
+          if (clampedStart > clampedEnd) continue;
+          const overlapDays = daysBetween(clampedStart, clampedEnd);
+          weekFloor += monthlyAmt * (overlapDays / daysInMo);
+        }
 
-        // Check actual for this account+venue+month
-        const actual = allRawCosts
-          .filter(r => r.venue === venue && r.account_code === accountCode && (r.date ?? "").slice(0, 7) === yyyyMM)
-          .reduce((sum, r) => sum + Number(r.amount), 0);
-
-        const supp = Math.max(0, venueFloor - actual);
-        if (supp === 0) continue;
-
-        const vm = getVM(acc, yyyyMM, venue);
-        if      (ebitdaLine === "utilities") vm.utilities += supp;
-        else if (ebitdaLine === "cogs")      vm.cogs      += supp;
-        else                                  vm.sga       += supp;
+        for (const venue of targetVenues) {
+          if (!allSlugs.has(venue)) continue;
+          const venueFloor = splitEqual ? weekFloor / numVenues : weekFloor;
+          // Check actual for this account+venue+week
+          const actual = allRawCosts
+            .filter(r => r.venue === venue && r.account_code === accountCode && isoWeek(r.date ?? "1970-01-01") === wk)
+            .reduce((sum, r) => sum + Number(r.amount), 0);
+          const supp = Math.max(0, venueFloor - actual);
+          if (supp === 0) continue;
+          const vm = getVM(acc, wk, venue);
+          if      (ebitdaLine === "utilities") vm.utilities += supp;
+          else if (ebitdaLine === "cogs")      vm.cogs      += supp;
+          else                                  vm.sga       += supp;
+        }
       }
     }
   }
@@ -557,19 +772,45 @@ async function aggregateRange(
     const targetVenue = pf.venue;
     if (!allSlugs.has(targetVenue)) continue;
 
-    for (const monthStr of overlappingMonths(dateFrom, dateTo)) {
-      const yyyyMM      = monthStr.slice(0, 7);
-      const daysInMo    = totalDaysInMonth(monthStr);
-      const daysInRange = daysOfMonthInRange(monthStr, dateFrom, dateTo);
-      if (daysInRange === 0) continue;
-      const floor = pf.monthly_floor * (daysInRange / daysInMo);
-
-      const actual = allRawCosts
-        .filter(r => (r.contact_name ?? "").toLowerCase().trim() === contactKey && (r.date ?? "").slice(0, 7) === yyyyMM)
-        .reduce((sum, r) => sum + Number(r.amount), 0);
-
-      const supp = Math.max(0, floor - actual);
-      if (supp > 0) getVM(acc, yyyyMM, targetVenue).sga += supp;
+    if (granularity === "monthly") {
+      for (const monthStr of overlappingMonths(dateFrom, dateTo)) {
+        const yyyyMM      = monthStr.slice(0, 7);
+        const daysInMo    = totalDaysInMonth(monthStr);
+        const daysInRange = daysOfMonthInRange(monthStr, dateFrom, dateTo);
+        if (daysInRange === 0) continue;
+        const floor = pf.monthly_floor * (daysInRange / daysInMo);
+        const actual = allRawCosts
+          .filter(r => (r.contact_name ?? "").toLowerCase().trim() === contactKey && (r.date ?? "").slice(0, 7) === yyyyMM)
+          .reduce((sum, r) => sum + Number(r.amount), 0);
+        const supp = Math.max(0, floor - actual);
+        if (supp > 0) getVM(acc, yyyyMM, targetVenue).sga += supp;
+      }
+    } else {
+      // Weekly: pro-rate prof-fee floor into weeks
+      for (const wk of overlappingWeeks(dateFrom, dateTo)) {
+        const [wMon, wSun] = weekBounds(wk);
+        const monthsForWeek = overlappingMonths(
+          wMon > dateFrom ? wMon : dateFrom,
+          wSun < dateTo   ? wSun : dateTo,
+        );
+        let weekFloor = 0;
+        for (const monthStr of monthsForWeek) {
+          const monthEnd    = lastDayOfMonth(monthStr);
+          const daysInMo    = totalDaysInMonth(monthStr);
+          const overlapStart = (wMon > monthStr ? wMon : monthStr);
+          const overlapEnd   = (wSun < monthEnd ? wSun : monthEnd);
+          const clampedStart = overlapStart > dateFrom ? overlapStart : dateFrom;
+          const clampedEnd   = overlapEnd   < dateTo   ? overlapEnd   : dateTo;
+          if (clampedStart > clampedEnd) continue;
+          const overlapDays = daysBetween(clampedStart, clampedEnd);
+          weekFloor += pf.monthly_floor * (overlapDays / daysInMo);
+        }
+        const actual = allRawCosts
+          .filter(r => (r.contact_name ?? "").toLowerCase().trim() === contactKey && isoWeek(r.date ?? "1970-01-01") === wk)
+          .reduce((sum, r) => sum + Number(r.amount), 0);
+        const supp = Math.max(0, weekFloor - actual);
+        if (supp > 0) getVM(acc, wk, targetVenue).sga += supp;
+      }
     }
   }
 
@@ -587,23 +828,61 @@ async function aggregateRange(
   }
   const frozenMonths = Array.from(suppByMonth.keys()).sort();
 
-  for (const targetMonthStr of overlappingMonths(dateFrom, dateTo)) {
-    const yyyyMM = targetMonthStr.slice(0, 7);
-    let rows = suppByMonth.get(targetMonthStr);
-    if (!rows || rows.length === 0) {
-      const candidate = [...frozenMonths].reverse().find(m => m < targetMonthStr);
-      if (candidate) rows = suppByMonth.get(candidate)!;
+  if (granularity === "monthly") {
+    for (const targetMonthStr of overlappingMonths(dateFrom, dateTo)) {
+      const yyyyMM = targetMonthStr.slice(0, 7);
+      let rows = suppByMonth.get(targetMonthStr);
+      if (!rows || rows.length === 0) {
+        const candidate = [...frozenMonths].reverse().find(m => m < targetMonthStr);
+        if (candidate) rows = suppByMonth.get(candidate)!;
+      }
+      if (!rows || rows.length === 0) continue;
+
+      const daysInRange = daysOfMonthInRange(targetMonthStr, dateFrom, dateTo);
+      const factor      = daysInRange / totalDaysInMonth(targetMonthStr);
+
+      for (const row of rows) {
+        if (!row.spa_slug || !allSlugs.has(row.spa_slug)) continue;
+        const suppRole = (WAGE_ROLES as readonly string[]).includes(row.role) ? row.role : "unassigned";
+        void suppRole; // role detail is not tracked in longitudinal (top-level only)
+        getVM(acc, yyyyMM, row.spa_slug).wages += row.amount * factor;
+      }
     }
-    if (!rows || rows.length === 0) continue;
+  } else {
+    // Weekly: pro-rate supplement into weeks (using the same month-resolution fallback)
+    for (const wk of overlappingWeeks(dateFrom, dateTo)) {
+      const [wMon, wSun] = weekBounds(wk);
+      const monthsForWeek = overlappingMonths(
+        wMon > dateFrom ? wMon : dateFrom,
+        wSun < dateTo   ? wSun : dateTo,
+      );
+      for (const targetMonthStr of monthsForWeek) {
+        const monthEnd    = lastDayOfMonth(targetMonthStr);
+        const daysInMo    = totalDaysInMonth(targetMonthStr);
 
-    const daysInRange = daysOfMonthInRange(targetMonthStr, dateFrom, dateTo);
-    const factor      = daysInRange / totalDaysInMonth(targetMonthStr);
+        let rows = suppByMonth.get(targetMonthStr);
+        if (!rows || rows.length === 0) {
+          const candidate = [...frozenMonths].reverse().find(m => m < targetMonthStr);
+          if (candidate) rows = suppByMonth.get(candidate)!;
+        }
+        if (!rows || rows.length === 0) continue;
 
-    for (const row of rows) {
-      if (!row.spa_slug || !allSlugs.has(row.spa_slug)) continue;
-      const suppRole = (WAGE_ROLES as readonly string[]).includes(row.role) ? row.role : "unassigned";
-      void suppRole; // role detail is not tracked in longitudinal (top-level only)
-      getVM(acc, yyyyMM, row.spa_slug).wages += row.amount * factor;
+        // How many days of this month fall within this week (clamped to overall range)
+        const overlapStart = (wMon > targetMonthStr ? wMon : targetMonthStr);
+        const overlapEnd   = (wSun < monthEnd ? wSun : monthEnd);
+        const clampedStart = overlapStart > dateFrom ? overlapStart : dateFrom;
+        const clampedEnd   = overlapEnd   < dateTo   ? overlapEnd   : dateTo;
+        if (clampedStart > clampedEnd) continue;
+        const overlapDays = daysBetween(clampedStart, clampedEnd);
+        const factor = overlapDays / daysInMo;
+
+        for (const row of rows) {
+          if (!row.spa_slug || !allSlugs.has(row.spa_slug)) continue;
+          const suppRole = (WAGE_ROLES as readonly string[]).includes(row.role) ? row.role : "unassigned";
+          void suppRole;
+          getVM(acc, wk, row.spa_slug).wages += row.amount * factor;
+        }
+      }
     }
   }
 
@@ -611,6 +890,8 @@ async function aggregateRange(
   // For each active fallback rule: if no real transaction exists for that
   // account+venue in a given month, apply TTM/previous_month/manual estimate.
   // This prevents chart dips caused by late postings.
+  // NOTE: TTM fallbacks are computed per-month even in weekly mode, then pro-rated
+  // into weeks by day-count to avoid per-week DB round-trips.
   const activeFallbacks = fallbackRules.filter(r => r.active && r.rule_type !== "min_monthly");
   if (activeFallbacks.length > 0) {
     const activeCodes = activeFallbacks.map(r => r.account_code);
@@ -670,7 +951,6 @@ async function aggregateRange(
 
     for (const monthStr of overlappingMonths(dateFrom, dateTo)) {
       const yyyyMM      = monthStr.slice(0, 7);
-      const daysInMo    = totalDaysInMonth(monthStr);
       const daysInRange = daysOfMonthInRange(monthStr, dateFrom, dateTo);
       if (daysInRange === 0) continue;
 
@@ -719,14 +999,43 @@ async function aggregateRange(
 
           if (fallbackValue <= 0) continue;
 
-          const vm   = getVM(acc, yyyyMM, venue);
-          const line = hist.ebitda_line;
-          if      (line === "wages")     vm.wages      += fallbackValue;
-          else if (line === "advertising") vm.advertising += fallbackValue;
-          else if (line === "sga")       vm.sga        += fallbackValue;
-          else if (line === "cogs")      vm.cogs       += fallbackValue;
-          else if (line === "rent")      vm.rent       += fallbackValue;
-          else if (line === "utilities") vm.utilities  += fallbackValue;
+          if (granularity === "monthly") {
+            // Apply directly to month period key
+            const vm   = getVM(acc, yyyyMM, venue);
+            const line = hist.ebitda_line;
+            if      (line === "wages")       vm.wages      += fallbackValue;
+            else if (line === "advertising") vm.advertising += fallbackValue;
+            else if (line === "sga")         vm.sga        += fallbackValue;
+            else if (line === "cogs")        vm.cogs       += fallbackValue;
+            else if (line === "rent")        vm.rent       += fallbackValue;
+            else if (line === "utilities")   vm.utilities  += fallbackValue;
+          } else {
+            // Weekly: distribute the monthly fallback amount pro-rata into each week
+            const monthEnd = lastDayOfMonth(monthStr);
+            const weeksInMonth = overlappingWeeks(
+              monthStr > dateFrom ? monthStr : dateFrom,
+              monthEnd < dateTo   ? monthEnd : dateTo,
+            );
+            for (const wk of weeksInMonth) {
+              const [wMon, wSun] = weekBounds(wk);
+              const overlapStart = (wMon > monthStr ? wMon : monthStr);
+              const overlapEnd   = (wSun < monthEnd ? wSun : monthEnd);
+              const clampedStart = overlapStart > dateFrom ? overlapStart : dateFrom;
+              const clampedEnd   = overlapEnd   < dateTo   ? overlapEnd   : dateTo;
+              if (clampedStart > clampedEnd) continue;
+              const wkDays = daysBetween(clampedStart, clampedEnd);
+              const wkFallback = fallbackValue * (wkDays / daysInRange);
+              if (wkFallback <= 0) continue;
+              const vm   = getVM(acc, wk, venue);
+              const line = hist.ebitda_line;
+              if      (line === "wages")       vm.wages      += wkFallback;
+              else if (line === "advertising") vm.advertising += wkFallback;
+              else if (line === "sga")         vm.sga        += wkFallback;
+              else if (line === "cogs")        vm.cogs       += wkFallback;
+              else if (line === "rent")        vm.rent       += wkFallback;
+              else if (line === "utilities")   vm.utilities  += wkFallback;
+            }
+          }
         }
       }
     }
@@ -735,7 +1044,7 @@ async function aggregateRange(
   return acc;
 }
 
-// ── Collapse a PeriodicAccum month into MonthTotals for a brand ──────────────
+// ── Collapse a PeriodicAccum period into MonthTotals for a brand ─────────────
 
 function zeroTotals(): MonthTotals {
   return { revenue: 0, ebitda: 0, ebitda_pct: 0, wages: 0, advertising: 0, sga: 0, rent: 0, cogs: 0, utilities: 0 };
@@ -756,14 +1065,14 @@ function addVM(t: MonthTotals, vm: VenueMonth): void {
   t.utilities   += vm.utilities;
 }
 
-function buildBrandTotals(acc: PeriodicAccum, yyyyMM: string): BrandTotals {
+function buildBrandTotals(acc: PeriodicAccum, period: string): BrandTotals {
   const group: MonthTotals = zeroTotals();
   const spa:   MonthTotals = zeroTotals();
   const aes:   MonthTotals = zeroTotals();
   const slim:  MonthTotals = zeroTotals();
 
   for (const vc of VENUE_CONFIG) {
-    const vm = acc.get(`${yyyyMM}|${vc.slug}`) ?? emptyVM();
+    const vm = acc.get(`${period}|${vc.slug}`) ?? emptyVM();
     addVM(group, vm);
     if (vc.brand === "SPA")  addVM(spa,  vm);
     if (vc.brand === "AES")  addVM(aes,  vm);
@@ -785,15 +1094,27 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const dateFrom = searchParams.get("date_from");
   const dateTo   = searchParams.get("date_to");
+  const granularityParam = searchParams.get("granularity") ?? "monthly";
 
   if (!dateFrom || !dateTo)
     return NextResponse.json({ error: "date_from and date_to required" }, { status: 400 });
 
+  if (granularityParam !== "monthly" && granularityParam !== "weekly")
+    return NextResponse.json({ error: "granularity must be 'monthly' or 'weekly'" }, { status: 400 });
+
+  const granularity: "monthly" | "weekly" = granularityParam;
+
   const supabase = await createServerSupabaseClient();
 
-  // SPPY range: same calendar months, 1 year earlier
-  const sppyFrom = shiftDateByMonths(dateFrom, -12);
-  const sppyTo   = shiftDateByMonths(dateTo,   -12);
+  // SPPY range:
+  //   monthly → same calendar months, 12 months earlier
+  //   weekly  → same ISO weeks, 364 days (52 weeks) earlier (preserves weekday alignment)
+  const sppyFrom = granularity === "weekly"
+    ? shiftDateByDays(dateFrom, -364)
+    : shiftDateByMonths(dateFrom, -12);
+  const sppyTo = granularity === "weekly"
+    ? shiftDateByDays(dateTo, -364)
+    : shiftDateByMonths(dateTo, -12);
 
   // ── Load config tables once (shared across both ranges) ──────────────────
   const [wageRolesRes, adPatternsRes, fallbackRulesRes, hardwiredRulesRes] = await Promise.all([
@@ -848,40 +1169,67 @@ export async function GET(req: Request) {
 
   // ── Aggregate both ranges ─────────────────────────────────────────────────
   const [currentAcc, sppyAcc] = await Promise.all([
-    aggregateRange(supabase, dateFrom, dateTo, currentData,
+    aggregateRange(supabase, dateFrom, dateTo, granularity, currentData,
       wageRoleMap, wageVenueOverride, profFeeMap, adPatternsArr, hardwiredRules, fallbackRules),
     sppyData
-      ? aggregateRange(supabase, sppyFrom, sppyTo, sppyData,
+      ? aggregateRange(supabase, sppyFrom, sppyTo, granularity, sppyData,
           wageRoleMap, wageVenueOverride, profFeeMap, adPatternsArr, hardwiredRules, fallbackRules)
       : Promise.resolve(new Map() as PeriodicAccum),
   ]);
 
   // ── Build output periods ──────────────────────────────────────────────────
-  const months = overlappingMonths(dateFrom, dateTo);
+  let periods: LongitudinalPeriod[];
 
-  const periods: LongitudinalPeriod[] = months.map(monthStr => {
-    const yyyyMM     = monthStr.slice(0, 7);                 // "YYYY-MM"
-    const sppyYYYYMM = shiftMonth(monthStr, -12).slice(0, 7);
+  if (granularity === "monthly") {
+    const months = overlappingMonths(dateFrom, dateTo);
+    periods = months.map(monthStr => {
+      const yyyyMM     = monthStr.slice(0, 7);                 // "YYYY-MM"
+      const sppyYYYYMM = shiftMonth(monthStr, -12).slice(0, 7);
 
-    const current = buildBrandTotals(currentAcc, yyyyMM);
+      const current = buildBrandTotals(currentAcc, yyyyMM);
 
-    // SPPY is null when no data exists for that prior-year month
-    const hasSppyData = sppyAcc.size > 0 && (
-      [...sppyAcc.keys()].some(k => k.startsWith(sppyYYYYMM + "|"))
-    );
-    const sppy = hasSppyData ? buildBrandTotals(sppyAcc, sppyYYYYMM) : null;
+      // SPPY is null when no data exists for that prior-year month
+      const hasSppyData = sppyAcc.size > 0 && (
+        [...sppyAcc.keys()].some(k => k.startsWith(sppyYYYYMM + "|"))
+      );
+      const sppy = hasSppyData ? buildBrandTotals(sppyAcc, sppyYYYYMM) : null;
 
-    return {
-      month:   yyyyMM,
-      label:   monthLabel(yyyyMM),
-      current,
-      sppy,
-    };
-  });
+      return {
+        period:  yyyyMM,
+        label:   monthLabel(yyyyMM),
+        current,
+        sppy,
+      };
+    });
+  } else {
+    // Weekly
+    const weeks = overlappingWeeks(dateFrom, dateTo);
+    periods = weeks.map(wk => {
+      // SPPY week = same week key but in the SPPY range (364 days back same ISO week)
+      // Since SPPY range is shifted back by exactly 364 days, the ISO week numbers
+      // align perfectly (52 weeks × 7 days = 364 days).
+      const sppyWk = isoWeek(shiftDateByDays(weekBounds(wk)[0], -364));
+
+      const current = buildBrandTotals(currentAcc, wk);
+
+      const hasSppyData = sppyAcc.size > 0 && (
+        [...sppyAcc.keys()].some(k => k.startsWith(sppyWk + "|"))
+      );
+      const sppy = hasSppyData ? buildBrandTotals(sppyAcc, sppyWk) : null;
+
+      return {
+        period: wk,
+        label:  weekLabel(wk),
+        current,
+        sppy,
+      };
+    });
+  }
 
   const response: LongitudinalResponse = {
-    date_from: dateFrom,
-    date_to:   dateTo,
+    date_from:   dateFrom,
+    date_to:     dateTo,
+    granularity,
     periods,
   };
 
