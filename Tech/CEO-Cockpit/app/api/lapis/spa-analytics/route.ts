@@ -280,7 +280,6 @@ function computeAnalytics(
   staffCombined.sort((a, b) =>
     (b.service_revenue + b.retail_revenue) - (a.service_revenue + a.retail_revenue)
   );
-  const staffCombinedTop15 = staffCombined.slice(0, 15);
 
   // ── Build guest_groups ──────────────────────────────────────────────────────
   const guestGroups: GuestGroup[] = Object.entries(SPA_LOCATION_META).map(([idStr, meta]) => {
@@ -344,7 +343,7 @@ function computeAnalytics(
     .sort((a, b) => a.location_id - b.location_id);
 
   return {
-    staff_combined:      staffCombinedTop15,
+    staff_combined:      staffCombined,
     guest_groups:        guestGroups,
     payment_types:       paymentTypes,
     payment_by_location: paymentByLocation,

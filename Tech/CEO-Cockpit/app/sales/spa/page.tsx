@@ -12,7 +12,7 @@ import { useSpaRevenue, SpaRevenueLocation } from "@/lib/hooks/useSpaRevenue";
 import { useSpaDeepaAnalytics } from "@/lib/hooks/useSpaDeepaAnalytics";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, LabelList, Legend, Cell,
+  ResponsiveContainer, LabelList, Legend,
 } from "recharts";
 import { RefreshCw, AlertCircle, TrendingDown, FileSpreadsheet } from "lucide-react";
 
@@ -243,19 +243,6 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
       .map(([type]) => type);
   }, [analytics.paymentByLocation]);
 
-  /* ── Discount chart data (inc-VAT) ───────────────────────────── */
-  const discountChartData = useMemo(() =>
-    analytics.discounts
-      .filter((d) => d.total_txn_count > 0)
-      .map((d) => ({
-        name:           d.name,
-        color:          d.color,
-        "Discount %":   d.discount_pct,
-        discount_amt:   Math.round(d.total_discount * 1.18),
-      })),
-    [analytics.discounts]
-  );
-
   return (
     <>
       {/* ── Header ─────────────────────────────────────────────────── */}
@@ -446,7 +433,14 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                         stackId="a"
                         fill={PAYMENT_COLORS[type] ?? "#aaa"}
                         radius={idx === allPaymentTypes.length - 1 ? [4, 4, 0, 0] : undefined}
-                      />
+                      >
+                        <LabelList
+                          dataKey={type}
+                          position="inside"
+                          formatter={(v: unknown) => Number(v) >= 10 ? `${v}%` : ""}
+                          style={{ fontSize: 10, fontWeight: 700, fill: "#fff" }}
+                        />
+                      </Bar>
                     ))}
                   </BarChart>
                 </ResponsiveContainer>
@@ -454,59 +448,6 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
             )}
           </Card>
         </div>
-      )}
-
-      {/* ── Discount by Location ───────────────────────────────────── */}
-      {(analytics.isFetching || discountChartData.length > 0) && (
-        <Card className="p-4 md:p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-1">Discount by Location</h2>
-          <p className="text-xs text-muted-foreground mb-5">
-            Total discounts as % of net revenue per venue · inc-VAT
-          </p>
-          {analytics.isFetching ? (
-            <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
-              Loading analytics…
-            </div>
-          ) : discountChartData.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No discount data for this period.</p>
-          ) : (
-            <div className="h-[280px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={discountChartData}
-                  margin={{ top: 20, right: 12, left: 8, bottom: 32 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" vertical={false} />
-                  <XAxis
-                    dataKey="name"
-                    tick={{ fontSize: 11 }}
-                    angle={-30}
-                    textAnchor="end"
-                    interval={0}
-                  />
-                  <YAxis
-                    tickFormatter={(v: number) => `${v}%`}
-                    tick={{ fontSize: 11 }}
-                  />
-                  <Tooltip
-                    formatter={(v: unknown) => [`${Number(v).toFixed(1)}%`, "Discount %"]}
-                  />
-                  <Bar dataKey="Discount %" radius={[4, 4, 0, 0]}>
-                    {discountChartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                    <LabelList
-                      dataKey="Discount %"
-                      position="top"
-                      formatter={(v: unknown) => `${Number(v).toFixed(1)}%`}
-                      style={{ fontSize: 10, fontWeight: 600, fill: "#374151" }}
-                    />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </Card>
       )}
 
       {/* ── Staff Performance ──────────────────────────────────────── */}
