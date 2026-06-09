@@ -124,20 +124,32 @@ if not _SUPABASE_URL or not _SUPABASE_KEY:
     sys.exit(1)
 
 
+CHUNK_SIZE = 200  # rows per upsert batch
+
+
 def _supabase_upsert(table: str, rows: list[dict], on_conflict: str) -> int:
-    """POST rows to Supabase REST with upsert (merge-duplicates) semantics."""
+    """POST rows to Supabase REST in chunks with upsert semantics."""
     if not rows:
         return 0
     headers = {
         "apikey":        _SUPABASE_KEY,
         "Authorization": f"Bearer {_SUPABASE_KEY}",
         "Content-Type":  "application/json",
-        "Prefer":        "return=representation,resolution=merge-duplicates",
+        "Prefer":        "return=minimal,resolution=merge-duplicates",
     }
     url = f"{_SUPABASE_URL}/rest/v1/{table}?on_conflict={on_conflict}"
-    resp = requests.post(url, headers=headers, data=json.dumps(rows), timeout=60)
-    resp.raise_for_status()
-    return len(resp.json()) if resp.text else 0
+    total = 0
+    for i in range(0, len(rows), CHUNK_SIZE):
+        chunk = rows[i : i + CHUNK_SIZE]
+        resp = requests.post(url, headers=headers, data=json.dumps(chunk), timeout=60)
+        if not resp.ok:
+            raise RuntimeError(
+                f"Supabase upsert failed (chunk {i//CHUNK_SIZE + 1}, "
+                f"rows {i}–{i+len(chunk)-1}): "
+                f"HTTP {resp.status_code} — {resp.text[:300]}"
+            )
+        total += len(chunk)
+    return total
 
 
 # ── Parse helpers ─────────────────────────────────────────────────────────────
@@ -199,50 +211,95 @@ def parse_date(val: str) -> str | None:
 
 
 # ── Main sync logic ───────────────────────────────────────────────────────────
+
+# Agents whose tab uses the SDR structure instead of the standard chat structure.
+# SDR columns: Date | Outbound(Sales,Dials,Answered,Booked,Dep) | Inbound(Sales,Recv,Booked,Dep) |
+#              Chat(Sales,Conv,Booked,Dep) | Total(Sales,Booked,Dep,Rate,Dials,Dep%)
+SDR_AGENTS = {"nathalia"}
+
+
+def _build_chat_row(slug: str, date_iso: str, row: list) -> dict:
+    """Standard chat-agent column mapping (Live Chat / CRM / Other)."""
+    return {
+        "agent_slug":          slug,
+        "date":                date_iso,
+        # Live Chat
+        "lc_sales":            parse_currency(_cell(row, 1)),
+        "lc_messages":         parse_integer(_cell(row, 2)),
+        "lc_booked":           parse_integer(_cell(row, 3)),
+        "lc_deposit":          parse_integer(_cell(row, 4)),
+        # CRM
+        "crm_sales":           parse_currency(_cell(row, 5)),
+        "crm_messages":        parse_integer(_cell(row, 6)),
+        "crm_booked":          parse_integer(_cell(row, 7)),
+        "crm_deposit":         parse_integer(_cell(row, 8)),
+        # Other
+        "other_sales":         parse_currency(_cell(row, 9)),
+        "other_messages":      parse_integer(_cell(row, 10)),
+        "other_booked":        parse_integer(_cell(row, 11)),
+        "other_deposit":       parse_integer(_cell(row, 12)),
+        # Totals
+        "total_messages":      parse_integer(_cell(row, 13)),
+        "total_booked":        parse_integer(_cell(row, 14)),
+        "total_deposit_count": parse_integer(_cell(row, 15)),
+        "conversion_rate_pct": parse_percent(_cell(row, 16)),
+        "total_sales":         parse_currency(_cell(row, 17)),
+        "deposit_pct":         parse_percent(_cell(row, 18)),
+        "aov":                 parse_currency(_cell(row, 19)),
+    }
+
+
+def _build_sdr_row(slug: str, date_iso: str, row: list) -> dict:
+    """SDR column mapping: Outbound→other, Inbound→crm, Chat→lc, Total cols."""
+    # Outbound: Sales[1], Dials[2], Answered[3], Booked[4], w/Dep[5]
+    # Inbound:  Sales[6], Received[7], Booked[8], w/Dep[9]
+    # Chat:     Sales[10], Conv[11], Booked[12], w/Dep[13]
+    # Total:    Sales[14], Booked[15], w/Dep[16], Rate[17], Dials[18], Dep%[19]
+    return {
+        "agent_slug":          slug,
+        "date":                date_iso,
+        # Chat → lc_*
+        "lc_sales":            parse_currency(_cell(row, 10)),
+        "lc_messages":         parse_integer(_cell(row, 11)),
+        "lc_booked":           parse_integer(_cell(row, 12)),
+        "lc_deposit":          parse_integer(_cell(row, 13)),
+        # Inbound → crm_*
+        "crm_sales":           parse_currency(_cell(row, 6)),
+        "crm_messages":        parse_integer(_cell(row, 7)),
+        "crm_booked":          parse_integer(_cell(row, 8)),
+        "crm_deposit":         parse_integer(_cell(row, 9)),
+        # Outbound → other_*
+        "other_sales":         parse_currency(_cell(row, 1)),
+        "other_messages":      parse_integer(_cell(row, 2)),   # Dials
+        "other_booked":        parse_integer(_cell(row, 4)),
+        "other_deposit":       parse_integer(_cell(row, 5)),
+        # Totals
+        "total_messages":      parse_integer(_cell(row, 18)),  # total Dials
+        "total_booked":        parse_integer(_cell(row, 15)),
+        "total_deposit_count": parse_integer(_cell(row, 16)),
+        "conversion_rate_pct": parse_percent(_cell(row, 17)),
+        "total_sales":         parse_currency(_cell(row, 14)),
+        "deposit_pct":         parse_percent(_cell(row, 19)),
+        "aov":                 0.0,
+    }
+
+
 def sync_agent(slug: str, tab_name: str, sh: gspread.Spreadsheet) -> int:
     """Read one agent tab, build rows, upsert to Supabase. Returns row count synced."""
-    ws = sh.worksheet(tab_name)
+    ws  = sh.worksheet(tab_name)
     raw = ws.get_all_values()
+    is_sdr = slug in SDR_AGENTS
 
-    rows: list[dict] = []
-
-    # Data rows start at index 2 (indices 0 and 1 are header rows)
+    # Use a dict keyed by date so later rows overwrite earlier duplicates
+    rows_by_date: dict[str, dict] = {}
     for row in raw[2:]:
         date_iso = parse_date(_cell(row, 0))
         if date_iso is None:
-            continue  # skip header rows, blank rows, non-parseable dates
+            continue
+        record = _build_sdr_row(slug, date_iso, row) if is_sdr else _build_chat_row(slug, date_iso, row)
+        rows_by_date[date_iso] = record  # last entry for a date wins
 
-        record: dict = {
-            "agent_slug":          slug,
-            "date":                date_iso,
-            # Live Chat
-            "lc_sales":            parse_currency(_cell(row, 1)),
-            "lc_messages":         parse_integer(_cell(row, 2)),
-            "lc_booked":           parse_integer(_cell(row, 3)),
-            "lc_deposit":          parse_integer(_cell(row, 4)),
-            # CRM
-            "crm_sales":           parse_currency(_cell(row, 5)),
-            "crm_messages":        parse_integer(_cell(row, 6)),
-            "crm_booked":          parse_integer(_cell(row, 7)),
-            "crm_deposit":         parse_integer(_cell(row, 8)),
-            # Other
-            "other_sales":         parse_currency(_cell(row, 9)),
-            "other_messages":      parse_integer(_cell(row, 10)),
-            "other_booked":        parse_integer(_cell(row, 11)),
-            "other_deposit":       parse_integer(_cell(row, 12)),
-            # Totals
-            "total_messages":      parse_integer(_cell(row, 13)),
-            "total_booked":        parse_integer(_cell(row, 14)),
-            "total_deposit_count": parse_integer(_cell(row, 15)),
-            "conversion_rate_pct": parse_percent(_cell(row, 16)),
-            "total_sales":         parse_currency(_cell(row, 17)),
-            "deposit_pct":         parse_percent(_cell(row, 18)),
-            "aov":                 parse_currency(_cell(row, 19)),
-        }
-        rows.append(record)
-
-    count = _supabase_upsert("crm_agent_daily", rows, "agent_slug,date")
-    return count
+    return _supabase_upsert("crm_agent_daily", list(rows_by_date.values()), "agent_slug,date")
 
 
 def main() -> None:
