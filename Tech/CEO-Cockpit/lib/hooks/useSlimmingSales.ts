@@ -39,11 +39,35 @@ export interface ServiceTypeBreakdown {
 }
 
 export interface ServiceBreakdown {
-  service:    string;
-  type:       string;
-  tx_count:   number;
-  revenue_ex: number;
-  pct:        number;
+  service:      string;
+  type:         string;
+  nav_group:    string;
+  nav_category: string;
+  tx_count:     number;
+  revenue_ex:   number;
+  pct:          number;
+}
+
+export function categorizeSlimmingNav(service: string, type: string): { group: string; category: string } {
+  const s = service.toLowerCase();
+  if (/\bno.?show\b|\bcancel\b|\bdeposit\b|\brefund\b/i.test(s)) return { group: "Admin",          category: "Admin" };
+  if (/consult/i.test(s))                                          return { group: "Medical",        category: "Medical Consultation" };
+  if (type === "product")                                          return { group: "Products",       category: "Products" };
+  if (/\binject|\bglp.?1\b|\bsemaglutide\b|\bozempic\b|\bmounjaro\b/i.test(s)) return { group: "GLP-1s", category: "GLP-1 Programme" };
+  if (/package/i.test(s))                                          return { group: "Packages",       category: "Packages" };
+  if (/fat\s*freez/i.test(s))                                      return { group: "Body Treatments", category: "Fat Freezing" };
+  if (/fat\s*dis|\blipolysis\b/i.test(s))                          return { group: "Body Treatments", category: "Fat Dissolving" };
+  if (/\bems\b|\bmuscle\s*stim/i.test(s))                          return { group: "Body Treatments", category: "Muscle Stimulation (EMS)" };
+  if (/radio\s*freq|\brf\b|skin\s*tight/i.test(s))                 return { group: "Body Treatments", category: "Skin Tightening" };
+  if (/\bcavit/i.test(s))                                          return { group: "Body Treatments", category: "Lipocavitation" };
+  if (/anti.?cellu|cellul/i.test(s))                               return { group: "Body Treatments", category: "Anti Cellulite" };
+  if (/lymph/i.test(s))                                            return { group: "Body Treatments", category: "Lymphatic Drainage" };
+  if (/laser\s*lipo/i.test(s))                                     return { group: "Body Treatments", category: "Laser Lipo" };
+  if (/ultrasound/i.test(s))                                       return { group: "Body Treatments", category: "Ultrasound" };
+  if (/sculpt/i.test(s))                                           return { group: "Body Treatments", category: "Body Sculpting" };
+  if (type === "weight_loss" || /transform|guide|programme|mixed|weight/i.test(s)) return { group: "Weight Loss", category: "Weight Loss Programme" };
+  if (type === "treatment")                                         return { group: "Body Treatments", category: "Body Treatment" };
+  return { group: "Other", category: "Other" };
 }
 
 export interface SlimmingSalesTotals {
@@ -340,13 +364,19 @@ export function useSlimmingSales(dateFrom: Date, dateTo: Date, { skipSync = fals
     }
     const totalEx = Array.from(map.values()).reduce((s, v) => s + v.revenue_ex, 0) || 1;
     return Array.from(map.entries())
-      .map(([key, v]) => ({
-        service:    labelMap.get(key) ?? key,
-        type:       v.type,
-        tx_count:   v.tx_count,
-        revenue_ex: Math.round(v.revenue_ex),
-        pct:        Math.round((v.revenue_ex / totalEx) * 1000) / 10,
-      }))
+      .map(([key, v]) => {
+        const svc = labelMap.get(key) ?? key;
+        const { group, category } = categorizeSlimmingNav(svc, v.type);
+        return {
+          service:      svc,
+          type:         v.type,
+          nav_group:    group,
+          nav_category: category,
+          tx_count:     v.tx_count,
+          revenue_ex:   Math.round(v.revenue_ex),
+          pct:          Math.round((v.revenue_ex / totalEx) * 1000) / 10,
+        };
+      })
       .sort((a, b) => b.revenue_ex - a.revenue_ex);
   }, [rows]);
 

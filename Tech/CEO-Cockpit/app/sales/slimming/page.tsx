@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
 import { SalesKPICard } from "@/components/sales/SalesKPICard";
@@ -112,6 +112,18 @@ function chartH(n: number) { return Math.max(180, n * 48 + 40); }
 // ── Main content ──────────────────────────────────────────────────────────────
 const SALARY_BLUE = "#4a7fa5";
 
+const SLM_GROUP_ORDER = ["Weight Loss", "GLP-1s", "Body Treatments", "Packages", "Medical", "Products", "Admin", "Other"] as const;
+const SLM_GROUP_COLORS: Record<string, string> = {
+  "Weight Loss":     "#3D6B3D",
+  "GLP-1s":          "#7C3AED",
+  "Body Treatments": "#3B7676",
+  "Packages":        "#B87000",
+  "Medical":         "#2563EB",
+  "Products":        "#8C7A5A",
+  "Admin":           "#9CA3AF",
+  "Other":           "#D1D5DB",
+};
+
 function enrichWithSalary(
   staff: string,
   revenue_inc: number,
@@ -206,12 +218,24 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
     pct:       t.pct,
   }));
 
-  const serviceData = byService.slice(0, 15).map(s => ({
-    name:      s.service,
-    "Revenue": s.revenue_ex,
-    type:      s.type,
-    pct:       s.pct,
-  }));
+  const byGroup = useMemo(() => {
+    const map = new Map<string, typeof byService>();
+    for (const s of byService) {
+      const g = s.nav_group;
+      if (!map.has(g)) map.set(g, []);
+      map.get(g)!.push(s);
+    }
+    return SLM_GROUP_ORDER
+      .filter(g => map.has(g))
+      .map(g => ({
+        group:         g,
+        color:         SLM_GROUP_COLORS[g] ?? "#D1D5DB",
+        services:      map.get(g)!,
+        total_revenue: map.get(g)!.reduce((s, v) => s + v.revenue_ex, 0),
+        total_count:   map.get(g)!.reduce((s, v) => s + v.tx_count, 0),
+      }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [byService]);
 
   const txTypeData = byTreatment.map(t => ({
     name:      t.treatment,
@@ -410,62 +434,72 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
         )}
       </Card>
 
-      {/* ── Revenue by Service / Product ──────────────────────────────── */}
+      {/* ── Revenue by Service / Product — grouped by nav category ─── */}
       <Card className="p-4 md:p-5">
-        <h2 className="text-base font-semibold text-foreground mb-1">Revenue by Service / Product</h2>
-        <p className="text-xs text-muted-foreground mb-4">Top 15 services/products by revenue ex-VAT · colour = service type</p>
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="text-base font-semibold text-foreground">Revenue by Service / Product</h2>
+          <span className="text-xs text-muted-foreground">grouped by website nav category</span>
+        </div>
         {byService.length === 0 ? (
           <EmptyState isLoading={isLoading} />
         ) : (
-          <ResponsiveContainer width="100%" height={chartH(Math.min(byService.length, 15))}>
-            <BarChart
-              layout="vertical"
-              data={serviceData}
-              margin={{ top: 4, right: 80, left: 130, bottom: 4 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-              <XAxis
-                type="number"
-                tickFormatter={fmtK}
-                tick={{ fontSize: 11 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                type="category"
-                dataKey="name"
-                width={126}
-                tick={{ fontSize: 11 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <Tooltip
-                formatter={tooltipFmt}
-              />
-              <Bar dataKey="Revenue" radius={[0, 4, 4, 0]} maxBarSize={28}>
-                {serviceData.map((entry, i) => (
-                  <Cell key={i} fill={SERVICE_TYPE_COLORS[entry.type] ?? SLIMMING_GREEN} />
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
+                  <th className="text-left pb-2 font-medium w-[38%]">Service / Product</th>
+                  <th className="text-left pb-2 font-medium">Category</th>
+                  <th className="text-right pb-2 font-medium">Bookings</th>
+                  <th className="text-right pb-2 font-medium">Revenue ex-VAT</th>
+                  <th className="text-left pb-2 pl-4 font-medium">Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byGroup.map(({ group, color, services, total_revenue, total_count }) => (
+                  <Fragment key={group}>
+                    <tr className="border-y border-muted bg-muted/20">
+                      <td colSpan={2} className="py-2 pl-2">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-block w-2 h-4 rounded-sm shrink-0" style={{ backgroundColor: color }} />
+                          <span className="text-xs font-bold uppercase tracking-wider" style={{ color }}>{group}</span>
+                        </div>
+                      </td>
+                      <td className="py-2 text-right text-xs text-muted-foreground font-medium pr-0.5">{total_count}</td>
+                      <td className="py-2 text-right text-xs font-semibold">{fmtK(total_revenue)}</td>
+                      <td className="py-2 pl-4 text-xs text-muted-foreground">
+                        {totals.revenue_ex > 0 ? `${((total_revenue / totals.revenue_ex) * 100).toFixed(1)}%` : ""}
+                      </td>
+                    </tr>
+                    {services.map(s => (
+                      <tr key={s.service} className="border-b last:border-0 hover:bg-muted/10">
+                        <td className="py-2 pl-5 font-medium">{s.service}</td>
+                        <td className="py-2">
+                          <span className="text-xs text-muted-foreground">{s.nav_category}</span>
+                        </td>
+                        <td className="py-2 text-right text-muted-foreground">{s.tx_count}</td>
+                        <td className="py-2 text-right font-medium">{fmtK(s.revenue_ex)}</td>
+                        <td className="py-2 pl-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                              <div className="h-full rounded-full" style={{ width: `${s.pct}%`, backgroundColor: color }} />
+                            </div>
+                            <span className="text-xs text-muted-foreground">{s.pct}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </Fragment>
                 ))}
-                <LabelList
-                  dataKey="pct"
-                  position="right"
-                  formatter={labelFmtPct}
-                  style={{ fontSize: 11, fill: "#374151" }}
-                />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-        {byService.length > 0 && (
-          <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-muted-foreground">
-            {Object.entries(SERVICE_TYPE_COLORS).map(([type, color]) =>
-              byService.some(s => s.type === type) ? (
-                <span key={type} className="flex items-center gap-1.5">
-                  <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: color }} />
-                  {type === "weight_loss" ? "Weight Loss" : type === "treatment" ? "Treatment" : type === "medical" ? "Medical" : "Product"}
-                </span>
-              ) : null
-            )}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 font-semibold">
+                  <td className="pt-2.5" colSpan={2}>Total</td>
+                  <td className="pt-2.5 text-right text-muted-foreground">{totals.tx_count}</td>
+                  <td className="pt-2.5 text-right">{fmtK(totals.revenue_ex)}</td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
           </div>
         )}
       </Card>

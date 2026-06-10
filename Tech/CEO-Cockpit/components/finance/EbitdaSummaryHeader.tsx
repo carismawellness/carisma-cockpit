@@ -1,6 +1,6 @@
 "use client";
 
-import { TrendingUp, TrendingDown, Minus, CheckCircle2, AlertCircle, Info } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { formatCurrency } from "@/lib/charts/config";
 
 const VAT_RATE = 0.18;
@@ -207,122 +207,6 @@ function BrandCard({ name, revenue, ebitda, border, loading, sppyRevenue, sppyEb
   );
 }
 
-// ── Revenue QC Widget ─────────────────────────────────────────────────────────
-
-interface QcRow {
-  label:      string;
-  sourceRev:  number;
-  ebitdaRev:  number;
-  sourceNote: string;
-}
-
-function RevenueQCWidget({
-  spaCockpit, spaRevenue, aesRevenue, slimRevenue,
-}: {
-  spaCockpit:    number;
-  spaRevenue:  number;
-  aesRevenue:  number;
-  slimRevenue: number;
-}) {
-  const spaAdj    = spaRevenue - spaCockpit;
-  const groupSrc  = spaCockpit + aesRevenue + slimRevenue;
-  const groupEbt  = spaRevenue + aesRevenue + slimRevenue;
-  const groupAdj  = groupEbt - groupSrc;
-
-  const rows: QcRow[] = [
-    { label: "Spa",        sourceRev: spaCockpit,    ebitdaRev: spaRevenue,  sourceNote: "Cockpit daily" },
-    { label: "Aesthetics", sourceRev: aesRevenue,  ebitdaRev: aesRevenue,  sourceNote: "Direct (price_ex_vat)" },
-    { label: "Slimming",   sourceRev: slimRevenue, ebitdaRev: slimRevenue, sourceNote: "Direct (price_ex_vat)" },
-  ];
-
-  // QC passes if Aes/Slim match exactly. Spa can differ (monthly adjustments = expected).
-  const aesMismatch  = Math.abs(aesRevenue - aesRevenue) > 1;  // always false — same field
-  const slimMismatch = Math.abs(slimRevenue - slimRevenue) > 1; // always false — same field
-  const allClear     = !aesMismatch && !slimMismatch;
-
-  return (
-    <div className="rounded-lg border bg-card/50 p-3">
-      <div className="flex items-center gap-1.5 mb-2.5">
-        {allClear
-          ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-          : <AlertCircle  className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
-        <span className="text-xs font-semibold">Revenue QC</span>
-        <span className="text-xs text-muted-foreground">Sales source vs EBITDA table</span>
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="w-full text-[11px]">
-          <thead>
-            <tr className="border-b text-muted-foreground">
-              <th className="text-left pb-1.5 font-medium pr-3">Brand</th>
-              <th className="text-right pb-1.5 font-medium pr-3">Sales Source</th>
-              <th className="text-right pb-1.5 font-medium pr-3">EBITDA</th>
-              <th className="text-right pb-1.5 font-medium pr-3">Δ</th>
-              <th className="text-center pb-1.5 font-medium">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(r => {
-              const adj       = r.ebitdaRev - r.sourceRev;
-              const hasAdj    = Math.abs(adj) > 1;
-              const isSpa     = r.label === "Spa";
-              return (
-                <tr key={r.label} className="border-b last:border-0">
-                  <td className="py-1.5 pr-3 font-medium">{r.label}</td>
-                  <td className="py-1.5 pr-3 text-right tabular-nums">
-                    {fmtC(r.sourceRev)}
-                    <span className="text-muted-foreground/50 ml-1 hidden sm:inline">({r.sourceNote})</span>
-                  </td>
-                  <td className="py-1.5 pr-3 text-right tabular-nums">{fmtC(r.ebitdaRev)}</td>
-                  <td className={`py-1.5 pr-3 text-right tabular-nums ${hasAdj ? "text-amber-600" : "text-muted-foreground"}`}>
-                    {!hasAdj ? "—" : `${adj > 0 ? "+" : ""}${fmtC(adj)}`}
-                  </td>
-                  <td className="py-1.5 text-center">
-                    {isSpa && hasAdj
-                      ? <span className="inline-flex items-center gap-0.5 text-amber-600" title="Expected: monthly Cockpit adjustments (wholesale, refunds, discounts)">
-                          <Info className="h-3 w-3" /> adj.
-                        </span>
-                      : <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 mx-auto" />
-                    }
-                  </td>
-                </tr>
-              );
-            })}
-
-            {/* Group total row */}
-            <tr className="bg-muted/20 font-semibold">
-              <td className="py-1.5 pr-3">Group</td>
-              <td className="py-1.5 pr-3 text-right tabular-nums">{fmtC(groupSrc)}</td>
-              <td className="py-1.5 pr-3 text-right tabular-nums">{fmtC(groupEbt)}</td>
-              <td className={`py-1.5 pr-3 text-right tabular-nums ${Math.abs(groupAdj) > 1 ? "text-amber-600" : "text-muted-foreground"}`}>
-                {Math.abs(groupAdj) < 1 ? "—" : `${groupAdj > 0 ? "+" : ""}${fmtC(groupAdj)}`}
-              </td>
-              <td className="py-1.5 text-center">
-                {Math.abs(spaAdj) < 1
-                  ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 mx-auto" />
-                  : <span className="inline-flex items-center gap-0.5 text-amber-600"><Info className="h-3 w-3" /></span>
-                }
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      {Math.abs(spaAdj) > 1 && (
-        <p className="text-[10px] text-muted-foreground mt-2 leading-relaxed">
-          <span className="font-medium text-amber-700">ℹ Spa Δ {spaAdj > 0 ? "+" : ""}{fmtC(spaAdj)}:</span>
-          {" "}Monthly Cockpit adjustments (wholesale revenue, refunds, manual corrections) not captured in daily transactions.
-        </p>
-      )}
-      {allClear && Math.abs(spaAdj) <= 1 && (
-        <p className="text-[10px] text-emerald-700 mt-1.5 font-medium">
-          All revenue sources triangulated — EBITDA figures match sales data.
-        </p>
-      )}
-    </div>
-  );
-}
-
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function EbitdaSummaryHeader({ data, loading }: EbitdaSummaryHeaderProps) {
@@ -471,15 +355,6 @@ export function EbitdaSummaryHeader({ data, loading }: EbitdaSummaryHeaderProps)
         />
       </div>
 
-      {/* Row 3 — Revenue QC */}
-      {!loading && data && (d.spaCockpitRevenue > 0 || d.aesRevenue > 0 || d.slimRevenue > 0) && (
-        <RevenueQCWidget
-          spaCockpit={d.spaCockpitRevenue}
-          spaRevenue={d.spaRevenue}
-          aesRevenue={d.aesRevenue}
-          slimRevenue={d.slimRevenue}
-        />
-      )}
     </div>
   );
 }
