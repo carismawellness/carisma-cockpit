@@ -4,7 +4,6 @@ import { Card } from "@/components/ui/card";
 import { useKPIData } from "@/lib/hooks/useKPIData";
 import { useLookups } from "@/lib/hooks/useLookups";
 import { BookingMixRow } from "@/lib/types/crm";
-import { chartColors } from "@/lib/charts/config";
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -21,38 +20,6 @@ const BRANDS = [
   { slug: "slimming", label: "Slimming" },
 ] as const;
 
-/* ------------------------------------------------------------------ */
-/*  Dummy data for brands without real booking mix                     */
-/* ------------------------------------------------------------------ */
-
-const DUMMY_BOOKING_MIX: Record<string, { name: string; value: number }[]> = {
-  spa: [
-    { name: "Deep Tissue Massage", value: 42 },
-    { name: "Hot Stone Therapy", value: 28 },
-    { name: "Aromatherapy", value: 22 },
-    { name: "Facial Treatment", value: 18 },
-    { name: "Body Wrap", value: 14 },
-    { name: "Couples Massage", value: 11 },
-    { name: "Reflexology", value: 8 },
-  ],
-  aesthetics: [
-    { name: "Filler", value: 45 },
-    { name: "Skinbooster", value: 38 },
-    { name: "Botox", value: 32 },
-    { name: "PRP", value: 18 },
-    { name: "Laser Hair Removal", value: 15 },
-    { name: "Chemical Peel", value: 12 },
-    { name: "Microneedling", value: 9 },
-  ],
-  slimming: [
-    { name: "Body Contouring", value: 35 },
-    { name: "Fat Freezing", value: 28 },
-    { name: "Cavitation", value: 22 },
-    { name: "Lymphatic Drainage", value: 16 },
-    { name: "Consultation", value: 12 },
-    { name: "RF Skin Tightening", value: 10 },
-  ],
-};
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -109,38 +76,14 @@ export function BookingMix({
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
       {visibleBrands.map((brand) => {
         const treatments = byBrand[brand.slug] ?? {};
-        let items = Object.entries(treatments)
+        const items = Object.entries(treatments)
           .map(([name, value]) => ({ name, value }))
           .sort((a, b) => b.value - a.value);
-
-        // Use dummy data if no real treatment data or if data doesn't
-        // contain recognisable treatment keywords (ETL currently returns
-        // person names instead of treatment names for some brands)
-        const TREATMENT_KEYWORDS = [
-          "massage", "therapy", "facial", "wrap", "peel", "filler", "botox",
-          "laser", "contouring", "sculpt", "cavitation", "drainage", "consult",
-          "prp", "needling", "tightening", "freez", "rf ", "skinbooster",
-          "aromatherapy", "reflexology", "hair removal", "anti-aging",
-          "body", "deep tissue", "hot stone", "couples", "prenatal",
-          "weight", "slimming", "fat", "cellulite", "nutritional",
-        ];
-        const looksLikeTreatments = items.some((t) =>
-          TREATMENT_KEYWORDS.some((kw) => t.name.toLowerCase().includes(kw))
-        );
-        const isDummy = items.length === 0 || !looksLikeTreatments;
-        if (isDummy) {
-          items = DUMMY_BOOKING_MIX[brand.slug] ?? [];
-        }
 
         const total = items.reduce((s, t) => s + t.value, 0);
 
         return (
           <Card key={brand.slug} className="p-3 md:p-6 relative">
-            {isDummy && (
-              <span className="absolute top-2 right-3 text-[10px] uppercase tracking-wider text-text-secondary bg-gray-100 px-1.5 py-0.5 rounded">
-                sample
-              </span>
-            )}
             <h3 className="text-base font-semibold text-foreground mb-4">
               {brand.label}
             </h3>

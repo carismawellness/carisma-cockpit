@@ -246,19 +246,33 @@ async function fetchBookingStats(
   return byDate;
 }
 
-// ── Unread conversation snapshot ──────────────────────────────────────────────
+// ── Unread conversation snapshot — split by channel ──────────────────────────
 
-async function fetchUnreadCount(brand: GhlBrand): Promise<number> {
-  try {
-    const data = (await ghlGet("/conversations/search", brand.apiKey, {
-      locationId: brand.locationId,
-      status: "unread",
-      limit: "1",
-    })) as { total?: number };
-    return data.total ?? 0;
-  } catch {
-    return 0;
+type UnreadCounts = { whatsapp: number; crm: number; email: number };
+
+async function fetchUnreadCounts(brand: GhlBrand): Promise<UnreadCounts> {
+  async function countByType(type: string): Promise<number> {
+    try {
+      const data = (await ghlGet("/conversations/search", brand.apiKey, {
+        locationId: brand.locationId,
+        status: "unread",
+        type,
+        limit: "1",
+      })) as { total?: number };
+      return data.total ?? 0;
+    } catch {
+      return 0;
+    }
   }
+
+  // GHL conversation types: TYPE_WHATSAPP, TYPE_SMS, TYPE_EMAIL
+  const [whatsapp, crm, email] = await Promise.all([
+    countByType("TYPE_WHATSAPP"),
+    countByType("TYPE_SMS"),
+    countByType("TYPE_EMAIL"),
+  ]);
+
+  return { whatsapp, crm, email };
 }
 
 // ── Supabase helpers ──────────────────────────────────────────────────────────
@@ -355,8 +369,8 @@ export async function POST(req: NextRequest) {
       log.push(`[${brand.slug}] fetching bookings...`);
       const bookingStats = await fetchBookingStats(brand, fromMs, toMs);
 
-      log.push(`[${brand.slug}] fetching unread count...`);
-      const unreadCount = await fetchUnreadCount(brand);
+      log.push(`[${brand.slug}] fetching unread counts...`);
+      const unreadCounts = await fetchUnreadCounts(brand);
 
       const dates = allDatesInRange(fromMs, toMs);
       const crmRows: object[] = [];
@@ -379,8 +393,10 @@ export async function POST(req: NextRequest) {
           leads_crm:            cs.total   > 0 ? cs.total   : null,
           appointments_booked:  bs.count   > 0 ? bs.count   : null,
           total_sales:          bs.count   > 0 ? bs.revenue : null,
-          // unreplied is a point-in-time snapshot — only meaningful for today
-          unreplied_whatsapp:   dateStr === todayStr ? unreadCount : null,
+          // unreplied counts are point-in-time snapshots — only meaningful for today
+          unreplied_whatsapp:   dateStr === todayStr ? unreadCounts.whatsapp : null,
+          unreplied_crm:        dateStr === todayStr ? unreadCounts.crm      : null,
+          unreplied_email:      dateStr === todayStr ? unreadCounts.email    : null,
           unworked_leads:       cs.unworked > 0 ? cs.unworked : null,
           conversion_rate_pct:  conversionPct,
           etl_synced_at:        syncedAt,
@@ -416,7 +432,8 @@ export async function POST(req: NextRequest) {
       const totalBookings = [...bookingStats.values()].reduce((s, v) => s + v.count, 0);
       log.push(
         `[${brand.slug}] ✓ ${dates.length} days | ` +
-        `${totalContacts} contacts | ${totalBookings} bookings | ${unreadCount} unread`
+        `${totalContacts} contacts | ${totalBookings} bookings | ` +
+        `wa:${unreadCounts.whatsapp} crm:${unreadCounts.crm} email:${unreadCounts.email} unread`
       );
     } catch (e) {
       const msg = `[${brand.slug}] ${String(e)}`;

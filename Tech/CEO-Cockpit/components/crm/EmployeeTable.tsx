@@ -154,8 +154,8 @@ export function EmployeeTable({
   const tableData = hasRealData
     ? realTableData
     : brandFilter
-    ? DUMMY_EMPLOYEES.filter((e) => e.brand === brandFilter)
-    : DUMMY_EMPLOYEES;
+      ? DUMMY_EMPLOYEES.filter((e) => e.brand === brandFilter)
+      : DUMMY_EMPLOYEES;
 
   const columns = [
     { key: "name", label: "Name" },
@@ -243,22 +243,22 @@ export function EmployeeTable({
     },
   ];
 
-  // --- Agent detail chart ---
+  11  // --- Agent detail chart ---
   const selectedAgentRows = selectedAgent
     ? agents.find((a) => a.name === selectedAgent)?.rows ?? []
     : [];
   const agentDailyData = selectedAgent
     ? hasRealData
       ? [...selectedAgentRows]
-          .sort((a, b) => a.date.localeCompare(b.date))
-          .map((r) => ({
-            date: format(new Date(r.date), "MMM dd"),
-            Sales: r.total_sales ?? 0,
-            Bookings: r.total_booked ?? 0,
-            "Conv %": r.conversion_rate_pct ?? 0,
-            "Deposit %": r.deposit_pct ?? 0,
-            "Missed %": 0,
-          }))
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .map((r) => ({
+          date: format(new Date(r.date), "MMM dd"),
+          Sales: r.total_sales ?? 0,
+          Bookings: r.total_booked ?? 0,
+          "Conv %": r.conversion_rate_pct ?? 0,
+          "Deposit %": r.deposit_pct ?? 0,
+          "Missed %": 0,
+        }))
       : generateDummyDailyData(selectedAgent)
     : [];
 
