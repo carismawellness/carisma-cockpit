@@ -122,19 +122,19 @@ const SLM_GROUP_COLORS: Record<string, string> = {
   "Other":           "#D1D5DB",
 };
 
+// Slimming sales surface uses GROSS (paid, inc-VAT). K% = salary / gross.
 function enrichWithSalary(
   staff: string,
-  revenue_inc: number,
-  revenue_ex: number,
+  revenue_gross: number,
   getSalary: (name: string) => number | null,
 ) {
   const salary = getSalary(staff) ?? 0;
-  const salary_cost = salary > 0 ? Math.min(salary, revenue_inc) : 0;
-  const k_pct = salary > 0 && revenue_ex > 0 ? +(salary / revenue_ex * 100).toFixed(0) : null;
-  const revStr = revenue_inc >= 1000 ? `€${(revenue_inc / 1000).toFixed(1)}K` : `€${revenue_inc}`;
+  const salary_cost = salary > 0 ? Math.min(salary, revenue_gross) : 0;
+  const k_pct = salary > 0 && revenue_gross > 0 ? +(salary / revenue_gross * 100).toFixed(0) : null;
+  const revStr = revenue_gross >= 1000 ? `€${(revenue_gross / 1000).toFixed(1)}K` : `€${revenue_gross}`;
   return {
     salary_cost,
-    revenue_net_inc: Math.max(0, revenue_inc - salary_cost),
+    revenue_net_inc: Math.max(0, revenue_gross - salary_cost),
     k_label: k_pct != null ? `${k_pct}%` : null as string | null,
     bar_label: revStr,
   };
@@ -154,9 +154,9 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
   const delta = useMemo(() => {
     const calc = (curr: number, prior: number) => prior > 0 ? ((curr - prior) / prior) * 100 : undefined;
     return {
-      net:     calc(totals.revenue_inc,         prevTotals.revenue_inc),
-      service: calc(totals.service_revenue_inc, prevTotals.service_revenue_inc),
-      retail:  calc(totals.retail_revenue_inc,  prevTotals.retail_revenue_inc),
+      net:     calc(totals.revenue_paid,         prevTotals.revenue_paid),
+      service: calc(totals.service_revenue_paid, prevTotals.service_revenue_paid),
+      retail:  calc(totals.retail_revenue_paid,  prevTotals.retail_revenue_paid),
     };
   }, [totals, prevTotals]);
 
@@ -183,7 +183,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
     regularStaff.map(s => ({
       name: s.staff,
       "Bookings": s.tx_count,
-      ...enrichWithSalary(s.staff, s.revenue_inc, s.revenue_ex, getSlmSalary),
+      ...enrichWithSalary(s.staff, s.revenue_paid, getSlmSalary),
     })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [regularStaff, getSlmSalary]
@@ -193,17 +193,19 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
     retailStaff.map(s => ({
       name: s.staff,
       "Bookings": s.tx_count,
-      ...enrichWithSalary(s.staff, s.revenue_inc, s.revenue_ex, getSlmSalary),
+      ...enrichWithSalary(s.staff, s.revenue_paid, getSlmSalary),
     })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [retailStaff, getSlmSalary]
   );
 
+  // Tx (treatments) tab has no `paid` column — its ex-VAT figure is the
+  // session-level revenue and is the only number on that tab.
   const txStaffData = useMemo(() =>
     txByStaff.map(s => ({
       name: s.staff,
       "Bookings": s.tx_count,
-      ...enrichWithSalary(s.staff, s.revenue_ex, s.revenue_ex, getSlmSalary),
+      ...enrichWithSalary(s.staff, s.revenue_ex, getSlmSalary),
     })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [txByStaff, getSlmSalary]
@@ -211,7 +213,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
 
   const serviceTypeData = byServiceType.map(t => ({
     name:      t.label,
-    "Revenue": t.revenue_ex,
+    "Revenue": t.revenue_paid,
     type:      t.type,
     pct:       t.pct,
   }));
@@ -229,7 +231,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
         group:         g,
         color:         SLM_GROUP_COLORS[g] ?? "#D1D5DB",
         services:      map.get(g)!,
-        total_revenue: map.get(g)!.reduce((s, v) => s + v.revenue_ex, 0),
+        total_revenue: map.get(g)!.reduce((s, v) => s + v.revenue_paid, 0),
         total_count:   map.get(g)!.reduce((s, v) => s + v.tx_count, 0),
       }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -251,7 +253,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
             Slimming — Sales
           </h1>
           <p className="text-sm text-muted-foreground">
-            All figures in EUR · inc-VAT and ex-VAT shown · Revenue = services delivered (Full Price)
+            All figures in EUR · gross (inc-VAT) · Revenue = actually collected (Paid)
           </p>
           <div className="flex flex-wrap gap-2 pt-1">
             <a
@@ -283,23 +285,23 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
       )}
       <SalesKPIGrid columns={3}>
         <SalesKPICard
-          label="Net Revenue"
-          value={fmtK(totals.revenue_inc)}
-          subtitle={`${fmtK(totals.revenue_ex)} ex-VAT · ${totals.tx_count} bookings · VAT ${fmtK(totals.vat_amount)}`}
+          label="Gross Revenue"
+          value={fmtK(totals.revenue_paid)}
+          subtitle={`inc-VAT · ${totals.tx_count} bookings`}
           yoyChange={delta.net}
           yoyLabel="vs prev period"
         />
         <SalesKPICard
           label="Service Revenue"
-          value={fmtK(totals.service_revenue_inc)}
-          subtitle={`${pct(totals.service_revenue_ex, totals.revenue_ex)} of net`}
+          value={fmtK(totals.service_revenue_paid)}
+          subtitle={`${pct(totals.service_revenue_paid, totals.revenue_paid)} of gross`}
           yoyChange={delta.service}
           yoyLabel="vs prev period"
         />
         <SalesKPICard
           label="Retail Revenue"
-          value={fmtK(totals.retail_revenue_inc)}
-          subtitle={`${pct(totals.retail_revenue_ex, totals.revenue_ex)} of net`}
+          value={fmtK(totals.retail_revenue_paid)}
+          subtitle={`${pct(totals.retail_revenue_paid, totals.revenue_paid)} of gross`}
           yoyChange={delta.retail}
           yoyLabel="vs prev period"
         />
@@ -452,7 +454,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
             <div className="flex flex-wrap gap-3">
               {byGroup.map(({ group, color, total_revenue, total_count }) => {
                 const groupAov = total_count > 0 ? Math.round(total_revenue / total_count) : 0;
-                const sharePct = totals.revenue_ex > 0 ? ((total_revenue / totals.revenue_ex) * 100).toFixed(0) : "0";
+                const sharePct = totals.revenue_paid > 0 ? ((total_revenue / totals.revenue_paid) * 100).toFixed(0) : "0";
                 return (
                   <div key={group} className="flex items-center gap-2 rounded-lg border px-3 py-2 bg-card/50 min-w-[140px]">
                     <span className="inline-block w-2 h-8 rounded-sm shrink-0" style={{ backgroundColor: color }} />
@@ -475,13 +477,13 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                     <th className="text-left pb-2 font-medium">Category</th>
                     <th className="text-right pb-2 font-medium">Bookings</th>
                     <th className="text-right pb-2 font-medium">AOV</th>
-                    <th className="text-right pb-2 font-medium">Revenue ex-VAT</th>
+                    <th className="text-right pb-2 font-medium">Revenue (inc-VAT)</th>
                     <th className="text-left pb-2 pl-4 font-medium">Share</th>
                   </tr>
                 </thead>
                 <tbody>
                   {byGroup.map(({ group, color, services, total_revenue, total_count }) => {
-                    const visibleServices = services.filter(s => s.revenue_ex > 0);
+                    const visibleServices = services.filter(s => s.revenue_paid > 0);
                     if (visibleServices.length === 0) return null;
                     const groupAov = total_count > 0 ? Math.round(total_revenue / total_count) : 0;
                     return (
@@ -497,7 +499,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                           <td className="py-2 text-right text-xs font-semibold tabular-nums">{fmtK(groupAov)}</td>
                           <td className="py-2 text-right text-xs font-semibold tabular-nums">{fmtK(total_revenue)}</td>
                           <td className="py-2 pl-4 text-xs text-muted-foreground tabular-nums">
-                            {totals.revenue_ex > 0 ? `${((total_revenue / totals.revenue_ex) * 100).toFixed(1)}%` : ""}
+                            {totals.revenue_paid > 0 ? `${((total_revenue / totals.revenue_paid) * 100).toFixed(1)}%` : ""}
                           </td>
                         </tr>
                         {visibleServices.map(s => (
@@ -508,7 +510,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                             </td>
                             <td className="py-2 text-right text-muted-foreground tabular-nums">{s.tx_count}</td>
                             <td className="py-2 text-right text-muted-foreground tabular-nums">{fmtK(s.aov)}</td>
-                            <td className="py-2 text-right font-medium tabular-nums">{fmtK(s.revenue_ex)}</td>
+                            <td className="py-2 text-right font-medium tabular-nums">{fmtK(s.revenue_paid)}</td>
                             <td className="py-2 pl-4">
                               <div className="flex items-center gap-2">
                                 <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
@@ -527,8 +529,8 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                   <tr className="border-t-2 font-semibold">
                     <td className="pt-2.5" colSpan={2}>Total</td>
                     <td className="pt-2.5 text-right text-muted-foreground tabular-nums">{totals.tx_count}</td>
-                    <td className="pt-2.5 text-right text-muted-foreground tabular-nums">{fmtK(totals.revenue_ex > 0 && totals.tx_count > 0 ? Math.round(totals.revenue_ex / totals.tx_count) : 0)}</td>
-                    <td className="pt-2.5 text-right tabular-nums">{fmtK(totals.revenue_ex)}</td>
+                    <td className="pt-2.5 text-right text-muted-foreground tabular-nums">{fmtK(totals.revenue_paid > 0 && totals.tx_count > 0 ? Math.round(totals.revenue_paid / totals.tx_count) : 0)}</td>
+                    <td className="pt-2.5 text-right tabular-nums">{fmtK(totals.revenue_paid)}</td>
                     <td />
                   </tr>
                 </tfoot>

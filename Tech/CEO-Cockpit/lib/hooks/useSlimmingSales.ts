@@ -24,18 +24,20 @@ export interface SlimmingSaleRow {
 }
 
 export interface StaffBreakdown {
-  staff:       string;
-  tx_count:    number;
-  revenue_ex:  number;
-  revenue_inc: number;
+  staff:        string;
+  tx_count:     number;
+  revenue_ex:   number;            // ex-VAT (kept for back-compat)
+  revenue_inc:  number;            // sticker inc-VAT (full_price), pre-discount
+  revenue_paid: number;            // gross actually collected inc-VAT (paid)
 }
 
 export interface ServiceTypeBreakdown {
-  type:        string;
-  label:       string;
-  tx_count:    number;
-  revenue_ex:  number;
-  pct:         number;
+  type:         string;
+  label:        string;
+  tx_count:     number;
+  revenue_ex:   number;
+  revenue_paid: number;            // gross actually collected inc-VAT
+  pct:          number;            // share of paid total
 }
 
 export interface ServiceBreakdown {
@@ -45,8 +47,9 @@ export interface ServiceBreakdown {
   nav_category: string;
   tx_count:     number;
   revenue_ex:   number;
-  aov:          number;
-  pct:          number;
+  revenue_paid: number;            // gross actually collected inc-VAT
+  aov:          number;            // AOV computed on paid (inc-VAT)
+  pct:          number;            // share of paid total
 }
 
 export function categorizeSlimmingNav(service: string, type: string): { group: string; category: string } {
@@ -72,15 +75,18 @@ export function categorizeSlimmingNav(service: string, type: string): { group: s
 }
 
 export interface SlimmingSalesTotals {
-  revenue_ex:          number;
-  revenue_inc:         number;
-  vat_amount:          number;
-  tx_count:            number;
-  service_revenue_ex:  number;
-  service_revenue_inc: number;
-  retail_revenue_ex:   number;
-  retail_revenue_inc:  number;
-  last_synced:         string | null;
+  revenue_ex:           number;    // ex-VAT
+  revenue_inc:          number;    // sticker inc-VAT (full_price)
+  revenue_paid:         number;    // gross actually collected (paid) — sales surface headline
+  vat_amount:           number;
+  tx_count:             number;
+  service_revenue_ex:   number;
+  service_revenue_inc:  number;
+  service_revenue_paid: number;
+  retail_revenue_ex:    number;
+  retail_revenue_inc:   number;
+  retail_revenue_paid:  number;
+  last_synced:          string | null;
 }
 
 export interface UseSlimmingSalesResult {
@@ -282,14 +288,16 @@ export function useSlimmingSales(dateFrom: Date, dateTo: Date, { skipSync = fals
       const label = raw === "(Unassigned)" ? raw : raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
       const ex    = r.price_ex_vat ?? 0;
       const inc   = r.full_price   ?? 0;
+      const paid  = r.paid         ?? 0;
       if (!labelMap.has(key)) labelMap.set(key, label);
       if (!map.has(key)) {
-        map.set(key, { staff: label, tx_count: 0, revenue_ex: 0, revenue_inc: 0 });
+        map.set(key, { staff: label, tx_count: 0, revenue_ex: 0, revenue_inc: 0, revenue_paid: 0 });
       }
       const agg = map.get(key)!;
       agg.tx_count++;
-      agg.revenue_ex  += ex;
-      agg.revenue_inc += inc;
+      agg.revenue_ex   += ex;
+      agg.revenue_inc  += inc;
+      agg.revenue_paid += paid;
     }
 
     // Fuzzy post-merge: collapse near-identical names (e.g. "ivana" vs "ivava")
@@ -308,9 +316,10 @@ export function useSlimmingSales(dateFrom: Date, dateTo: Date, { skipSync = fals
         if (lev(a, b) <= threshold) {
           const [keep, drop] = a.length >= b.length ? [a, b] : [b, a];
           const kv = map.get(keep)!, dv = map.get(drop)!;
-          kv.tx_count   += dv.tx_count;
-          kv.revenue_ex  += dv.revenue_ex;
-          kv.revenue_inc += dv.revenue_inc;
+          kv.tx_count     += dv.tx_count;
+          kv.revenue_ex   += dv.revenue_ex;
+          kv.revenue_inc  += dv.revenue_inc;
+          kv.revenue_paid += dv.revenue_paid;
           map.delete(drop);
           labelMap.delete(drop);
         }
@@ -320,93 +329,103 @@ export function useSlimmingSales(dateFrom: Date, dateTo: Date, { skipSync = fals
     return Array.from(map.entries())
       .map(([key, s]) => ({
         ...s,
-        staff:       labelMap.get(key) ?? s.staff,
-        revenue_ex:  Math.round(s.revenue_ex),
-        revenue_inc: Math.round(s.revenue_inc),
+        staff:        labelMap.get(key) ?? s.staff,
+        revenue_ex:   Math.round(s.revenue_ex),
+        revenue_inc:  Math.round(s.revenue_inc),
+        revenue_paid: Math.round(s.revenue_paid),
       }))
-      .sort((a, b) => b.revenue_ex - a.revenue_ex);
+      .sort((a, b) => b.revenue_paid - a.revenue_paid);
   }, [rows]);
 
   // ── 4. By Service Type ───────────────────────────────────────────────────────
   const byServiceType = useMemo<ServiceTypeBreakdown[]>(() => {
-    const map = new Map<string, { tx_count: number; revenue_ex: number }>();
+    const map = new Map<string, { tx_count: number; revenue_ex: number; revenue_paid: number }>();
     for (const r of rows) {
       const type = r.service_type ?? "unknown";
-      if (!map.has(type)) map.set(type, { tx_count: 0, revenue_ex: 0 });
+      if (!map.has(type)) map.set(type, { tx_count: 0, revenue_ex: 0, revenue_paid: 0 });
       const agg = map.get(type)!;
       agg.tx_count++;
-      agg.revenue_ex += r.price_ex_vat ?? 0;
+      agg.revenue_ex   += r.price_ex_vat ?? 0;
+      agg.revenue_paid += r.paid         ?? 0;
     }
-    const totalEx = Array.from(map.values()).reduce((s, v) => s + v.revenue_ex, 0) || 1;
+    const totalPaid = Array.from(map.values()).reduce((s, v) => s + v.revenue_paid, 0) || 1;
     return Array.from(map.entries())
       .map(([type, v]) => ({
         type,
-        label:      SERVICE_TYPE_LABELS[type] ?? type,
-        tx_count:   v.tx_count,
-        revenue_ex: Math.round(v.revenue_ex),
-        pct:        Math.round((v.revenue_ex / totalEx) * 1000) / 10,
+        label:        SERVICE_TYPE_LABELS[type] ?? type,
+        tx_count:     v.tx_count,
+        revenue_ex:   Math.round(v.revenue_ex),
+        revenue_paid: Math.round(v.revenue_paid),
+        pct:          Math.round((v.revenue_paid / totalPaid) * 1000) / 10,
       }))
-      .sort((a, b) => b.revenue_ex - a.revenue_ex);
+      .sort((a, b) => b.revenue_paid - a.revenue_paid);
   }, [rows]);
 
   // ── 5. By Service ────────────────────────────────────────────────────────────
   const byService = useMemo<ServiceBreakdown[]>(() => {
-    const map      = new Map<string, { type: string; tx_count: number; revenue_ex: number }>();
+    const map      = new Map<string, { type: string; tx_count: number; revenue_ex: number; revenue_paid: number }>();
     const labelMap = new Map<string, string>();
     for (const r of rows) {
       const raw   = r.service_description?.trim() || "(Unspecified)";
       const label = canonicalize(raw);
       const key   = label.toLowerCase();
       if (!labelMap.has(key)) labelMap.set(key, label);
-      if (!map.has(key)) map.set(key, { type: r.service_type ?? "unknown", tx_count: 0, revenue_ex: 0 });
+      if (!map.has(key)) map.set(key, { type: r.service_type ?? "unknown", tx_count: 0, revenue_ex: 0, revenue_paid: 0 });
       const agg = map.get(key)!;
       agg.tx_count++;
-      agg.revenue_ex += r.price_ex_vat ?? 0;
+      agg.revenue_ex   += r.price_ex_vat ?? 0;
+      agg.revenue_paid += r.paid         ?? 0;
     }
-    const totalEx = Array.from(map.values()).reduce((s, v) => s + v.revenue_ex, 0) || 1;
+    const totalPaid = Array.from(map.values()).reduce((s, v) => s + v.revenue_paid, 0) || 1;
     return Array.from(map.entries())
       .map(([key, v]) => {
         const svc = labelMap.get(key) ?? key;
         const { group, category } = categorizeSlimmingNav(svc, v.type);
-        const rev = Math.round(v.revenue_ex);
         return {
           service:      svc,
           type:         v.type,
           nav_group:    group,
           nav_category: category,
           tx_count:     v.tx_count,
-          revenue_ex:   rev,
-          aov:          v.tx_count > 0 ? Math.round(v.revenue_ex / v.tx_count) : 0,
-          pct:          Math.round((v.revenue_ex / totalEx) * 1000) / 10,
+          revenue_ex:   Math.round(v.revenue_ex),
+          revenue_paid: Math.round(v.revenue_paid),
+          aov:          v.tx_count > 0 ? Math.round(v.revenue_paid / v.tx_count) : 0,
+          pct:          Math.round((v.revenue_paid / totalPaid) * 1000) / 10,
         };
       })
-      .sort((a, b) => b.revenue_ex - a.revenue_ex);
+      .sort((a, b) => b.revenue_paid - a.revenue_paid);
   }, [rows]);
 
   // ── 6. Totals ────────────────────────────────────────────────────────────────
   const totals = useMemo<SlimmingSalesTotals>(() => {
-    let ex = 0, inc = 0, svcEx = 0, svcInc = 0, retEx = 0, retInc = 0;
+    let ex = 0, inc = 0, paid = 0;
+    let svcEx = 0, svcInc = 0, svcPaid = 0;
+    let retEx = 0, retInc = 0, retPaid = 0;
     for (const r of rows) {
       const e = r.price_ex_vat ?? 0;
       const i = r.full_price   ?? 0;
-      ex  += e; inc += i;
-      if (r.service_type === "product") { retEx += e; retInc += i; }
-      else                              { svcEx += e; svcInc += i; }
+      const p = r.paid         ?? 0;
+      ex  += e; inc += i; paid += p;
+      if (r.service_type === "product") { retEx += e; retInc += i; retPaid += p; }
+      else                              { svcEx += e; svcInc += i; svcPaid += p; }
     }
     const last = rows.reduce((best, r) => {
       if (!r.synced_at) return best;
       return (!best || r.synced_at > best) ? r.synced_at : best;
     }, null as string | null);
     return {
-      revenue_ex:          Math.round(ex),
-      revenue_inc:         Math.round(inc),
-      vat_amount:          Math.round(inc - ex),
-      tx_count:            rows.length,
-      service_revenue_ex:  Math.round(svcEx),
-      service_revenue_inc: Math.round(svcInc),
-      retail_revenue_ex:   Math.round(retEx),
-      retail_revenue_inc:  Math.round(retInc),
-      last_synced:         last,
+      revenue_ex:           Math.round(ex),
+      revenue_inc:          Math.round(inc),
+      revenue_paid:         Math.round(paid),
+      vat_amount:           Math.round(inc - ex),
+      tx_count:             rows.length,
+      service_revenue_ex:   Math.round(svcEx),
+      service_revenue_inc:  Math.round(svcInc),
+      service_revenue_paid: Math.round(svcPaid),
+      retail_revenue_ex:    Math.round(retEx),
+      retail_revenue_inc:   Math.round(retInc),
+      retail_revenue_paid:  Math.round(retPaid),
+      last_synced:          last,
     };
   }, [rows]);
 
