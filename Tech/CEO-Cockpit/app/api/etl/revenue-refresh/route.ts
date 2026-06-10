@@ -23,11 +23,12 @@ export async function POST(req: NextRequest) {
   const payload = JSON.stringify({ date_from, date_to, force });
   const headers = { "Content-Type": "application/json" };
 
-  const [cockpitRes, aestheticsRes, slimmingSalesRes, slimmingTxRes] = await Promise.allSettled([
+  const [cockpitRes, aestheticsRes, slimmingSalesRes, slimmingTxRes, spaEmpRes] = await Promise.allSettled([
     fetch(`${BASE_URL}/api/etl/cockpit-revenue`,        { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/aesthetics-sales`,     { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/slimming-sales`,       { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/slimming-treatments`,  { method: "POST", headers, body: payload }),
+    fetch(`${BASE_URL}/api/etl/spa-services-by-employee`, { method: "POST", headers, body: payload }),
   ]);
 
   const outcome = (r: PromiseSettledResult<Response>) =>
@@ -40,6 +41,7 @@ export async function POST(req: NextRequest) {
       aesthetics:         outcome(aestheticsRes),
       slimming_sales:     outcome(slimmingSalesRes),
       slimming_treatments: outcome(slimmingTxRes),
+      spa_employees:      outcome(spaEmpRes),
     },
   });
 }
