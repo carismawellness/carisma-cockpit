@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { AgentTeamBanner } from "@/components/crm/AgentTeamBanner";
 import { AgentLeaderboardCards } from "@/components/crm/AgentLeaderboardCards";
@@ -42,23 +43,37 @@ function IndividualKPIsContent({
 }) {
   const { agents, isLoading, isError, error } = useCrmAgents(dateFrom, dateTo);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncDone, setSyncDone] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const handleSync = useCallback(async () => {
     setIsSyncing(true);
     setSyncError(null);
     try {
       const res = await fetch("/api/etl/crm-agents", { method: "POST" });
+      const json = await res.json().catch(() => ({})) as {
+        status?: string;
+        errors?: string[];
+        error?: string;
+      };
       if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        setSyncError((json as { error?: string }).error ?? `HTTP ${res.status}`);
+        setSyncError(json.error ?? `HTTP ${res.status}`);
+        return;
       }
+      if (json.errors?.length) {
+        setSyncError(`Partial sync — ${json.errors.length} agent(s) failed: ${json.errors[0]}`);
+      }
+      // Invalidate so useCrmAgents re-fetches fresh data from Supabase
+      await queryClient.invalidateQueries({ queryKey: ["crm-agents"] });
+      setSyncDone(true);
+      setTimeout(() => setSyncDone(false), 4000);
     } catch (e) {
       setSyncError(String(e));
     } finally {
       setIsSyncing(false);
     }
-  }, []);
+  }, [queryClient]);
 
   return (
     <>
@@ -78,10 +93,14 @@ function IndividualKPIsContent({
         <button
           onClick={handleSync}
           disabled={isSyncing || isLoading}
-          className="flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg border hover:bg-muted transition-colors disabled:opacity-50"
+          className={`flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg border transition-colors disabled:opacity-50 ${
+            syncDone
+              ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+              : "hover:bg-muted"
+          }`}
         >
           <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin" : ""}`} />
-          {isSyncing ? "Syncing…" : "Re-Sync"}
+          {isSyncing ? "Pulling from sheet…" : syncDone ? "Updated ✓" : "Re-Sync"}
         </button>
       </div>
 
