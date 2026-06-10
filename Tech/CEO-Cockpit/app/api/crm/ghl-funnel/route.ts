@@ -143,25 +143,32 @@ async function diagnoseFilters(
     }
   }
 
-  // Try POST advanced search with various body shapes
+  // Try POST advanced search — locationId camelCase + filters array
   const postBodies: Record<string, Record<string, unknown>> = {
-    "POST_snake_eq": {
-      location_id: locationId,
-      pipeline_id: pipelineId,
-      pipeline_stage_id: stageId,
-      filters: [{ field: "dateAdded", operator: "eq", value: dateFromIso }],
-      limit: 1,
-    },
-    "POST_snake_minimal": {
-      location_id: locationId,
-      pipeline_id: pipelineId,
-      pipeline_stage_id: stageId,
-      limit: 1,
-    },
-    "POST_camel_minimal": {
+    "POST_filters_pipeline_only": {
       locationId,
-      pipelineId,
-      pipelineStageId: stageId,
+      filters: [
+        { field: "pipeline_id", operator: "eq", value: pipelineId },
+        { field: "pipeline_stage_id", operator: "eq", value: stageId },
+      ],
+      limit: 1,
+    },
+    "POST_filters_dateAdded_gte_lte": {
+      locationId,
+      filters: [
+        { field: "pipeline_id", operator: "eq", value: pipelineId },
+        { field: "pipeline_stage_id", operator: "eq", value: stageId },
+        { field: "dateAdded", operator: "gte", value: dateFromIso },
+        { field: "dateAdded", operator: "lte", value: dateFromIso },
+      ],
+      limit: 1,
+    },
+    "POST_filters_just_eq_op_check": {
+      locationId,
+      filters: [
+        { field: "pipeline_stage_id", operator: "eq", value: stageId },
+        { field: "dateAdded", operator: "between", value: [dateFromIso, dateFromIso] },
+      ],
       limit: 1,
     },
   };
