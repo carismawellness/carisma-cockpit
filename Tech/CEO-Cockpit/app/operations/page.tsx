@@ -20,6 +20,7 @@ import {
   ReferenceLine,
 } from "recharts";
 import { cn } from "@/lib/utils";
+import { BRAND } from "@/lib/constants/design-tokens";
 import {
   ShieldAlert,
   AlertTriangle,
@@ -33,7 +34,9 @@ import {
    ═══════════════════════════════════════════════════════════════════════ */
 
 const REVIEW_LOCATIONS = [
-  { name: "InterContinental", short: "Inter",  totalReviews: 190, avgScore: 4.5, prevScore: 4.4, color: "#8C7A5A" },
+  // Spa-hotel locations use a categorical palette (not brand colors).
+  // Carisma Aesthetics + Slimming use their canonical BRAND.x.dark.
+  { name: "InterContinental", short: "Inter",  totalReviews: 190, avgScore: 4.5, prevScore: 4.4, color: BRAND.spa.dark },
   { name: "Hugos",            short: "Hugos",  totalReviews: 151, avgScore: 4.8, prevScore: 4.7, color: "#B8C9E0" },
   { name: "Ramla Bay",        short: "Ramla",  totalReviews: 99,  avgScore: 4.9, prevScore: 4.8, color: "#E5B8B0" },
   { name: "Hyatt",            short: "Hyatt",  totalReviews: 64,  avgScore: 4.8, prevScore: 4.7, color: "#E5C088" },
@@ -41,8 +44,8 @@ const REVIEW_LOCATIONS = [
   { name: "Novotel",          short: "Novo",   totalReviews: 45,  avgScore: 4.8, prevScore: 4.5, color: "#B5DCDC" },
   { name: "Labranda",         short: "Labr",   totalReviews: 36,  avgScore: 4.7, prevScore: 4.6, color: "#C7C4BD" },
   { name: "Sunny",            short: "Sunny",  totalReviews: 32,  avgScore: 4.9, prevScore: 4.9, color: "#E5B5D0" },
-  { name: "Carisma Aesthetics", short: "Aes",  totalReviews: 36,  avgScore: 4.8, prevScore: 4.7, color: "#DEEBEB" },
-  { name: "Carisma Slimming",   short: "Slim", totalReviews: 10,  avgScore: 4.9, prevScore: 4.9, color: "#C9D8C1" },
+  { name: "Carisma Aesthetics", short: "Aes",  totalReviews: 36,  avgScore: 4.8, prevScore: 4.7, color: BRAND.aesthetics.dark },
+  { name: "Carisma Slimming",   short: "Slim", totalReviews: 10,  avgScore: 4.9, prevScore: 4.9, color: BRAND.slimming.dark },
 ];
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -312,9 +315,9 @@ function OperationsContent({
               <XAxis type="number" tick={{ fontSize: 11 }} />
               <YAxis type="category" dataKey="name" width={145} tick={{ fontSize: 12 }} />
               <Tooltip
-                formatter={(value, name) => {
-                  if (name === "Total Reviews") return [value, name];
-                  return [`${Number(value).toFixed(1)} ★`, name];
+                formatter={(value: unknown, name) => {
+                  if (name === "Total Reviews") return [String(Number(value)), String(name ?? "")];
+                  return [`${Number(value).toFixed(1)} ★`, String(name ?? "")];
                 }}
               />
               <Bar dataKey="totalReviews" name="Total Reviews" radius={[0, 4, 4, 0]} barSize={22}>
@@ -375,11 +378,11 @@ function OperationsContent({
               <tr className="border-b border-warm-border/50">
                 <td className="py-2 px-3 font-semibold text-foreground sticky left-0 bg-white z-10">Total Sales</td>
                 {DILIGENCE_DATA.map((d) => (
-                  <td key={d.location} className="text-center py-2 px-1.5 font-medium text-foreground text-xs">
+                  <td key={d.location} className="text-center py-2 px-1.5 font-medium text-foreground text-xs tabular-nums">
                     {formatCurrency(d.totalSales)}
                   </td>
                 ))}
-                <td className="text-center py-2 px-3 font-bold text-foreground bg-muted/20 text-xs">
+                <td className="text-center py-2 px-3 font-bold text-foreground bg-muted/20 text-xs tabular-nums">
                   {formatCurrency(diligenceTotals.totalSales)}
                 </td>
               </tr>
@@ -501,7 +504,7 @@ function OperationsContent({
               <CartesianGrid strokeDasharray="3 3" horizontal={false} />
               <XAxis type="number" domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11 }} />
               <YAxis type="category" dataKey="location" width={145} tick={{ fontSize: 12 }} />
-              <Tooltip formatter={(v) => [`${v}%`, "Score"]} />
+              <Tooltip formatter={(v: unknown, name) => [`${Number(v)}%`, String(name ?? "")]} />
               <Bar dataKey="score" name="Facility %" radius={[0, 4, 4, 0]} barSize={22}>
                 {facilityBarData.map((entry, i) => (
                   <Cell key={i} fill={complianceColor(entry.score)} fillOpacity={0.85} />
@@ -526,7 +529,7 @@ function OperationsContent({
                   }}
                 />
               </Bar>
-              <ReferenceLine x={85} stroke="#94A3B8" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: "85%", position: "top", fill: "#94A3B8", fontSize: 10 }} />
+              <ReferenceLine x={85} stroke="#D97706" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: "Target 85%", position: "top", fill: "#D97706", fontSize: 10 }} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -572,7 +575,7 @@ function OperationsContent({
               <CartesianGrid strokeDasharray="3 3" horizontal={false} />
               <XAxis type="number" domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11 }} />
               <YAxis type="category" dataKey="location" width={145} tick={{ fontSize: 12 }} />
-              <Tooltip formatter={(v) => [`${v}%`, "Score"]} />
+              <Tooltip formatter={(v: unknown, name) => [`${Number(v)}%`, String(name ?? "")]} />
               <Bar dataKey="score" name="Mystery Guest %" radius={[0, 4, 4, 0]} barSize={22}>
                 {mysteryBarData.map((entry, i) => (
                   <Cell key={i} fill={complianceColor(entry.score)} fillOpacity={0.85} />
@@ -597,7 +600,7 @@ function OperationsContent({
                   }}
                 />
               </Bar>
-              <ReferenceLine x={85} stroke="#94A3B8" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: "85%", position: "top", fill: "#94A3B8", fontSize: 10 }} />
+              <ReferenceLine x={85} stroke="#D97706" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: "Target 85%", position: "top", fill: "#D97706", fontSize: 10 }} />
             </BarChart>
           </ResponsiveContainer>
         </div>
