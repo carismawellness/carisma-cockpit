@@ -14,6 +14,7 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  LabelList,
 } from "recharts";
 
 /* ------------------------------------------------------------------ */
@@ -119,7 +120,8 @@ export function RepLeaderboard({
     ? DUMMY_REPS.filter((r) => r.brandSlug === brandFilter)
     : DUMMY_REPS;
 
-  // Chart data — sorted by total sales desc
+  // Chart data — sorted by total sales desc.
+  // `_salesTotal` is the stacked-bar topmost label target (Avg Daily + Sales/Booking).
   const chartData = repData.map((r) => ({
     name: r.name,
     "Avg Daily": r.avgDaily,
@@ -127,6 +129,7 @@ export function RepLeaderboard({
     "Conv %": Number(r.conversionPct.toFixed(1)),
     "Deposit %": Number(r.depositPct.toFixed(1)),
     "Missed %": Number(r.missedPct.toFixed(1)),
+    _salesTotal: r.avgDaily + r.salesPerBooking,
   }));
 
   return (
@@ -146,7 +149,7 @@ export function RepLeaderboard({
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
             data={chartData}
-            margin={{ top: 10, right: 20, left: 0, bottom: 60 }}
+            margin={{ top: 24, right: 20, left: 0, bottom: 60 }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
             <XAxis
@@ -176,7 +179,7 @@ export function RepLeaderboard({
             <Tooltip content={<CustomTooltip />} />
             <Legend wrapperStyle={{ paddingTop: 12 }} />
 
-            {/* Bars — stacked sales metrics */}
+            {/* Bars — stacked sales metrics. Topmost carries the total label. */}
             <Bar
               yAxisId="sales"
               dataKey="Avg Daily"
@@ -194,7 +197,14 @@ export function RepLeaderboard({
               stackId="sales"
               radius={[4, 4, 0, 0]}
               barSize={28}
-            />
+            >
+              <LabelList
+                dataKey="_salesTotal"
+                position="top"
+                formatter={(v: unknown) => formatCurrency(Number(v))}
+                style={{ fontSize: 10, fontWeight: 600, fill: "#111827" }}
+              />
+            </Bar>
 
             {/* Lines — percentage metrics */}
             <Line
