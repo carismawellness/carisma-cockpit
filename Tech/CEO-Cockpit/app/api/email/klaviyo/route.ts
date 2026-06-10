@@ -134,10 +134,10 @@ async function fetchWithRetry(
     if (res.status !== 429) return res;
     // Parse Retry-After header or extract seconds from error body
     const retryAfter = res.headers.get("Retry-After");
-    let waitMs = 1000 * (attempt + 1); // default exponential backoff
+    let waitMs = Math.min(1500 * (attempt + 1), 8000); // exponential, capped
     if (retryAfter) {
       const secs = parseInt(retryAfter, 10);
-      if (!isNaN(secs)) waitMs = Math.min(secs * 1000, 60000);
+      if (!isNaN(secs)) waitMs = Math.min(secs * 1000, 8000);
     }
     await sleep(waitMs);
   }
@@ -250,12 +250,15 @@ async function fetchSubscriberCount(apiKey: string): Promise<number> {
     for (const list of lists) {
       const url = `${KLAVIYO_BASE}/lists/${list.id}/?additional-fields%5Blist%5D=profile_count`;
       const r = await fetchWithRetry(url, { headers: hdrs });
-      if (!r.ok) continue;
+      if (!r.ok) {
+        if (r.status === 429) break;
+        continue;
+      }
       const j = (await r.json()) as {
         data?: { attributes?: { profile_count?: number } };
       };
       total += j?.data?.attributes?.profile_count ?? 0;
-      await sleep(150);
+      await sleep(250);
     }
     return total;
   } catch {

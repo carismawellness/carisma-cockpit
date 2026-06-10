@@ -41,19 +41,26 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/** Retry on 429 with a cap. Klaviyo sometimes returns Retry-After in the
+ *  thousands of seconds (steady-state limit). Cap waits at 8s so a single
+ *  blocked list/report doesn't consume the entire Vercel function budget. */
 async function fetchWithRetry(
   url: string,
   init: RequestInit,
   maxRetries = 3,
 ): Promise<Response> {
+  let last: Response | null = null;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const res = await fetch(url, init);
+    last = res;
     if (res.status !== 429) return res;
     const after = res.headers.get("Retry-After");
-    const waitMs = after ? Math.min(parseInt(after, 10) * 1000, 60000) : 1000 * (attempt + 1);
+    const waitMs = after
+      ? Math.min(parseInt(after, 10) * 1000, 8000)
+      : Math.min(1500 * (attempt + 1), 8000);
     await sleep(waitMs);
   }
-  throw new Error("Klaviyo rate limit exceeded after max retries");
+  return last as Response; // give up — caller handles !ok
 }
 
 async function getBrandId(slug: string): Promise<string> {
@@ -82,12 +89,16 @@ async function fetchSubscriberCount(apiKey: string): Promise<number> {
     for (const list of lists) {
       const url = `${KLAVIYO_BASE}/lists/${list.id}/?additional-fields%5Blist%5D=profile_count`;
       const r = await fetchWithRetry(url, { headers: klaviyoHeaders(apiKey) });
-      if (!r.ok) continue;
+      if (!r.ok) {
+        // On sustained 429 stop trying — we'll resume on the next nightly run.
+        if (r.status === 429) break;
+        continue;
+      }
       const j = (await r.json()) as {
         data?: { attributes?: { profile_count?: number } };
       };
       sum += j.data?.attributes?.profile_count ?? 0;
-      await sleep(150);
+      await sleep(250);
     }
     return sum;
   } catch {
@@ -274,11 +285,13 @@ export async function runKlaviyoDailyEtl(opts: {
 
       log.push(`[${slug}] fetching Klaviyo data for ${dateFrom}…${dateTo} (stored as ${date})`);
 
-      const [subscriberCount, activeFlows, aggregates] = await Promise.all([
-        fetchSubscriberCount(apiKey),
-        fetchActiveFlowCount(apiKey),
-        fetchCampaignAggregates(apiKey, dateFrom, dateTo),
-      ]);
+      // Sequential, not parallel — these all hit Klaviyo's burst limit (75/sec).
+      // Reports are more important than subscribers for dashboard rates.
+      const aggregates = await fetchCampaignAggregates(apiKey, dateFrom, dateTo);
+      await sleep(800);
+      const activeFlows = await fetchActiveFlowCount(apiKey);
+      await sleep(800);
+      const subscriberCount = await fetchSubscriberCount(apiKey);
 
       const row: Record<string, unknown> = {
         date,
