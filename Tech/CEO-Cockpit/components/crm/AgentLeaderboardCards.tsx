@@ -5,7 +5,6 @@ import {
   ComposedChart,
   Bar,
   Cell,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -56,50 +55,58 @@ const BRAND_LABEL_COLOR: Record<AgentBrand, string> = {
   SLIMMING:   "#6A9455",
 };
 
+const SLIMMING_BAR_COLOR = "#6A9455";
+
 // ── Data shaping ──────────────────────────────────────────────────────────────
 
 type ChartRow = {
-  slug:       string;
-  name:       string;
-  brand:      AgentBrand;
-  role:       string;
-  revenue:    number;
-  lc:         number;
-  crm:        number;
-  other:      number;
-  bookings:   number;
-  depositPct: number;
-  convRate:   number;
-  aov:        number;
-  activeDays: number;
+  slug:        string;
+  name:        string;
+  brand:       AgentBrand;
+  role:        string;
+  revenue:     number;    // actual sales (used for sorting + tooltip)
+  revBarTotal: number;    // sum of lc+crm+other shown in bars (0 for Slimming)
+  lc:          number;    // channel revenue bar (0 for Slimming)
+  crm:         number;
+  other:       number;
+  bkgBar:      number;    // bookings shown as bar for Slimming, 0 for others
+  bookings:    number;
+  convRate:    number;
+  aov:         number;
+  activeDays:  number;
 };
 
 function toRow(agent: CrmAgent): ChartRow | null {
   const meta = AGENT_META_BY_SLUG[agent.slug];
   if (!meta) return null;
 
-  const lc    = agent.rows.reduce((s, r) => s + (r.lc_sales    ?? 0), 0);
-  const crm   = agent.rows.reduce((s, r) => s + (r.crm_sales   ?? 0), 0);
-  const other = agent.rows.reduce((s, r) => s + (r.other_sales ?? 0), 0);
-  const channelSum = lc + crm + other;
-  const revenue    = channelSum > 0 ? channelSum : agent.totals.total_sales;
+  const isSlimming = meta.brand === "SLIMMING";
 
-  const depositPct = agent.totals.total_bookings > 0
-    ? (agent.totals.total_deposits / agent.totals.total_bookings) * 100
-    : 0;
+  const lcRaw    = agent.rows.reduce((s, r) => s + (r.lc_sales    ?? 0), 0);
+  const crmRaw   = agent.rows.reduce((s, r) => s + (r.crm_sales   ?? 0), 0);
+  const otherRaw = agent.rows.reduce((s, r) => s + (r.other_sales ?? 0), 0);
+  const channelSum = lcRaw + crmRaw + otherRaw;
+
+  // For Slimming: bars show bookings on the right axis — revenue bars zeroed out
+  const lc    = isSlimming ? 0 : lcRaw;
+  const crm   = isSlimming ? 0 : crmRaw;
+  const other = isSlimming ? 0 : otherRaw;
+  const revBarTotal = isSlimming ? 0 : (channelSum > 0 ? channelSum : agent.totals.total_sales);
+  const revenue     = channelSum > 0 ? channelSum : agent.totals.total_sales;
 
   return {
-    slug:       agent.slug,
-    name:       agent.name,
-    brand:      meta.brand,
-    role:       meta.role,
+    slug:        agent.slug,
+    name:        agent.name,
+    brand:       meta.brand,
+    role:        meta.role,
     revenue,
+    revBarTotal,
     lc, crm, other,
-    bookings:   agent.totals.total_bookings,
-    depositPct: Math.round(depositPct * 10) / 10,
-    convRate:   agent.totals.avg_conversion_rate,
-    aov:        agent.totals.avg_aov,
-    activeDays: agent.totals.active_days,
+    bkgBar:      isSlimming ? agent.totals.total_bookings : 0,
+    bookings:    agent.totals.total_bookings,
+    convRate:    agent.totals.avg_conversion_rate,
+    aov:         agent.totals.avg_aov,
+    activeDays:  agent.totals.active_days,
   };
 }
 
@@ -158,34 +165,43 @@ function CustomTooltip({
 }) {
   if (!active || !payload || payload.length === 0) return null;
   const row = payload[0].payload;
+  const isSlimming = row.brand === "SLIMMING";
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-lg space-y-0.5 min-w-[190px]">
       <p className="font-semibold text-foreground">{row.name}</p>
       <p className="text-muted-foreground">{row.brand} · {row.role}</p>
       <div className="border-t border-gray-100 my-1.5" />
-      {row.lc > 0 && (
+      {isSlimming ? (
         <div className="flex justify-between gap-4">
-          <span style={{ color: slotColor(row.role, "lc") }} className="font-medium">{slotLabel(row.role, "lc")}</span>
-          <span className="font-semibold tabular-nums">{formatCurrency(row.lc)}</span>
+          <span style={{ color: SLIMMING_BAR_COLOR }} className="font-medium">Bookings</span>
+          <span className="font-semibold tabular-nums">{row.bkgBar}</span>
         </div>
+      ) : (
+        <>
+          {row.lc > 0 && (
+            <div className="flex justify-between gap-4">
+              <span style={{ color: slotColor(row.role, "lc") }} className="font-medium">{slotLabel(row.role, "lc")}</span>
+              <span className="font-semibold tabular-nums">{formatCurrency(row.lc)}</span>
+            </div>
+          )}
+          {row.crm > 0 && (
+            <div className="flex justify-between gap-4">
+              <span style={{ color: slotColor(row.role, "crm") }} className="font-medium">{slotLabel(row.role, "crm")}</span>
+              <span className="font-semibold tabular-nums">{formatCurrency(row.crm)}</span>
+            </div>
+          )}
+          {row.other > 0 && (
+            <div className="flex justify-between gap-4">
+              <span style={{ color: slotColor(row.role, "other") }} className="font-medium">{slotLabel(row.role, "other")}</span>
+              <span className="font-semibold tabular-nums">{formatCurrency(row.other)}</span>
+            </div>
+          )}
+          <div className="border-t border-gray-100 my-1.5" />
+          <div className="flex justify-between gap-4"><span>Total Revenue</span><span className="font-semibold tabular-nums">{formatCurrency(row.revenue)}</span></div>
+        </>
       )}
-      {row.crm > 0 && (
-        <div className="flex justify-between gap-4">
-          <span style={{ color: slotColor(row.role, "crm") }} className="font-medium">{slotLabel(row.role, "crm")}</span>
-          <span className="font-semibold tabular-nums">{formatCurrency(row.crm)}</span>
-        </div>
-      )}
-      {row.other > 0 && (
-        <div className="flex justify-between gap-4">
-          <span style={{ color: slotColor(row.role, "other") }} className="font-medium">{slotLabel(row.role, "other")}</span>
-          <span className="font-semibold tabular-nums">{formatCurrency(row.other)}</span>
-        </div>
-      )}
-      <div className="border-t border-gray-100 my-1.5" />
-      <div className="flex justify-between gap-4"><span>Total Revenue</span><span className="font-semibold tabular-nums">{formatCurrency(row.revenue)}</span></div>
-      <div className="flex justify-between gap-4"><span>Bookings</span><span className="font-semibold tabular-nums">{row.bookings}</span></div>
-      <div className="flex justify-between gap-4"><span>Deposit %</span><span className="font-semibold tabular-nums">{row.depositPct > 0 ? formatPercent(row.depositPct) : "—"}</span></div>
+      <div className="flex justify-between gap-4"><span>Total Bookings</span><span className="font-semibold tabular-nums">{row.bookings}</span></div>
       <div className="flex justify-between gap-4"><span>Conv Rate</span><span className="font-semibold tabular-nums">{row.convRate > 0 ? formatPercent(row.convRate) : "—"}</span></div>
       <div className="flex justify-between gap-4"><span>AOV</span><span className="font-semibold tabular-nums">{row.aov > 0 ? formatCurrency(row.aov) : "—"}</span></div>
     </div>
@@ -221,10 +237,12 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
     );
   }
 
+  // Median computed only over Spa + Aesthetics revenue (Slimming is on different scale)
   const teamMedianRevenue = (() => {
-    const sorted = [...rows].map((r) => r.revenue).sort((a, b) => a - b);
-    const mid = Math.floor(sorted.length / 2);
-    return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+    const nonSlimming = rows.filter((r) => r.brand !== "SLIMMING").map((r) => r.revenue).sort((a, b) => a - b);
+    if (nonSlimming.length === 0) return 0;
+    const mid = Math.floor(nonSlimming.length / 2);
+    return nonSlimming.length % 2 === 0 ? (nonSlimming[mid - 1] + nonSlimming[mid]) / 2 : nonSlimming[mid];
   })();
 
   const brandSections: Array<{ brand: AgentBrand; x1: string; x2: string }> = [];
@@ -235,7 +253,7 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
     }
   }
 
-  // Legend items: Chat-role channels left, SDR-role channels right
+  // Legend items: channel colours + Slimming bookings
   const legendItems = [
     { color: CH.liveChat, label: "Live Chat" },
     { color: CH.ghl,      label: "GHL"       },
@@ -257,7 +275,7 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
               ))}
             </div>
           </div>
-          {/* Channel legend — two rows on mobile */}
+          {/* Channel legend */}
           <div className="flex flex-col gap-1.5 text-[11px] text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               {legendItems.map(({ color, label }) => (
@@ -268,8 +286,9 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
               ))}
             </div>
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-2 w-6 rounded-full" style={{ backgroundColor: "#E07A5F" }} />
-              Deposit %
+              <span className="inline-block h-3 w-3 rounded-[3px]" style={{ backgroundColor: SLIMMING_BAR_COLOR }} />
+              <span style={{ color: BRAND_LABEL_COLOR.SLIMMING }} className="font-medium">Bookings</span>
+              <span className="text-muted-foreground">(Slimming)</span>
             </span>
           </div>
         </div>
@@ -281,7 +300,7 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
         <div className="overflow-x-auto">
           <div className="h-[480px]" style={{ minWidth: `max(100%, ${rows.length * 72}px)` }}>
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={rows} margin={{ top: 28, right: 20, left: 0, bottom: 8 }}>
+              <ComposedChart data={rows} margin={{ top: 28, right: 48, left: 0, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
 
                 {/* Brand background shading */}
@@ -289,7 +308,7 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
                   <ReferenceArea key={brand} x1={x1} x2={x2} fill={BRAND_BG[brand]} fillOpacity={1} stroke="none" />
                 ))}
 
-                {/* Brand separator lines — dashed vertical at start of each non-first brand */}
+                {/* Brand separator lines */}
                 {brandSections.slice(1).map(({ brand, x1 }) => (
                   <ReferenceLine
                     key={`sep-${brand}`}
@@ -315,6 +334,8 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
                     />
                   }
                 />
+
+                {/* Left axis: € revenue (Spa + Aesthetics) */}
                 <YAxis
                   yAxisId="rev"
                   orientation="left"
@@ -323,56 +344,74 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
                   axisLine={false}
                   tickLine={false}
                 />
+
+                {/* Right axis: # bookings (Slimming) */}
                 <YAxis
-                  yAxisId="dep"
+                  yAxisId="bkg"
                   orientation="right"
-                  tickFormatter={(v) => `${v}%`}
-                  domain={[0, 100]}
-                  tick={{ fontSize: 11, fill: "#71717A" }}
+                  tickFormatter={(v) => `${v}`}
+                  tick={{ fontSize: 11, fill: SLIMMING_BAR_COLOR }}
                   axisLine={false}
                   tickLine={false}
+                  label={{
+                    value: "Bookings",
+                    angle: 90,
+                    position: "insideRight",
+                    offset: 12,
+                    style: { fontSize: 10, fill: SLIMMING_BAR_COLOR },
+                  }}
                 />
+
                 <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(0,0,0,0.03)" }} />
 
-                <ReferenceLine
-                  yAxisId="rev"
-                  y={teamMedianRevenue}
-                  stroke="#A1A1AA"
-                  strokeDasharray="4 4"
-                  strokeWidth={1}
-                  label={{ value: `Median ${formatCurrency(teamMedianRevenue)}`, position: "insideTopRight", fill: "#71717A", fontSize: 10 }}
-                />
+                {/* Team median line (Spa + Aesthetics only) */}
+                {teamMedianRevenue > 0 && (
+                  <ReferenceLine
+                    yAxisId="rev"
+                    y={teamMedianRevenue}
+                    stroke="#A1A1AA"
+                    strokeDasharray="4 4"
+                    strokeWidth={1}
+                    label={{ value: `Median ${formatCurrency(teamMedianRevenue)}`, position: "insideTopRight", fill: "#71717A", fontSize: 10 }}
+                  />
+                )}
 
-                {/* Stacked bars: bottom=lc, middle=crm, top=other — Cell applies per-row channel colour */}
-                <Bar yAxisId="rev" dataKey="lc" stackId="ch" barSize={68} radius={[0, 0, 0, 0]}>
+                {/* Revenue bars: Spa + Aesthetics (Slimming rows have lc=crm=other=0) */}
+                <Bar yAxisId="rev" dataKey="lc" stackId="ch" barSize={56} radius={[0, 0, 0, 0]}>
                   {rows.map((r) => <Cell key={r.slug} fill={slotColor(r.role, "lc")} />)}
                 </Bar>
-                <Bar yAxisId="rev" dataKey="crm" stackId="ch" barSize={68} radius={[0, 0, 0, 0]}>
+                <Bar yAxisId="rev" dataKey="crm" stackId="ch" barSize={56} radius={[0, 0, 0, 0]}>
                   {rows.map((r) => <Cell key={r.slug} fill={slotColor(r.role, "crm")} />)}
                 </Bar>
-                <Bar yAxisId="rev" dataKey="other" stackId="ch" barSize={68} radius={[6, 6, 0, 0]}>
+                <Bar yAxisId="rev" dataKey="other" stackId="ch" barSize={56} radius={[6, 6, 0, 0]}>
                   {rows.map((r) => <Cell key={r.slug} fill={slotColor(r.role, "other")} />)}
                   <LabelList
-                    dataKey="revenue"
+                    dataKey="revBarTotal"
                     position="top"
                     formatter={(v: unknown) => {
                       const n = Number(v);
+                      if (n === 0) return "";
                       return n >= 1000 ? `€${(n / 1000).toFixed(0)}k` : `€${n}`;
                     }}
                     style={{ fontSize: 11, fill: "#27272A", fontWeight: 700 }}
                   />
                 </Bar>
 
-                <Line
-                  yAxisId="dep"
-                  type="monotone"
-                  dataKey="depositPct"
-                  name="Deposit %"
-                  stroke="#E07A5F"
-                  strokeWidth={2.5}
-                  dot={{ r: 4, fill: "#E07A5F", stroke: "#fff", strokeWidth: 1.5 }}
-                  activeDot={{ r: 6 }}
-                />
+                {/* Bookings bar: Slimming only (non-Slimming rows have bkgBar=0) */}
+                <Bar yAxisId="bkg" dataKey="bkgBar" stackId="bkg" barSize={44} radius={[6, 6, 0, 0]}>
+                  {rows.map((r) => (
+                    <Cell key={r.slug} fill={r.brand === "SLIMMING" ? SLIMMING_BAR_COLOR : "transparent"} />
+                  ))}
+                  <LabelList
+                    dataKey="bkgBar"
+                    position="top"
+                    formatter={(v: unknown) => {
+                      const n = Number(v);
+                      return n > 0 ? `${n}` : "";
+                    }}
+                    style={{ fontSize: 11, fill: "#27272A", fontWeight: 700 }}
+                  />
+                </Bar>
               </ComposedChart>
             </ResponsiveContainer>
           </div>
