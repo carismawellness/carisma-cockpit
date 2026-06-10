@@ -128,14 +128,15 @@ function GroupEbitdaTooltip({
   );
 }
 
-function GroupEbitdaChart({ points }: { points: GroupChartPoint[] }) {
+function GroupEbitdaChart({ points, width }: { points: GroupChartPoint[]; width: number }) {
   const fmtEuro = (v: number) =>
     Math.abs(v) >= 1000 ? "€" + (v / 1000).toFixed(0) + "k" : "€" + v;
 
   const lblStyle = { fontSize: 9, fill: "#fff", fontWeight: 700 };
 
   return (
-    <ResponsiveContainer width="100%" height={340}>
+    <div style={{ width, height: 340 }}>
+      <ResponsiveContainer width="100%" height="100%">
       <ComposedChart data={points} margin={{ top: 18, right: 48, bottom: 0, left: 8 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
         <XAxis
@@ -189,7 +190,8 @@ function GroupEbitdaChart({ points }: { points: GroupChartPoint[] }) {
         <ReferenceLine yAxisId="right" y={30} stroke="#22c55e" strokeDasharray="4 4"
           label={{ value: "Target 30%", fontSize: 9, fill: "#22c55e", position: "insideTopRight" }} />
       </ComposedChart>
-    </ResponsiveContainer>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -309,14 +311,15 @@ function BrandTooltip({
 
 // ── Brand chart ───────────────────────────────────────────────────────────────
 
-function BrandChart({ points }: { points: BrandChartPoint[] }) {
+function BrandChart({ points, width }: { points: BrandChartPoint[]; width: number }) {
   const fmtEuro = (v: number) =>
     Math.abs(v) >= 1000 ? "€" + (v / 1000).toFixed(0) + "k" : "€" + v;
 
   const lblStyle = { fontSize: 9, fill: "#fff", fontWeight: 600 };
 
   return (
-    <ResponsiveContainer width="100%" height={400}>
+    <div style={{ width, height: 400 }}>
+    <ResponsiveContainer width="100%" height="100%">
       <ComposedChart data={points} margin={{ top: 28, right: 16, bottom: 0, left: 8 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
         <XAxis
@@ -386,6 +389,7 @@ function BrandChart({ points }: { points: BrandChartPoint[] }) {
         />
       </ComposedChart>
     </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -405,12 +409,6 @@ function LongitudinalContent({
   const [data, setData]               = useState<LongitudinalResponse | null>(null);
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState<string | null>(null);
-  const [pageOffset, setPageOffset]   = useState(0);
-
-  const PAGE_SIZE = granularity === "monthly" ? 12 : 13;
-
-  // Reset page when granularity changes
-  useEffect(() => { setPageOffset(0); }, [granularity]);
 
   // Fetch
   useEffect(() => {
@@ -439,22 +437,12 @@ function LongitudinalContent({
     return () => controller.abort();
   }, [dfStr, dtStr, granularity]);
 
-  // ── Visible periods (paging) ────────────────────────────────────────────────
+  // ── Visible periods (all) ───────────────────────────────────────────────────
 
   const visiblePeriods = useMemo(() => {
     if (!data) return [];
-    return data.periods.slice(pageOffset, pageOffset + PAGE_SIZE);
-  }, [data, pageOffset, PAGE_SIZE]);
-
-  // Navigation label
-  const navLabel = useMemo(() => {
-    if (!data || data.periods.length === 0) return "";
-    const start = visiblePeriods[0]?.label ?? "";
-    const end   = visiblePeriods[visiblePeriods.length - 1]?.label ?? "";
-    const total = data.periods.length;
-    const shown = visiblePeriods.length;
-    return `${start} – ${end} (${shown} of ${total} periods)`;
-  }, [data, visiblePeriods]);
+    return data.periods;
+  }, [data]);
 
   // ── Summary data from LAST visible period ───────────────────────────────────
 
@@ -633,8 +621,7 @@ function LongitudinalContent({
     }));
   }, [visiblePeriods]);
 
-  const hasPrev = pageOffset > 0;
-  const hasNext = data != null && pageOffset + PAGE_SIZE < data.periods.length;
+  const chartWidth = Math.max(800, visiblePeriods.length * 80);
 
   return (
     <div className="space-y-4">
@@ -646,7 +633,7 @@ function LongitudinalContent({
       />
 
       {/* Controls bar */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
+      <div className="flex items-center gap-4 flex-wrap">
 
         {/* Granularity toggle */}
         <div className="flex rounded-lg border border-border overflow-hidden text-xs font-medium">
@@ -672,26 +659,6 @@ function LongitudinalContent({
           </button>
         </div>
 
-        {/* Period navigation */}
-        {data && data.periods.length > PAGE_SIZE && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <button
-              onClick={() => setPageOffset(Math.max(0, pageOffset - PAGE_SIZE))}
-              disabled={!hasPrev}
-              className="px-2 py-1 rounded border border-border disabled:opacity-30 hover:bg-muted"
-            >
-              &larr; Prev
-            </button>
-            <span className="text-center">{navLabel}</span>
-            <button
-              onClick={() => setPageOffset(Math.min(data.periods.length - PAGE_SIZE, pageOffset + PAGE_SIZE))}
-              disabled={!hasNext}
-              className="px-2 py-1 rounded border border-border disabled:opacity-30 hover:bg-muted"
-            >
-              Next &rarr;
-            </button>
-          </div>
-        )}
       </div>
 
       {loading && (
@@ -706,27 +673,37 @@ function LongitudinalContent({
 
           {/* Group EBITDA by Brand */}
           <ChartCard title="Group EBITDA by Brand — Monthly">
-            <GroupEbitdaChart points={groupPoints} />
+            <div className="overflow-x-auto">
+              <GroupEbitdaChart points={groupPoints} width={chartWidth} />
+            </div>
           </ChartCard>
 
           {/* Spa */}
           <ChartCard title="Spa — Cost Breakdown vs Revenue">
-            <BrandChart points={spaPoints} />
+            <div className="overflow-x-auto">
+              <BrandChart points={spaPoints} width={chartWidth} />
+            </div>
           </ChartCard>
 
           {/* Aesthetics */}
           <ChartCard title="Aesthetics — Cost Breakdown vs Revenue">
-            <BrandChart points={aesPoints} />
+            <div className="overflow-x-auto">
+              <BrandChart points={aesPoints} width={chartWidth} />
+            </div>
           </ChartCard>
 
           {/* Slimming */}
           <ChartCard title="Slimming — Cost Breakdown vs Revenue">
-            <BrandChart points={slimPoints} />
+            <div className="overflow-x-auto">
+              <BrandChart points={slimPoints} width={chartWidth} />
+            </div>
           </ChartCard>
 
           {/* EBITDA Margin % */}
           <ChartCard title="EBITDA Margin %">
-            <ResponsiveContainer width="100%" height={220}>
+            <div className="overflow-x-auto">
+            <div style={{ width: chartWidth, height: 220 }}>
+            <ResponsiveContainer width="100%" height="100%">
               <LineChart data={marginChartData} margin={{ top: 18, right: 16, bottom: 0, left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
                 <XAxis
@@ -769,6 +746,8 @@ function LongitudinalContent({
                 />
               </LineChart>
             </ResponsiveContainer>
+            </div>
+            </div>
           </ChartCard>
 
         </div>
