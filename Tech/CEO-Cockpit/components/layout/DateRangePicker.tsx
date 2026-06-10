@@ -62,6 +62,19 @@ function isMonthActive(monthIndex: number, from: Date, to: Date): boolean {
 
 const presets = [
   {
+    key: "yest",
+    label: "Yesterday",
+    fn: () => {
+      const y = subDays(new Date(), 1);
+      return { from: y, to: y };
+    },
+  },
+  {
+    key: "td_yest",
+    label: "Today & Yesterday",
+    fn: () => ({ from: subDays(new Date(), 1), to: new Date() }),
+  },
+  {
     key: "7d",
     label: "7 days",
     fn: () => ({ from: subDays(new Date(), 7), to: new Date() }),
