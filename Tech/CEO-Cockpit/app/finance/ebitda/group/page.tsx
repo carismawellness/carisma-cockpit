@@ -395,13 +395,13 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
                   <YAxis tickFormatter={(v: number) => fmtCurrencyShort(v)} />
                   <Tooltip content={<ChartTooltip />} />
                   <Legend />
-                  <Bar dataKey="Wages"       stackId="s" fill="#F59E0B" />
-                  <Bar dataKey="Advertising" stackId="s" fill="#EC4899" />
-                  <Bar dataKey="Rent"        stackId="s" fill="#9CA3AF" />
-                  <Bar dataKey="Utilities"   stackId="s" fill="#06B6D4" />
-                  <Bar dataKey="COGS"        stackId="s" fill="#3B82F6" />
-                  <Bar dataKey="SG&A"        stackId="s" fill="#8B5CF6" />
-                  <Bar dataKey="EBITDA"      stackId="s" fill="#22C55E" />
+                  <Bar dataKey="Wages"       stackId="s" fill="#E5C088" />
+                  <Bar dataKey="Advertising" stackId="s" fill="#E5B5D0" />
+                  <Bar dataKey="Rent"        stackId="s" fill="#C5D0E0" />
+                  <Bar dataKey="Utilities"   stackId="s" fill="#B5DCDC" />
+                  <Bar dataKey="COGS"        stackId="s" fill="#E5B8B0" />
+                  <Bar dataKey="SG&A"        stackId="s" fill="#D5C0E5" />
+                  <Bar dataKey="EBITDA"      stackId="s" fill="#A8D4A8" />
                 </BarChart>
               </ResponsiveContainer>
             </div>

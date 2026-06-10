@@ -827,13 +827,13 @@ function AestheticsEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo:
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tickFormatter={(v: number) => fmtShort(v)} />
                   <Tooltip content={<BreakdownTooltip />} />
-                  <Bar dataKey="Wages"       stackId="s" fill="#F59E0B" name="Wages"><LabelList dataKey="WagesPct"       content={renderSegmentLabel} /></Bar>
-                  <Bar dataKey="Advertising" stackId="s" fill="#EC4899" name="Advertising"><LabelList dataKey="AdvertisingPct" content={renderSegmentLabel} /></Bar>
-                  <Bar dataKey="Rent"        stackId="s" fill="#9CA3AF" name="Rent"><LabelList dataKey="RentPct"        content={renderSegmentLabel} /></Bar>
-                  <Bar dataKey="Utilities"   stackId="s" fill="#06B6D4" name="Utilities"><LabelList dataKey="UtilitiesPct"   content={renderSegmentLabel} /></Bar>
-                  <Bar dataKey="COGS"        stackId="s" fill="#3B82F6" name="COGS"><LabelList dataKey="COGSPct"        content={renderSegmentLabel} /></Bar>
-                  <Bar dataKey="SG&A"        stackId="s" fill="#8B5CF6" name="SG&A"><LabelList dataKey="SG&APct"        content={renderSegmentLabel} /></Bar>
-                  <Bar dataKey="EBITDA"      stackId="s" fill="#22C55E" name="EBITDA"><LabelList dataKey="EBITDAPct"      content={renderTopLabel}     /></Bar>
+                  <Bar dataKey="Wages"       stackId="s" fill="#E5C088" name="Wages"><LabelList dataKey="WagesPct"       content={renderSegmentLabel} /></Bar>
+                  <Bar dataKey="Advertising" stackId="s" fill="#E5B5D0" name="Advertising"><LabelList dataKey="AdvertisingPct" content={renderSegmentLabel} /></Bar>
+                  <Bar dataKey="Rent"        stackId="s" fill="#C5D0E0" name="Rent"><LabelList dataKey="RentPct"        content={renderSegmentLabel} /></Bar>
+                  <Bar dataKey="Utilities"   stackId="s" fill="#B5DCDC" name="Utilities"><LabelList dataKey="UtilitiesPct"   content={renderSegmentLabel} /></Bar>
+                  <Bar dataKey="COGS"        stackId="s" fill="#E5B8B0" name="COGS"><LabelList dataKey="COGSPct"        content={renderSegmentLabel} /></Bar>
+                  <Bar dataKey="SG&A"        stackId="s" fill="#D5C0E5" name="SG&A"><LabelList dataKey="SG&APct"        content={renderSegmentLabel} /></Bar>
+                  <Bar dataKey="EBITDA"      stackId="s" fill="#A8D4A8" name="EBITDA"><LabelList dataKey="EBITDAPct"      content={renderTopLabel}     /></Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>

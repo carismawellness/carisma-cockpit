@@ -32,14 +32,14 @@ function toIso(d: Date): string {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const COST_COLORS: Record<string, string> = {
-  wages:       "#475569",
-  advertising: "#8b5cf6",
-  rent:        "#d97706",
-  sga:         "#0ea5e9",
-  cogs:        "#f43f5e",
-  utilities:   "#14b8a6",
-  ebitda_pos:  "#34d399",
-  ebitda_neg:  "#f87171",
+  wages:       "#E5C088",  // soft amber
+  advertising: "#E5B5D0",  // soft pink
+  rent:        "#C5D0E0",  // soft slate
+  sga:         "#D5C0E5",  // soft purple
+  cogs:        "#E5B8B0",  // soft coral
+  utilities:   "#B5DCDC",  // soft cyan
+  ebitda_pos:  "#A8D4A8",  // soft green
+  ebitda_neg:  "#E8A8A0",  // soft red
 };
 
 const COST_LABELS: Record<string, string> = {
