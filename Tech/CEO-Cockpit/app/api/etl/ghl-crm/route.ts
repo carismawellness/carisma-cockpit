@@ -105,7 +105,6 @@ type ContactApiRow = {
   dateAdded: string;
   tags?: string[];
   attributionSource?: { utmSource?: string; medium?: string; sessionSource?: string };
-  searchAfter?: [number, string];
 };
 
 async function fetchContactStats(
@@ -130,6 +129,7 @@ async function fetchContactStats(
 
     const data = (await ghlGet("/contacts/", brand.apiKey, params)) as {
       contacts?: ContactApiRow[];
+      meta?: { startAfter?: number; startAfterId?: string };
     };
 
     const contacts = data.contacts ?? [];
@@ -162,10 +162,9 @@ async function fetchContactStats(
     // Contacts are sorted newest-first — stop once entire batch is past window
     if (oldestInBatch < fromMs) break;
 
-    const last = contacts[contacts.length - 1];
-    if (!last.searchAfter) break;
-    startAfter   = String(last.searchAfter[0]);
-    startAfterId = last.searchAfter[1];
+    if (!data.meta?.startAfter) break;
+    startAfter   = String(data.meta.startAfter);
+    startAfterId = data.meta.startAfterId;
   }
 
   return byDate;
@@ -358,10 +357,10 @@ export async function POST(req: NextRequest) {
         const cs = contactStats.get(dateStr) ?? { total: 0, meta: 0, unworked: 0 };
         const bs = bookingStats.get(dateStr)  ?? { count: 0, revenue: 0, treatments: [] };
 
-        const conversionPct =
-          cs.total > 0
-            ? Math.round((bs.count / cs.total) * 10000) / 100
-            : null;
+        const rawConvPct = cs.total > 0 ? (bs.count / cs.total) * 100 : null;
+        const conversionPct = rawConvPct === null
+          ? null
+          : Math.min(Math.round(rawConvPct * 100) / 100, 999.99);
 
         crmRows.push({
           date:                 dateStr,

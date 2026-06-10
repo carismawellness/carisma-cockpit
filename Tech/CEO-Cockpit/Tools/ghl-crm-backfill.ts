@@ -66,7 +66,10 @@ async function fetchContactStats(brand: typeof BRANDS[0], fromMs: number, toMs: 
     if (startAfter)   params.startAfter   = startAfter;
     if (startAfterId) params.startAfterId = startAfterId;
 
-    const data = (await ghlGet("/contacts/", brand.apiKey, params)) as { contacts?: any[] };
+    const data = (await ghlGet("/contacts/", brand.apiKey, params)) as {
+      contacts?: any[];
+      meta?: { startAfter?: number; startAfterId?: string };
+    };
     const contacts = data.contacts ?? [];
     if (!contacts.length) break;
 
@@ -85,10 +88,9 @@ async function fetchContactStats(brand: typeof BRANDS[0], fromMs: number, toMs: 
       byDate.set(dateStr, { total: prev.total + 1, meta: prev.meta + (isMeta ? 1 : 0), unworked: prev.unworked + (isUnworked ? 1 : 0) });
     }
     if (oldest < fromMs) break;
-    const last = contacts[contacts.length - 1];
-    if (!last.searchAfter) break;
-    startAfter   = String(last.searchAfter[0]);
-    startAfterId = last.searchAfter[1];
+    if (!data.meta?.startAfter) break;
+    startAfter   = String(data.meta.startAfter);
+    startAfterId = data.meta.startAfterId;
   }
   return byDate;
 }
@@ -176,7 +178,8 @@ async function main() {
     for (const d of dates) {
       const cs = contacts.get(d) ?? { total: 0, meta: 0, unworked: 0 };
       const bs = bookings.get(d)  ?? { count: 0, revenue: 0, treatments: [] };
-      const convPct = cs.total > 0 ? Math.round((bs.count / cs.total) * 10000) / 100 : null;
+      const rawConvPct = cs.total > 0 ? (bs.count / cs.total) * 100 : null;
+      const convPct = rawConvPct === null ? null : Math.min(Math.round(rawConvPct * 100) / 100, 999.99);
       crmRows.push({
         date: d, brand_id: brandId,
         total_leads:         cs.total   > 0 ? cs.total   : null,
