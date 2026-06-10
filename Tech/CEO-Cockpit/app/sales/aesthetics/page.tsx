@@ -5,6 +5,7 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
 import { SalesKPICard } from "@/components/sales/SalesKPICard";
 import { SalesKPIGrid } from "@/components/sales/SalesKPIGrid";
+import { AestheticsRetentionSection } from "@/components/sales/AestheticsRetentionSection";
 import { useAestheticsSales } from "@/lib/hooks/useAestheticsSales";
 import { useSalaryRoster } from "@/lib/hooks/useSalaryRoster";
 import { formatCurrency } from "@/lib/charts/config";
@@ -340,6 +341,9 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
           </div>
         )}
       </Card>
+
+      {/* ── Client Retention (additive — computed server-side) ───────── */}
+      <AestheticsRetentionSection dateFrom={dateFrom} dateTo={dateTo} />
     </>
   );
 }

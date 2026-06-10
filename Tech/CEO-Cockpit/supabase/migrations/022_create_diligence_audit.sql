@@ -1,3 +1,4 @@
+-- SUPERSEDED by 072_operations_live.sql — do not apply.
 CREATE TABLE IF NOT EXISTS diligence_audit (
   id SERIAL PRIMARY KEY,
   date DATE NOT NULL,

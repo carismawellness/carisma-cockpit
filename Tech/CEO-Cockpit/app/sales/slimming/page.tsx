@@ -5,6 +5,7 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
 import { SalesKPICard } from "@/components/sales/SalesKPICard";
 import { SalesKPIGrid } from "@/components/sales/SalesKPIGrid";
+import { SlimmingProgramHealthSection } from "@/components/sales/SlimmingProgramHealthSection";
 import { useSlimmingSales } from "@/lib/hooks/useSlimmingSales";
 import { useSlimmingTreatments } from "@/lib/hooks/useSlimmingTreatments";
 import { useSalaryRoster } from "@/lib/hooks/useSalaryRoster";
@@ -655,6 +656,9 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
           </div>
         )}
       </Card>
+
+      {/* ── Program Health (additive — computed server-side) ─────────── */}
+      <SlimmingProgramHealthSection dateFrom={dateFrom} dateTo={dateTo} />
     </>
   );
 }

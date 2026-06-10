@@ -1,3 +1,4 @@
+-- SUPERSEDED by 072_operations_live.sql — do not apply.
 CREATE TABLE IF NOT EXISTS google_reviews (
   id SERIAL PRIMARY KEY,
   date DATE NOT NULL,
