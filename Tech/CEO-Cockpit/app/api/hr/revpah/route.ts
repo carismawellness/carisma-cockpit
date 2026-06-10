@@ -3,25 +3,32 @@
  *
  * Revenue per available hour by location.
  *
- *  - Revenue source: same as `/api/hr/financials` (spa_revenue_daily,
- *    aesthetics_sales_daily, slimming_sales_daily).
- *  - Available-hours source priority:
- *      1. `hr_shifts_daily` (preferred — populated by the Talexio ETL).
- *      2. Estimated hours from `hr_talexio_daily_snapshot` headcount
- *         (headcount * 8h * workdays-in-month).
- *      3. `"sample"` — placeholder zero when nothing is available.
- *
- *  `dataSource` is reported per row.
+ *  - Revenue source: same queries as `/api/hr/financials`.
+ *  - Available-hours: headcount × 8h × workdays_in_month from the most
+ *    recent `hr_talexio_daily_snapshot` in or before the month.
+ *    (hr_shifts_daily is per-day only and would give near-zero RevPAH
+ *    for past months with sparse ETL runs — headcount estimate is more
+ *    reliable for a monthly view.)
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { LOCATION_ID_TO_DISPLAY, LOCATION_TO_BRAND } from "@/lib/constants/hr-mapping";
+import {
+  LOCATION_ID_TO_DISPLAY,
+  LOCATION_TO_BRAND,
+} from "@/lib/constants/hr-mapping";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-function monthBounds(monthYYYYMM: string): { start: string; end: string; workdays: number } | null {
+interface MonthBounds {
+  start: string;
+  end: string;
+  monthStart: string;
+  workdays: number;
+}
+
+function monthBounds(monthYYYYMM: string): MonthBounds | null {
   const m = monthYYYYMM.match(/^(\d{4})-(\d{2})$/);
   if (!m) return null;
   const y = parseInt(m[1], 10);
@@ -35,8 +42,9 @@ function monthBounds(monthYYYYMM: string): { start: string; end: string; workday
     if (day !== 0 && day !== 6) workdays++;
   }
   return {
-    start:    `${y}-${pad(mo)}-01`,
-    end:      `${y}-${pad(mo)}-${pad(lastDay)}`,
+    start:      `${y}-${pad(mo)}-01`,
+    end:        `${y}-${pad(mo)}-${pad(lastDay)}`,
+    monthStart: `${y}-${pad(mo)}-01`,
     workdays,
   };
 }
@@ -45,17 +53,6 @@ function currentMonthYYYYMM(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
-
-/** "HH:MM[:SS]" → hours as decimal. Returns 0 for invalid input. */
-function timeToHours(t: string | null | undefined): number {
-  if (!t) return 0;
-  const parts = t.split(":").map(Number);
-  if (parts.length < 2 || parts.some((n) => Number.isNaN(n))) return 0;
-  const [h, m, s = 0] = parts;
-  return h + m / 60 + s / 3600;
-}
-
-type DataSource = "talexio_shifts" | "estimated" | "sample";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -67,7 +64,7 @@ export async function GET(req: NextRequest) {
 
   const supabase = await createServerSupabaseClient();
 
-  // ── Revenue by location ───────────────────────────────────────────────────
+  // ── Revenue by location (same logic as /api/hr/financials) ───────────────
   const revenueByLocation = new Map<string, number>();
 
   const { data: spaRev, error: spaErr } = await supabase
@@ -81,74 +78,57 @@ export async function GET(req: NextRequest) {
   for (const r of spaRev ?? []) {
     const loc = LOCATION_ID_TO_DISPLAY[r.location_id as number];
     if (!loc) continue;
-    // services + product_* hold inc-VAT after migration 073. Divide for ex-VAT
-    // so RevPAH stays consistent with aesthetics/slimming (price_ex_vat).
-    const totalInc =
+    const total =
       Number(r.services ?? 0) +
       Number(r.product_phytomer ?? 0) +
       Number(r.product_purest ?? 0) +
       Number(r.product_other ?? 0);
-    const total = totalInc / 1.18;
     revenueByLocation.set(loc, (revenueByLocation.get(loc) ?? 0) + total);
   }
 
+  // aesthetics — include NULL date_of_service rows anchored to month bucket
   const { data: aesRev } = await supabase
     .from("aesthetics_sales_daily")
-    .select("price_ex_vat")
-    .gte("date_of_service", bounds.start)
-    .lte("date_of_service", bounds.end);
-  const aesTotal = (aesRev ?? []).reduce(
-    (a, r) => a + Number(r.price_ex_vat ?? 0),
-    0,
-  );
+    .select("price_ex_vat, date_of_service, month")
+    .or(
+      `and(date_of_service.gte.${bounds.start},date_of_service.lte.${bounds.end}),` +
+      `and(date_of_service.is.null,month.eq.${bounds.monthStart})`,
+    );
+  const aesTotal = (aesRev ?? []).reduce((a, r) => a + Number(r.price_ex_vat ?? 0), 0);
   if (aesTotal > 0) {
     revenueByLocation.set("Aesthetics Centre", aesTotal);
   }
 
+  // slimming — same pattern
   const { data: slmRev } = await supabase
     .from("slimming_sales_daily")
-    .select("price_ex_vat")
-    .gte("date_of_service", bounds.start)
-    .lte("date_of_service", bounds.end);
-  const slmTotal = (slmRev ?? []).reduce(
-    (a, r) => a + Number(r.price_ex_vat ?? 0),
-    0,
-  );
+    .select("price_ex_vat, date_of_service, month")
+    .or(
+      `and(date_of_service.gte.${bounds.start},date_of_service.lte.${bounds.end}),` +
+      `and(date_of_service.is.null,month.eq.${bounds.monthStart})`,
+    );
+  const slmTotal = (slmRev ?? []).reduce((a, r) => a + Number(r.price_ex_vat ?? 0), 0);
   if (slmTotal > 0) {
     revenueByLocation.set("Slimming Centre", slmTotal);
   }
 
-  // ── Available hours: prefer shift data ────────────────────────────────────
-  const hoursByLocation = new Map<string, number>();
-  const sourceByLocation = new Map<string, DataSource>();
+  // ── Headcount: most recent snapshot per location in or before the month ───
+  // Query a wider window (3 months back) so even locations without a
+  // current-month snapshot still get an estimate.
+  const threeMonthsBack = (() => {
+    const [y, m] = bounds.start.split("-").map(Number);
+    const d = new Date(y, m - 1 - 3, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  })();
 
-  const { data: shifts } = await supabase
-    .from("hr_shifts_daily")
-    .select("scheduled_start, scheduled_end, location_name")
-    .gte("shift_date", bounds.start)
-    .lte("shift_date", bounds.end);
-
-  if (shifts && shifts.length > 0) {
-    for (const s of shifts) {
-      const loc = s.location_name as string | null;
-      if (!loc) continue;
-      const start = timeToHours(s.scheduled_start as string | null);
-      const end   = timeToHours(s.scheduled_end   as string | null);
-      const hours = Math.max(0, end - start);
-      if (hours === 0) continue;
-      hoursByLocation.set(loc, (hoursByLocation.get(loc) ?? 0) + hours);
-      sourceByLocation.set(loc, "talexio_shifts");
-    }
-  }
-
-  // ── Fallback: estimated hours from latest headcount snapshot ──────────────
   const { data: snap } = await supabase
     .from("hr_talexio_daily_snapshot")
     .select("location_name, active_headcount, snapshot_date")
     .lte("snapshot_date", bounds.end)
-    .gte("snapshot_date", bounds.start)
+    .gte("snapshot_date", threeMonthsBack)
     .order("snapshot_date", { ascending: false });
 
+  // Keep only the most recent snapshot per location
   const headcountByLocation = new Map<string, number>();
   for (const r of snap ?? []) {
     const loc = r.location_name as string;
@@ -157,35 +137,24 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── Build rows ────────────────────────────────────────────────────────────
   const allLocations = new Set<string>([
     ...revenueByLocation.keys(),
-    ...hoursByLocation.keys(),
     ...headcountByLocation.keys(),
   ]);
 
-  for (const loc of allLocations) {
-    if (hoursByLocation.has(loc)) continue;
-    const hc = headcountByLocation.get(loc) ?? 0;
-    if (hc > 0) {
-      hoursByLocation.set(loc, hc * 8 * bounds.workdays);
-      sourceByLocation.set(loc, "estimated");
-    } else {
-      hoursByLocation.set(loc, 0);
-      sourceByLocation.set(loc, "sample");
-    }
-  }
-
-  // ── Build rows ────────────────────────────────────────────────────────────
   const rows = Array.from(allLocations)
+    .filter((loc) => loc !== "HQ")
     .map((loc) => {
       const revenue = +(revenueByLocation.get(loc) ?? 0).toFixed(2);
-      const availableHours = +(hoursByLocation.get(loc) ?? 0).toFixed(2);
+      const headcount = headcountByLocation.get(loc) ?? 0;
+      // available hours = headcount × 8h/day × workdays in month
+      const availableHours = headcount * 8 * bounds.workdays;
       const revpah = availableHours > 0 ? +(revenue / availableHours).toFixed(2) : null;
-      const dataSource: DataSource = sourceByLocation.get(loc) ?? "sample";
-      // Tag brand for downstream charts (not in the spec, harmless extra field).
       const brand = LOCATION_TO_BRAND[loc] ?? "Spa";
-      return { location: loc, revenue, availableHours, revpah, dataSource, brand };
+      return { location: loc, revenue, availableHours, headcount, revpah, brand };
     })
+    .filter((r) => r.revenue > 0 || r.headcount > 0)
     .sort((a, b) => (b.revpah ?? -1) - (a.revpah ?? -1));
 
   const validRevpahs = rows.map((r) => r.revpah).filter((v): v is number => v !== null);
@@ -194,14 +163,15 @@ export async function GET(req: NextRequest) {
       ? +(validRevpahs.reduce((a, b) => a + b, 0) / validRevpahs.length).toFixed(2)
       : null;
 
-  // Shape matches HRRevPAHResponse in lib/hooks/useHRData.ts
   return NextResponse.json({
     month,
     byLocation: rows.map((r) => ({
-      location:   r.location,
-      revpah:     r.revpah ?? 0,
-      revenue:    r.revenue,
-      dataSource: r.dataSource,
+      location:       r.location,
+      revpah:         r.revpah ?? 0,
+      revenue:        r.revenue,
+      availableHours: r.availableHours,
+      headcount:      r.headcount,
+      dataSource:     "estimated" as const,
     })),
     avgRevPAH: avgRevpah ?? 0,
   });

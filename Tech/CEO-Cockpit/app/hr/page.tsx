@@ -258,23 +258,12 @@ const latenessColumns = [
   },
 ];
 
-// Consolidated leave table: vacation hours + sick hours + total
+// Annual entitlement table — Talexio provides statutory entitlement, not remaining balance
 const leaveColumns = [
   { key: "name", label: "Employee", sortable: true },
-  { key: "vacationHrs", label: "Vacation (hrs)", align: "right" as const, sortable: true },
-  {
-    key: "sickHrs",
-    label: "Sick (hrs)",
-    align: "right" as const,
-    sortable: true,
-    render: (v: unknown) => {
-      const hrs = Number(v);
-      if (hrs > 80) return getStatusBadge(`${hrs}h`, "bg-red-100 text-red-800");
-      if (hrs > 40) return getStatusBadge(`${hrs}h`, "bg-amber-100 text-amber-800");
-      return `${hrs}h`;
-    },
-  },
-  { key: "totalHrs", label: "Total (hrs)", align: "right" as const, sortable: true },
+  { key: "vacationHrs", label: "Annual Vacation (hrs)", align: "right" as const, sortable: true },
+  { key: "sickHrs", label: "Annual Sick (hrs)", align: "right" as const, sortable: true },
+  { key: "totalHrs", label: "Total Entitlement (hrs)", align: "right" as const, sortable: true },
 ];
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -731,13 +720,16 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════
-          SECTION 4: Leave Balances (consolidated)
+          SECTION 4: Annual Leave Entitlement
           ══════════════════════════════════════════════════════════════════ */}
       <Card className="p-3 md:p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center">
-          Leave Balances — {new Date().getFullYear()}
+        <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
+          Annual Leave Entitlement — {new Date().getFullYear()}
           {isLeaveReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
         </h2>
+        <p className="text-xs text-muted-foreground mb-4">
+          Statutory annual allowance per employee — remaining balance not available from Talexio
+        </p>
         {leaveQ.isLoading ? (
           <TableSkeleton rows={8} columns={4} />
         ) : (
