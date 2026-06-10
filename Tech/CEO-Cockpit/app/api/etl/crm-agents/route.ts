@@ -143,6 +143,8 @@ function parseDate(val: string): string | null {
 type CrmRow = {
   agent_slug:          string;
   date:                string;
+  booking_eff_pct:     number;
+  booking_rate_pct:    number;
   lc_sales:            number;
   lc_messages:         number;
   lc_booked:           number;
@@ -168,6 +170,8 @@ function buildChatRow(slug: string, date: string, row: string[]): CrmRow {
   return {
     agent_slug:          slug,
     date,
+    booking_eff_pct:     0,
+    booking_rate_pct:    0,
     lc_sales:            parseCurrency(cell(row, 1)),
     lc_messages:         parseInteger(cell(row, 2)),
     lc_booked:           parseInteger(cell(row, 3)),
@@ -191,38 +195,39 @@ function buildChatRow(slug: string, date: string, row: string[]): CrmRow {
 }
 
 function buildSdrRow(slug: string, date: string, row: string[]): CrmRow {
-  // SDR sheets (Juliana, Nathalia, …): columns A–U
+  // SDR sheets after 2026-06-10 column insertion (G=Booking Eff, H=Booking Rate): columns A–W
   //   A=Date | B=Out Sales | C=Out Dials | D=Out Answered | E=Out Booked | F=Out Dep
-  //   G=In Sales | H=In Received | I=In Booked | J=In Dep
-  //   K=Chat Sales | L=Chat Convs | M=Chat Booked | N=Chat Dep
-  //   O=Total Sales | P=Total Booked | Q=Total Dep | R=Rate | S=Dials | T=Dep% | U=AOV
+  //   G=Booking Eff | H=Booking Rate (NEW — all prior cols from G shift +2)
+  //   I=In Sales | J=In Recv | K=In Booked | L=In Dep
+  //   M=Chat Sales | N=Chat Convs | O=Chat Booked | P=Chat Dep
+  //   Q=Tot Sales | R=Tot Booked | S=Tot Dep | T=Rate | U=Dials | V=Dep% | W=AOV
   const outDials  = parseInteger(cell(row, 2));   // C
-  const inRecv    = parseInteger(cell(row, 7));   // H
-  const chatConvs = parseInteger(cell(row, 11));  // L
+  const inRecv    = parseInteger(cell(row, 9));   // J
+  const chatConvs = parseInteger(cell(row, 13));  // N
   return {
     agent_slug:          slug,
     date,
-    lc_sales:            parseCurrency(cell(row, 10)),  // K
-    lc_messages:         chatConvs,                     // L
-    lc_booked:           parseInteger(cell(row, 12)),   // M
-    lc_deposit:          parseInteger(cell(row, 13)),   // N
-    crm_sales:           parseCurrency(cell(row, 6)),   // G
-    crm_messages:        inRecv,                        // H
-    crm_booked:          parseInteger(cell(row, 8)),    // I
-    crm_deposit:         parseInteger(cell(row, 9)),    // J
-    other_sales:         parseCurrency(cell(row, 1)),   // B
-    other_messages:      outDials,                      // C
-    other_booked:        parseInteger(cell(row, 4)),    // E
-    other_deposit:       parseInteger(cell(row, 5)),    // F
-    // Sum the three channel interaction counts — col 18 (KPIs Dials)
-    // duplicates outbound dials and underreports total volume.
+    booking_eff_pct:     parsePercent(cell(row, 6)),   // G
+    booking_rate_pct:    parsePercent(cell(row, 7)),   // H
+    lc_sales:            parseCurrency(cell(row, 12)), // M
+    lc_messages:         chatConvs,                    // N
+    lc_booked:           parseInteger(cell(row, 14)),  // O
+    lc_deposit:          parseInteger(cell(row, 15)),  // P
+    crm_sales:           parseCurrency(cell(row, 8)),  // I
+    crm_messages:        inRecv,                       // J
+    crm_booked:          parseInteger(cell(row, 10)),  // K
+    crm_deposit:         parseInteger(cell(row, 11)),  // L
+    other_sales:         parseCurrency(cell(row, 1)),  // B
+    other_messages:      outDials,                     // C
+    other_booked:        parseInteger(cell(row, 4)),   // E
+    other_deposit:       parseInteger(cell(row, 5)),   // F
     total_messages:      outDials + inRecv + chatConvs,
-    total_booked:        parseInteger(cell(row, 15)),   // P
-    total_deposit_count: parseInteger(cell(row, 16)),   // Q
-    conversion_rate_pct: parsePercent(cell(row, 17)),   // R
-    total_sales:         parseCurrency(cell(row, 14)),  // O
-    deposit_pct:         parsePercent(cell(row, 19)),   // T
-    aov:                 parseCurrency(cell(row, 20)),  // U
+    total_booked:        parseInteger(cell(row, 17)),  // R
+    total_deposit_count: parseInteger(cell(row, 18)),  // S
+    conversion_rate_pct: parsePercent(cell(row, 19)),  // T
+    total_sales:         parseCurrency(cell(row, 16)), // Q
+    deposit_pct:         parsePercent(cell(row, 21)),  // V
+    aov:                 parseCurrency(cell(row, 22)), // W
   };
 }
 
