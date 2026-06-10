@@ -161,42 +161,47 @@ export function GroupBrandBreakdown({ period, ly, spaLocations, isFetching }: Pr
               formatter={(v: unknown, name) => [fmtK(Number(v)), String(name ?? "")]}
               cursor={{ fill: "rgba(0,0,0,0.03)" }}
             />
-            {/* LY bar — soft brand color. Hidden (height 0) for rows where hasLy=false (Spa locations). */}
-            <Bar
-              dataKey={(d: Row) => (d.hasLy ? d.ly : 0)}
-              name="Same Period LY"
-              barSize={isWide ? 56 : 72}
-              radius={[4, 4, 0, 0]}
-            >
-              {chartData.map((d, i) => (
-                <Cell key={`ly-${i}`} fill={d.hasLy ? d.soft : "transparent"} />
-              ))}
-              <LabelList
-                content={(props: { x?: number | string; y?: number | string; width?: number | string; index?: number }) => {
-                  const i = props.index ?? -1;
-                  if (i < 0) return null;
-                  const row = chartData[i];
-                  if (!row || !row.hasLy || row.ly <= 0) return null;
-                  const x = Number(props.x ?? 0);
-                  const y = Number(props.y ?? 0);
-                  const w = Number(props.width ?? 0);
-                  return (
-                    <text
-                      x={x + w / 2}
-                      y={y - 5}
-                      textAnchor="middle"
-                      fontSize="10"
-                      fontWeight="500"
-                      fill="#9ca3af"
-                    >
-                      {fmtK(row.ly)}
-                    </text>
-                  );
-                }}
-              />
-            </Bar>
+            {/* LY companion bar — only rendered in collapsed (3-brand) view. In
+                expanded mode Spa locations have no LY data anyway, and keeping
+                a zero-height LY bar around just steals half of every column's
+                width and makes the current bars look skinny. */}
+            {!isWide && (
+              <Bar
+                dataKey={(d: Row) => (d.hasLy ? d.ly : 0)}
+                name="Same Period LY"
+                barSize={84}
+                radius={[4, 4, 0, 0]}
+              >
+                {chartData.map((d, i) => (
+                  <Cell key={`ly-${i}`} fill={d.hasLy ? d.soft : "transparent"} />
+                ))}
+                <LabelList
+                  content={(props: { x?: number | string; y?: number | string; width?: number | string; index?: number }) => {
+                    const i = props.index ?? -1;
+                    if (i < 0) return null;
+                    const row = chartData[i];
+                    if (!row || !row.hasLy || row.ly <= 0) return null;
+                    const x = Number(props.x ?? 0);
+                    const y = Number(props.y ?? 0);
+                    const w = Number(props.width ?? 0);
+                    return (
+                      <text
+                        x={x + w / 2}
+                        y={y - 5}
+                        textAnchor="middle"
+                        fontSize="10"
+                        fontWeight="500"
+                        fill="#9ca3af"
+                      >
+                        {fmtK(row.ly)}
+                      </text>
+                    );
+                  }}
+                />
+              </Bar>
+            )}
             {/* Current bar — dark brand color, with value + YoY label on top */}
-            <Bar dataKey="current" name="This Period" barSize={isWide ? 56 : 72} radius={[4, 4, 0, 0]}>
+            <Bar dataKey="current" name="This Period" barSize={isWide ? 80 : 84} radius={[4, 4, 0, 0]}>
               {chartData.map((d, i) => <Cell key={`cur-${i}`} fill={d.dark} />)}
               <LabelList
                 content={(props: { x?: number | string; y?: number | string; width?: number | string; index?: number }) => {
