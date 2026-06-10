@@ -275,18 +275,31 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
         </div>
       </CardHeader>
 
-      <CardContent className="pt-1 px-2 md:px-6">
+      <CardContent className="pt-1 px-0 sm:px-2 md:px-4">
         {/* Mobile scroll hint */}
-        <p className="mb-1 text-center text-[10px] text-muted-foreground sm:hidden">← swipe to scroll →</p>
-        <div className="overflow-x-auto -mx-2 md:mx-0">
-          <div className="h-[640px]" style={{ minWidth: Math.max(rows.length * 120, 480) }}>
+        <p className="mb-1 text-center text-[10px] text-muted-foreground md:hidden">← swipe to scroll →</p>
+        <div className="overflow-x-auto">
+          <div className="h-[640px]" style={{ minWidth: `max(100%, ${rows.length * 72}px)` }}>
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={rows} margin={{ top: 28, right: 40, left: 4, bottom: 160 }}>
+              <ComposedChart data={rows} margin={{ top: 28, right: 20, left: 0, bottom: 160 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
 
                 {/* Brand background shading */}
                 {brandSections.map(({ brand, x1, x2 }) => (
                   <ReferenceArea key={brand} x1={x1} x2={x2} fill={BRAND_BG[brand]} fillOpacity={1} stroke="none" />
+                ))}
+
+                {/* Brand separator lines — dashed vertical at start of each non-first brand */}
+                {brandSections.slice(1).map(({ brand, x1 }) => (
+                  <ReferenceLine
+                    key={`sep-${brand}`}
+                    yAxisId="rev"
+                    x={x1}
+                    stroke="#94A3B8"
+                    strokeDasharray="5 4"
+                    strokeWidth={1.5}
+                    strokeOpacity={0.7}
+                  />
                 ))}
 
                 <XAxis
