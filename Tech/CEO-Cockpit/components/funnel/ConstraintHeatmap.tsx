@@ -108,7 +108,7 @@ function buildRows(brands: Record<string, BrandHeatmapMetrics>): RowGroups {
     {
       metric: "Booking Conversion", benchmark: `${OVERALL_CONVERSION_BENCHMARK}%`,
       cells: BRANDS.map(b => cell(
-        brands[b]?.booking_conversion,
+        brands[b]?.booking_efficiency,
         n => `${n.toFixed(1)}%`,
         n => overallConversionSeverity(n),
       )),

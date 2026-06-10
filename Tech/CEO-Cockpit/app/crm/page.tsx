@@ -47,7 +47,7 @@ function CRMContent({
         <h2 className="text-lg font-semibold text-foreground mb-3">Lead Reconciliation</h2>
         <LeadReconciliation dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
       </section>
-
+      11111   111
       {/* Pipeline Funnel */}
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-3">Pipeline Funnel</h2>
@@ -56,6 +56,7 @@ function CRMContent({
 
       {/* Leads per Hour Distribution */}
       <section>
+        <h2 className="text-lg font-semibold text-foreground mb-3">Lead Volume by Hour</h2>
         <LeadsPerHour dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
       </section>
 
