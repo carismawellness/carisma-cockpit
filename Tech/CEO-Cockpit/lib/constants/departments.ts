@@ -35,6 +35,10 @@ export interface Department {
   label: string;
   icon: LucideIcon;
   path: string;
+  /** Permission group label shown in User Access UI */
+  group?: string;
+  /** If true, all children share one permission key (dept.slug) — e.g. Settings */
+  singleKey?: boolean;
   children?: SubItem[];
 }
 
@@ -44,6 +48,7 @@ export const departments: Department[] = [
     label: "To Do",
     icon: ClipboardList,
     path: "",
+    group: "General",
     children: [
       { slug: "funnel",     label: "Funnel",     path: "/funnel",     icon: Filter },
       { slug: "hr",         label: "HR",         path: "/hr",         icon: Users },
@@ -55,6 +60,7 @@ export const departments: Department[] = [
     label: "Sales",
     icon: DollarSign,
     path: "/sales/spa",
+    group: "Sales",
     children: [
       { slug: "spa", label: "Spa", path: "/sales/spa", icon: Sparkles },
       { slug: "aesthetics", label: "Aesthetics", path: "/sales/aesthetics", icon: Heart },
@@ -66,6 +72,7 @@ export const departments: Department[] = [
     label: "CRM",
     icon: Headphones,
     path: "/crm",
+    group: "CRM",
     children: [
       { slug: "crm-overview", label: "Overview", path: "/crm", icon: Headphones },
       {
@@ -95,6 +102,7 @@ export const departments: Department[] = [
     label: "Marketing",
     icon: Megaphone,
     path: "/marketing",
+    group: "Marketing",
     children: [
       { slug: "marketing-master",     label: "Master",     path: "/marketing",            icon: Megaphone },
       { slug: "marketing-spa",        label: "Spa",        path: "/marketing/spa",        icon: Sparkles  },
@@ -107,6 +115,7 @@ export const departments: Department[] = [
     label: "EBITDA",
     icon: TrendingUp,
     path: "/finance/ebitda-v2",
+    group: "Finance",
     children: [
       { slug: "ebitda-point-in-time",  label: "Point in Time",  path: "/finance/ebitda-v2",            icon: TrendingUp },
       { slug: "ebitda-longitudinal",   label: "Longitudinal",   path: "/finance/ebitda-longitudinal",  icon: TrendingUp },
@@ -117,6 +126,8 @@ export const departments: Department[] = [
     label: "Settings",
     icon: Settings,
     path: "/settings",
+    group: "Admin",
+    singleKey: true,
     children: [
       { slug: "ebitda-rules",   label: "EBITDA Rules",   path: "/settings/ebitda-rules",   icon: BookOpen },
       { slug: "ebitda-mapping", label: "EBITDA Mapping", path: "/settings/ebitda-mapping", icon: BookOpen },
