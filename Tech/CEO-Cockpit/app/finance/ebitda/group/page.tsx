@@ -152,7 +152,7 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
   /* ---- Aggregate SPA locations → single BU ---- */
   const spaBU = useMemo((): BUData => {
     const z: BUData = {
-      slug: "spa", name: "Spa", color: "#1B3A4B",
+      slug: "spa", name: "Spa", color: "#EFE7D7",
       revenue: 0, cogs: 0, wages: 0, advertising: 0,
       rent: 0, utilities: 0, sga: 0, ebitda: 0,
     };
@@ -173,7 +173,7 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
   const aestheticsBU = useMemo((): BUData => {
     const d = aesth.depts.find((x) => x.dept === "aesthetics");
     return {
-      slug: "aesthetics", name: "Aesthetics", color: "#B79E61",
+      slug: "aesthetics", name: "Aesthetics", color: "#DEEBEB",
       revenue:     d?.revenue     ?? 0,
       cogs:        d?.cogs        ?? 0,
       wages:       d?.wages       ?? 0,
@@ -188,7 +188,7 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
   const slimmingBU = useMemo((): BUData => {
     const d = aesth.depts.find((x) => x.dept === "slimming");
     return {
-      slug: "slimming", name: "Slimming", color: "#4A90D9",
+      slug: "slimming", name: "Slimming", color: "#C9D8C1",
       revenue:     d?.revenue     ?? 0,
       cogs:        d?.cogs        ?? 0,
       wages:       d?.wages       ?? 0,
@@ -432,8 +432,8 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
                   </thead>
                   <tbody>
                     {/* ── Spa section header ── */}
-                    <tr className="bg-[#1B3A4B]/8">
-                      <td colSpan={10} className="py-1 px-3 text-xs font-semibold uppercase tracking-wide text-[#1B3A4B] sticky left-0">
+                    <tr className="bg-[#EFE7D7]/40">
+                      <td colSpan={10} className="py-1 px-3 text-xs font-semibold uppercase tracking-wide text-[#8C7A5A] sticky left-0">
                         Spa
                       </td>
                     </tr>
@@ -490,8 +490,8 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
                     </tr>
 
                     {/* ── Aesthetics section header ── */}
-                    <tr className="bg-[#B79E61]/10 border-t-2 border-border">
-                      <td colSpan={10} className="py-1 px-3 text-xs font-semibold uppercase tracking-wide text-[#8B7540] sticky left-0">
+                    <tr className="bg-[#DEEBEB]/40 border-t-2 border-border">
+                      <td colSpan={10} className="py-1 px-3 text-xs font-semibold uppercase tracking-wide text-[#3B7676] sticky left-0">
                         Aesthetics
                       </td>
                     </tr>
@@ -500,7 +500,7 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
                     <tr className="border-b border-border">
                       <td className="py-1.5 px-3 sticky left-0 bg-background z-10">
                         <span className="inline-flex items-center gap-1.5 pl-2">
-                          <span className="inline-block h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: "#B79E61" }} />
+                          <span className="inline-block h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: "#DEEBEB", border: "1px solid #3B7676" }} />
                           Aesthetics
                         </span>
                       </td>
@@ -528,8 +528,8 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
                     </tr>
 
                     {/* ── Slimming section header ── */}
-                    <tr className="bg-[#4A90D9]/10 border-t-2 border-border">
-                      <td colSpan={10} className="py-1 px-3 text-xs font-semibold uppercase tracking-wide text-[#2F6EA8] sticky left-0">
+                    <tr className="bg-[#C9D8C1]/40 border-t-2 border-border">
+                      <td colSpan={10} className="py-1 px-3 text-xs font-semibold uppercase tracking-wide text-[#3D6B3D] sticky left-0">
                         Slimming
                       </td>
                     </tr>
@@ -538,7 +538,7 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
                     <tr className="border-b border-border">
                       <td className="py-1.5 px-3 sticky left-0 bg-background z-10">
                         <span className="inline-flex items-center gap-1.5 pl-2">
-                          <span className="inline-block h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: "#4A90D9" }} />
+                          <span className="inline-block h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: "#C9D8C1", border: "1px solid #3D6B3D" }} />
                           Slimming
                         </span>
                       </td>
@@ -566,8 +566,8 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
                     </tr>
 
                     {/* ── Group Total ── */}
-                    <tr className="border-t-2 border-border bg-[#1B3A4B]/5">
-                      <td className="py-2 px-3 font-bold text-foreground sticky left-0 bg-[#1B3A4B]/5 z-10">Group Total</td>
+                    <tr className="border-t-2 border-border bg-[#EFE7D7]/30">
+                      <td className="py-2 px-3 font-bold text-foreground sticky left-0 bg-[#EFE7D7]/30 z-10">Group Total</td>
                       <td className="py-2 px-3 text-right font-bold text-foreground">{fmtCurrencyShort(group.revenue)}</td>
                       <td className="py-2 px-3 text-right font-bold text-foreground">({fmtCurrencyShort(group.wages)})</td>
                       <td className="py-2 px-3 text-right font-bold text-foreground">({fmtCurrencyShort(group.cogs)})</td>

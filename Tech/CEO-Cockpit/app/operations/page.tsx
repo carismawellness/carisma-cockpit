@@ -42,8 +42,8 @@ const REVIEW_LOCATIONS = [
   { name: "Novotel",          short: "Novo",   totalReviews: 45,  avgScore: 4.8, prevScore: 4.5, color: "#0EA5E9" },
   { name: "Labranda",         short: "Labr",   totalReviews: 36,  avgScore: 4.7, prevScore: 4.6, color: "#9CA3AF" },
   { name: "Sunny",            short: "Sunny",  totalReviews: 32,  avgScore: 4.9, prevScore: 4.9, color: "#7C6F64" },
-  { name: "Carisma Aesthetics", short: "Aes",  totalReviews: 36,  avgScore: 4.8, prevScore: 4.7, color: "#96B2B2" },
-  { name: "Carisma Slimming",   short: "Slim", totalReviews: 10,  avgScore: 4.9, prevScore: 4.9, color: "#8EB093" },
+  { name: "Carisma Aesthetics", short: "Aes",  totalReviews: 36,  avgScore: 4.8, prevScore: 4.7, color: "#DEEBEB" },
+  { name: "Carisma Slimming",   short: "Slim", totalReviews: 10,  avgScore: 4.9, prevScore: 4.9, color: "#C9D8C1" },
 ];
 
 /* ═══════════════════════════════════════════════════════════════════════

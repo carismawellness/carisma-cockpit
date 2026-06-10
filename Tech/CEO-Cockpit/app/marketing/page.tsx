@@ -13,9 +13,9 @@ import type { CampaignData } from "@/lib/types/ads";
 /* ---------- brand colours ---------- */
 
 const BRAND = {
-  spa: { name: "Spa", color: "#B79E61" },
-  aesthetics: { name: "Aesthetics", color: "#96B2B2" },
-  slimming: { name: "Slimming", color: "#8EB093" },
+  spa: { name: "Spa", color: "#EFE7D7" },
+  aesthetics: { name: "Aesthetics", color: "#DEEBEB" },
+  slimming: { name: "Slimming", color: "#C9D8C1" },
 } as const;
 
 type BrandKey = keyof typeof BRAND;

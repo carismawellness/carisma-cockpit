@@ -54,9 +54,9 @@ const COST_LABELS: Record<string, string> = {
 // ── Group EBITDA chart ────────────────────────────────────────────────────────
 
 const BRAND_EBITDA_COLORS = {
-  spa:  "#475569",
-  aes:  "#d97706",
-  slim: "#0d9488",
+  spa:  "#EFE7D7",
+  aes:  "#DEEBEB",
+  slim: "#C9D8C1",
 };
 
 interface GroupChartPoint {
@@ -132,7 +132,7 @@ function GroupEbitdaChart({ points, width }: { points: GroupChartPoint[]; width:
   const fmtEuro = (v: number) =>
     Math.abs(v) >= 1000 ? "€" + (v / 1000).toFixed(0) + "k" : "€" + v;
 
-  const lblStyle = { fontSize: 9, fill: "#fff", fontWeight: 700 };
+  const lblStyle = { fontSize: 9, fill: "#374151", fontWeight: 700 };
 
   return (
     <div style={{ width, height: 340 }}>
