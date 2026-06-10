@@ -47,10 +47,6 @@ const FALLBACK_BRAND_AGENTS: Record<string, string[]> = {
   slimming:   ["dorianne", "queenee"],
 };
 
-// Manual booking efficiency overrides — takes precedence over DB computation
-const BRAND_CONV_OVERRIDE: Partial<Record<string, number>> = {
-  spa: 10.0,  // Business assumption: conservative 10%
-};
 
 function resolveAov(brandSlug: string, campaignName: string): number {
   const lower = campaignName.toLowerCase();
@@ -158,22 +154,21 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Conversion rate: manual override takes precedence, otherwise weighted avg from crm_agent_daily
-    let conversionPct: number | null = BRAND_CONV_OVERRIDE[slug] ?? null;
-    if (conversionPct === null) {
-      const agents = brandAgents[slug] ?? [];
-      if (agents.length > 0) {
-        const { data: agentRows } = await supabase
-          .from("crm_agent_daily")
-          .select("total_booked, total_messages, booking_eff_pct")
-          .in("agent_slug", agents)
-          .gte("date", from)
-          .lte("date", to);
-        type AgRow = { total_booked: number; total_messages: number; booking_eff_pct: number };
-        const totalMessages = (agentRows ?? []).reduce((s: number, r: AgRow) => s + (r.total_messages ?? 0), 0);
-        const weightedSum   = (agentRows ?? []).reduce((s: number, r: AgRow) => s + ((r.booking_eff_pct ?? 0) * (r.total_messages ?? 0)), 0);
-        conversionPct = totalMessages > 0 ? Math.round((weightedSum / totalMessages) * 10) / 10 : null;
-      }
+    // Conversion rate: Meta bookings (SDR outbound) ÷ Meta leads for the brand.
+    // Matches the funnel heatmap's Booking Efficiency definition.
+    const brandMetaLeads = [...map.values()].reduce((s, v) => s + v.leads, 0);
+    let conversionPct: number | null = null;
+    const agents = brandAgents[slug] ?? [];
+    if (agents.length > 0 && brandMetaLeads > 0) {
+      const { data: agentRows } = await supabase
+        .from("crm_agent_daily")
+        .select("other_booked")
+        .in("agent_slug", agents)
+        .gte("date", from)
+        .lte("date", to);
+      type AgRow = { other_booked: number };
+      const metaBooked = (agentRows ?? []).reduce((s: number, r: AgRow) => s + (r.other_booked ?? 0), 0);
+      conversionPct = Math.round((metaBooked / brandMetaLeads) * 1000) / 10;
     }
 
     // Build campaign rows

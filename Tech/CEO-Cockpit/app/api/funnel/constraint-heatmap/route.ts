@@ -2,15 +2,18 @@
  * GET /api/funnel/constraint-heatmap?from=YYYY-MM-DD&to=YYYY-MM-DD
  *
  * Metric sources:
- *   total_revenue       — brand revenue table (Cockpit datasheet via ETL)
+ *   total_revenue       — brand revenue table, gross sales (Cockpit datasheet via ETL)
  *   total_leads         — Meta meta_campaigns_daily: SUM(leads)
  *   total_bookings      — crm_agent_daily: SUM(total_booked) for SDR agents
+ *                         (includes outbound + inbound + chat from each SDR sheet)
+ *   total_meta_bookings — crm_agent_daily: SUM(other_booked) for SDR agents
+ *                         (outbound-only — bookings from SDRs dialling Meta leads)
  *   daily_leads         — Meta leads / calendar days in range
  *   leads_per_agent     — daily_leads / active SDR count in period
- *   roas                — total_revenue / total_spend
+ *   roas                — total_revenue / total_spend (blended)
  *   cpl                 — Meta spend / Meta leads
- *   booking_efficiency  — weighted avg of crm_agent_daily.conversion_rate_pct across SDR agents
- *                         (SUM(rate * messages) / SUM(messages))
+ *   booking_efficiency  — total_meta_bookings / total_leads × 100
+ *                         (Meta lead in → outbound booking out)
  *   deposit_rate        — crm_agent_daily: SUM(total_deposit_count) / SUM(total_booked) for SDR agents
  *   speed_to_lead_min   — crm_daily: median of daily medians
  *   ad_refresh_days     — meta_campaigns_daily: days since newest campaign_id first appeared
@@ -34,26 +37,22 @@ const FALLBACK_SDR_AGENTS: Record<BrandSlug, string[]> = {
   slimming:   ["dorianne", "queenee"],
 };
 
-// Manual booking efficiency overrides — takes precedence over DB computation
-const BRAND_BOOKING_OVERRIDE: Partial<Record<BrandSlug, number>> = {
-  spa: 10.0,  // Business assumption: conservative 10%
-};
-
 export type BrandHeatmapMetrics = {
-  total_revenue:      number | null;
-  total_leads:        number | null;
-  total_bookings:     number | null;
-  daily_leads:        number | null;
-  leads_per_agent:    number | null;
-  roas:               number | null;
-  cpl:                number | null;
-  booking_efficiency: number | null;
-  deposit_rate:       number | null;
-  show_rate_pct:      number | null;
-  speed_to_lead_min:  number | null;
-  ad_refresh_days:    number | null;
+  total_revenue:       number | null;
+  total_leads:         number | null;
+  total_bookings:      number | null;
+  total_meta_bookings: number | null;
+  daily_leads:         number | null;
+  leads_per_agent:     number | null;
+  roas:                number | null;
+  cpl:                 number | null;
+  booking_efficiency:  number | null;
+  deposit_rate:        number | null;
+  show_rate_pct:       number | null;
+  speed_to_lead_min:   number | null;
+  ad_refresh_days:     number | null;
   // kept for campaign drilldown compatibility
-  total_spend:        number | null;
+  total_spend:         number | null;
 };
 
 export type ConstraintHeatmapResponse = {
@@ -64,7 +63,7 @@ export type ConstraintHeatmapResponse = {
 };
 
 const EMPTY_METRICS: BrandHeatmapMetrics = {
-  total_revenue: null, total_leads: null, total_bookings: null,
+  total_revenue: null, total_leads: null, total_bookings: null, total_meta_bookings: null,
   daily_leads: null, leads_per_agent: null,
   roas: null, cpl: null,
   booking_efficiency: null, deposit_rate: null,
@@ -149,10 +148,12 @@ export async function GET(req: NextRequest) {
       ? Math.floor((Date.now() - new Date(newestLaunch).getTime()) / 86_400_000)
       : null;
 
-    // ── 2. CRM agent data: booking efficiency, deposit rate, active SDR count ─
+    // ── 2. CRM agent data: bookings, deposit rate, active SDR count ─
+    // other_booked = SDR Outbound Booked (sheet col E) — bookings from SDRs
+    // dialling Meta leads. total_booked = all channels (out + in + chat).
     const { data: agentRows } = await supabase
       .from("crm_agent_daily")
-      .select("agent_slug, total_booked, total_messages, total_deposit_count, booking_eff_pct")
+      .select("agent_slug, total_booked, other_booked, total_deposit_count")
       .in("agent_slug", sdrs)
       .gte("date", from)
       .lte("date", to);
@@ -160,29 +161,19 @@ export async function GET(req: NextRequest) {
     type AgentRow = {
       agent_slug: string;
       total_booked: number;
-      total_messages: number;
+      other_booked: number;
       total_deposit_count: number;
-      booking_eff_pct: number;
     };
 
-    const totalBooked   = (agentRows ?? []).reduce((s: number, r: AgentRow) => s + (r.total_booked   ?? 0), 0);
-    const totalMessages = (agentRows ?? []).reduce((s: number, r: AgentRow) => s + (r.total_messages ?? 0), 0);
-    const totalDeposits = (agentRows ?? []).reduce((s: number, r: AgentRow) => s + (r.total_deposit_count ?? 0), 0);
+    const totalBooked    = (agentRows ?? []).reduce((s: number, r: AgentRow) => s + (r.total_booked        ?? 0), 0);
+    const metaBooked     = (agentRows ?? []).reduce((s: number, r: AgentRow) => s + (r.other_booked        ?? 0), 0);
+    const totalDeposits  = (agentRows ?? []).reduce((s: number, r: AgentRow) => s + (r.total_deposit_count ?? 0), 0);
 
-    // Booking efficiency: weighted average of per-row booking_eff_pct (sheet col G),
-    // weighted by total_messages so high-volume agents contribute proportionally.
-    let booking_efficiency: number | null;
-    if (BRAND_BOOKING_OVERRIDE[slug] !== undefined) {
-      booking_efficiency = BRAND_BOOKING_OVERRIDE[slug]!;
-    } else {
-      const weightedSum = (agentRows ?? []).reduce(
-        (s: number, r: AgentRow) => s + ((r.booking_eff_pct ?? 0) * (r.total_messages ?? 0)),
-        0,
-      );
-      booking_efficiency = totalMessages > 0
-        ? Math.round((weightedSum / totalMessages) * 10) / 10
-        : null;
-    }
+    // Booking efficiency: Meta bookings (SDR outbound) ÷ Meta leads.
+    // The honest funnel ratio — Meta lead in → outbound booking out.
+    const booking_efficiency = metaLeads > 0
+      ? Math.round((metaBooked / metaLeads) * 1000) / 10
+      : null;
 
     const deposit_rate = totalBooked > 0
       ? Math.round((totalDeposits / totalBooked) * 1000) / 10
@@ -246,8 +237,9 @@ export async function GET(req: NextRequest) {
 
     return [slug, {
       total_revenue,
-      total_leads:    metaLeads > 0 ? metaLeads : null,
-      total_bookings: totalBooked > 0 ? totalBooked : null,
+      total_leads:         metaLeads > 0 ? metaLeads : null,
+      total_bookings:      totalBooked > 0 ? totalBooked : null,
+      total_meta_bookings: metaBooked > 0 ? metaBooked : null,
       daily_leads,
       leads_per_agent,
       roas,

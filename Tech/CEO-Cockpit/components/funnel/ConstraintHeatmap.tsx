@@ -70,6 +70,14 @@ function buildRows(brands: Record<string, BrandHeatmapMetrics>): { main: AnyRow[
         () => "green",
       )),
     },
+    {
+      metric: "Total Meta Bookings", benchmark: null,
+      cells: BRANDS.map(b => cell(
+        brands[b]?.total_meta_bookings,
+        n => n.toLocaleString(),
+        () => "green",
+      )),
+    },
 
     // ── Lead flow ─────────────────────────────────────────────────────
     { type: "section", label: "Lead Flow" },
