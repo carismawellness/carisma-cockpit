@@ -4,6 +4,7 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { SalesPerformance } from "@/components/crm/SalesPerformance";
 import { MessageQueueHealth } from "@/components/crm/MessageQueueHealth";
 import { LeadReconciliation } from "@/components/crm/LeadReconciliation";
+import { LeadsPerHour } from "@/components/crm/LeadsPerHour";
 import { PipelineFunnel } from "@/components/crm/PipelineFunnel";
 import { GHLSyncBadge } from "@/components/crm/GHLSyncBadge";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
@@ -85,6 +86,10 @@ function CRMContent({
         <PipelineFunnel dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
       </section>
 
+      {/* Daily Lead Volume */}
+      <section>
+        <LeadsPerHour dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
+      </section>
     </>
   );
 }
