@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { getAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const supabase = await createServerSupabaseClient();
+  const supabase = getAdminClient();
 
   const { data, error } = await supabase
     .from("crm_daily")
@@ -18,6 +18,6 @@ export async function GET() {
   }
 
   return NextResponse.json({
-    last_synced: data?.etl_synced_at ?? null,
+    last_synced: (data as { etl_synced_at?: string } | null)?.etl_synced_at ?? null,
   });
 }

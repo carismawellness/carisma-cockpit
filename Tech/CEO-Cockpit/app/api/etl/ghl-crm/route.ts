@@ -110,14 +110,18 @@ type ContactApiRow = {
 async function fetchContactStats(
   brand: GhlBrand,
   fromMs: number,
-  toMs: number
+  toMs: number,
+  log: string[]
 ): Promise<Map<string, DailyContactStats>> {
   const byDate = new Map<string, DailyContactStats>();
   const toMsInclusive = toMs + 86_400_000;
 
   let startAfter: string | undefined;
   let startAfterId: string | undefined;
-  const MAX_PAGES = 150; // up to 15,000 contacts
+  let prevCursor = "";
+  const MAX_PAGES = 500; // up to 50,000 contacts
+  let processed = 0;
+  let pageCount = 0;
 
   for (let page = 0; page < MAX_PAGES; page++) {
     const params: Record<string, string> = {
@@ -129,10 +133,11 @@ async function fetchContactStats(
 
     const data = (await ghlGet("/contacts/", brand.apiKey, params)) as {
       contacts?: ContactApiRow[];
-      meta?: { startAfter?: number; startAfterId?: string };
+      meta?: { startAfter?: number | string; startAfterId?: string };
     };
 
     const contacts = data.contacts ?? [];
+    pageCount++;
     if (contacts.length === 0) break;
 
     let oldestInBatch = Infinity;
@@ -140,6 +145,7 @@ async function fetchContactStats(
     for (const c of contacts) {
       const ts = new Date(c.dateAdded).getTime();
       if (ts < oldestInBatch) oldestInBatch = ts;
+      processed++;
       if (ts > toMsInclusive || ts < fromMs) continue;
 
       const dateStr = c.dateAdded.slice(0, 10);
@@ -159,14 +165,17 @@ async function fetchContactStats(
       });
     }
 
-    // Contacts are sorted newest-first — stop once entire batch is past window
     if (oldestInBatch < fromMs) break;
+    if (data.meta?.startAfter === undefined || data.meta?.startAfter === null) break;
 
-    if (!data.meta?.startAfter) break;
+    const nextCursor = `${data.meta.startAfter}|${data.meta.startAfterId ?? ""}`;
+    if (nextCursor === prevCursor) break;
+    prevCursor   = nextCursor;
     startAfter   = String(data.meta.startAfter);
     startAfterId = data.meta.startAfterId;
   }
 
+  log.push(`[${brand.slug}] contacts: ${pageCount} pages, ${processed} processed, ${byDate.size} dates with data`);
   return byDate;
 }
 
@@ -341,7 +350,7 @@ export async function POST(req: NextRequest) {
 
     try {
       log.push(`[${brand.slug}] fetching contacts...`);
-      const contactStats = await fetchContactStats(brand, fromMs, toMs);
+      const contactStats = await fetchContactStats(brand, fromMs, toMs, log);
 
       log.push(`[${brand.slug}] fetching bookings...`);
       const bookingStats = await fetchBookingStats(brand, fromMs, toMs);
