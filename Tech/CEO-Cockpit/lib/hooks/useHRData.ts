@@ -74,3 +74,37 @@ export function useHRRevPAH(month: string) {
     retry: false,
   });
 }
+
+// ── We360 productivity leaderboard (per-employee, date range) ───────────────
+
+export interface We360ProductivityRow {
+  name: string;
+  Productive: number;
+  Neutral: number;
+  Unproductive: number;
+  Idle: number;
+  productivePct: number;
+  totalHrs: string;
+  days: number;
+}
+
+export interface We360ProductivityResponse {
+  from: string;
+  to: string;
+  employees: We360ProductivityRow[];
+  count: number;
+}
+
+export function useWe360Productivity(from: string, to: string) {
+  return useQuery<We360ProductivityResponse>({
+    queryKey: ["we360-productivity", from, to],
+    queryFn: async () => {
+      const res = await fetch(`/api/hr/we360-productivity?from=${from}&to=${to}`);
+      if (!res.ok) throw new Error(`Failed to fetch We360 productivity: ${res.status}`);
+      return res.json();
+    },
+    staleTime: 30 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
+    retry: false,
+  });
+}

@@ -18,7 +18,7 @@ import {
   useTalexioLeave,
   useTalexioPayslips,
 } from "@/lib/hooks/useTalexio";
-import { useHRFinancials, useHRRevPAH } from "@/lib/hooks/useHRData";
+import { useHRFinancials, useHRRevPAH, useWe360Productivity } from "@/lib/hooks/useHRData";
 import {
   getActiveEmployees,
   buildAttendanceLogs,
@@ -281,8 +281,14 @@ const leaveColumns = [
 // MAIN CONTENT
 // ════════════════════════════════════════════════════════════════════════════
 
-function HRContent({ dateFrom }: { dateFrom: Date }) {
+function toISODate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const month = `${dateFrom.getFullYear()}-${String(dateFrom.getMonth() + 1).padStart(2, "0")}`;
+  const fromISO = toISODate(dateFrom);
+  const toISO = toISODate(dateTo);
   const queryClient = useQueryClient();
 
   // ── Live data: Talexio ────────────────────────────────────────────────────
@@ -294,6 +300,7 @@ function HRContent({ dateFrom }: { dateFrom: Date }) {
   // ── Live data: Supabase-backed HR financials ──────────────────────────────
   const financialsQ = useHRFinancials(month);
   const revpahQ = useHRRevPAH(month);
+  const we360Q = useWe360Productivity(fromISO, toISO);
 
   // ── Talexio-derived views (memoized) ──────────────────────────────────────
   const activeEmployees = useMemo(
@@ -367,10 +374,22 @@ function HRContent({ dateFrom }: { dateFrom: Date }) {
       : 0;
   }, [revpahQ.data, revpahData]);
 
+  // ── We360 productivity (live → fallback) ──────────────────────────────────
+  const isProductivityReal =
+    we360Q.isSuccess && !!we360Q.data && we360Q.data.employees.length > 0;
+  const productivityData = isProductivityReal
+    ? we360Q.data!.employees
+    : PRODUCTIVITY_DATA;
+
   // ── Derived KPIs ──────────────────────────────────────────────────────────
   const avgProductivity = useMemo(
-    () => Math.round(PRODUCTIVITY_DATA.reduce((s, p) => s + p.productivePct, 0) / PRODUCTIVITY_DATA.length),
-    [],
+    () =>
+      productivityData.length > 0
+        ? Math.round(
+            productivityData.reduce((s, p) => s + p.productivePct, 0) / productivityData.length,
+          )
+        : 0,
+    [productivityData],
   );
 
   const revenuePerEmployee = resolvedHeadcount > 0 ? Math.round(totalRevenue / resolvedHeadcount) : 0;
@@ -405,7 +424,7 @@ function HRContent({ dateFrom }: { dateFrom: Date }) {
       target: "80%",
       targetValue: 80,
       currentValue: avgProductivity,
-      isSample: true,
+      isSample: !isProductivityReal,
     },
     {
       label: "Avg RevPAH",
@@ -731,25 +750,30 @@ function HRContent({ dateFrom }: { dateFrom: Date }) {
       </Card>
 
       {/* ══════════════════════════════════════════════════════════════════
-          SECTION 5: Productivity Leaderboard (WE360 — sample)
+          SECTION 5: Productivity Leaderboard (WE360)
           ══════════════════════════════════════════════════════════════════ */}
-      <Card className="p-3 md:p-6 opacity-60" title="Connect WE360 integration to see real productivity metrics.">
-        <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          <span aria-hidden>ℹ️</span>
-          <span>
-            <strong>Sample data.</strong> Connect WE360 integration to see real productivity metrics.
-          </span>
-        </div>
+      <Card
+        className={`p-3 md:p-6 ${isProductivityReal ? "" : "opacity-60"}`}
+        title={isProductivityReal ? "Live We360 productivity metrics" : "Connect WE360 integration to see real productivity metrics."}
+      >
+        {!isProductivityReal && (
+          <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <span aria-hidden>ℹ️</span>
+            <span>
+              <strong>Sample data.</strong> Connect WE360 integration to see real productivity metrics.
+            </span>
+          </div>
+        )}
         <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
           Productivity Leaderboard
-          <SampleDataBadge />
+          {isProductivityReal ? <LiveBadge source="supabase" /> : <SampleDataBadge />}
         </h2>
         <p className="text-xs text-muted-foreground mb-4">
-          Daily hours breakdown — sorted by productive % descending | Target: 80%
+          Avg daily hours breakdown — sorted by productive % descending | Target: 80%
         </p>
-        <ResponsiveContainer width="100%" height={PRODUCTIVITY_DATA.length * 40 + 60}>
+        <ResponsiveContainer width="100%" height={productivityData.length * 40 + 60}>
           <BarChart
-            data={PRODUCTIVITY_DATA}
+            data={productivityData}
             layout="vertical"
             margin={{ top: 5, right: 100, left: 10, bottom: 5 }}
           >
@@ -759,7 +783,7 @@ function HRContent({ dateFrom }: { dateFrom: Date }) {
             <Tooltip
               formatter={(value, name) => [`${Number(value).toFixed(1)}h`, String(name)]}
               labelFormatter={(label) => {
-                const item = PRODUCTIVITY_DATA.find((d) => d.name === label);
+                const item = productivityData.find((d) => d.name === label);
                 return item
                   ? `${label} — ${item.productivePct}% productive (${item.totalHrs}h total)`
                   : String(label);
@@ -795,7 +819,7 @@ function HRContent({ dateFrom }: { dateFrom: Date }) {
                 dataKey="productivePct"
                 content={(props) => {
                   const { x, width, y, height, index } = props as Record<string, unknown>;
-                  const entry = PRODUCTIVITY_DATA[Number(index)];
+                  const entry = productivityData[Number(index)];
                   if (!entry) return <></>;
                   return (
                     <text
@@ -830,7 +854,7 @@ function HRContent({ dateFrom }: { dateFrom: Date }) {
 export default function HRPage() {
   return (
     <DashboardShell>
-      {({ dateFrom }) => <HRContent dateFrom={dateFrom} />}
+      {({ dateFrom, dateTo }) => <HRContent dateFrom={dateFrom} dateTo={dateTo} />}
     </DashboardShell>
   );
 }
