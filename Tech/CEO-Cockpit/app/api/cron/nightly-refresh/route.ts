@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
 
   // Phase 1: run source ETLs in parallel
   const [revenueRes, spaRes, aestheticsRes, crmAgentsRes, ghlCrmRes,
-         metaCampaignsRes, googleCampaignsRes, klaviyoRes, talexioHrRes] = await Promise.allSettled([
+         metaCampaignsRes, googleCampaignsRes, klaviyoRes, talexioHrRes, we360Res] = await Promise.allSettled([
     fetch(`${BASE_URL}/api/etl/revenue-refresh`,              { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/zoho-spa-transactions`,        { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/zoho-aesthetics-transactions`, { method: "POST", headers, body: payload }),
@@ -81,6 +81,7 @@ export async function GET(req: NextRequest) {
     fetch(`${BASE_URL}/api/etl/google-campaigns`,             { method: "POST", headers, body: mktPayload }),
     fetch(`${BASE_URL}/api/etl/klaviyo-sync`,                 { method: "POST", headers, body: klaviyoPayload }),
     fetch(`${BASE_URL}/api/etl/talexio-hr?date=${today}`,     { method: "POST", headers }),
+    fetch(`${BASE_URL}/api/etl/we360`,                        { method: "POST", headers }),
   ]);
 
   // Phase 2: lead reconciliation depends on ghl-crm + meta-campaigns completing first
@@ -111,6 +112,7 @@ export async function GET(req: NextRequest) {
     ["google_campaigns",    googleCampaignsRes],
     ["klaviyo",             klaviyoRes],
     ["talexio_hr",          talexioHrRes],
+    ["we360",               we360Res],
     ["lead_reconciliation", leadReconRes],
   ];
 
