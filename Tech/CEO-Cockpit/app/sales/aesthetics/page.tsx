@@ -7,7 +7,8 @@ import { SalesKPICard } from "@/components/sales/SalesKPICard";
 import { SalesKPIGrid } from "@/components/sales/SalesKPIGrid";
 import { useAestheticsSales } from "@/lib/hooks/useAestheticsSales";
 import { useSalaryRoster } from "@/lib/hooks/useSalaryRoster";
-import { chartColors, formatCurrency } from "@/lib/charts/config";
+import { formatCurrency } from "@/lib/charts/config";
+import { BRAND } from "@/lib/constants/design-tokens";
 import { FileSpreadsheet } from "lucide-react";
 import { SyncButton } from "@/components/dashboard/SyncButton";
 import {
@@ -178,7 +179,7 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
           {hasCostData && (
             <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: chartColors.aesthetics }} />
+                <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: BRAND.aesthetics.dark }} />
                 Net revenue
               </span>
               <span className="flex items-center gap-1">
@@ -197,7 +198,7 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
             <BarChart
               layout="vertical"
               data={byPersonEnriched}
-              margin={{ top: 0, right: 100, left: 0, bottom: 0 }}
+              margin={{ top: 20, right: 100, left: 0, bottom: 0 }}
             >
               <CartesianGrid strokeDasharray="3 3" horizontal={false} />
               <XAxis
@@ -231,7 +232,7 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
               />
               {hasCostData ? (
                 <>
-                  <Bar dataKey="revenue_net" stackId="rev" fill={chartColors.aesthetics} radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="revenue_net" stackId="rev" fill={BRAND.aesthetics.dark} radius={[0, 0, 0, 0]} />
                   <Bar dataKey="salary_cost" stackId="rev" fill="#4a7fa5" radius={[0, 4, 4, 0]}>
                     <LabelList
                       dataKey="k_label"
@@ -243,17 +244,17 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
                       dataKey="bar_label"
                       position="right"
                       formatter={(v: unknown) => String(v ?? "")}
-                      style={{ fontSize: 11, fill: "#64748b", fontWeight: 600 }}
+                      style={{ fontSize: 11, fill: "#111827", fontWeight: 600 }}
                     />
                   </Bar>
                 </>
               ) : (
-                <Bar dataKey="revenue_ex" fill={chartColors.aesthetics} radius={[0, 4, 4, 0]}>
+                <Bar dataKey="revenue_ex" fill={BRAND.aesthetics.dark} radius={[0, 4, 4, 0]}>
                   <LabelList
                     dataKey="revenue_ex"
                     position="right"
-                    formatter={(v: unknown) => { const n = Number(v); return n >= 1000 ? `€${(n / 1000).toFixed(1)}K` : `€${n}`; }}
-                    style={{ fontSize: 11, fill: "#64748b", fontWeight: 600 }}
+                    formatter={(v: unknown) => fmtK(Number(v))}
+                    style={{ fontSize: 11, fill: "#111827", fontWeight: 600 }}
                   />
                 </Bar>
               )}
@@ -295,9 +296,9 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
                           <span className="text-xs font-bold uppercase tracking-wider" style={{ color }}>{group}</span>
                         </div>
                       </td>
-                      <td className="py-2 text-right text-xs text-muted-foreground font-medium pr-0.5">{total_count}</td>
-                      <td className="py-2 text-right text-xs font-semibold">{fmtK(total_revenue)}</td>
-                      <td className="py-2 pl-4 text-xs text-muted-foreground">
+                      <td className="py-2 text-right text-xs text-muted-foreground font-medium pr-0.5 tabular-nums">{total_count}</td>
+                      <td className="py-2 text-right text-xs font-semibold tabular-nums">{fmtK(total_revenue)}</td>
+                      <td className="py-2 pl-4 text-xs text-muted-foreground tabular-nums">
                         {totals.revenue_ex > 0 ? `${((total_revenue / totals.revenue_ex) * 100).toFixed(1)}%` : ""}
                       </td>
                     </tr>
@@ -308,8 +309,8 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
                         <td className="py-2">
                           <span className="text-xs text-muted-foreground">{s.nav_category}</span>
                         </td>
-                        <td className="py-2 text-right text-muted-foreground">{s.tx_count}</td>
-                        <td className="py-2 text-right font-medium">{formatCurrency(s.revenue_ex)}</td>
+                        <td className="py-2 text-right text-muted-foreground tabular-nums">{s.tx_count}</td>
+                        <td className="py-2 text-right font-medium tabular-nums">{formatCurrency(s.revenue_ex)}</td>
                         <td className="py-2 pl-4">
                           <div className="flex items-center gap-2">
                             <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
@@ -318,7 +319,7 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
                                 style={{ width: `${s.pct}%`, backgroundColor: color }}
                               />
                             </div>
-                            <span className="text-xs text-muted-foreground">{s.pct}%</span>
+                            <span className="text-xs text-muted-foreground tabular-nums">{s.pct}%</span>
                           </div>
                         </td>
                       </tr>
@@ -329,8 +330,8 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
               <tfoot>
                 <tr className="border-t-2 font-semibold">
                   <td className="pt-2.5" colSpan={2}>Total</td>
-                  <td className="pt-2.5 text-right text-muted-foreground">{totals.tx_count}</td>
-                  <td className="pt-2.5 text-right">{formatCurrency(totals.revenue_ex)}</td>
+                  <td className="pt-2.5 text-right text-muted-foreground tabular-nums">{totals.tx_count}</td>
+                  <td className="pt-2.5 text-right tabular-nums">{formatCurrency(totals.revenue_ex)}</td>
                   <td />
                 </tr>
               </tfoot>
