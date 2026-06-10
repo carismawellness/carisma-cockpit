@@ -23,6 +23,7 @@ import {
   SppyData,
 } from "@/components/finance/EbitdaSummaryHeader";
 import type { LongitudinalResponse } from "@/app/api/finance/ebitda-longitudinal/route";
+import { BRAND } from "@/lib/constants/design-tokens";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -55,9 +56,9 @@ const COST_LABELS: Record<string, string> = {
 // ── Group EBITDA chart ────────────────────────────────────────────────────────
 
 const BRAND_EBITDA_COLORS = {
-  spa:  "#EFE7D7",
-  aes:  "#DEEBEB",
-  slim: "#C9D8C1",
+  spa:  BRAND.spa.soft,
+  aes:  BRAND.aesthetics.soft,
+  slim: BRAND.slimming.soft,
 };
 
 interface GroupChartPoint {
