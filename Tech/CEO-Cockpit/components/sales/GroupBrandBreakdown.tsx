@@ -17,6 +17,20 @@ const BRAND = {
   slimming:   { dark: "#3D6B3D", soft: "#C9D8C1" },
 } as const;
 
+// All Spa hotels are still "Spa" — so the expanded view uses 8 cream/taupe
+// shades within the brand family rather than 8 arbitrary unrelated colors.
+// Ordered darkest → lightest. Stable per hotel so identity persists across periods.
+const SPA_LOCATION_PALETTE: Record<string, string> = {
+  Inter:     "#5C4D32",
+  Hyatt:     "#6B5C42",
+  Excelsior: "#7A6A4F",
+  Ramla:     "#8C7A5A",
+  Hugos:     "#9F8E6F",
+  Riviera:   "#B2A186",
+  Odycy:     "#C5B69D",
+  Novotel:   "#D9CDB2",
+};
+
 function fmtK(v: number) {
   if (Math.abs(v) >= 1_000_000) return `€${(v / 1_000_000).toFixed(1)}M`;
   if (Math.abs(v) >= 1_000)     return `€${(v / 1_000).toFixed(1)}K`;
@@ -63,7 +77,7 @@ export function GroupBrandBreakdown({ period, ly, spaLocations, isFetching }: Pr
         name:    l.name,
         current: l.revenue,
         ly:      0,
-        dark:    l.color || BRAND.spa.dark,
+        dark:    SPA_LOCATION_PALETTE[l.name] ?? BRAND.spa.dark,
         soft:    BRAND.spa.soft,
         hasLy:   false,
       })),
@@ -126,22 +140,23 @@ export function GroupBrandBreakdown({ period, ly, spaLocations, isFetching }: Pr
       </div>
 
       {/* Chart */}
-      <div className={isWide ? "h-[280px] md:h-[340px]" : "h-[240px] md:h-[300px]"}>
+      <div className={isWide ? "h-[380px] md:h-[460px]" : "h-[320px] md:h-[400px]"}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={chartData}
-            margin={{ top: 40, right: 8, left: 8, bottom: isWide ? 32 : 4 }}
-            barCategoryGap={isWide ? "15%" : "25%"}
+            margin={{ top: 48, right: 16, left: 16, bottom: isWide ? 40 : 8 }}
+            barCategoryGap={isWide ? "22%" : "30%"}
           >
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
             <XAxis
               dataKey="name"
-              tick={{ fontSize: isWide ? 10 : 12, fill: "#374151" }}
-              angle={isWide ? -30 : 0}
+              tick={{ fontSize: isWide ? 11 : 13, fill: "#374151", fontWeight: 500 }}
+              angle={isWide ? -28 : 0}
               textAnchor={isWide ? "end" : "middle"}
               interval={0}
+              tickMargin={isWide ? 8 : 4}
             />
-            <YAxis tickFormatter={(v) => fmtK(Number(v))} tick={{ fontSize: 11, fill: "#6b7280" }} width={56} />
+            <YAxis tickFormatter={(v) => fmtK(Number(v))} tick={{ fontSize: 11, fill: "#6b7280" }} width={64} />
             <Tooltip
               formatter={(v: unknown, name) => [fmtK(Number(v)), String(name ?? "")]}
               cursor={{ fill: "rgba(0,0,0,0.03)" }}
@@ -150,8 +165,8 @@ export function GroupBrandBreakdown({ period, ly, spaLocations, isFetching }: Pr
             <Bar
               dataKey={(d: Row) => (d.hasLy ? d.ly : 0)}
               name="Same Period LY"
-              barSize={isWide ? 18 : 28}
-              radius={[3, 3, 0, 0]}
+              barSize={isWide ? 32 : 48}
+              radius={[4, 4, 0, 0]}
             >
               {chartData.map((d, i) => (
                 <Cell key={`ly-${i}`} fill={d.hasLy ? d.soft : "transparent"} />
@@ -181,7 +196,7 @@ export function GroupBrandBreakdown({ period, ly, spaLocations, isFetching }: Pr
               />
             </Bar>
             {/* Current bar — dark brand color, with value + YoY label on top */}
-            <Bar dataKey="current" name="This Period" barSize={isWide ? 18 : 28} radius={[3, 3, 0, 0]}>
+            <Bar dataKey="current" name="This Period" barSize={isWide ? 32 : 48} radius={[4, 4, 0, 0]}>
               {chartData.map((d, i) => <Cell key={`cur-${i}`} fill={d.dark} />)}
               <LabelList
                 content={(props: { x?: number | string; y?: number | string; width?: number | string; index?: number }) => {
@@ -200,9 +215,9 @@ export function GroupBrandBreakdown({ period, ly, spaLocations, isFetching }: Pr
                     <g>
                       <text
                         x={cx}
-                        y={pctTxt ? y - 20 : y - 6}
+                        y={pctTxt ? y - 22 : y - 8}
                         textAnchor="middle"
-                        fontSize={isWide ? "10" : "12"}
+                        fontSize={isWide ? "11" : "13"}
                         fontWeight="700"
                         fill="#111827"
                       >
@@ -211,7 +226,7 @@ export function GroupBrandBreakdown({ period, ly, spaLocations, isFetching }: Pr
                       {pctTxt && (
                         <text
                           x={cx}
-                          y={y - 6}
+                          y={y - 7}
                           textAnchor="middle"
                           fontSize="10"
                           fontWeight="600"
