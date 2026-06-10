@@ -20,6 +20,7 @@ import {
   ResponsiveContainer,
   Cell,
   ReferenceLine,
+  LabelList,
 } from "recharts";
 
 function scoreColor(score: number): string {
@@ -121,18 +122,42 @@ export function StandardTab({ standardType, month, location }: StandardTabProps)
           <BarChart
             data={locationScores}
             layout="vertical"
-            margin={{ top: 5, right: 60, left: 20, bottom: 5 }}
+            margin={{ top: 20, right: 60, left: 20, bottom: 5 }}
           >
             <CartesianGrid strokeDasharray="3 3" horizontal={false} />
             <XAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
             <YAxis type="category" dataKey="location" width={100} tick={{ fontSize: 12 }} />
-            <Tooltip formatter={(v) => [`${v}%`, "Score"]} />
-            <ReferenceLine x={85} stroke="#22C55E" strokeDasharray="3 3" />
-            <ReferenceLine x={60} stroke="#F59E0B" strokeDasharray="3 3" />
+            <Tooltip formatter={(v: unknown, name) => [`${Number(v)}%`, String(name ?? "")]} />
+            <ReferenceLine
+              x={85}
+              stroke="#D97706"
+              strokeDasharray="6 3"
+              strokeWidth={1.5}
+              label={{ value: "85%", position: "top", fill: "#D97706", fontSize: 10 }}
+            />
+            <ReferenceLine x={60} stroke="#9CA3AF" strokeDasharray="3 3" />
             <Bar dataKey="score" name="Compliance %" radius={[0, 4, 4, 0]} barSize={24}>
               {locationScores.map((entry, index) => (
                 <Cell key={index} fill={scoreColor(entry.score)} fillOpacity={0.85} />
               ))}
+              <LabelList
+                dataKey="score"
+                position="right"
+                content={(props) => {
+                  const { x, y, width, height, value } = props as Record<string, unknown>;
+                  return (
+                    <text
+                      x={Number(x) + Number(width) + 6}
+                      y={Number(y) + Number(height) / 2 + 4}
+                      fontSize={11}
+                      fontWeight={700}
+                      fill={scoreColor(Number(value))}
+                    >
+                      {Number(value)}%
+                    </text>
+                  );
+                }}
+              />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
@@ -150,17 +175,41 @@ export function StandardTab({ standardType, month, location }: StandardTabProps)
           <BarChart
             data={categoryScores}
             layout="vertical"
-            margin={{ top: 5, right: 60, left: 20, bottom: 5 }}
+            margin={{ top: 20, right: 60, left: 20, bottom: 5 }}
           >
             <CartesianGrid strokeDasharray="3 3" horizontal={false} />
             <XAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
             <YAxis type="category" dataKey="category" width={180} tick={{ fontSize: 11 }} />
-            <Tooltip formatter={(v) => [`${v}%`, "Score"]} />
-            <ReferenceLine x={85} stroke="#22C55E" strokeDasharray="3 3" />
+            <Tooltip formatter={(v: unknown, name) => [`${Number(v)}%`, String(name ?? "")]} />
+            <ReferenceLine
+              x={85}
+              stroke="#D97706"
+              strokeDasharray="6 3"
+              strokeWidth={1.5}
+              label={{ value: "85%", position: "top", fill: "#D97706", fontSize: 10 }}
+            />
             <Bar dataKey="score" name="Compliance %" radius={[0, 4, 4, 0]} barSize={20}>
               {categoryScores.map((entry, index) => (
                 <Cell key={index} fill={scoreColor(entry.score)} fillOpacity={0.85} />
               ))}
+              <LabelList
+                dataKey="score"
+                position="right"
+                content={(props) => {
+                  const { x, y, width, height, value } = props as Record<string, unknown>;
+                  return (
+                    <text
+                      x={Number(x) + Number(width) + 6}
+                      y={Number(y) + Number(height) / 2 + 4}
+                      fontSize={11}
+                      fontWeight={700}
+                      fill={scoreColor(Number(value))}
+                    >
+                      {Number(value)}%
+                    </text>
+                  );
+                }}
+              />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
@@ -197,7 +246,7 @@ export function StandardTab({ standardType, month, location }: StandardTabProps)
                   <td className="py-2 px-3 text-muted-foreground text-xs">
                     {item.category}
                   </td>
-                  <td className="py-2 px-3 text-right font-medium text-xs" style={{ color: scoreColor(item.passRate) }}>
+                  <td className="py-2 px-3 text-right font-medium text-xs tabular-nums" style={{ color: scoreColor(item.passRate) }}>
                     {item.passRate}%
                   </td>
                   {locations.map((loc) => (

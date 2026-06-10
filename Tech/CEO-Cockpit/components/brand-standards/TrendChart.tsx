@@ -100,9 +100,15 @@ export function TrendChart({ standardType, locationFilter }: TrendChartProps) {
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="month" tick={{ fontSize: 11 }} />
           <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11 }} />
-          <Tooltip formatter={(v) => [`${v}%`, ""]} />
+          <Tooltip formatter={(v: unknown, name) => [`${Number(v)}%`, String(name ?? "")]} />
           <Legend />
-          <ReferenceLine y={85} stroke="#22C55E" strokeDasharray="3 3" label={{ value: "Target", fill: "#22C55E", fontSize: 10 }} />
+          <ReferenceLine
+            y={85}
+            stroke="#D97706"
+            strokeDasharray="6 3"
+            strokeWidth={1.5}
+            label={{ value: "Target 85%", fill: "#D97706", fontSize: 10, position: "right" }}
+          />
           {filteredLocations.map((loc, i) => (
             <Line
               key={loc}
