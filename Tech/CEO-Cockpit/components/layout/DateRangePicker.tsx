@@ -61,23 +61,13 @@ const presets = [
     fn: () => ({ from: subDays(new Date(), 7), to: new Date() }),
   },
   {
-    key: "30d",
-    label: "30 days",
-    fn: () => ({ from: subDays(new Date(), 30), to: new Date() }),
-  },
-  {
-    key: "90d",
-    label: "90 days",
-    fn: () => ({ from: subDays(new Date(), 90), to: new Date() }),
-  },
-  {
     key: "lw",
     label: "Last week",
     fn: () => {
       const lastWeek = subWeeks(new Date(), 1);
       return {
         from: startOfWeek(lastWeek, { weekStartsOn: 1 }),
-        to: endOfWeek(lastWeek, { weekStartsOn: 1 }),
+        to: endOfWeek(lastWeek,   { weekStartsOn: 1 }),
       };
     },
   },
@@ -87,6 +77,24 @@ const presets = [
     fn: () => {
       const lastMonth = subMonths(new Date(), 1);
       return { from: startOfMonth(lastMonth), to: endOfMonth(lastMonth) };
+    },
+  },
+  {
+    key: "l3m",
+    label: "Last 3 months",
+    fn: () => {
+      const endMonth   = subMonths(new Date(), 1);
+      const startMonth = subMonths(endMonth, 2);
+      return { from: startOfMonth(startMonth), to: endOfMonth(endMonth) };
+    },
+  },
+  {
+    key: "l6m",
+    label: "Last 6 months",
+    fn: () => {
+      const endMonth   = subMonths(new Date(), 1);
+      const startMonth = subMonths(endMonth, 5);
+      return { from: startOfMonth(startMonth), to: endOfMonth(endMonth) };
     },
   },
 ] as const;
