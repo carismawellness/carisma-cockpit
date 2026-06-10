@@ -130,12 +130,15 @@ async function diagnoseFilters(
     pipeline_stage_id: stageId,
     limit: "1",
   };
+  const dateFromTs = `${dateFromIso}T00:00:00.000Z`;
+  const dateToTs   = `${dateToIso}T23:59:59.999Z`;
   const variants: Record<string, Record<string, string>> = {
-    "noDate":             base,
-    "date_only":          { ...base, date: dateFromIso },
-    "startDate_endDate":  { ...base, startDate: dateFromIso, endDate: dateToIso },
-    "date_added":         { ...base, dateAdded: dateFromIso },
-    "q_dateRange":        { ...base, q: `dateAdded:[${dateFromIso} TO ${dateToIso}]` },
+    "date_iso":           { ...base, date: dateFromTs },
+    "date_endDate":       { ...base, date: dateFromTs, endDate: dateToTs },
+    "date_dateEnd":       { ...base, date: dateFromTs, dateEnd: dateToTs },
+    "date_dateTo":        { ...base, date: dateFromTs, dateTo: dateToTs },
+    "date_dateUntil":     { ...base, date: dateFromTs, dateUntil: dateToTs },
+    "date_endDate_iso":   { ...base, date: dateFromIso, endDate: dateToIso },
   };
   const out: Record<string, number | string> = {};
   for (const [name, params] of Object.entries(variants)) {
@@ -143,7 +146,7 @@ async function diagnoseFilters(
       const r = await ghlGet("/opportunities/search", apiKey, params) as { meta?: { total?: number } };
       out[name] = r.meta?.total ?? 0;
     } catch (e) {
-      out[name] = e instanceof Error ? e.message.slice(0, 200) : "err";
+      out[name] = e instanceof Error ? e.message.slice(0, 400) : "err";
     }
   }
 
