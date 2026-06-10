@@ -131,19 +131,19 @@ function MetricTick({
 
   return (
     <g transform={`translate(${x},${y})`} style={{ cursor: "pointer" }} onClick={() => onClick(row.slug)}>
-      <text x={0} y={14}  textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.name}</text>
-      <text x={0} y={28}  textAnchor="middle" fontSize={9}  fill={lc}>
+      <text x={0} y={16}  textAnchor="middle" fontSize={13} fontWeight={700} fill={vc}>{row.name}</text>
+      <text x={0} y={32}  textAnchor="middle" fontSize={10} fill={lc}>
         <tspan fill={BRAND_LABEL_COLOR[row.brand]} fontWeight={700}>●</tspan>
         <tspan dx={3}>{row.brand} · {row.role}</tspan>
       </text>
-      <text x={0} y={46}  textAnchor="middle" fontSize={10} fill={lc}>Bookings</text>
-      <text x={0} y={58}  textAnchor="middle" fontSize={11} fontWeight={600} fill={vc}>{row.bookings}</text>
-      <text x={0} y={74}  textAnchor="middle" fontSize={10} fill={lc}>Conv Rate</text>
-      <text x={0} y={86}  textAnchor="middle" fontSize={11} fontWeight={600} fill={vc}>{row.convRate > 0 ? `${row.convRate.toFixed(1)}%` : "—"}</text>
-      <text x={0} y={102} textAnchor="middle" fontSize={10} fill={lc}>AOV</text>
-      <text x={0} y={114} textAnchor="middle" fontSize={11} fontWeight={600} fill={vc}>{row.aov > 0 ? `€${row.aov.toFixed(0)}` : "—"}</text>
-      <text x={0} y={130} textAnchor="middle" fontSize={10} fill={lc}>Active Days</text>
-      <text x={0} y={142} textAnchor="middle" fontSize={11} fontWeight={600} fill={vc}>{row.activeDays}</text>
+      <text x={0} y={54}  textAnchor="middle" fontSize={10} fill={lc}>Bookings</text>
+      <text x={0} y={68}  textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.bookings}</text>
+      <text x={0} y={86}  textAnchor="middle" fontSize={10} fill={lc}>Conv Rate</text>
+      <text x={0} y={100} textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.convRate > 0 ? `${row.convRate.toFixed(1)}%` : "—"}</text>
+      <text x={0} y={118} textAnchor="middle" fontSize={10} fill={lc}>AOV</text>
+      <text x={0} y={132} textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.aov > 0 ? `€${row.aov.toFixed(0)}` : "—"}</text>
+      <text x={0} y={150} textAnchor="middle" fontSize={10} fill={lc}>Active Days</text>
+      <text x={0} y={164} textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.activeDays}</text>
     </g>
   );
 }
@@ -247,37 +247,41 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
 
   return (
     <Card>
-      <CardHeader className="pb-1">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <CardHeader className="pb-2">
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
           <div>
             <CardTitle className="text-base font-semibold">Agent Leaderboard</CardTitle>
-            <div className="mt-1 flex gap-3 text-[10px] font-semibold uppercase tracking-widest">
+            <div className="mt-1.5 flex gap-4 text-[11px] font-bold uppercase tracking-widest">
               {brandSections.map(({ brand }) => (
                 <span key={brand} style={{ color: BRAND_LABEL_COLOR[brand] }}>{brand}</span>
               ))}
             </div>
           </div>
-          {/* Channel legend */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
-            {legendItems.map(({ color, label }) => (
-              <span key={label} className="flex items-center gap-1">
-                <span className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: color }} />
-                {label}
-              </span>
-            ))}
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-2 w-5 rounded-full" style={{ backgroundColor: "#E07A5F" }} />
+          {/* Channel legend — two rows on mobile */}
+          <div className="flex flex-col gap-1.5 text-[11px] text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              {legendItems.map(({ color, label }) => (
+                <span key={label} className="flex items-center gap-1.5">
+                  <span className="inline-block h-3 w-3 rounded-[3px]" style={{ backgroundColor: color }} />
+                  {label}
+                </span>
+              ))}
+            </div>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-2 w-6 rounded-full" style={{ backgroundColor: "#E07A5F" }} />
               Deposit %
             </span>
           </div>
         </div>
       </CardHeader>
 
-      <CardContent className="pt-2 px-2 md:px-6">
+      <CardContent className="pt-1 px-2 md:px-6">
+        {/* Mobile scroll hint */}
+        <p className="mb-1 text-center text-[10px] text-muted-foreground sm:hidden">← swipe to scroll →</p>
         <div className="overflow-x-auto -mx-2 md:mx-0">
-          <div className="h-[520px]" style={{ minWidth: Math.max(rows.length * 90, 360) }}>
+          <div className="h-[640px]" style={{ minWidth: Math.max(rows.length * 120, 480) }}>
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={rows} margin={{ top: 22, right: 30, left: 0, bottom: 130 }}>
+              <ComposedChart data={rows} margin={{ top: 28, right: 40, left: 4, bottom: 160 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
 
                 {/* Brand background shading */}
@@ -290,7 +294,7 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
                   interval={0}
                   tickLine={false}
                   axisLine={{ stroke: "#E5E7EB" }}
-                  height={150}
+                  height={175}
                   tick={
                     <MetricTick
                       rows={rows}
@@ -327,13 +331,13 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
                 />
 
                 {/* Stacked bars: bottom=lc, middle=crm, top=other — Cell applies per-row channel colour */}
-                <Bar yAxisId="rev" dataKey="lc" stackId="ch" barSize={52} radius={[0, 0, 0, 0]}>
+                <Bar yAxisId="rev" dataKey="lc" stackId="ch" barSize={68} radius={[0, 0, 0, 0]}>
                   {rows.map((r) => <Cell key={r.slug} fill={slotColor(r.role, "lc")} />)}
                 </Bar>
-                <Bar yAxisId="rev" dataKey="crm" stackId="ch" barSize={52} radius={[0, 0, 0, 0]}>
+                <Bar yAxisId="rev" dataKey="crm" stackId="ch" barSize={68} radius={[0, 0, 0, 0]}>
                   {rows.map((r) => <Cell key={r.slug} fill={slotColor(r.role, "crm")} />)}
                 </Bar>
-                <Bar yAxisId="rev" dataKey="other" stackId="ch" barSize={52} radius={[6, 6, 0, 0]}>
+                <Bar yAxisId="rev" dataKey="other" stackId="ch" barSize={68} radius={[6, 6, 0, 0]}>
                   {rows.map((r) => <Cell key={r.slug} fill={slotColor(r.role, "other")} />)}
                   <LabelList
                     dataKey="revenue"
@@ -342,7 +346,7 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
                       const n = Number(v);
                       return n >= 1000 ? `€${(n / 1000).toFixed(0)}k` : `€${n}`;
                     }}
-                    style={{ fontSize: 10, fill: "#27272A", fontWeight: 700 }}
+                    style={{ fontSize: 11, fill: "#27272A", fontWeight: 700 }}
                   />
                 </Bar>
 
