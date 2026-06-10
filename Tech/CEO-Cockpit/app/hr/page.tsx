@@ -11,12 +11,22 @@ import { KPIGridSkeleton, Skeleton, TableSkeleton } from "@/components/ui/skelet
 import { formatCurrency } from "@/lib/charts/config";
 import { BRAND } from "@/lib/constants/design-tokens";
 
-const TARGET_AMBER = "#D97706";
-// Status palette (see .agents/skills/carisma-brand-colors). NEVER reuse a brand
-// identity hex for status — green must mean Slimming, not "good".
-const STATUS_GOOD = "#7FB17F"; // success
-const STATUS_OK   = "#E5B66B"; // warning / watch
-const STATUS_OVER = "#D88B89"; // danger / over-target
+const TARGET_AMBER = "#D97706"; // target reference-line marker (not a brand color)
+
+// Per-location bars are colored by their business unit so the chart reads as
+// on-brand — warm Spa-family tones for the hotels, Aesthetics teal, Slimming
+// green — instead of a flat status color. See .agents/skills/carisma-brand-colors.
+const SPA_LOCATION_COLORS: Record<string, string> = {
+  InterContinental: "#5E4B2E", // deep espresso
+  Hugos:            "#C49862", // caramel
+  Hyatt:            "#8A5A3C", // chestnut
+  "Ramla Bay":      "#8C7A5A", // canonical Spa tan
+  Excelsior:        "#A0673D", // sienna
+  Odycy:            "#7E7A4F", // olive-tan
+  Labranda:         "#B08D5B", // sand-bronze
+  Novotel:          "#D9B98C", // pale sand
+  "Sunny Coast":    "#C77B4A", // terracotta
+};
 import {
   useTalexioHeadcount,
   useTalexioTimeLogs,
@@ -62,16 +72,12 @@ const PROD_COLORS = {
 // HELPERS
 // ════════════════════════════════════════════════════════════════════════════
 
-function getRevPAHColor(value: number): string {
-  if (value >= REVPAH_TARGET) return STATUS_GOOD;
-  if (value >= REVPAH_TARGET * 0.9) return STATUS_OK;
-  return STATUS_OVER;
-}
-
-function getHCPctColor(value: number): string {
-  if (value <= HC_PCT_TARGET) return STATUS_GOOD;
-  if (value <= HC_PCT_TARGET * 1.1) return STATUS_OK;
-  return STATUS_OVER;
+// Color a location bar by its business unit (warm Spa-family tone per hotel,
+// or the Aesthetics / Slimming brand color for those clinics).
+function locationColor(name: string): string {
+  if (/aesthetic/i.test(name)) return BRAND.aesthetics.dark;
+  if (/slimming/i.test(name))  return BRAND.slimming.dark;
+  return SPA_LOCATION_COLORS[name] ?? BRAND.spa.dark;
 }
 
 function getStatusBadge(status: string, className: string) {
@@ -548,7 +554,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
               />
               <Bar dataKey="hcPct" name="HC %" barSize={28}>
                 {hcByLocation.map((entry) => (
-                  <Cell key={entry.name} fill={getHCPctColor(entry.hcPct)} />
+                  <Cell key={entry.name} fill={locationColor(entry.name)} />
                 ))}
                 <LabelList
                   dataKey="hcPct"
@@ -668,7 +674,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
               />
               <Bar dataKey="revpah" name="RevPAH">
                 {revpahData.map((entry) => (
-                  <Cell key={entry.location} fill={getRevPAHColor(entry.revpah)} />
+                  <Cell key={entry.location} fill={locationColor(entry.location)} />
                 ))}
                 <LabelList
                   dataKey="revpah"
