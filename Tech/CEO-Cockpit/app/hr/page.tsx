@@ -12,6 +12,11 @@ import { formatCurrency } from "@/lib/charts/config";
 import { BRAND } from "@/lib/constants/design-tokens";
 
 const TARGET_AMBER = "#D97706";
+// Status palette (see .agents/skills/carisma-brand-colors). NEVER reuse a brand
+// identity hex for status — green must mean Slimming, not "good".
+const STATUS_GOOD = "#7FB17F"; // success
+const STATUS_OK   = "#E5B66B"; // warning / watch
+const STATUS_OVER = "#D88B89"; // danger / over-target
 import {
   useTalexioHeadcount,
   useTalexioTimeLogs,
@@ -58,15 +63,15 @@ const PROD_COLORS = {
 // ════════════════════════════════════════════════════════════════════════════
 
 function getRevPAHColor(value: number): string {
-  if (value >= REVPAH_TARGET) return BRAND.slimming.dark;
-  if (value >= REVPAH_TARGET * 0.9) return BRAND.aesthetics.dark;
-  return TARGET_AMBER;
+  if (value >= REVPAH_TARGET) return STATUS_GOOD;
+  if (value >= REVPAH_TARGET * 0.9) return STATUS_OK;
+  return STATUS_OVER;
 }
 
 function getHCPctColor(value: number): string {
-  if (value <= HC_PCT_TARGET) return BRAND.slimming.dark;
-  if (value <= HC_PCT_TARGET * 1.1) return BRAND.aesthetics.dark;
-  return TARGET_AMBER;
+  if (value <= HC_PCT_TARGET) return STATUS_GOOD;
+  if (value <= HC_PCT_TARGET * 1.1) return STATUS_OK;
+  return STATUS_OVER;
 }
 
 function getStatusBadge(status: string, className: string) {
@@ -470,10 +475,22 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           {headerBadge}
           <SyncButton
             onSync={async () => {
-              await fetch("/api/etl/talexio-hr", { method: "POST" });
-              await queryClient.invalidateQueries({ queryKey: ["talexio"] });
+              // Refresh both HR sources: Talexio (headcount/attendance/payroll)
+              // and We360 (productivity/attendance) over the visible range.
+              await Promise.all([
+                fetch("/api/etl/talexio-hr", { method: "POST" }),
+                fetch("/api/etl/we360", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ start_date: fromISO, end_date: toISO }),
+                }),
+              ]);
+              await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ["talexio"] }),
+                queryClient.invalidateQueries({ queryKey: ["we360-productivity"] }),
+              ]);
             }}
-            isExternalBusy={talexioLoading}
+            isExternalBusy={talexioLoading || we360Q.isFetching}
           />
         </div>
       </div>

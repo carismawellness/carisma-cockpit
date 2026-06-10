@@ -430,12 +430,15 @@ function EbitdaReconciliation({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                   </thead>
                   <tbody>
                     {result.zoho.income_accounts.map((acc, i) => (
-                      <tr key={i} className={`border-b border-border/30 last:border-0 ${acc.dept === "slimming" ? "bg-blue-50/50" : ""}`}>
+                      <tr key={i} className="border-b border-border/30 last:border-0"
+                        style={acc.dept === "slimming" ? { backgroundColor: `${BRAND.slimming.soft}4D` } : undefined}>
                         <td className="py-1 px-1 text-muted-foreground font-mono">{acc.code}</td>
                         <td className="py-1 px-1 font-medium text-foreground">{acc.name}</td>
                         <td className="py-1 px-1">
-                          <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium
-                            ${acc.dept === "slimming" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}`}>
+                          <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium"
+                            style={acc.dept === "slimming"
+                              ? { backgroundColor: BRAND.slimming.soft, color: BRAND.slimming.dark }
+                              : { backgroundColor: BRAND.aesthetics.soft, color: BRAND.aesthetics.dark }}>
                             {acc.dept === "slimming" ? "Slimming" : "Aesthetics"}
                           </span>
                         </td>
