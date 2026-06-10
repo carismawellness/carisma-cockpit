@@ -78,31 +78,32 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
         group:         g,
         color:         GROUP_COLORS[g] ?? "#cbd5e1",
         services:      map.get(g)!,
-        total_revenue: map.get(g)!.reduce((s, v) => s + v.revenue_ex, 0),
+        total_revenue: map.get(g)!.reduce((s, v) => s + v.revenue_inc, 0),
         total_count:   map.get(g)!.reduce((s, v) => s + v.tx_count, 0),
       }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [byService]);
 
-  // Enrich byPerson with salary overlay
+  // Enrich byPerson with salary overlay. Sales surface uses gross (inc-VAT);
+  // K% is salary ÷ gross-revenue (display metric, not the EBITDA labour ratio).
   const byPersonEnriched = useMemo(() =>
     byPerson.map(bp => {
       const salary = getAesSalary(bp.person);
-      const revStr = bp.revenue_ex >= 1000 ? `€${(bp.revenue_ex / 1000).toFixed(1)}K` : `€${bp.revenue_ex}`;
+      const revStr = bp.revenue_inc >= 1000 ? `€${(bp.revenue_inc / 1000).toFixed(1)}K` : `€${bp.revenue_inc}`;
       if (!salary) return {
         ...bp,
         salary_cost: 0,
-        revenue_net: bp.revenue_ex,
+        revenue_net: bp.revenue_inc,
         k_pct: null as number | null,
         k_label: null as string | null,
         bar_label: revStr,
       };
-      const salary_cost = Math.min(salary, bp.revenue_ex);
-      const k_pct = bp.revenue_ex > 0 ? +(salary / bp.revenue_ex * 100).toFixed(1) : null;
+      const salary_cost = Math.min(salary, bp.revenue_inc);
+      const k_pct = bp.revenue_inc > 0 ? +(salary / bp.revenue_inc * 100).toFixed(1) : null;
       return {
         ...bp,
         salary_cost,
-        revenue_net: Math.max(0, bp.revenue_ex - salary_cost),
+        revenue_net: Math.max(0, bp.revenue_inc - salary_cost),
         k_pct,
         k_label: k_pct != null ? `${k_pct.toFixed(0)}%` : null as string | null,
         bar_label: revStr,
@@ -123,7 +124,7 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
             Aesthetics — Sales
           </h1>
           <p className="text-sm text-muted-foreground">
-            All figures in EUR · ex-VAT and inc-VAT shown
+            All figures in EUR · gross (inc-VAT)
           </p>
           <div className="flex flex-wrap gap-2 pt-1">
             <a
@@ -147,9 +148,9 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
       )}
       <SalesKPIGrid columns={3}>
         <SalesKPICard
-          label="Net Revenue"
+          label="Gross Revenue"
           value={fmtK(totals.revenue_inc)}
-          subtitle={`${fmtK(totals.revenue_ex)} ex-VAT · ${totals.tx_count} bookings · VAT ${fmtK(totals.vat_amount)}`}
+          subtitle={`inc-VAT · ${totals.tx_count} bookings`}
           yoyChange={yoy.net}
         />
         <SalesKPICard
@@ -165,7 +166,7 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
             <SalesKPICard
               label="Cash vs Non-Cash"
               value={`${cash?.pct ?? 0}% Cash`}
-              subtitle={`${fmtK(cash?.revenue_ex ?? 0)} cash · ${fmtK(nonCash?.revenue_ex ?? 0)} card/transfer`}
+              subtitle={`${fmtK(cash?.revenue_inc ?? 0)} cash · ${fmtK(nonCash?.revenue_inc ?? 0)} card/transfer · inc-VAT`}
             />
           );
         })()}
@@ -180,7 +181,7 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
             <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
                 <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: BRAND.aesthetics.dark }} />
-                Net revenue
+                Revenue (inc-VAT, net of salary)
               </span>
               <span className="flex items-center gap-1">
                 <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: "#4a7fa5" }} />
@@ -222,9 +223,9 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
                   const p = entry.payload as typeof byPersonEnriched[0];
                   if (name === "revenue_net") {
                     const label = hasCostData && p.salary_cost > 0
-                      ? `${formatCurrency(p.revenue_ex)} total · K%=${p.k_pct != null ? p.k_pct.toFixed(0) : "—"}% · ${p.tx_count} bookings`
-                      : `${formatCurrency(n)} · ${p.tx_count} bookings · VAT ${(p.vat_rate * 100).toFixed(0)}%`;
-                    return [label, "Revenue ex-VAT"];
+                      ? `${formatCurrency(p.revenue_inc)} total · K%=${p.k_pct != null ? p.k_pct.toFixed(0) : "—"}% · ${p.tx_count} bookings`
+                      : `${formatCurrency(n)} · ${p.tx_count} bookings`;
+                    return [label, "Revenue (inc-VAT)"];
                   }
                   return [`${formatCurrency(n)} salary cost`, "Salary (K%)"];
                 }}
@@ -249,9 +250,9 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
                   </Bar>
                 </>
               ) : (
-                <Bar dataKey="revenue_ex" fill={BRAND.aesthetics.dark} radius={[0, 4, 4, 0]}>
+                <Bar dataKey="revenue_inc" fill={BRAND.aesthetics.dark} radius={[0, 4, 4, 0]}>
                   <LabelList
-                    dataKey="revenue_ex"
+                    dataKey="revenue_inc"
                     position="right"
                     formatter={(v: unknown) => fmtK(Number(v))}
                     style={{ fontSize: 11, fill: "#111827", fontWeight: 600 }}
@@ -281,7 +282,7 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
                   <th className="text-left pb-2 font-medium w-[38%]">Service / Product</th>
                   <th className="text-left pb-2 font-medium">Category</th>
                   <th className="text-right pb-2 font-medium">Bookings</th>
-                  <th className="text-right pb-2 font-medium">Revenue ex-VAT</th>
+                  <th className="text-right pb-2 font-medium">Revenue (inc-VAT)</th>
                   <th className="text-left pb-2 pl-4 font-medium">Share</th>
                 </tr>
               </thead>
@@ -299,7 +300,7 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
                       <td className="py-2 text-right text-xs text-muted-foreground font-medium pr-0.5 tabular-nums">{total_count}</td>
                       <td className="py-2 text-right text-xs font-semibold tabular-nums">{fmtK(total_revenue)}</td>
                       <td className="py-2 pl-4 text-xs text-muted-foreground tabular-nums">
-                        {totals.revenue_ex > 0 ? `${((total_revenue / totals.revenue_ex) * 100).toFixed(1)}%` : ""}
+                        {totals.revenue_inc > 0 ? `${((total_revenue / totals.revenue_inc) * 100).toFixed(1)}%` : ""}
                       </td>
                     </tr>
                     {/* Individual services */}
@@ -310,7 +311,7 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
                           <span className="text-xs text-muted-foreground">{s.nav_category}</span>
                         </td>
                         <td className="py-2 text-right text-muted-foreground tabular-nums">{s.tx_count}</td>
-                        <td className="py-2 text-right font-medium tabular-nums">{formatCurrency(s.revenue_ex)}</td>
+                        <td className="py-2 text-right font-medium tabular-nums">{formatCurrency(s.revenue_inc)}</td>
                         <td className="py-2 pl-4">
                           <div className="flex items-center gap-2">
                             <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
@@ -331,7 +332,7 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
                 <tr className="border-t-2 font-semibold">
                   <td className="pt-2.5" colSpan={2}>Total</td>
                   <td className="pt-2.5 text-right text-muted-foreground tabular-nums">{totals.tx_count}</td>
-                  <td className="pt-2.5 text-right tabular-nums">{formatCurrency(totals.revenue_ex)}</td>
+                  <td className="pt-2.5 text-right tabular-nums">{formatCurrency(totals.revenue_inc)}</td>
                   <td />
                 </tr>
               </tfoot>

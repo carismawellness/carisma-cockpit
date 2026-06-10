@@ -1,6 +1,7 @@
 // app/api/sales/group/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { buildGroupForecast, type GroupForecast } from "@/lib/analytics/revenue-forecast";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +92,15 @@ function windowCoversMonth(month: string, fromDateStr: string, toDateStr: string
   return fromDateStr <= month && toDateStr >= monthEnd;
 }
 
+// Gross-revenue column per brand:
+//   aesthetics → price_inc_vat (sticker inc-VAT)
+//   slimming   → paid           (actually collected inc-VAT)
+// Sales surfaces show GROSS by definition; EBITDA paths use ex-VAT separately.
+const GROSS_COLUMN: Record<"aesthetics_sales_daily" | "slimming_sales_daily", "price_inc_vat" | "paid"> = {
+  aesthetics_sales_daily: "price_inc_vat",
+  slimming_sales_daily:   "paid",
+};
+
 // Daily-sales revenue for a date window: returns { total, undatedExcluded }.
 // Shared between aesthetics_sales_daily and slimming_sales_daily — identical shape.
 // Undated rows are month-anchored, so they only belong to windows that fully
@@ -103,10 +113,11 @@ async function fetchDailySalesRevenue(
 ) {
   const fromMonth = fromDateStr.substring(0, 7) + "-01";
   const toMonth   = toDateStr.substring(0, 7)   + "-01";
+  const grossCol  = GROSS_COLUMN[table];
 
   const { data, error } = await supabase
     .from(table)
-    .select("date_of_service, month, price_ex_vat")
+    .select(`date_of_service, month, ${grossCol}`)
     .gte("month", fromMonth)
     .lte("month", toMonth);
 
@@ -114,13 +125,16 @@ async function fetchDailySalesRevenue(
 
   let total = 0;
   let undatedExcluded = 0;
-  for (const r of data ?? []) {
-    if (r.date_of_service) {
-      if (r.date_of_service >= fromDateStr && r.date_of_service <= toDateStr) {
-        total += r.price_ex_vat ?? 0;
+  for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+    const amount = (r[grossCol] as number | null) ?? 0;
+    const dos    = r.date_of_service as string | null;
+    const month  = r.month as string;
+    if (dos) {
+      if (dos >= fromDateStr && dos <= toDateStr) {
+        total += amount;
       }
-    } else if (windowCoversMonth(r.month, fromDateStr, toDateStr)) {
-      total += r.price_ex_vat ?? 0;
+    } else if (windowCoversMonth(month, fromDateStr, toDateStr)) {
+      total += amount;
     } else {
       undatedExcluded++;
     }
@@ -181,10 +195,10 @@ async function fetchMonthlySeries(
     }
   }
 
-  // Fetch aesthetics monthly
+  // Fetch aesthetics monthly (inc-VAT — sales surfaces show gross)
   const { data: aesRows, error: aesError } = await supabase
     .from("aesthetics_sales_daily")
-    .select("month, price_ex_vat")
+    .select("month, price_inc_vat")
     .gte("month", allFrom)
     .lte("month", allTo);
 
@@ -192,13 +206,13 @@ async function fetchMonthlySeries(
 
   const aesByMonth = new Map<string, number>();
   for (const r of aesRows ?? []) {
-    aesByMonth.set(r.month, (aesByMonth.get(r.month) ?? 0) + (r.price_ex_vat ?? 0));
+    aesByMonth.set(r.month, (aesByMonth.get(r.month) ?? 0) + (r.price_inc_vat ?? 0));
   }
 
-  // Fetch slimming monthly
+  // Fetch slimming monthly (paid = actually collected inc-VAT)
   const { data: slimRows, error: slimError } = await supabase
     .from("slimming_sales_daily")
-    .select("month, price_ex_vat")
+    .select("month, paid")
     .gte("month", allFrom)
     .lte("month", allTo);
 
@@ -206,10 +220,10 @@ async function fetchMonthlySeries(
 
   const slimByMonth = new Map<string, number>();
   for (const r of slimRows ?? []) {
-    slimByMonth.set(r.month, (slimByMonth.get(r.month) ?? 0) + (r.price_ex_vat ?? 0));
+    slimByMonth.set(r.month, (slimByMonth.get(r.month) ?? 0) + (r.paid ?? 0));
   }
 
-  return months.map((m, i) => {
+  const series = months.map((m, i) => {
     const lyM = lyMonths[i];
     const spa    = Math.round(spaByMonth.get(m)   ?? 0);
     const aes    = Math.round(aesByMonth.get(m)   ?? 0);
@@ -237,6 +251,34 @@ async function fetchMonthlySeries(
       spa_by_location,
     };
   });
+
+  // ---- Forecast inputs (additive — derived from data already fetched) ----
+  // Full per-brand month maps. The fetch window (lyMonths[0]..current month)
+  // already covers the entire prior calendar year, so future-month LY
+  // baselines (e.g. Jul–Dec last year) are present without extra queries.
+  const roundMap = (m: Map<string, number>): Record<string, number> => {
+    const o: Record<string, number> = {};
+    for (const [k, v] of m) o[k] = Math.round(v);
+    return o;
+  };
+  const brandByMonth = {
+    spa:        roundMap(spaByMonth),
+    aesthetics: roundMap(aesByMonth),
+    slimming:   roundMap(slimByMonth),
+  };
+
+  // Latest spa daily date inside the current month — used as "elapsed days"
+  // for the MTD run-rate so nightly-ETL lag doesn't deflate the projection.
+  const currentMonthPrefix = months[months.length - 1].slice(0, 7);
+  let lastSpaDataDate: string | null = null;
+  for (const r of spaRows ?? []) {
+    const ds = r.date as string;
+    if (ds.slice(0, 7) === currentMonthPrefix && (!lastSpaDataDate || ds > lastSpaDataDate)) {
+      lastSpaDataDate = ds;
+    }
+  }
+
+  return { series, brandByMonth, lastSpaDataDate };
 }
 
 export async function GET(req: NextRequest) {
@@ -265,7 +307,7 @@ export async function GET(req: NextRequest) {
     const lyFrom   = toDateStr(shiftYearClamped(fromDate, -1));
     const lyTo     = toDateStr(shiftYearClamped(toDate,   -1));
 
-    const [spaCurr, spaLY, aesCurr, aesLY, slimCurr, slimLY, monthly] = await Promise.all([
+    const [spaCurr, spaLY, aesCurr, aesLY, slimCurr, slimLY, monthlyResult] = await Promise.all([
       fetchSpaRevenue(supabase, fromStr, toStr),
       fetchSpaRevenue(supabase, lyFrom,  lyTo),
       fetchDailySalesRevenue(supabase, "aesthetics_sales_daily", fromStr, toStr),
@@ -274,6 +316,32 @@ export async function GET(req: NextRequest) {
       fetchDailySalesRevenue(supabase, "slimming_sales_daily",   lyFrom,  lyTo),
       fetchMonthlySeries(supabase),
     ]);
+    const monthly = monthlyResult.series;
+
+    // Forward-looking forecast (additive — never affects actual figures).
+    // Computed from the monthly maps already fetched; failures degrade to
+    // forecast: null rather than breaking the actuals payload.
+    let forecast: GroupForecast | null = null;
+    try {
+      const today = new Date();
+      const currentMonth = toMonthStr(today);
+      const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+      // Elapsed days = day of the latest spa data point this month (data may
+      // lag a day behind the calendar), capped at today's day-of-month.
+      let elapsedDays = today.getDate();
+      const { lastSpaDataDate } = monthlyResult;
+      if (lastSpaDataDate && lastSpaDataDate.slice(0, 7) === currentMonth.slice(0, 7)) {
+        elapsedDays = Math.min(elapsedDays, Number(lastSpaDataDate.slice(8, 10)));
+      }
+      forecast = buildGroupForecast(
+        monthlyResult.brandByMonth,
+        currentMonth,
+        elapsedDays,
+        daysInMonth
+      );
+    } catch (forecastError) {
+      console.error("[api/sales/group] forecast computation failed:", forecastError);
+    }
 
     return NextResponse.json({
       period: {
@@ -295,6 +363,10 @@ export async function GET(req: NextRequest) {
       },
       spa_locations: spaCurr.byLocation,
       monthly,
+      // Additive forward-looking block: current (partial) month projection +
+      // each remaining month of the calendar year. null = not computable
+      // (no LY data at all) — clients hide the forecast UI in that case.
+      forecast,
     });
   } catch (error: unknown) {
     console.error("[api/sales/group] error:", error);

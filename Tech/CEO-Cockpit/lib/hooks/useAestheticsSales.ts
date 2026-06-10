@@ -138,24 +138,27 @@ export interface ServiceBreakdown {
   nav_group:    string;
   nav_category: string;
   tx_count:     number;
-  revenue_ex:   number;
-  pct:          number;
+  revenue_ex:   number;       // ex-VAT (kept for any EBITDA-adjacent consumer)
+  revenue_inc:  number;       // gross / inc-VAT — sales surfaces display this
+  pct:          number;       // share of inc-VAT total
 }
 
 export interface PaymentMethodBreakdown {
-  method:     string;
-  category:   "Cash" | "Non-Cash";
-  tx_count:   number;
-  revenue_ex: number;
-  pct:        number;
+  method:      string;
+  category:    "Cash" | "Non-Cash";
+  tx_count:    number;
+  revenue_ex:  number;
+  revenue_inc: number;        // gross / inc-VAT
+  pct:         number;        // share of inc-VAT total
 }
 
 export interface CashTypeBreakdown {
-  category:   "Cash" | "Non-Cash";
-  tx_count:   number;
-  revenue_ex: number;
-  pct:        number;
-  methods:    string[];  // raw method labels that mapped to this category
+  category:    "Cash" | "Non-Cash";
+  tx_count:    number;
+  revenue_ex:  number;
+  revenue_inc: number;        // gross / inc-VAT
+  pct:         number;        // share of inc-VAT total
+  methods:     string[];      // raw method labels that mapped to this category
 }
 
 export interface AestheticsSalesTotals {
@@ -365,7 +368,7 @@ export function useAestheticsSales(dateFrom: Date, dateTo: Date, { skipSync = fa
         revenue_inc: Math.round(p.revenue_inc),
         vat_amount:  Math.round(p.vat_amount),
       }))
-      .sort((a, b) => b.revenue_ex - a.revenue_ex);
+      .sort((a, b) => b.revenue_inc - a.revenue_inc);
   }, [rows]);
 
   const byService = useMemo<ServiceBreakdown[]>(() => {
@@ -452,12 +455,13 @@ export function useAestheticsSales(dateFrom: Date, dateTo: Date, { skipSync = fa
       return row[n];
     }
 
-    const map      = new Map<string, { tx_count: number; revenue_ex: number }>();
+    const map      = new Map<string, { tx_count: number; revenue_ex: number; revenue_inc: number }>();
     const labelMap = new Map<string, string>();
     for (const r of rows) {
       const raw   = r.service_product?.trim() || "(Unspecified)";
       const label = canonicalize(raw);
-      const revEx = r.price_ex_vat ?? 0;
+      const revEx  = r.price_ex_vat  ?? 0;
+      const revInc = r.price_inc_vat ?? 0;
       // Split combo services (e.g. "Botox + Filler") into individual components
       // and distribute revenue equally. Package bundles (suffix "- Package") are kept whole.
       const isPackage  = /- package/i.test(label);
@@ -467,10 +471,11 @@ export function useAestheticsSales(dateFrom: Date, dateTo: Date, { skipSync = fa
         const cLabel = comp.trim();
         const key    = cLabel.toLowerCase();
         if (!labelMap.has(key)) labelMap.set(key, cLabel);
-        if (!map.has(key)) map.set(key, { tx_count: 0, revenue_ex: 0 });
+        if (!map.has(key)) map.set(key, { tx_count: 0, revenue_ex: 0, revenue_inc: 0 });
         const agg = map.get(key)!;
         agg.tx_count++;
-        agg.revenue_ex += revEx / n;
+        agg.revenue_ex  += revEx  / n;
+        agg.revenue_inc += revInc / n;
       }
     }
 
@@ -487,15 +492,16 @@ export function useAestheticsSales(dateFrom: Date, dateTo: Date, { skipSync = fa
         const threshold = Math.min(2, Math.max(1, Math.floor(Math.min(a.length, b.length) * 0.2)));
         if (lev(a, b) <= threshold) {
           const va = map.get(a)!, vb = map.get(b)!;
-          const [keep, drop] = va.revenue_ex >= vb.revenue_ex ? [a, b] : [b, a];
-          map.get(keep)!.tx_count   += map.get(drop)!.tx_count;
-          map.get(keep)!.revenue_ex += map.get(drop)!.revenue_ex;
+          const [keep, drop] = va.revenue_inc >= vb.revenue_inc ? [a, b] : [b, a];
+          map.get(keep)!.tx_count    += map.get(drop)!.tx_count;
+          map.get(keep)!.revenue_ex  += map.get(drop)!.revenue_ex;
+          map.get(keep)!.revenue_inc += map.get(drop)!.revenue_inc;
           map.delete(drop);
           labelMap.delete(drop);
         }
       }
     }
-    const totalEx = Array.from(map.values()).reduce((s, v) => s + v.revenue_ex, 0) || 1;
+    const totalInc = Array.from(map.values()).reduce((s, v) => s + v.revenue_inc, 0) || 1;
     return Array.from(map.entries())
       .map(([key, v]) => {
         const service = labelMap.get(key) ?? key;
@@ -506,61 +512,66 @@ export function useAestheticsSales(dateFrom: Date, dateTo: Date, { skipSync = fa
           nav_category: category,
           tx_count:     v.tx_count,
           revenue_ex:   Math.round(v.revenue_ex),
-          pct:          Math.round((v.revenue_ex / totalEx) * 1000) / 10,
+          revenue_inc:  Math.round(v.revenue_inc),
+          pct:          Math.round((v.revenue_inc / totalInc) * 1000) / 10,
         };
       })
-      .sort((a, b) => b.revenue_ex - a.revenue_ex);
+      .sort((a, b) => b.revenue_inc - a.revenue_inc);
   }, [rows]);
 
   const byPaymentMethod = useMemo<PaymentMethodBreakdown[]>(() => {
-    const map      = new Map<string, { tx_count: number; revenue_ex: number }>();
+    const map      = new Map<string, { tx_count: number; revenue_ex: number; revenue_inc: number }>();
     const labelMap = new Map<string, string>();
     for (const r of rows) {
       const raw   = r.payment_method?.trim() || "(Unspecified)";
       const key   = raw.toLowerCase();
       if (!labelMap.has(key)) labelMap.set(key, raw);
-      if (!map.has(key)) map.set(key, { tx_count: 0, revenue_ex: 0 });
+      if (!map.has(key)) map.set(key, { tx_count: 0, revenue_ex: 0, revenue_inc: 0 });
       const agg = map.get(key)!;
       agg.tx_count++;
-      agg.revenue_ex += r.price_ex_vat ?? 0;
+      agg.revenue_ex  += r.price_ex_vat  ?? 0;
+      agg.revenue_inc += r.price_inc_vat ?? 0;
     }
-    const totalEx = Array.from(map.values()).reduce((s, v) => s + v.revenue_ex, 0) || 1;
+    const totalInc = Array.from(map.values()).reduce((s, v) => s + v.revenue_inc, 0) || 1;
     return Array.from(map.entries())
       .map(([key, v]) => {
         const method = labelMap.get(key) ?? key;
         return {
           method,
-          category:   categorizeCash(method),
-          tx_count:   v.tx_count,
-          revenue_ex: Math.round(v.revenue_ex),
-          pct:        Math.round((v.revenue_ex / totalEx) * 1000) / 10,
+          category:    categorizeCash(method),
+          tx_count:    v.tx_count,
+          revenue_ex:  Math.round(v.revenue_ex),
+          revenue_inc: Math.round(v.revenue_inc),
+          pct:         Math.round((v.revenue_inc / totalInc) * 1000) / 10,
         };
       })
-      .sort((a, b) => b.revenue_ex - a.revenue_ex);
+      .sort((a, b) => b.revenue_inc - a.revenue_inc);
   }, [rows]);
 
   const byCashType = useMemo<CashTypeBreakdown[]>(() => {
-    const cashMap = new Map<"Cash" | "Non-Cash", { tx_count: number; revenue_ex: number; methods: Set<string> }>([
-      ["Cash",     { tx_count: 0, revenue_ex: 0, methods: new Set() }],
-      ["Non-Cash", { tx_count: 0, revenue_ex: 0, methods: new Set() }],
+    const cashMap = new Map<"Cash" | "Non-Cash", { tx_count: number; revenue_ex: number; revenue_inc: number; methods: Set<string> }>([
+      ["Cash",     { tx_count: 0, revenue_ex: 0, revenue_inc: 0, methods: new Set() }],
+      ["Non-Cash", { tx_count: 0, revenue_ex: 0, revenue_inc: 0, methods: new Set() }],
     ]);
     for (const r of rows) {
       const raw = r.payment_method?.trim() || "(Unspecified)";
       const cat = categorizeCash(raw);
       const agg = cashMap.get(cat)!;
       agg.tx_count++;
-      agg.revenue_ex += r.price_ex_vat ?? 0;
+      agg.revenue_ex  += r.price_ex_vat  ?? 0;
+      agg.revenue_inc += r.price_inc_vat ?? 0;
       agg.methods.add(raw);
     }
-    const totalEx = Array.from(cashMap.values()).reduce((s, v) => s + v.revenue_ex, 0) || 1;
+    const totalInc = Array.from(cashMap.values()).reduce((s, v) => s + v.revenue_inc, 0) || 1;
     return (["Cash", "Non-Cash"] as const).map(cat => {
       const v = cashMap.get(cat)!;
       return {
-        category:   cat,
-        tx_count:   v.tx_count,
-        revenue_ex: Math.round(v.revenue_ex),
-        pct:        Math.round((v.revenue_ex / totalEx) * 1000) / 10,
-        methods:    [...v.methods].sort(),
+        category:    cat,
+        tx_count:    v.tx_count,
+        revenue_ex:  Math.round(v.revenue_ex),
+        revenue_inc: Math.round(v.revenue_inc),
+        pct:         Math.round((v.revenue_inc / totalInc) * 1000) / 10,
+        methods:     [...v.methods].sort(),
       };
     });
   }, [rows]);
