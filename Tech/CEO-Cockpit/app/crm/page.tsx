@@ -4,7 +4,6 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { SalesPerformance } from "@/components/crm/SalesPerformance";
 import { SpeedToLeadSection } from "@/components/crm/SpeedToLeadSection";
 import { MessageQueueHealth } from "@/components/crm/MessageQueueHealth";
-import { RepLeaderboard } from "@/components/crm/RepLeaderboard";
 import { LeadReconciliation } from "@/components/crm/LeadReconciliation";
 import { LeadsPerHour } from "@/components/crm/LeadsPerHour";
 import { CIChat } from "@/components/ci/CIChat";
@@ -54,12 +53,6 @@ function CRMContent({
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-3">Lead Reconciliation</h2>
         <LeadReconciliation dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
-      </section>
-
-      {/* Rep Leaderboard */}
-      <section>
-        <h2 className="text-lg font-semibold text-foreground mb-3">Rep Leaderboard</h2>
-        <RepLeaderboard dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
       </section>
 
       {/* Speed to Lead — data not yet available */}
