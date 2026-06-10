@@ -18,7 +18,9 @@ import {
   ResponsiveContainer,
   Legend,
   CartesianGrid,
+  LabelList,
 } from "recharts";
+import { BRAND } from "@/lib/constants/design-tokens";
 
 /* ------------------------------------------------------------------ */
 /*  HELPERS                                                            */
@@ -152,7 +154,7 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
   /* ---- Aggregate SPA locations → single BU ---- */
   const spaBU = useMemo((): BUData => {
     const z: BUData = {
-      slug: "spa", name: "Spa", color: "#EFE7D7",
+      slug: "spa", name: "Spa", color: BRAND.spa.soft,
       revenue: 0, cogs: 0, wages: 0, advertising: 0,
       rent: 0, utilities: 0, sga: 0, ebitda: 0,
     };
@@ -173,7 +175,7 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
   const aestheticsBU = useMemo((): BUData => {
     const d = aesth.depts.find((x) => x.dept === "aesthetics");
     return {
-      slug: "aesthetics", name: "Aesthetics", color: "#DEEBEB",
+      slug: "aesthetics", name: "Aesthetics", color: BRAND.aesthetics.soft,
       revenue:     d?.revenue     ?? 0,
       cogs:        d?.cogs        ?? 0,
       wages:       d?.wages       ?? 0,
@@ -188,7 +190,7 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
   const slimmingBU = useMemo((): BUData => {
     const d = aesth.depts.find((x) => x.dept === "slimming");
     return {
-      slug: "slimming", name: "Slimming", color: "#C9D8C1",
+      slug: "slimming", name: "Slimming", color: BRAND.slimming.soft,
       revenue:     d?.revenue     ?? 0,
       cogs:        d?.cogs        ?? 0,
       wages:       d?.wages       ?? 0,
@@ -339,7 +341,7 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
                             : isRevenue ? "font-bold text-foreground"
                             : "text-foreground";
                           return (
-                            <td key={bu.slug} className={`py-1.5 px-3 text-right ${valClass}`}>
+                            <td key={bu.slug} className={`py-1.5 px-3 text-right tabular-nums ${valClass}`}>
                               {display}
                               {isEbitda && (
                                 <span className="ml-1 text-xs font-normal text-muted-foreground">
@@ -361,7 +363,7 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
                             : isRevenue ? "font-bold text-foreground"
                             : "text-foreground";
                           return (
-                            <td className={`py-1.5 px-3 text-right border-l border-border ${valClass}`}>
+                            <td className={`py-1.5 px-3 text-right tabular-nums border-l border-border ${valClass}`}>
                               {display}
                               {isEbitda && (
                                 <span className="ml-1 text-xs font-normal text-muted-foreground">
@@ -399,7 +401,14 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
                   <Bar dataKey="Utilities"   stackId="s" fill="#B5DCDC" />
                   <Bar dataKey="COGS"        stackId="s" fill="#E5B8B0" />
                   <Bar dataKey="SG&A"        stackId="s" fill="#D5C0E5" />
-                  <Bar dataKey="EBITDA"      stackId="s" fill="#A8D4A8" />
+                  <Bar dataKey="EBITDA"      stackId="s" fill="#A8D4A8">
+                    <LabelList
+                      dataKey="EBITDA"
+                      position="top"
+                      formatter={(v) => fmtCurrencyShort(Number(v))}
+                      style={{ fontSize: 10, fontWeight: 600, fill: "#111827" }}
+                    />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
