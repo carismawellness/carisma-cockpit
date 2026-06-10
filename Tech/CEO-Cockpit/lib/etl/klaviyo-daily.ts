@@ -173,7 +173,8 @@ async function fetchReport(
       attributes: {
         statistics: [
           "recipients", "delivered", "open_rate", "click_rate",
-          "unsubscribe_rate", "bounce_rate",
+          "unsubscribe_rate", "bounce_rate", "clicks", "clicks_unique",
+          "opens_unique",
         ],
         timeframe: {
           key:   "custom",
@@ -181,9 +182,7 @@ async function fetchReport(
           end:   `${dateTo}T23:59:59+00:00`,
         },
         conversion_metric_id: conversionMetricId,
-        ...(reportType === "campaign-values-report"
-          ? { filter: 'equals(send_channel,"email")' }
-          : {}),
+        filter: 'equals(send_channel,"email")',
       },
     },
   };
