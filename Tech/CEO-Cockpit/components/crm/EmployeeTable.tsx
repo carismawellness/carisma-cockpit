@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { DataTable } from "@/components/dashboard/DataTable";
-import { useKPIData } from "@/lib/hooks/useKPIData";
-import { useLookups } from "@/lib/hooks/useLookups";
+import { useCrmAgents } from "@/lib/hooks/useCrmAgents";
+import { AGENT_META_BY_SLUG } from "@/lib/constants/agents";
 import {
   chartColors,
   chartDefaults,
@@ -24,7 +24,6 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { format, addDays } from "date-fns";
-import type { CrmByRepRow } from "@/lib/types/crm";
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -115,17 +114,11 @@ export function EmployeeTable({
   dateTo: Date;
   brandFilter: string | null;
 }) {
-  const { brandMap } = useLookups();
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
 
-  const { data, loading } = useKPIData<CrmByRepRow>({
-    table: "crm_by_rep",
-    dateFrom,
-    dateTo,
-    brandFilter,
-  });
+  const { agents, isLoading } = useCrmAgents(dateFrom, dateTo);
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="space-y-4">
         <div className="h-64 rounded-xl bg-gray-100 animate-pulse" />
@@ -133,85 +126,27 @@ export function EmployeeTable({
     );
   }
 
-  // --- Brand ID -> slug mapping ---
-  const brandIdToSlug: Record<number, string> = {};
-  for (const [slug, id] of Object.entries(brandMap)) {
-    brandIdToSlug[id] = slug;
-  }
-
-  // --- Aggregate real data by staff_id ---
-  const repMap: Record<
-    number,
-    {
-      staffId: number;
-      brandId: number;
-      teamType: string;
-      totalSales: number;
-      dials: number;
-      bookings: number;
-      leadsAssigned: number;
-      convSum: number;
-      convCount: number;
-      depSum: number;
-      depCount: number;
-      missedSum: number;
-      missedCount: number;
-    }
-  > = {};
-
-  for (const row of data) {
-    if (!repMap[row.staff_id]) {
-      repMap[row.staff_id] = {
-        staffId: row.staff_id,
-        brandId: row.brand_id,
-        teamType: row.team_type ?? "-",
-        totalSales: 0,
-        dials: 0,
-        bookings: 0,
-        leadsAssigned: 0,
-        convSum: 0,
-        convCount: 0,
-        depSum: 0,
-        depCount: 0,
-        missedSum: 0,
-        missedCount: 0,
-      };
-    }
-    const agg = repMap[row.staff_id];
-    agg.totalSales += row.total_sales ?? 0;
-    agg.dials += row.dials ?? 0;
-    agg.bookings += row.bookings ?? 0;
-    agg.leadsAssigned += row.leads_assigned ?? 0;
-    if (row.conversion_rate_pct !== null) {
-      agg.convSum += row.conversion_rate_pct;
-      agg.convCount++;
-    }
-    if (row.deposit_pct !== null) {
-      agg.depSum += row.deposit_pct;
-      agg.depCount++;
-    }
-    if (row.missed_pct !== null) {
-      agg.missedSum += row.missed_pct;
-      agg.missedCount++;
-    }
-  }
-
-  const realTableData: AggregatedRep[] = Object.values(repMap).map((r) => {
-    const bookingTarget = Math.max(Math.round(r.leadsAssigned * BOOKING_CONVERSION_TARGET), 1);
+  const realTableData: AggregatedRep[] = agents.map((a) => {
+    const meta = AGENT_META_BY_SLUG[a.slug];
+    const brand = meta?.brand.toLowerCase() ?? "spa";
+    const teamType = meta?.role ?? "-";
+    const leadsAssigned = a.totals.total_messages;
+    const bookingTarget = Math.max(Math.round(leadsAssigned * BOOKING_CONVERSION_TARGET), 1);
+    const activeDays = a.totals.active_days || 1;
     return {
-      name: `Rep ${r.staffId}`,
-      brand: brandIdToSlug[r.brandId] ?? `brand_${r.brandId}`,
-      team_type: r.teamType === "sdr" ? "SDR" : r.teamType === "chat" ? "Chat" : r.teamType,
-      total_sales: r.totalSales,
-      dials: r.dials,
-      bookings: r.bookings,
-      leads_assigned: r.leadsAssigned,
+      name: a.name,
+      brand,
+      team_type: teamType,
+      total_sales: a.totals.total_sales,
+      dials: a.totals.total_messages,
+      bookings: a.totals.total_bookings,
+      leads_assigned: leadsAssigned,
       booking_target: bookingTarget,
-      conversion_rate_pct: r.convCount > 0 ? r.convSum / r.convCount : 0,
-      deposit_pct: r.depCount > 0 ? r.depSum / r.depCount : 0,
-      missed_pct: r.missedCount > 0 ? r.missedSum / r.missedCount : 0,
-      total_tasks: 0,
-      avg_tasks_per_day: 0,
+      conversion_rate_pct: a.totals.avg_conversion_rate,
+      deposit_pct: a.totals.avg_deposit_pct,
+      missed_pct: 0,
+      total_tasks: a.totals.total_messages,
+      avg_tasks_per_day: a.totals.total_messages / activeDays,
     };
   });
 
@@ -308,19 +243,21 @@ export function EmployeeTable({
     },
   ];
 
-  // --- Agent detail chart (dummy daily) ---
+  // --- Agent detail chart ---
+  const selectedAgentRows = selectedAgent
+    ? agents.find((a) => a.name === selectedAgent)?.rows ?? []
+    : [];
   const agentDailyData = selectedAgent
     ? hasRealData
-      ? data
-          .filter((r) => `Rep ${r.staff_id}` === selectedAgent)
+      ? [...selectedAgentRows]
           .sort((a, b) => a.date.localeCompare(b.date))
           .map((r) => ({
             date: format(new Date(r.date), "MMM dd"),
             Sales: r.total_sales ?? 0,
-            Bookings: r.bookings ?? 0,
+            Bookings: r.total_booked ?? 0,
             "Conv %": r.conversion_rate_pct ?? 0,
             "Deposit %": r.deposit_pct ?? 0,
-            "Missed %": r.missed_pct ?? 0,
+            "Missed %": 0,
           }))
       : generateDummyDailyData(selectedAgent)
     : [];

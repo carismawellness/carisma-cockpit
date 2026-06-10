@@ -1,9 +1,8 @@
 "use client";
 
 import { Card } from "@/components/ui/card";
-import { useKPIData } from "@/lib/hooks/useKPIData";
-import { useLookups } from "@/lib/hooks/useLookups";
-import { CrmByRepRow } from "@/lib/types/crm";
+import { useCrmAgents } from "@/lib/hooks/useCrmAgents";
+import { AGENT_META_BY_SLUG } from "@/lib/constants/agents";
 import { chartColors, formatCurrency, formatPercent } from "@/lib/charts/config";
 import {
   ComposedChart,
@@ -82,84 +81,34 @@ export function RepLeaderboard({
   dateTo: Date;
   brandFilter: string | null;
 }) {
-  const { brandMap } = useLookups();
+  const { agents, isLoading } = useCrmAgents(dateFrom, dateTo);
 
-  const { data, loading } = useKPIData<CrmByRepRow>({
-    table: "crm_by_rep",
-    dateFrom,
-    dateTo,
-    brandFilter,
-  });
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="h-96 rounded-xl bg-gray-100 animate-pulse" />
     );
   }
 
-  // Build brand_id -> slug lookup
-  const brandIdToSlug: Record<number, string> = {};
-  for (const [slug, id] of Object.entries(brandMap)) {
-    brandIdToSlug[id] = slug;
-  }
-
-  // Aggregate real data by staff_id
-  const repAgg: Record<
-    number,
-    {
-      staffId: number;
-      brandId: number;
-      totalSales: number;
-      activeDays: Set<string>;
-      totalBookings: number;
-      convSum: number;
-      convCount: number;
-      depSum: number;
-      depCount: number;
-      missedSum: number;
-      missedCount: number;
-    }
-  > = {};
-
-  for (const row of data) {
-    if (!repAgg[row.staff_id]) {
-      repAgg[row.staff_id] = {
-        staffId: row.staff_id,
-        brandId: row.brand_id,
-        totalSales: 0,
-        activeDays: new Set(),
-        totalBookings: 0,
-        convSum: 0, convCount: 0,
-        depSum: 0, depCount: 0,
-        missedSum: 0, missedCount: 0,
-      };
-    }
-    const agg = repAgg[row.staff_id];
-    agg.totalSales += row.total_sales ?? 0;
-    agg.totalBookings += row.bookings ?? 0;
-    if (row.total_sales !== null && row.total_sales > 0) {
-      agg.activeDays.add(row.date);
-    }
-    if (row.conversion_rate_pct !== null) { agg.convSum += row.conversion_rate_pct; agg.convCount++; }
-    if (row.deposit_pct !== null) { agg.depSum += row.deposit_pct; agg.depCount++; }
-    if (row.missed_pct !== null) { agg.missedSum += row.missed_pct; agg.missedCount++; }
-  }
-
-  const realData: RepRow[] = Object.values(repAgg)
-    .map((r) => {
-      const days = r.activeDays.size || 1;
+  const realData: RepRow[] = agents
+    .map((a) => {
+      const meta = AGENT_META_BY_SLUG[a.slug];
+      const brandSlug = meta?.brand.toLowerCase() ?? "spa";
+      const days = a.totals.active_days || 1;
       return {
-        name: `Rep ${r.staffId}`,
-        brandSlug: brandIdToSlug[r.brandId] ?? "spa",
-        avgDaily: Math.round(r.totalSales / days),
-        salesPerBooking: r.totalBookings > 0 ? Math.round(r.totalSales / r.totalBookings) : 0,
-        conversionPct: r.convCount > 0 ? r.convSum / r.convCount : 0,
-        depositPct: r.depCount > 0 ? r.depSum / r.depCount : 0,
-        missedPct: r.missedCount > 0 ? r.missedSum / r.missedCount : 0,
-        totalSales: r.totalSales,
-        totalBookings: r.totalBookings,
+        name: a.name,
+        brandSlug,
+        avgDaily: Math.round(a.totals.total_sales / days),
+        salesPerBooking: a.totals.total_bookings > 0
+          ? Math.round(a.totals.total_sales / a.totals.total_bookings)
+          : 0,
+        conversionPct: a.totals.avg_conversion_rate,
+        depositPct: a.totals.avg_deposit_pct,
+        missedPct: 0,
+        totalSales: a.totals.total_sales,
+        totalBookings: a.totals.total_bookings,
       };
     })
+    .filter((r) => !brandFilter || r.brandSlug === brandFilter)
     .filter((r) => r.totalSales > 0)
     .sort((a, b) => b.totalSales - a.totalSales);
 
