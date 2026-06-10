@@ -1,11 +1,11 @@
 /**
  * GET /api/funnel/campaign-drilldown?from=YYYY-MM-DD&to=YYYY-MM-DD
  *
- * Returns per-campaign Meta metrics (spend, leads, CPL, attributed_revenue, ROAS)
- * grouped by brand. Booking conversion is sourced at brand level from crm_daily
- * and applied uniformly to all campaigns of that brand.
+ * Returns per-campaign Meta metrics (spend, leads, CPL, expected revenue, ROAS)
+ * grouped by brand. Booking conversion is the weighted outbound rate for the
+ * brand's CRM agents, computed live from crm_agent_daily for the requested window.
  *
- * Columns not available per-campaign: show_rate_pct → null
+ * Agent → brand: Spa = juliana + vj | Aesthetics = april | Slimming = dorianne + queenee
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -40,13 +40,11 @@ const AOV_OVERRIDES: Array<{ keywords: string[]; aov: number }> = [
   { keywords: ["weight loss", "slimming plan", "glp", "ozempic", "mounjaro"],aov: 350 },
 ];
 
-// Weighted outbound conversion rates per brand — sourced from CRM Master Sheet agent tabs
-// Spa: Juliana + VJ  |  Aesthetics: April  |  Slimming: Dorianne + Queenee
-// Last computed: last 30 days ending Jun 10, 2026 — update quarterly
-const BRAND_OUTBOUND_CONV: Record<string, number> = {
-  spa:        17.6,
-  aesthetics: 16.4,
-  slimming:   17.0,
+// CRM agents responsible for each brand (slugs in crm_agent_daily)
+const BRAND_AGENTS: Record<string, string[]> = {
+  spa:        ["juliana", "vj"],
+  aesthetics: ["april"],
+  slimming:   ["dorianne", "queenee"],
 };
 
 function resolveAov(brandSlug: string, campaignName: string): number {
@@ -136,7 +134,20 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const conversionPct = BRAND_OUTBOUND_CONV[slug] ?? null;
+    // Weighted outbound conversion rate: SUM(total_booked) / SUM(total_messages) for brand agents
+    const agents = BRAND_AGENTS[slug] ?? [];
+    let conversionPct: number | null = null;
+    if (agents.length > 0) {
+      const { data: agentRows } = await supabase
+        .from("crm_agent_daily")
+        .select("total_booked, total_messages")
+        .in("agent_slug", agents)
+        .gte("date", from)
+        .lte("date", to);
+      const totalBooked   = (agentRows ?? []).reduce((s: number, r: { total_booked: number }) => s + (r.total_booked ?? 0), 0);
+      const totalMessages = (agentRows ?? []).reduce((s: number, r: { total_messages: number }) => s + (r.total_messages ?? 0), 0);
+      conversionPct = totalMessages > 0 ? Math.round((totalBooked / totalMessages) * 1000) / 10 : null;
+    }
 
     // Build campaign rows
     const campaigns: DrilldownCampaign[] = [];
