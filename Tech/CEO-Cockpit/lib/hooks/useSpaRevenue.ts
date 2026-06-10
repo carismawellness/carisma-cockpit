@@ -16,24 +16,21 @@ export const SPA_LOCATION_META: Record<string, { name: string; color: string }> 
   8: { name: "Novotel",   color: "#DC2626" },
 };
 
+// Gross sales = services + products only. Wholesale/discount/refund live in
+// spa_revenue_monthly and are reserved for EBITDA — every customer-facing
+// sales surface shows the blunt gross figure straight from the Cockpit datasheet.
+
 export interface SpaRevenueLocation {
   location_id:      number;
   name:             string;
   color:            string;
-  // Cockpit
   services:         number;
   product_phytomer: number;
   product_purest:   number;
   product_other:    number;
   product_total:    number;
-  // Zoho
-  wholesale:        number;
-  sales_discount:   number;
-  sales_refund:     number;
-  // Derived
-  net_revenue:      number;
+  gross_revenue:    number;
   lapis_synced_at:  string | null;
-  zoho_synced_at:   string | null;
 }
 
 export interface SpaRevenueTotals {
@@ -42,10 +39,7 @@ export interface SpaRevenueTotals {
   product_purest:   number;
   product_other:    number;
   product_total:    number;
-  wholesale:        number;
-  sales_discount:   number;
-  sales_refund:     number;
-  net_revenue:      number;
+  gross_revenue:    number;
 }
 
 export interface UseSpaRevenueResult {
@@ -78,29 +72,31 @@ export function useSpaRevenue(dateFrom: Date, dateTo: Date): UseSpaRevenueResult
   const queryClient   = useQueryClient();
   const lastFiredRef  = useRef("");
 
-  const fromStr   = toDateStr(new Date(dateFrom.getFullYear(), dateFrom.getMonth(), 1));
-  const toStr     = toDateStr(new Date(dateTo.getFullYear(),   dateTo.getMonth(),   1));
-  const allMonths = monthsInRange(dateFrom, dateTo);
+  const fromDateStr = toDateStr(dateFrom);
+  const toDateStr_  = toDateStr(dateTo);
+  const allMonths   = monthsInRange(dateFrom, dateTo);
 
-  // ── 1. Fetch from Supabase ────────────────────────────────────────────────
+  // ── 1. Fetch from Supabase (daily, exact date range) ──────────────────────
   const { data: rawRows, isFetching } = useQuery({
-    queryKey: ["spa-revenue", fromStr, toStr],
+    queryKey: ["spa-revenue", fromDateStr, toDateStr_],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("spa_revenue_monthly")
-        .select("*")
-        .gte("month", fromStr)
-        .lte("month", toStr)
-        .order("month");
+        .from("spa_revenue_daily")
+        .select("location_id, date, services, product_phytomer, product_purest, product_other, lapis_synced_at")
+        .gte("date", fromDateStr)
+        .lte("date", toDateStr_)
+        .order("date");
       if (error) throw error;
       return data ?? [];
     },
     staleTime: 0,
   });
 
-  // ── 2. Detect missing months ──────────────────────────────────────────────
-  const presentMonths  = new Set((rawRows ?? []).map((r: { month: string }) => r.month));
-  const missingMonths  = allMonths.filter((m) => !presentMonths.has(m));
+  // ── 2. Detect missing months (sync trigger still operates per-month) ──────
+  const presentMonths = new Set(
+    (rawRows ?? []).map((r: { date: string }) => r.date.slice(0, 7) + "-01"),
+  );
+  const missingMonths = allMonths.filter((m) => !presentMonths.has(m));
 
   // ── 3. Sync mutation ──────────────────────────────────────────────────────
   const syncMutation = useMutation({
@@ -127,34 +123,31 @@ export function useSpaRevenue(dateFrom: Date, dateTo: Date): UseSpaRevenueResult
       return json;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["spa-revenue", fromStr, toStr] });
+      queryClient.invalidateQueries({ queryKey: ["spa-revenue", fromDateStr, toDateStr_] });
     },
   });
 
   // ── 4. Auto-trigger sync ─────────────────────────────────────────────────
   const autoRefreshFiredRef = useRef(false);
 
-  // Current + previous month boundaries (staff enter service dates retroactively)
   const today          = new Date();
   const prevMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
   const curMonthEnd    = new Date(today.getFullYear(), today.getMonth() + 1, 0);
   const curMonthStr    = toDateStr(new Date(today.getFullYear(), today.getMonth(), 1));
   const prevMonthStr   = toDateStr(prevMonthStart);
-  // Only auto-refresh if the current or previous month is within the queried range
+  const fromMonth      = fromDateStr.slice(0, 7) + "-01";
+  const toMonth        = toDateStr_.slice(0, 7)  + "-01";
   const recentInRange  = rawRows !== undefined && (
-    (curMonthStr  >= fromStr && curMonthStr  <= toStr) ||
-    (prevMonthStr >= fromStr && prevMonthStr <= toStr)
+    (curMonthStr  >= fromMonth && curMonthStr  <= toMonth) ||
+    (prevMonthStr >= fromMonth && prevMonthStr <= toMonth)
   );
 
   const missingKey = missingMonths.join(",");
   if (!isFetching && !syncMutation.isPending) {
     if (missingMonths.length > 0 && missingKey !== lastFiredRef.current) {
-      // Priority 1: fetch missing months (first-time, no force)
       lastFiredRef.current = missingKey;
       setTimeout(() => syncMutation.mutate({ force: false }), 0);
     } else if (recentInRange && !autoRefreshFiredRef.current) {
-      // Priority 2: once per mount, force-refresh current + previous month
-      // so data entered retroactively in Cockpit is always picked up
       autoRefreshFiredRef.current = true;
       setTimeout(() => syncMutation.mutate({
         force:    true,
@@ -167,15 +160,12 @@ export function useSpaRevenue(dateFrom: Date, dateTo: Date): UseSpaRevenueResult
   // ── 5. Aggregate rows per location ────────────────────────────────────────
   type Row = {
     location_id:      number;
+    date:             string;
     services:         number;
     product_phytomer: number;
     product_purest:   number;
     product_other:    number;
-    wholesale:        number;
-    sales_discount:   number;
-    sales_refund:     number;
     lapis_synced_at:  string | null;
-    zoho_synced_at:   string | null;
   };
 
   const locMap = new Map<number, SpaRevenueLocation>();
@@ -194,12 +184,8 @@ export function useSpaRevenue(dateFrom: Date, dateTo: Date): UseSpaRevenueResult
         product_purest:   0,
         product_other:    0,
         product_total:    0,
-        wholesale:        0,
-        sales_discount:   0,
-        sales_refund:     0,
-        net_revenue:      0,
+        gross_revenue:    0,
         lapis_synced_at:  null,
-        zoho_synced_at:   null,
       });
     }
 
@@ -208,22 +194,16 @@ export function useSpaRevenue(dateFrom: Date, dateTo: Date): UseSpaRevenueResult
     agg.product_phytomer += row.product_phytomer ?? 0;
     agg.product_purest   += row.product_purest   ?? 0;
     agg.product_other    += row.product_other    ?? 0;
-    agg.wholesale        += row.wholesale        ?? 0;
-    agg.sales_discount   += row.sales_discount   ?? 0;
-    agg.sales_refund     += row.sales_refund     ?? 0;
     if (row.lapis_synced_at && (!agg.lapis_synced_at || row.lapis_synced_at > agg.lapis_synced_at)) {
       agg.lapis_synced_at = row.lapis_synced_at;
     }
-    if (row.zoho_synced_at && (!agg.zoho_synced_at || row.zoho_synced_at > agg.zoho_synced_at)) {
-      agg.zoho_synced_at = row.zoho_synced_at;
-    }
   }
 
-  // Round, compute product_total and net_revenue, sort by services desc
+  // Round, compute product_total + gross_revenue, sort by gross desc
   const locations: SpaRevenueLocation[] = Array.from(locMap.values())
     .map((loc) => {
-      const pt = loc.product_phytomer + loc.product_purest + loc.product_other;
-      const net = loc.services + pt + loc.wholesale - loc.sales_discount - loc.sales_refund;
+      const pt    = loc.product_phytomer + loc.product_purest + loc.product_other;
+      const gross = loc.services + pt;
       return {
         ...loc,
         services:         Math.round(loc.services),
@@ -231,13 +211,10 @@ export function useSpaRevenue(dateFrom: Date, dateTo: Date): UseSpaRevenueResult
         product_purest:   Math.round(loc.product_purest),
         product_other:    Math.round(loc.product_other),
         product_total:    Math.round(pt),
-        wholesale:        Math.round(loc.wholesale),
-        sales_discount:   Math.round(loc.sales_discount),
-        sales_refund:     Math.round(loc.sales_refund),
-        net_revenue:      Math.round(net),
+        gross_revenue:    Math.round(gross),
       };
     })
-    .sort((a, b) => b.net_revenue - a.net_revenue);
+    .sort((a, b) => b.gross_revenue - a.gross_revenue);
 
   // ── 6. Totals ─────────────────────────────────────────────────────────────
   const totals: SpaRevenueTotals = locations.reduce(
@@ -247,14 +224,11 @@ export function useSpaRevenue(dateFrom: Date, dateTo: Date): UseSpaRevenueResult
       product_purest:   acc.product_purest   + loc.product_purest,
       product_other:    acc.product_other    + loc.product_other,
       product_total:    acc.product_total    + loc.product_total,
-      wholesale:        acc.wholesale        + loc.wholesale,
-      sales_discount:   acc.sales_discount   + loc.sales_discount,
-      sales_refund:     acc.sales_refund     + loc.sales_refund,
-      net_revenue:      acc.net_revenue      + loc.net_revenue,
+      gross_revenue:    acc.gross_revenue    + loc.gross_revenue,
     }),
     {
       services: 0, product_phytomer: 0, product_purest: 0, product_other: 0,
-      product_total: 0, wholesale: 0, sales_discount: 0, sales_refund: 0, net_revenue: 0,
+      product_total: 0, gross_revenue: 0,
     }
   );
 

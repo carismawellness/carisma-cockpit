@@ -194,27 +194,19 @@ export async function GET(req: NextRequest) {
       : null;
 
     // ── 3. Revenue ────────────────────────────────────────────────────────────
+    // Gross sales only — services + products. Wholesale/discount/refund only
+    // matter inside EBITDA; every sales/funnel surface shows blunt gross.
     let total_revenue: number | null = null;
     if (slug === "spa") {
-      // Use spa_revenue_monthly with net formula to match the Spa sales dashboard:
-      // net_revenue = services + products + wholesale - sales_discount - sales_refund
-      // Snap to month boundaries (same as useSpaRevenue hook).
-      const fromMonth = from.slice(0, 7) + "-01";
-      const toMonth   = to.slice(0, 7)   + "-01";
       const { data: spaRevRows } = await supabase
-        .from("spa_revenue_monthly")
-        .select("services, product_phytomer, product_purest, product_other, wholesale, sales_discount, sales_refund")
-        .gte("month", fromMonth)
-        .lte("month", toMonth);
-      type SpaRevRow = {
-        services: number | null; product_phytomer: number | null;
-        product_purest: number | null; product_other: number | null;
-        wholesale: number | null; sales_discount: number | null; sales_refund: number | null;
-      };
+        .from("spa_revenue_daily")
+        .select("services, product_phytomer, product_purest, product_other")
+        .gte("date", from)
+        .lte("date", to);
+      type SpaRevRow = { services: number | null; product_phytomer: number | null; product_purest: number | null; product_other: number | null };
       const sum = (spaRevRows ?? []).reduce(
         (s: number, r: SpaRevRow) =>
-          s + (r.services ?? 0) + (r.product_phytomer ?? 0) + (r.product_purest ?? 0) + (r.product_other ?? 0)
-            + (r.wholesale ?? 0) - (r.sales_discount ?? 0) - (r.sales_refund ?? 0),
+          s + (r.services ?? 0) + (r.product_phytomer ?? 0) + (r.product_purest ?? 0) + (r.product_other ?? 0),
         0,
       );
       total_revenue = sum > 0 ? Math.round(sum * 100) / 100 : null;

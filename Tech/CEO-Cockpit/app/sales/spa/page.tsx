@@ -64,7 +64,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
     const calc = (curr: number, prior: number) =>
       prior > 0 ? ((curr - prior) / prior) * 100 : undefined;
     return {
-      net:     calc(totals.net_revenue,   priorTotals.net_revenue),
+      gross:   calc(totals.gross_revenue, priorTotals.gross_revenue),
       service: calc(totals.services,      priorTotals.services),
       retail:  calc(totals.product_total, priorTotals.product_total),
     };
@@ -74,12 +74,12 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
 
   const subtitle = useMemo(() => {
     const range = formatDateRangeLabel(dateFrom, dateTo);
-    return `${range} · Source: Cockpit Datasheet + Zoho Books`;
+    return `${range} · Source: Cockpit Datasheet (gross sales)`;
   }, [dateFrom, dateTo]);
 
   /* ── Inc-VAT totals ──────────────────────────────────────────── */
   const incVat = useMemo(() => ({
-    net_revenue:   Math.round(totals.net_revenue   * (1 + VAT_RATE)),
+    gross_revenue: Math.round(totals.gross_revenue * (1 + VAT_RATE)),
     services:      Math.round(totals.services      * (1 + VAT_RATE)),
     product_total: Math.round(totals.product_total * (1 + VAT_RATE)),
   }), [totals]);
@@ -88,13 +88,13 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
   const hotelChartData = useMemo(() => {
     const priorLocMap = new Map(priorLocations.map(l => [l.location_id, l]));
     return [...locations]
-      .sort((a, b) => b.net_revenue - a.net_revenue)
+      .sort((a, b) => b.gross_revenue - a.gross_revenue)
       .map((loc) => {
-        const gross    = loc.services + loc.product_total;
-        const prodPct  = gross > 0 ? Math.round((loc.product_total / gross) * 100) : 0;
-        const currNet  = Math.round(loc.net_revenue * (1 + VAT_RATE));
+        const grossEx  = loc.services + loc.product_total;
+        const prodPct  = grossEx > 0 ? Math.round((loc.product_total / grossEx) * 100) : 0;
+        const currNet  = Math.round(loc.gross_revenue * (1 + VAT_RATE));
         const prior    = priorLocMap.get(loc.location_id);
-        const priorNet = prior ? Math.round(prior.net_revenue * (1 + VAT_RATE)) : 0;
+        const priorNet = prior ? Math.round(prior.gross_revenue * (1 + VAT_RATE)) : 0;
         const yoyPct   = priorNet > 0 ? Math.round(((currNet - priorNet) / priorNet) * 100) : null;
         return {
           name:       loc.name,
@@ -248,21 +248,21 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
       {/* ── KPI Row ─────────────────────────────────────────────────── */}
       <SalesKPIGrid columns={3}>
         <SalesKPICard
-          label="Net Revenue"
-          value={fmtShort(incVat.net_revenue)}
-          subtitle={`${fmtShort(totals.net_revenue)} ex-VAT · ${locations.length} locations`}
-          yoyChange={yoy.net}
+          label="Gross Revenue"
+          value={fmtShort(incVat.gross_revenue)}
+          subtitle={`${fmtShort(totals.gross_revenue)} ex-VAT · ${locations.length} locations`}
+          yoyChange={yoy.gross}
         />
         <SalesKPICard
           label="Service Revenue"
           value={fmtShort(incVat.services)}
-          subtitle={`${pct(totals.services, totals.net_revenue)} of net`}
+          subtitle={`${pct(totals.services, totals.gross_revenue)} of gross`}
           yoyChange={yoy.service}
         />
         <SalesKPICard
           label="Retail Revenue"
           value={fmtShort(incVat.product_total)}
-          subtitle={`${pct(totals.product_total, totals.net_revenue)} of net`}
+          subtitle={`${pct(totals.product_total, totals.gross_revenue)} of gross`}
           yoyChange={yoy.retail}
         />
       </SalesKPIGrid>
@@ -272,7 +272,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
         <Card className="p-4 md:p-6">
           <h2 className="text-lg font-semibold text-foreground mb-1">Revenue Mix by Hotel</h2>
           <p className="text-xs text-muted-foreground mb-5">
-            Net revenue per location · inc-VAT · retail share colored
+            Gross revenue per location · inc-VAT · retail share colored
           </p>
           <div className="h-[280px] md:h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -339,14 +339,14 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                 <tfoot>
                   <tr className="border-t-2 font-semibold text-sm">
                     <td className="py-2">Total</td>
-                    <td className="py-2 text-right tabular-nums">{fmtShort(Math.round(totals.net_revenue * (1 + VAT_RATE)))}</td>
+                    <td className="py-2 text-right tabular-nums">{fmtShort(Math.round(totals.gross_revenue * (1 + VAT_RATE)))}</td>
                     <td className="py-2 text-right tabular-nums text-muted-foreground">
-                      {priorTotals.net_revenue > 0 ? fmtShort(Math.round(priorTotals.net_revenue * (1 + VAT_RATE))) : "—"}
+                      {priorTotals.gross_revenue > 0 ? fmtShort(Math.round(priorTotals.gross_revenue * (1 + VAT_RATE))) : "—"}
                     </td>
                     <td className="py-2 text-right tabular-nums">
-                      {yoy.net !== undefined ? (
-                        <span className={`font-bold ${yoy.net >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                          {yoy.net >= 0 ? "+" : ""}{Math.round(yoy.net)}%
+                      {yoy.gross !== undefined ? (
+                        <span className={`font-bold ${yoy.gross >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                          {yoy.gross >= 0 ? "+" : ""}{Math.round(yoy.gross)}%
                         </span>
                       ) : "—"}
                     </td>

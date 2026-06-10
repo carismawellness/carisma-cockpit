@@ -90,14 +90,14 @@ function buildRows(brands: Record<string, BrandHeatmapMetrics>): { main: AnyRow[
       )),
     },
 
-    // ── ROAS & cost ───────────────────────────────────────────────────
-    { type: "section", label: "ROAS & Cost" },
+    // ── Blended ROAS & cost ───────────────────────────────────────────
+    { type: "section", label: "Blended ROAS & Cost" },
     {
-      metric: "ROAS", benchmark: "3×",
+      metric: "Blended ROAS", benchmark: "12×",
       cells: BRANDS.map(b => cell(
         brands[b]?.roas,
         n => `${n.toFixed(1)}×`,
-        n => (n >= 3 ? "green" : n >= 2 ? "amber" : "red"),
+        n => (n >= 12 ? "green" : n >= 8 ? "amber" : "red"),
       )),
     },
     {
