@@ -1,11 +1,12 @@
 /**
- * GET  /api/settings/crm-agent-mapping   — list all agents
+ * GET  /api/settings/crm-agent-mapping   — list all agents (auto-seeds on first call)
  * PUT  /api/settings/crm-agent-mapping   — upsert one agent row
  *      body: { agent_slug, display_name, position, brand_slug, is_active }
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { SEED_AGENTS } from "./setup/route";
 
 export const dynamic = "force-dynamic";
 
@@ -26,14 +27,35 @@ export type AgentMappingRow = {
 };
 
 export async function GET() {
-  const { data, error } = await supabase()
+  const db = supabase();
+
+  const { data, error } = await db
     .from("crm_agent_mapping")
     .select("id, agent_slug, display_name, position, brand_slug, is_active")
-    .order("position", { ascending: false })  // sdr first
-    .order("brand_slug", { ascending: true, nullsFirst: false })
+    .order("is_active",   { ascending: false })
+    .order("position",    { ascending: false })   // sdr before chat
+    .order("brand_slug",  { ascending: true, nullsFirst: false })
     .order("display_name");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Auto-seed on first use
+  if (!data || data.length === 0) {
+    await db
+      .from("crm_agent_mapping")
+      .upsert(SEED_AGENTS, { onConflict: "agent_slug", ignoreDuplicates: false });
+
+    const { data: seeded } = await db
+      .from("crm_agent_mapping")
+      .select("id, agent_slug, display_name, position, brand_slug, is_active")
+      .order("is_active",   { ascending: false })
+      .order("position",    { ascending: false })
+      .order("brand_slug",  { ascending: true, nullsFirst: false })
+      .order("display_name");
+
+    return NextResponse.json({ agents: (seeded ?? []) as AgentMappingRow[] });
+  }
+
   return NextResponse.json({ agents: data as AgentMappingRow[] });
 }
 
