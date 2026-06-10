@@ -22,8 +22,17 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  LabelList,
 } from "recharts";
 import { format, addDays } from "date-fns";
+import { BRAND } from "@/lib/constants/design-tokens";
+
+// Canonical brand palette — `dark` for left-border accents on brand cards.
+const BRAND_DARK: Record<string, string> = {
+  spa:        BRAND.spa.dark,
+  aesthetics: BRAND.aesthetics.dark,
+  slimming:   BRAND.slimming.dark,
+};
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -243,7 +252,7 @@ export function EmployeeTable({
     },
   ];
 
-  11  // --- Agent detail chart ---
+  // --- Agent detail chart ---
   const selectedAgentRows = selectedAgent
     ? agents.find((a) => a.name === selectedAgent)?.rows ?? []
     : [];
@@ -302,7 +311,7 @@ export function EmployeeTable({
             const loadColor = loadLevel === "High" ? "text-red-600" : loadLevel === "Medium" ? "text-amber-600" : "text-emerald-600";
             const loadBg = loadLevel === "High" ? "bg-red-50 border-red-200" : loadLevel === "Medium" ? "bg-amber-50 border-amber-200" : "bg-emerald-50 border-emerald-200";
             return (
-              <div key={b.brand} className="rounded-lg border p-4" style={{ borderLeftWidth: 4, borderLeftColor: chartColors[b.brand as keyof typeof chartColors] ?? "#888" }}>
+              <div key={b.brand} className="rounded-lg border p-4" style={{ borderLeftWidth: 4, borderLeftColor: BRAND_DARK[b.brand] ?? "#888" }}>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{b.label}</p>
                 <p className="text-2xl font-bold text-foreground mt-1">{b.totalTasks}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{b.totalReps} rep{b.totalReps !== 1 ? "s" : ""} assigned</p>
@@ -446,14 +455,33 @@ export function EmployeeTable({
                 Sales & Bookings
               </h4>
               <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={agentDailyData} margin={chartDefaults.margin}>
+                <BarChart
+                  data={agentDailyData}
+                  margin={{ ...chartDefaults.margin, top: 22 }}
+                >
                   <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                   <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip />
+                  <Tooltip
+                    formatter={(v: unknown, name) => [formatCurrency(Number(v)), String(name ?? "")]}
+                  />
                   <Legend />
-                  <Bar dataKey="Sales" fill={chartColors.spa} />
-                  <Bar dataKey="Bookings" fill={chartColors.aesthetics} />
+                  <Bar dataKey="Sales" fill={chartColors.spa}>
+                    <LabelList
+                      dataKey="Sales"
+                      position="top"
+                      formatter={(v: unknown) => formatCurrency(Number(v))}
+                      style={{ fontSize: 10, fontWeight: 600, fill: "#111827" }}
+                    />
+                  </Bar>
+                  <Bar dataKey="Bookings" fill={chartColors.aesthetics}>
+                    <LabelList
+                      dataKey="Bookings"
+                      position="top"
+                      formatter={(v: unknown) => Number(v).toLocaleString()}
+                      style={{ fontSize: 10, fontWeight: 600, fill: "#111827" }}
+                    />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
