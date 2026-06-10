@@ -9,12 +9,19 @@
  * Role filter: only therapists + practitioners are returned. Managers,
  * reception, CRM, unassigned, and HQ staff are excluded.
  *
+ * Name matching:
+ *   1. practitioner_name_aliases table (manual overrides)
+ *   2. Exact normalized-name match
+ *   3. Token fallback: revenue base-name (venue suffix stripped) matched
+ *      against any token of the Zoho salary name within the same venue.
+ *      Only resolves when exactly one salary candidate matches (unambiguous).
+ *
  * Query params (both required, YYYY-MM-DD):
  *   date_from, date_to
  */
 
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { getAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -34,9 +41,26 @@ const LOC_ID_TO_SLUG: Record<number, string> = {
 };
 const PRODUCTIVE_ROLES = new Set(["therapist", "practitioner"]);
 
+// Minimum token length to avoid matching noise words ("de", "ni", "la", etc.)
+const MIN_TOKEN_LEN = 4;
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function norm(s: string): string {
   return (s || "").toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+/**
+ * Strip location suffix that Spa sheet appends to therapist names.
+ * Examples:  "TINA-HUGOS" → "tina"
+ *            "BLAGOJCHE-INTER" → "blagojche"
+ *            "Juliana D.-Ramla" → "juliana d."
+ *            "Lovely-Hugo" → "lovely"
+ *            "PHACHA" → "phacha" (no suffix, unchanged)
+ */
+function stripVenueSuffix(rawName: string): string {
+  const s = (rawName || "").trim();
+  const dashIdx = s.indexOf("-");
+  return norm(dashIdx > 0 ? s.slice(0, dashIdx) : s);
 }
 
 function parseLocal(s: string): Date {
@@ -67,7 +91,7 @@ export async function GET(req: Request) {
   if (!dateFrom || !dateTo) {
     return NextResponse.json({ error: "date_from and date_to are required" }, { status: 400 });
   }
-  const supabase = await createServerSupabaseClient();
+  const supabase = getAdminClient();
 
   // ── 1. Role mapping (Zoho contact_key → role) ──────────────────────────────
   const { data: roleData } = await supabase
@@ -103,8 +127,6 @@ export async function GET(req: Request) {
   }
 
   // ── 3. Salary supplement (prorate per month) ──────────────────────────────
-  // Build month list overlapping with [dateFrom, dateTo] via pure string math
-  // (no UTC parsing — matches the drill route pattern).
   const months: string[] = [];
   {
     let y = parseInt(dateFrom.slice(0, 4), 10);
@@ -117,7 +139,6 @@ export async function GET(req: Request) {
     }
   }
 
-  // Per constraint: filter by spa_slug + is_frozen (matches drill route).
   const { data: suppData } = await supabase
     .from("salary_supplement_monthly")
     .select("spa_slug, employee_name, amount, role, month")
@@ -133,8 +154,6 @@ export async function GET(req: Request) {
     const venue = (s.spa_slug as string) || "";
     if (!venue) continue;
 
-    // Period proration: days_in_overlap / days_in_month
-    // (mirrors drill route lines 246–264)
     const m     = (s.month as string).slice(0, 10);
     const mY    = parseInt(m.slice(0, 4), 10);
     const mMo   = parseInt(m.slice(5, 7), 10);
@@ -154,11 +173,46 @@ export async function GET(req: Request) {
     salaryMap.set(mapKey, ex);
   }
 
+  // ── 3b. Token index (built after salaryMap is complete) ───────────────────
+  // Maps `${venue}|${token}` (Spa) or just `${token}` (Aes/Slm) → [salaryMapKey].
+  // Used for fallback name resolution when exact join fails.
+  const spaTokenIdx = new Map<string, string[]>();
+  const aesTokenIdx = new Map<string, string[]>();
+  const slmTokenIdx = new Map<string, string[]>();
+
+  for (const [mapKey, v] of salaryMap) {
+    const tokens = norm(v.rawName).split(" ").filter(t => t.length >= MIN_TOKEN_LEN);
+    for (const token of tokens) {
+      if (SPA_VENUES.includes(v.venue)) {
+        const ik = `${v.venue}|${token}`;
+        const arr = spaTokenIdx.get(ik) ?? []; arr.push(mapKey); spaTokenIdx.set(ik, arr);
+      } else if (v.venue === "aesthetics") {
+        const arr = aesTokenIdx.get(token) ?? []; arr.push(mapKey); aesTokenIdx.set(token, arr);
+      } else if (v.venue === "slimming") {
+        const arr = slmTokenIdx.get(token) ?? []; arr.push(mapKey); slmTokenIdx.set(token, arr);
+      }
+    }
+  }
+
+  function resolveViaTok(
+    idx: Map<string, string[]>,
+    prefix: string | null,
+    revRawName: string,
+  ): string | null {
+    const base = stripVenueSuffix(revRawName);
+    for (const token of base.split(" ").filter(t => t.length >= MIN_TOKEN_LEN)) {
+      const ik = prefix ? `${prefix}|${token}` : token;
+      const cands = idx.get(ik) ?? [];
+      if (cands.length === 1) return cands[0];
+      if (cands.length > 1) return null;
+    }
+    return null;
+  }
+
   // ── 4. Practitioner name aliases (applied on revenue side BEFORE join) ────
   const { data: aliasData } = await supabase
     .from("practitioner_name_aliases")
     .select("revenue_name, canonical_name, venue");
-  // alias key: `${brand}|${normalized_revenue_name}` → normalized_canonical_name
   const aliasMap = new Map<string, string>();
   for (const a of (aliasData ?? [])) {
     aliasMap.set(
@@ -172,8 +226,7 @@ export async function GET(req: Request) {
 
   // ── 5. Revenue per practitioner per brand ─────────────────────────────────
 
-  // 5a. Spa — keyed by (venue, normalized_name) because the same human can
-  //          work at multiple Spa locations and their salary lives per-venue.
+  // 5a. Spa
   const { data: spaRev } = await supabase
     .from("spa_services_by_employee_daily")
     .select("location_id, employee_name, price_ex_vat")
@@ -192,9 +245,7 @@ export async function GET(req: Request) {
     spaRevMap.set(mapKey, ex);
   }
 
-  // 5b. Aesthetics — prefer note_person (the practitioner who performed);
-  //                  fall back to sales_staff ONLY when note_person is empty.
-  //                  Single venue → key is normalized name only.
+  // 5b. Aesthetics
   const { data: aesRev } = await supabase
     .from("aesthetics_sales_daily")
     .select("note_person, sales_staff, price_ex_vat")
@@ -212,7 +263,7 @@ export async function GET(req: Request) {
     aesRevMap.set(key, ex);
   }
 
-  // 5c. Slimming — single venue → key is normalized name only.
+  // 5c. Slimming
   const { data: slmRev } = await supabase
     .from("slimming_treatments_daily")
     .select("therapist, price_ex_vat")
@@ -229,102 +280,155 @@ export async function GET(req: Request) {
   }
 
   // ── 6. Join + emit rows per brand ─────────────────────────────────────────
+  // Each brand uses a two-step join:
+  //   a) salary-driven loop: for each salary entry try exact rev-key, then token fallback
+  //   b) revenue-only sweep: emit rows whose revenue was never matched to a salary entry
+
   const out: Record<"spa" | "aesthetics" | "slimming", Row[]> = {
     spa: [], aesthetics: [], slimming: [],
   };
 
-  // 6a. Spa — keyed by (venue, normalized_name)
-  const spaSalaryKeys = new Set<string>();
-  for (const [k, v] of salaryMap) {
-    if (!SPA_VENUES.includes(v.venue)) continue;
-    spaSalaryKeys.add(k);
-    const revEntry  = spaRevMap.get(k);
-    const revenue   = revEntry?.revenue ?? 0;
-    const display   = revEntry?.rawName || v.rawName;
-    out.spa.push({
-      employee_name: display,
-      venue:         v.venue,
-      role:          v.role,
-      salary:        +v.salary.toFixed(2),
-      revenue:       +revenue.toFixed(2),
-      k_pct:         revenue > 0 ? +((v.salary / revenue) * 100).toFixed(1) : null,
-      flag:          revenue === 0 ? "no_revenue" : null,
-    });
-  }
-  // Spa: revenue-only rows (no matching salary at this venue)
-  for (const [k, r] of spaRevMap) {
-    if (spaSalaryKeys.has(k)) continue;
-    out.spa.push({
-      employee_name: r.rawName,
-      venue:         r.venue,
-      role:          "therapist",
-      salary:        0,
-      revenue:       +r.revenue.toFixed(2),
-      k_pct:         null,
-      flag:          "no_salary",
-    });
+  // 6a. Spa
+  {
+    // salary-driven: merge revenue into salary entry
+    const spaRevAssigned = new Set<string>(); // rev map keys that were merged
+
+    const mergedSpa = new Map<string, {
+      salary: number; role: string; rawName: string; venue: string; revenue: number; revRawName?: string;
+    }>();
+    for (const [k, v] of salaryMap) {
+      if (!SPA_VENUES.includes(v.venue)) continue;
+      mergedSpa.set(k, { salary: v.salary, role: v.role, rawName: v.rawName, venue: v.venue, revenue: 0 });
+    }
+
+    for (const [revKey, r] of spaRevMap) {
+      // Exact match?
+      if (mergedSpa.has(revKey)) {
+        mergedSpa.get(revKey)!.revenue += r.revenue;
+        mergedSpa.get(revKey)!.revRawName = r.rawName;
+        spaRevAssigned.add(revKey);
+        continue;
+      }
+      // Token fallback
+      const salaryKey = resolveViaTok(spaTokenIdx, r.venue, r.rawName);
+      if (salaryKey && mergedSpa.has(salaryKey)) {
+        mergedSpa.get(salaryKey)!.revenue += r.revenue;
+        mergedSpa.get(salaryKey)!.revRawName = r.rawName;
+        spaRevAssigned.add(revKey);
+      }
+    }
+
+    for (const [, e] of mergedSpa) {
+      out.spa.push({
+        employee_name: e.revRawName || e.rawName,
+        venue: e.venue, role: e.role,
+        salary: +e.salary.toFixed(2),
+        revenue: +e.revenue.toFixed(2),
+        k_pct: e.revenue > 0 ? +((e.salary / e.revenue) * 100).toFixed(1) : null,
+        flag: e.revenue === 0 ? "no_revenue" : null,
+      });
+    }
+    for (const [revKey, r] of spaRevMap) {
+      if (spaRevAssigned.has(revKey)) continue;
+      out.spa.push({
+        employee_name: r.rawName, venue: r.venue, role: "therapist",
+        salary: 0, revenue: +r.revenue.toFixed(2), k_pct: null, flag: "no_salary",
+      });
+    }
   }
 
-  // 6b. Aesthetics — single venue, keyed by normalized name only
-  const aesSalaryNames = new Set<string>();
-  for (const v of salaryMap.values()) {
-    if (v.venue !== "aesthetics") continue;
-    const nameKey = norm(v.rawName);
-    aesSalaryNames.add(nameKey);
-    const revEntry = aesRevMap.get(nameKey);
-    const revenue  = revEntry?.revenue ?? 0;
-    out.aesthetics.push({
-      employee_name: revEntry?.rawName || v.rawName,
-      venue:         "aesthetics",
-      role:          v.role,
-      salary:        +v.salary.toFixed(2),
-      revenue:       +revenue.toFixed(2),
-      k_pct:         revenue > 0 ? +((v.salary / revenue) * 100).toFixed(1) : null,
-      flag:          revenue === 0 ? "no_revenue" : null,
-    });
-  }
-  for (const [k, r] of aesRevMap) {
-    if (aesSalaryNames.has(k)) continue;
-    out.aesthetics.push({
-      employee_name: r.rawName,
-      venue:         "aesthetics",
-      role:          "practitioner",
-      salary:        0,
-      revenue:       +r.revenue.toFixed(2),
-      k_pct:         null,
-      flag:          "no_salary",
-    });
+  // 6b. Aesthetics
+  {
+    const aesRevAssigned = new Set<string>();
+    const mergedAes = new Map<string, {
+      salary: number; role: string; rawName: string; revenue: number; revRawName?: string;
+    }>();
+    for (const [k, v] of salaryMap) {
+      if (v.venue !== "aesthetics") continue;
+      const nameKey = norm(v.rawName);
+      mergedAes.set(nameKey, { salary: v.salary, role: v.role, rawName: v.rawName, revenue: 0 });
+    }
+
+    for (const [revKey, r] of aesRevMap) {
+      if (mergedAes.has(revKey)) {
+        mergedAes.get(revKey)!.revenue += r.revenue;
+        mergedAes.get(revKey)!.revRawName = r.rawName;
+        aesRevAssigned.add(revKey);
+        continue;
+      }
+      const salaryKey = resolveViaTok(aesTokenIdx, null, r.rawName);
+      if (salaryKey) {
+        const nameKey = norm(salaryMap.get(salaryKey)!.rawName);
+        if (mergedAes.has(nameKey)) {
+          mergedAes.get(nameKey)!.revenue += r.revenue;
+          mergedAes.get(nameKey)!.revRawName = r.rawName;
+          aesRevAssigned.add(revKey);
+        }
+      }
+    }
+
+    for (const [_k, e] of mergedAes) {
+      out.aesthetics.push({
+        employee_name: e.revRawName || e.rawName, venue: "aesthetics", role: e.role,
+        salary: +e.salary.toFixed(2), revenue: +e.revenue.toFixed(2),
+        k_pct: e.revenue > 0 ? +((e.salary / e.revenue) * 100).toFixed(1) : null,
+        flag: e.revenue === 0 ? "no_revenue" : null,
+      });
+    }
+    for (const [revKey, r] of aesRevMap) {
+      if (aesRevAssigned.has(revKey)) continue;
+      out.aesthetics.push({
+        employee_name: r.rawName, venue: "aesthetics", role: "practitioner",
+        salary: 0, revenue: +r.revenue.toFixed(2), k_pct: null, flag: "no_salary",
+      });
+    }
   }
 
-  // 6c. Slimming — single venue, keyed by normalized name only
-  const slmSalaryNames = new Set<string>();
-  for (const v of salaryMap.values()) {
-    if (v.venue !== "slimming") continue;
-    const nameKey = norm(v.rawName);
-    slmSalaryNames.add(nameKey);
-    const revEntry = slmRevMap.get(nameKey);
-    const revenue  = revEntry?.revenue ?? 0;
-    out.slimming.push({
-      employee_name: revEntry?.rawName || v.rawName,
-      venue:         "slimming",
-      role:          v.role,
-      salary:        +v.salary.toFixed(2),
-      revenue:       +revenue.toFixed(2),
-      k_pct:         revenue > 0 ? +((v.salary / revenue) * 100).toFixed(1) : null,
-      flag:          revenue === 0 ? "no_revenue" : null,
-    });
-  }
-  for (const [k, r] of slmRevMap) {
-    if (slmSalaryNames.has(k)) continue;
-    out.slimming.push({
-      employee_name: r.rawName,
-      venue:         "slimming",
-      role:          "therapist",
-      salary:        0,
-      revenue:       +r.revenue.toFixed(2),
-      k_pct:         null,
-      flag:          "no_salary",
-    });
+  // 6c. Slimming
+  {
+    const slmRevAssigned = new Set<string>();
+    const mergedSlm = new Map<string, {
+      salary: number; role: string; rawName: string; revenue: number; revRawName?: string;
+    }>();
+    for (const [k, v] of salaryMap) {
+      if (v.venue !== "slimming") continue;
+      const nameKey = norm(v.rawName);
+      mergedSlm.set(nameKey, { salary: v.salary, role: v.role, rawName: v.rawName, revenue: 0 });
+    }
+
+    for (const [revKey, r] of slmRevMap) {
+      if (mergedSlm.has(revKey)) {
+        mergedSlm.get(revKey)!.revenue += r.revenue;
+        mergedSlm.get(revKey)!.revRawName = r.rawName;
+        slmRevAssigned.add(revKey);
+        continue;
+      }
+      const salaryKey = resolveViaTok(slmTokenIdx, null, r.rawName);
+      if (salaryKey) {
+        const nameKey = norm(salaryMap.get(salaryKey)!.rawName);
+        if (mergedSlm.has(nameKey)) {
+          mergedSlm.get(nameKey)!.revenue += r.revenue;
+          mergedSlm.get(nameKey)!.revRawName = r.rawName;
+          slmRevAssigned.add(revKey);
+        }
+      }
+    }
+
+    for (const [_k, e] of mergedSlm) {
+      out.slimming.push({
+        employee_name: e.revRawName || e.rawName, venue: "slimming", role: e.role,
+        salary: +e.salary.toFixed(2), revenue: +e.revenue.toFixed(2),
+        k_pct: e.revenue > 0 ? +((e.salary / e.revenue) * 100).toFixed(1) : null,
+        flag: e.revenue === 0 ? "no_revenue" : null,
+      });
+    }
+    for (const [revKey, r] of slmRevMap) {
+      if (slmRevAssigned.has(revKey)) continue;
+      out.slimming.push({
+        employee_name: r.rawName, venue: "slimming", role: "therapist",
+        salary: 0, revenue: +r.revenue.toFixed(2), k_pct: null, flag: "no_salary",
+      });
+    }
   }
 
   // Sort each brand by K% DESCENDING (worst productivity at top).
