@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 export const DATA_SOURCE_DEFS = [
   {
     id:          "cockpit_revenue",
-    name:        "Cockpit Revenue (SPA Services & Products)",
+    name:        "Spa Revenue (Cockpit Datasheet)",
     description: "SPA service and product sales exported from the Cockpit Datasheet (Google Sheets). Also pulls Wholesale, Sales Discount and Sales Refund from Zoho SPA P&L.",
     tables:      ["spa_revenue_monthly"],
     brand:       "SPA",
@@ -56,7 +56,7 @@ export const DATA_SOURCE_DEFS = [
   },
   {
     id:          "aesthetics_sales",
-    name:        "Aesthetics Sales Revenue",
+    name:        "Aesthetics Sales (Cockpit Datasheet)",
     description: "Daily treatment and product revenue for the Aesthetics brand, sourced from the Cockpit Datasheet (Aesthetics tab). Loaded into aesthetics_sales_daily and used as Net Revenue in EBITDA V2.",
     tables:      ["aesthetics_sales_daily"],
     brand:       "AES",
@@ -69,7 +69,7 @@ export const DATA_SOURCE_DEFS = [
   },
   {
     id:          "slimming_sales",
-    name:        "Slimming Sales Revenue",
+    name:        "Slimming Sales (Cockpit Datasheet)",
     description: "Slimming programme package sales (weight loss, treatment plans, medical consults, products) sourced from the Cockpit Datasheet (Sales - Slimming tab). Loaded into slimming_sales_daily and used as Net Revenue in EBITDA V2.",
     tables:      ["slimming_sales_daily"],
     brand:       "SLIM",
@@ -82,7 +82,7 @@ export const DATA_SOURCE_DEFS = [
   },
   {
     id:          "slimming_treatments",
-    name:        "Slimming Treatments",
+    name:        "Slimming Treatments (Cockpit Datasheet)",
     description: "Individual treatment transactions for the Slimming brand (Tx - Slimming tab in Cockpit Datasheet). Drives per-therapist analytics on the Slimming sales page.",
     tables:      ["slimming_treatments_daily"],
     brand:       "SLIM",
