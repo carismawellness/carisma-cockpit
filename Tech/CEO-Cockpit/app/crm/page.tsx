@@ -52,11 +52,6 @@ function CRMContent({
         <MessageQueueHealth dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
       </section>
 
-      {/* Speed to Lead — Central Metric */}
-      <section>
-        <SpeedToLeadSection dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
-      </section>
-
       {/* Leads per Hour Distribution */}
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-3">Lead Volume by Hour</h2>
@@ -85,6 +80,11 @@ function CRMContent({
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-3">Employee Performance</h2>
         <EmployeeTable dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
+      </section>
+
+      {/* Speed to Lead — data not yet available */}
+      <section>
+        <SpeedToLeadSection dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
       </section>
 
       <CIChat />

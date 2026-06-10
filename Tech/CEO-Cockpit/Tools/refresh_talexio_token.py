@@ -1,11 +1,11 @@
 """
-Talexio Token Refresh — Playwright-based Third Party Token generation.
+Talexio Token Refresh — Playwright-based session token capture.
 
 Flow:
-  1. Opens Talexio in Chromium (reCAPTCHA auto-passes)
-  2. Logs in with TALEXIO_EMAIL + TALEXIO_PASSWORD
-  3. Navigates to Dashboard → Third Party Tokens tab
-  4. Generates a new "CEO Cockpit" API token
+  1. Opens Talexio in headless Chromium (reCAPTCHA auto-passes)
+  2. Checks "Remember me" to get a 7-day token
+  3. Logs in with TALEXIO_EMAIL + TALEXIO_PASSWORD
+  4. Captures the JWT from the loginUser GraphQL response
   5. Stores it in:
        • CEO-Cockpit/.env.local        (TALEXIO_TOKEN=)
        • ~/.claude/mcp-servers/talexio-mcp/.env  (TALEXIO_TOKEN=)
@@ -28,7 +28,7 @@ from pathlib import Path
 from dotenv import dotenv_values, set_key
 
 try:
-    from playwright.async_api import async_playwright
+    from playwright.async_api import async_playwright, Response
 except ImportError:
     print("playwright not installed. Run: pip install playwright && playwright install chromium")
     sys.exit(1)
@@ -39,6 +39,7 @@ ENV_COCKPIT = ROOT / ".env.local"
 ENV_MCP     = Path.home() / ".claude" / "mcp-servers" / "talexio-mcp" / ".env"
 
 TALEXIO_URL = "https://carismaspawellness.talexiohr.com"
+GRAPHQL_URL = "https://api.talexiohr.com/graphql"
 
 env      = dotenv_values(ENV_COCKPIT)
 EMAIL    = env.get("TALEXIO_EMAIL", "")
@@ -60,6 +61,26 @@ def parse_expiry(token: str) -> str:
         return "unknown"
 
 
+def expiry_days(token: str) -> float:
+    """Return days remaining on the token, or 0 if expired/unknown."""
+    import base64
+    try:
+        payload_b64 = token.split(".")[1]
+        padding     = 4 - len(payload_b64) % 4
+        payload     = json.loads(base64.b64decode(payload_b64 + "=" * padding).decode())
+        exp_str = payload.get("expiryDate") or payload.get("expireDate")
+        if exp_str:
+            exp_dt = datetime.fromisoformat(exp_str.replace("Z", "+00:00"))
+            delta  = exp_dt - datetime.now(timezone.utc)
+            return delta.total_seconds() / 86400
+        exp_unix = payload.get("exp", 0)
+        if exp_unix:
+            return (exp_unix - datetime.now(timezone.utc).timestamp()) / 86400
+    except Exception:
+        pass
+    return 0
+
+
 def write_token_to_envs(token: str):
     for env_path in [ENV_COCKPIT, ENV_MCP]:
         if not env_path.exists():
@@ -79,9 +100,7 @@ async def push_to_supabase(token: str, expiry_str: str):
             return
 
         try:
-            expires_at = datetime.fromisoformat(
-                expiry_str.replace("Z", "+00:00")
-            ).isoformat()
+            expires_at = datetime.fromisoformat(expiry_str.replace("Z", "+00:00")).isoformat()
         except Exception:
             expires_at = None
 
@@ -105,7 +124,7 @@ async def push_to_supabase(token: str, expiry_str: str):
         if r.status_code in (200, 201):
             print("  ✓ Stored in Supabase integration_tokens")
         elif "not found" in r.text.lower():
-            print("  ⚠ Supabase integration_tokens table missing — apply migration 025 first")
+            print("  ⚠ Supabase integration_tokens table missing — apply migration 025 to enable cross-instance caching")
         else:
             print(f"  ⚠ Supabase upsert returned {r.status_code}: {r.text[:200]}")
     except Exception as e:
@@ -114,77 +133,69 @@ async def push_to_supabase(token: str, expiry_str: str):
 
 async def get_token_via_playwright() -> str:
     """
-    Logs in to Talexio and generates a new Third Party API Token.
-    reCAPTCHA auto-validates headless Chromium.
+    Logs in to Talexio with Remember Me and captures the session JWT.
+    reCAPTCHA auto-validates in headless Chromium — no manual intervention needed.
     """
+    captured: dict = {}
+
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True)
         ctx     = await browser.new_context()
         page    = await ctx.new_page()
 
-        # ── Step 1: Login ──────────────────────────────────────────────────────
+        # ── Intercept loginUser GraphQL response ───────────────────────────────
+        async def on_response(response: Response):
+            if GRAPHQL_URL not in response.url:
+                return
+            try:
+                body = await response.json()
+                items = body if isinstance(body, list) else [body]
+                for item in items:
+                    login_data = (item.get("data") or {}).get("loginUser")
+                    if login_data and login_data.get("token"):
+                        token = login_data["token"]
+                        days  = expiry_days(token)
+                        print(f"  Token captured — expires in {days:.1f} days")
+                        if days > captured.get("best_days", 0):
+                            captured["token"]     = token
+                            captured["best_days"] = days
+            except Exception:
+                pass
+
+        page.on("response", on_response)
+
+        # ── Login with Remember Me ──────────────────────────────────────────────
         print(f"  Opening {TALEXIO_URL}/login …")
         await page.goto(f"{TALEXIO_URL}/login", wait_until="domcontentloaded")
-
-        # Wait for the email input to appear
         await page.wait_for_selector('input[placeholder="Your email address"]', timeout=15_000)
 
         await page.fill('input[placeholder="Your email address"]', EMAIL)
         await page.fill('input[placeholder="Your password"]',       PASSWORD)
+
+        # Check "Remember me" for a 7-day token
+        try:
+            remember_me = page.locator('input[type="checkbox"]').first
+            is_checked  = await remember_me.is_checked()
+            if not is_checked:
+                await remember_me.click()
+                print("  ✓ Remember me checked")
+        except Exception as e:
+            print(f"  (could not check Remember me: {e})")
+
         await page.click('button:has-text("Login")')
 
-        # Wait for redirect to dashboard
-        await page.wait_for_url(f"**/dashboard**", timeout=30_000)
+        # Wait for redirect to dashboard (proves login succeeded)
+        await page.wait_for_url("**/dashboard**", timeout=30_000)
         print("  ✓ Logged in to dashboard")
 
-        # ── Step 2: Navigate to Third Party Tokens tab ─────────────────────────
-        await page.goto(f"{TALEXIO_URL}/dashboard#third-party-tokens", wait_until="domcontentloaded")
-
-        # Wait for the tab to render
-        tab = await page.wait_for_selector('role=tab[name="Third Party Tokens"]', timeout=15_000)
-        await tab.click()
-        await page.wait_for_timeout(1500)
-        print("  ✓ On Third Party Tokens tab")
-
-        # ── Step 3: Click the create button ────────────────────────────────────
-        # Find the "+" button in the Third Party Tokens heading row
-        # It's a button with only an img child, next to "Connect your Google Calendar"
-        create_btn = await page.wait_for_selector(
-            'xpath=//h6[contains(text(),"Third Party Tokens")]/following-sibling::*//button[last()]',
-            timeout=10_000,
-        )
-        await create_btn.click()
-
-        # Wait for dialog input to appear (use page-level selector)
-        await page.wait_for_selector('role=dialog', timeout=8_000)
-        print("  ✓ Generate Token dialog opened")
-
-        # ── Step 4: Enter name and click Generate ─────────────────────────────
-        name_input = await page.wait_for_selector(
-            'input[placeholder="Enter token name"]', timeout=10_000
-        )
-        await name_input.fill("CEO Cockpit")
-        await page.wait_for_timeout(300)
-
-        generate_btn = await page.wait_for_selector(
-            'role=dialog >> button:has-text("Generate")', timeout=5_000
-        )
-        await generate_btn.click()
-
-        # ── Step 5: Read the generated token ──────────────────────────────────
-        # After generation the dialog shows a disabled input with the JWT
-        await page.wait_for_timeout(1500)
-        token_input = await page.wait_for_selector(
-            'role=dialog >> input[disabled]', timeout=10_000
-        )
-        token = await token_input.input_value()
-
-        if not token or not token.startswith("eyJ"):
-            raise RuntimeError(f"Generated token looks invalid: {token[:50]}")
-
-        print("  ✓ Third Party Token generated")
+        # Give interceptor a moment to process the response
+        await page.wait_for_timeout(500)
         await browser.close()
-        return token
+
+    if not captured.get("token"):
+        raise RuntimeError("Could not capture Talexio login token from network")
+
+    return captured["token"]
 
 
 async def main():
@@ -192,17 +203,21 @@ async def main():
     print("  Talexio Token Refresh")
     print("=" * 60)
 
-    print("\nStep 1: Generating Talexio Third Party Token …")
+    print("\nStep 1: Logging in to capture session token …")
     token = await get_token_via_playwright()
 
-    expiry = parse_expiry(token)
-    print(f"\nToken expiry: {expiry}")
+    expiry  = parse_expiry(token)
+    days    = expiry_days(token)
+    print(f"\nToken expiry: {expiry} ({days:.1f} days remaining)")
+
+    if days < 1:
+        print("⚠ WARNING: Token expires in less than 1 day — refresh may have failed")
 
     print("\nStep 2: Storing token …")
     write_token_to_envs(token)
     await push_to_supabase(token, expiry)
 
-    print(f"\n✓ Done. Token valid until {expiry}")
+    print(f"\n✓ Done. Token valid for {days:.1f} days (until {expiry})")
     print("  Add TALEXIO_TOKEN to Vercel env vars and redeploy to apply in production.")
     print(f"\n  Token (first 60 chars): {token[:60]}…")
 
