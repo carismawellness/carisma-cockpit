@@ -11,6 +11,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  LabelList,
 } from "recharts";
 import { chartColors } from "@/lib/charts/config";
 import { useKPIData } from "@/lib/hooks/useKPIData";
@@ -51,6 +52,27 @@ export function LeadsPerHour({
     ? [brandFilter]
     : ["spa", "aesthetics", "slimming"];
 
+  // Segment label — only render if the segment is tall enough to fit text
+  function SegmentLabel(props: Record<string, unknown>) {
+    const { x, y, width, height, value } = props as {
+      x: number; y: number; width: number; height: number; value: number;
+    };
+    if (!value || (height as number) < 18) return null;
+    return (
+      <text
+        x={x + width / 2}
+        y={y + (height as number) / 2}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize={10}
+        fontWeight={600}
+        fill="rgba(0,0,0,0.55)"
+      >
+        {value}
+      </text>
+    );
+  }
+
   // Build daily series: { date, spa, aesthetics, slimming }
   const chartData = useMemo(() => {
     const byDate = new Map<string, Record<string, number>>();
@@ -63,10 +85,10 @@ export function LeadsPerHour({
     }
     return Array.from(byDate.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, counts]) => ({
-        date: format(parseISO(date), "MMM d"),
-        ...counts,
-      })) as Array<Record<string, string | number>>;
+      .map(([date, counts]) => {
+        const _total = Object.values(counts).reduce((s, v) => s + v, 0);
+        return { date: format(parseISO(date), "MMM d"), ...counts, _total };
+      }) as Array<Record<string, string | number>>;
   }, [data, brandIdToSlug, visibleBrands]);
 
   // Summary stats
@@ -115,22 +137,34 @@ export function LeadsPerHour({
         <>
           <div className="h-[240px] md:h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+              <BarChart data={chartData} margin={{ top: 22, right: 10, left: -10, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
                 <XAxis dataKey="date" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
                 <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                 <Tooltip />
                 <Legend />
-                {visibleBrands.map((b) => (
-                  <Bar
-                    key={b}
-                    dataKey={b}
-                    name={BRAND_LABELS[b] ?? b}
-                    fill={chartColors[b as keyof typeof chartColors] ?? "#888"}
-                    radius={[2, 2, 0, 0]}
-                    stackId="leads"
-                  />
-                ))}
+                {visibleBrands.map((b, i) => {
+                  const isTop = i === visibleBrands.length - 1;
+                  return (
+                    <Bar
+                      key={b}
+                      dataKey={b}
+                      name={BRAND_LABELS[b] ?? b}
+                      fill={chartColors[b as keyof typeof chartColors] ?? "#888"}
+                      radius={isTop ? [2, 2, 0, 0] : [0, 0, 0, 0]}
+                      stackId="leads"
+                    >
+                      <LabelList content={SegmentLabel as never} />
+                      {isTop && (
+                        <LabelList
+                          dataKey="_total"
+                          position="top"
+                          style={{ fontSize: 11, fontWeight: 700, fill: "#374151" }}
+                        />
+                      )}
+                    </Bar>
+                  );
+                })}
               </BarChart>
             </ResponsiveContainer>
           </div>
