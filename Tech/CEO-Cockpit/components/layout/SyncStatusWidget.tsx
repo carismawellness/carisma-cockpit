@@ -53,13 +53,24 @@ function mostRecent(sources: DataSource[]): { iso: string; name: string } | null
   return best;
 }
 
-function overallStatus(sources: DataSource[]): "success" | "partial" | "failed" | "unknown" {
-  const logged = sources.filter((s) => s.last_sync);
-  if (logged.length === 0) return "unknown";
-  if (logged.some((s) => s.last_sync!.status === "failed")) return "failed";
-  if (logged.some((s) => s.last_sync!.status === "partial")) return "partial";
-  if (logged.every((s) => s.last_sync!.status === "success")) return "success";
-  return "partial";
+const STALE_AFTER_MS = 24 * 60 * 60 * 1000;  // 24 hours
+
+/**
+ * Overall health = freshness of the most-recent sync, not the worst per-source
+ * status. The widget should reassure the user that data IS being refreshed
+ * (green check) unless the freshest sync is now > 24h old.
+ *
+ * - "success" → most-recent sync ≤ 24h ago (any source)
+ * - "stale"   → most-recent sync > 24h ago
+ * - "unknown" → no source has ever logged a sync
+ */
+function overallHealth(
+  sources: DataSource[],
+  recent: { iso: string } | null,
+): "success" | "stale" | "unknown" {
+  if (sources.length === 0 || !recent) return "unknown";
+  const ageMs = Date.now() - new Date(recent.iso).getTime();
+  return ageMs <= STALE_AFTER_MS ? "success" : "stale";
 }
 
 export function SyncStatusWidget() {
@@ -118,13 +129,12 @@ export function SyncStatusWidget() {
   }
 
   const recent = data ? mostRecent(data.sources) : null;
-  const status = data ? overallStatus(data.sources) : "unknown";
+  const health = data ? overallHealth(data.sources, recent) : "unknown";
 
   const statusIcon =
-    status === "success" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> :
-    status === "partial" ? <AlertTriangle className="h-3.5 w-3.5 text-amber-500" /> :
-    status === "failed"  ? <XCircle      className="h-3.5 w-3.5 text-red-500" /> :
-                           <Clock        className="h-3.5 w-3.5 text-muted-foreground" />;
+    health === "success" ? <CheckCircle2  className="h-3.5 w-3.5 text-emerald-600" /> :
+    health === "stale"   ? <AlertTriangle className="h-3.5 w-3.5 text-amber-500"  /> :
+                           <Clock         className="h-3.5 w-3.5 text-muted-foreground" />;
 
   return (
     <div className="relative" ref={popoverRef}>
