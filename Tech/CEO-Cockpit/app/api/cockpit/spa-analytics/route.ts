@@ -711,21 +711,30 @@ function mergeAnalytics(a: SpaAnalyticsResponse, b: SpaAnalyticsResponse): SpaAn
     pblMap.set(p.location_id, cur);
   }
 
-  const dMap = new Map<number, DiscountEntry>();
+  // Discounts: recover each side's `all_net_revenue` (the sum of unitPriceEx
+  // across ALL txns, not just discounted ones) from its avg_order_value, sum,
+  // then re-derive discount_pct and avg_order_value from the merged totals.
+  //
+  //   side.all_net_revenue = side.avg_order_value × side.total_txn_count
+  //   merged.all_net       = a.all_net + b.all_net
+  //   merged.discount_pct  = merged.total_discount / merged.all_net × 100
+  //   merged.avg_order_value = merged.all_net / merged.total_txn_count
+  const dMap = new Map<number, DiscountEntry & { _allNet?: number }>();
   for (const d of [...a.discounts, ...b.discounts]) {
-    const cur = dMap.get(d.location_id) ?? { ...d, gross_list_revenue: 0, net_unit_revenue: 0, total_discount: 0, discount_pct: 0, discounted_txn_count: 0, total_txn_count: 0, avg_order_value: 0 };
+    const cur = dMap.get(d.location_id) ?? { ...d, gross_list_revenue: 0, net_unit_revenue: 0, total_discount: 0, discount_pct: 0, discounted_txn_count: 0, total_txn_count: 0, avg_order_value: 0, _allNet: 0 };
     cur.gross_list_revenue   = +(cur.gross_list_revenue   + d.gross_list_revenue  ).toFixed(2);
     cur.net_unit_revenue     = +(cur.net_unit_revenue     + d.net_unit_revenue    ).toFixed(2);
     cur.total_discount       = +(cur.total_discount       + d.total_discount      ).toFixed(2);
     cur.discounted_txn_count += d.discounted_txn_count;
     cur.total_txn_count      += d.total_txn_count;
+    cur._allNet              = (cur._allNet ?? 0) + d.avg_order_value * d.total_txn_count;
     dMap.set(d.location_id, cur);
   }
-  // Re-derive discount_pct + avg_order_value from the summed totals
   for (const cur of dMap.values()) {
-    const allNet = cur.net_unit_revenue + (cur.total_txn_count - cur.discounted_txn_count) * 0; // placeholder
+    const allNet = cur._allNet ?? 0;
     cur.discount_pct    = allNet > 0 ? +((cur.total_discount / allNet) * 100).toFixed(2) : 0;
-    cur.avg_order_value = cur.total_txn_count > 0 ? +(cur.net_unit_revenue / cur.total_txn_count).toFixed(2) : 0;
+    cur.avg_order_value = cur.total_txn_count > 0 ? +(allNet / cur.total_txn_count).toFixed(2) : 0;
+    delete cur._allNet;
   }
 
   return {

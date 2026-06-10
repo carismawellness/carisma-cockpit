@@ -23,6 +23,11 @@ import { cn } from "@/lib/utils";
 
 const DATE_FMT = "dd/MM/yyyy";
 
+// Earliest selectable date — matches the typed-input floor in parseDmy() and
+// the earliest spa transaction in spa_transactions_raw (2014-10-10). Used to
+// prevent the calendar widget from offering nav back to year 1900.
+const CALENDAR_MIN = new Date(2014, 0, 1);
+
 function parseDmy(value: string): Date | null {
   const parsed = parse(value, DATE_FMT, new Date());
   // Reject dates outside a plausible business range (2014–2099).
@@ -297,6 +302,8 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
                 if (pt) setToText(format(pt, DATE_FMT));
               }}
               numberOfMonths={2}
+              startMonth={CALENDAR_MIN}
+              disabled={{ before: CALENDAR_MIN }}
               className="hidden sm:block"
             />
             <Calendar
@@ -311,6 +318,8 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
                 if (pt) setToText(format(pt, DATE_FMT));
               }}
               numberOfMonths={1}
+              startMonth={CALENDAR_MIN}
+              disabled={{ before: CALENDAR_MIN }}
               className="sm:hidden"
             />
           </div>
