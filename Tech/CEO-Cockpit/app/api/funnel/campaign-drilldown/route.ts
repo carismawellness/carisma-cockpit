@@ -58,6 +58,11 @@ const BRAND_AGENTS: Record<string, string[]> = {
   slimming:   ["dorianne", "queenee"],
 };
 
+// Manual conversion rate overrides — takes precedence over dynamic crm_agent_daily calculation
+const BRAND_CONV_OVERRIDE: Partial<Record<string, number>> = {
+  spa: 10.0,  // Business assumption: conservative 10% (agent-derived ~16.6% deemed too high)
+};
+
 function resolveAov(brandSlug: string, campaignName: string): number {
   const lower = campaignName.toLowerCase();
   for (const { keywords, aov } of AOV_OVERRIDES) {
@@ -145,19 +150,21 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Weighted outbound conversion rate: SUM(total_booked) / SUM(total_messages) for brand agents
-    const agents = BRAND_AGENTS[slug] ?? [];
-    let conversionPct: number | null = null;
-    if (agents.length > 0) {
-      const { data: agentRows } = await supabase
-        .from("crm_agent_daily")
-        .select("total_booked, total_messages")
-        .in("agent_slug", agents)
-        .gte("date", from)
-        .lte("date", to);
-      const totalBooked   = (agentRows ?? []).reduce((s: number, r: { total_booked: number }) => s + (r.total_booked ?? 0), 0);
-      const totalMessages = (agentRows ?? []).reduce((s: number, r: { total_messages: number }) => s + (r.total_messages ?? 0), 0);
-      conversionPct = totalMessages > 0 ? Math.round((totalBooked / totalMessages) * 1000) / 10 : null;
+    // Conversion rate: use manual override if set, otherwise compute from crm_agent_daily
+    let conversionPct: number | null = BRAND_CONV_OVERRIDE[slug] ?? null;
+    if (conversionPct === undefined || conversionPct === null) {
+      const agents = BRAND_AGENTS[slug] ?? [];
+      if (agents.length > 0) {
+        const { data: agentRows } = await supabase
+          .from("crm_agent_daily")
+          .select("total_booked, total_messages")
+          .in("agent_slug", agents)
+          .gte("date", from)
+          .lte("date", to);
+        const totalBooked   = (agentRows ?? []).reduce((s: number, r: { total_booked: number }) => s + (r.total_booked ?? 0), 0);
+        const totalMessages = (agentRows ?? []).reduce((s: number, r: { total_messages: number }) => s + (r.total_messages ?? 0), 0);
+        conversionPct = totalMessages > 0 ? Math.round((totalBooked / totalMessages) * 1000) / 10 : null;
+      }
     }
 
     // Build campaign rows

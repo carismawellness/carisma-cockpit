@@ -29,6 +29,11 @@ const BRAND_SDR_AGENTS: Record<BrandSlug, string[]> = {
   slimming:   ["dorianne", "queenee"],
 };
 
+// Manual booking conversion overrides — takes precedence over crm_agent_daily computation
+const BRAND_CONV_OVERRIDE: Partial<Record<BrandSlug, number>> = {
+  spa: 10.0,  // Business assumption: conservative 10%
+};
+
 export type BrandHeatmapMetrics = {
   daily_leads:        number | null;
   total_leads:        number | null;
@@ -127,7 +132,9 @@ export async function GET(req: NextRequest) {
     const totalMessages = (agentRows ?? []).reduce((s: number, r: AgentRow) => s + (r.total_messages ?? 0), 0);
     const totalDeposits = (agentRows ?? []).reduce((s: number, r: AgentRow) => s + (r.total_deposit_count ?? 0), 0);
 
-    const booking_conversion = totalMessages > 0 ? Math.round((totalBooked / totalMessages) * 1000) / 10 : null;
+    const booking_conversion = BRAND_CONV_OVERRIDE[slug] !== undefined
+      ? BRAND_CONV_OVERRIDE[slug]!
+      : (totalMessages > 0 ? Math.round((totalBooked / totalMessages) * 1000) / 10 : null);
     const deposit_rate       = totalBooked   > 0 ? Math.round((totalDeposits / totalBooked) * 1000) / 10 : null;
 
     // Active SDR count = unique agents with any data in period
