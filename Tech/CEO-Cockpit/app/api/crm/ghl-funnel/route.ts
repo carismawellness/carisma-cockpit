@@ -143,41 +143,13 @@ async function diagnoseFilters(
     }
   }
 
-  const dateToFullIso = `${_dateToIso}T23:59:59.999Z`;
-  const dateFromFullIso = `${dateFromIso}T00:00:00.000Z`;
   const postBodies: Record<string, Record<string, unknown>> = {
-    "date_added_range_iso": {
-      locationId,
-      filters: [
-        { field: "pipeline_stage_id", operator: "eq", value: stageId },
-        { field: "date_added", operator: "range", value: { gte: dateFromIso, lte: _dateToIso } },
-      ],
-      limit: 1,
-    },
-    "date_added_range_arr": {
-      locationId,
-      filters: [
-        { field: "pipeline_stage_id", operator: "eq", value: stageId },
-        { field: "date_added", operator: "range", value: [dateFromIso, _dateToIso] },
-      ],
-      limit: 1,
-    },
-    "date_added_range_ts": {
-      locationId,
-      filters: [
-        { field: "pipeline_stage_id", operator: "eq", value: stageId },
-        { field: "date_added", operator: "range", value: { gte: dateFromFullIso, lte: dateToFullIso } },
-      ],
-      limit: 1,
-    },
-    "last_stage_change_range": {
-      locationId,
-      filters: [
-        { field: "pipeline_stage_id", operator: "eq", value: stageId },
-        { field: "last_stage_change_date", operator: "range", value: { gte: dateFromIso, lte: _dateToIso } },
-      ],
-      limit: 1,
-    },
+    "only_pipeline_stage_id":     { locationId, filters: [{ field: "pipeline_stage_id", operator: "eq", value: stageId }], limit: 1 },
+    "only_stage_id":              { locationId, filters: [{ field: "stage_id", operator: "eq", value: stageId }], limit: 1 },
+    "only_pipelineStageId":       { locationId, filters: [{ field: "pipelineStageId", operator: "eq", value: stageId }], limit: 1 },
+    "only_pipeline_id":           { locationId, filters: [{ field: "pipeline_id", operator: "eq", value: pipelineId }], limit: 1 },
+    "no_filters":                 { locationId, filters: [], limit: 1 },
+    "date_added_only":            { locationId, filters: [{ field: "date_added", operator: "range", value: { gte: dateFromIso, lte: _dateToIso } }], limit: 1 },
   };
   for (const [name, body] of Object.entries(postBodies)) {
     try {
