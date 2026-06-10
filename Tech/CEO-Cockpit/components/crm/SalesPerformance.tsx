@@ -6,7 +6,6 @@ import { useKPIData } from "@/lib/hooks/useKPIData";
 import { useLookups } from "@/lib/hooks/useLookups";
 import { AGENT_META_BY_SLUG } from "@/lib/constants/agents";
 import {
-  chartColors,
   formatCurrency,
   formatPercent,
 } from "@/lib/charts/config";
@@ -15,6 +14,14 @@ import {
   countExcludedCrmDatesInRange,
   isExcludedCrmDate,
 } from "@/lib/constants/excluded-dates";
+import { BRAND } from "@/lib/constants/design-tokens";
+
+// Canonical brand palette — `dark` for left-border accents.
+const BRAND_BORDER: Record<string, string> = {
+  spa:        BRAND.spa.dark,
+  aesthetics: BRAND.aesthetics.dark,
+  slimming:   BRAND.slimming.dark,
+};
 
 const BRANDS = ["spa", "aesthetics", "slimming"] as const;
 const BRAND_LABELS: Record<string, string> = {
@@ -123,8 +130,7 @@ export function SalesPerformance({
           key={b.slug}
           className="p-5 border-l-4"
           style={{
-            borderLeftColor:
-              chartColors[b.slug as keyof typeof chartColors] ?? "#888",
+            borderLeftColor: BRAND_BORDER[b.slug] ?? "#888",
           }}
         >
           <h3 className="text-sm font-semibold uppercase tracking-wider text-text-secondary mb-4">
@@ -138,13 +144,13 @@ export function SalesPerformance({
             <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-sm text-text-secondary">Total Bookings</span>
-                <span className="text-sm font-bold text-foreground">
-                  {b.totalBookings}
+                <span className="text-sm font-bold text-foreground tabular-nums">
+                  {b.totalBookings.toLocaleString()}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-text-secondary">Avg Bookings / Day</span>
-                <span className="text-sm font-semibold text-foreground">
+                <span className="text-sm font-semibold text-foreground tabular-nums">
                   {b.dailyBookingRate.toFixed(1)}
                 </span>
               </div>
