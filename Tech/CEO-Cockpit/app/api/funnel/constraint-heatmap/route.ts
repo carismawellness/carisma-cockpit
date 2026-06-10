@@ -12,8 +12,8 @@
  *   leads_per_agent     — daily_leads / active SDR count in period
  *   roas                — total_revenue / total_spend (blended)
  *   cpl                 — Meta spend / Meta leads
- *   booking_efficiency  — total_meta_bookings / total_leads × 100
- *                         (Meta lead in → outbound booking out)
+ *   booking_efficiency  — GHL Lead Conv: Booking Won ÷ all leads acquired
+ *                         in the period (matches Pipeline Funnel widget)
  *   deposit_rate        — crm_agent_daily: SUM(total_deposit_count) / SUM(total_booked) for SDR agents
  *   speed_to_lead_min   — crm_daily: median of daily medians
  *   ad_refresh_days     — meta_campaigns_daily: days since newest campaign_id first appeared
@@ -24,6 +24,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { computeLeadConversion } from "@/lib/funnel/lead-conversion";
 
 export const dynamic = "force-dynamic";
 
@@ -35,16 +36,6 @@ const FALLBACK_SDR_AGENTS: Record<BrandSlug, string[]> = {
   spa:        ["juliana", "vj"],
   aesthetics: ["april", "nathalia"],
   slimming:   ["dorianne", "queenee"],
-};
-
-// Planning conversion rate per brand — used in place of the noisy day-to-day
-// ratio so the heatmap reads stably across date ranges. Triangulated 2026-06-10
-// by a 9-agent analysis (data scientist + Meta advertiser + BCG consultant per
-// brand) of the CRM Master Sheet (other_booked) ÷ Meta leads. Revisit quarterly.
-const BRAND_PLANNING_CONVERSION: Record<BrandSlug, number> = {
-  spa:        5.0,
-  aesthetics: 15.0,
-  slimming:   12.0,
 };
 
 export type BrandHeatmapMetrics = {
@@ -179,10 +170,10 @@ export async function GET(req: NextRequest) {
     const metaBooked     = (agentRows ?? []).reduce((s: number, r: AgentRow) => s + (r.other_booked        ?? 0), 0);
     const totalDeposits  = (agentRows ?? []).reduce((s: number, r: AgentRow) => s + (r.total_deposit_count ?? 0), 0);
 
-    // Booking efficiency: brand-level planning rate from BRAND_PLANNING_CONVERSION.
-    // The live ratio (metaBooked ÷ metaLeads) swings wildly day to day, so the
-    // CEO uses a stable triangulated number for ROAS modelling and budgeting.
-    const booking_efficiency = BRAND_PLANNING_CONVERSION[slug];
+    // Booking efficiency: brand-level GHL Lead Conv — same calculation as the
+    // Pipeline Funnel widget. Booking Won ÷ all leads acquired in the period.
+    const leadConv = await computeLeadConversion(supabase, brandId, from, to);
+    const booking_efficiency = leadConv.ratePct;
 
     const deposit_rate = totalBooked > 0
       ? Math.round((totalDeposits / totalBooked) * 1000) / 10

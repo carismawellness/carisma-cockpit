@@ -2,6 +2,7 @@
 
 import { Card } from "@/components/ui/card";
 import { useKPIData } from "@/lib/hooks/useKPIData";
+import { useGhlFunnel } from "@/lib/hooks/useGhlFunnel";
 import { formatCurrency, formatPercent } from "@/lib/charts/config";
 import type { CrmByRepRow } from "@/lib/types/crm";
 
@@ -105,6 +106,24 @@ export function TeamSplit({
     brandFilter,
   });
 
+  // Brand-level GHL Lead Conv — same calculation as the Pipeline Funnel widget.
+  // Replaces the per-agent booking_eff_pct average we used to show: this is the
+  // honest lead → booked-appointment rate from the GHL pipeline mirror.
+  const { data: ghl } = useGhlFunnel(dateFrom, dateTo, "cohort");
+  const brandLeadConv = (() => {
+    if (!ghl?.brands) return null;
+    const slugs = brandFilter ? [brandFilter] : ["spa", "aesthetics", "slimming"];
+    let won = 0, total = 0;
+    for (const slug of slugs) {
+      const stages = ghl.brands[slug] ?? {};
+      for (const [stage, n] of Object.entries(stages)) {
+        total += n;
+        if (stage === "Booking Won") won += n;
+      }
+    }
+    return total > 0 ? (won / total) * 100 : null;
+  })();
+
   if (loading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -155,15 +174,15 @@ export function TeamSplit({
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-text-secondary">Conversion Rate</span>
+              <span className="text-sm text-text-secondary">Lead Conv. Rate</span>
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-foreground">
-                  {formatPercent(team.metrics.conversionRate)}
+                  {brandLeadConv !== null ? formatPercent(brandLeadConv) : "—"}
                 </span>
-                {statusBadge(
-                  team.metrics.conversionRate,
-                  team.metrics.conversionRate >= 20,
-                  team.metrics.conversionRate >= 20 ? "On Track" : "Below",
+                {brandLeadConv !== null && statusBadge(
+                  brandLeadConv,
+                  brandLeadConv >= 15,
+                  brandLeadConv >= 15 ? "On Track" : "Below",
                 )}
               </div>
             </div>

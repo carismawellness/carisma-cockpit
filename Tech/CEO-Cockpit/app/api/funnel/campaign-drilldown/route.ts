@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { computeLeadConversion } from "@/lib/funnel/lead-conversion";
 
 export const dynamic = "force-dynamic";
 
@@ -46,16 +47,6 @@ const FALLBACK_BRAND_AGENTS: Record<string, string[]> = {
   aesthetics: ["april"],
   slimming:   ["dorianne", "queenee"],
 };
-
-// Planning conversion rate per brand — kept in sync with constraint-heatmap.
-// Triangulated 2026-06-10 by a 9-agent analysis (data scientist + Meta
-// advertiser + BCG consultant per brand). Revisit quarterly.
-const BRAND_PLANNING_CONVERSION: Record<string, number> = {
-  spa:        5.0,
-  aesthetics: 15.0,
-  slimming:   12.0,
-};
-
 
 function resolveAov(brandSlug: string, campaignName: string): number {
   const lower = campaignName.toLowerCase();
@@ -170,9 +161,11 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Conversion rate: brand-level planning rate. Matches heatmap Booking
-    // Efficiency. The live ratio is too noisy day-to-day for ROAS modelling.
-    const conversionPct: number | null = BRAND_PLANNING_CONVERSION[slug] ?? null;
+    // Conversion rate: brand-level GHL Lead Conv (Booking Won ÷ all leads
+    // acquired in the period). Same calc used on the Pipeline Funnel widget
+    // and the funnel heatmap's Booking Efficiency row.
+    const leadConv = await computeLeadConversion(supabase, brandId, from, to);
+    const conversionPct: number | null = leadConv.ratePct;
 
     // Build campaign rows
     const campaigns: DrilldownCampaign[] = [];
