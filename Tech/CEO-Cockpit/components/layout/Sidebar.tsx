@@ -153,15 +153,12 @@ function NavItem({
     );
   }
 
-  // Parent with children — entire row toggles expand/collapse
+  // Parent with children — label navigates, chevron toggles expand/collapse
   return (
     <div>
-      <button
-        onClick={() => setOpen(!open)}
-        title={collapsed ? dept.label : undefined}
+      <div
         className={cn(
-          "w-full flex items-center rounded-lg text-sm font-medium transition-all cursor-pointer",
-          collapsed ? "justify-center px-0 py-2.5" : "gap-3 px-4 py-2.5",
+          "flex items-center rounded-lg text-sm font-medium transition-all",
           isActive
             ? "border-l-[3px] border-gold bg-gold-bg text-gold"
             : isChildActive
@@ -169,17 +166,33 @@ function NavItem({
               : "text-text-secondary hover:bg-warm-gray hover:text-charcoal"
         )}
       >
-        <Icon className={cn("h-[18px] w-[18px] shrink-0", (isActive || isChildActive) ? "text-gold" : "text-text-secondary")} />
-        {!collapsed && <span className="truncate flex-1 text-left">{dept.label}</span>}
+        <Link
+          href={dept.path}
+          title={collapsed ? dept.label : undefined}
+          onClick={onMobileClose}
+          className={cn(
+            "flex-1 flex items-center min-w-0",
+            collapsed ? "justify-center px-0 py-2.5" : "gap-3 px-4 py-2.5"
+          )}
+        >
+          <Icon className={cn("h-[18px] w-[18px] shrink-0", (isActive || isChildActive) ? "text-gold" : "text-text-secondary")} />
+          {!collapsed && <span className="truncate flex-1 text-left">{dept.label}</span>}
+        </Link>
         {!collapsed && (
-          <ChevronDown
-            className={cn(
-              "h-3.5 w-3.5 transition-transform duration-200",
-              open ? "rotate-0" : "-rotate-90"
-            )}
-          />
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(!open); }}
+            aria-label={open ? `Collapse ${dept.label}` : `Expand ${dept.label}`}
+            className="p-2 mr-1 rounded-md hover:bg-warm-gray/60 transition-colors"
+          >
+            <ChevronDown
+              className={cn(
+                "h-3.5 w-3.5 transition-transform duration-200",
+                open ? "rotate-0" : "-rotate-90"
+              )}
+            />
+          </button>
         )}
-      </button>
+      </div>
 
       {/* Children */}
       {!collapsed && open && dept.children && (

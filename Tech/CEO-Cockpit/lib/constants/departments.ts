@@ -11,7 +11,6 @@ import {
   Heart,
   Filter,
   BookOpen,
-  LayoutDashboard,
   type LucideIcon,
 } from "lucide-react";
 
@@ -57,7 +56,6 @@ export const departments: Department[] = [
     path: "/sales",
     group: "Sales",
     children: [
-      { slug: "group", label: "Group", path: "/sales", icon: LayoutDashboard },
       { slug: "spa", label: "Spa", path: "/sales/spa", icon: Sparkles },
       { slug: "aesthetics", label: "Aesthetics", path: "/sales/aesthetics", icon: Heart },
       { slug: "slimming", label: "Slimming", path: "/sales/slimming", icon: Activity },
@@ -100,7 +98,6 @@ export const departments: Department[] = [
     path: "/marketing",
     group: "Marketing",
     children: [
-      { slug: "marketing-master",     label: "Master",     path: "/marketing",            icon: Megaphone },
       { slug: "marketing-spa",        label: "Spa",        path: "/marketing/spa",        icon: Sparkles  },
       { slug: "marketing-aesthetics", label: "Aesthetics", path: "/marketing/aesthetics", icon: Heart     },
       { slug: "marketing-slimming",   label: "Slimming",   path: "/marketing/slimming",   icon: Activity  },
