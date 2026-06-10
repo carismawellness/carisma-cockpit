@@ -13,17 +13,24 @@ import {
   Legend,
   LabelList,
 } from "recharts";
-import { chartColors } from "@/lib/charts/config";
 import { useKPIData } from "@/lib/hooks/useKPIData";
 import { useLookups } from "@/lib/hooks/useLookups";
 import { format, parseISO } from "date-fns";
 import type { CrmDailyRow } from "@/lib/types/crm";
 import { isExcludedCrmDate } from "@/lib/constants/excluded-dates";
+import { BRAND } from "@/lib/constants/design-tokens";
 
 const BRAND_LABELS: Record<string, string> = {
   spa: "Spa",
   aesthetics: "Aesthetics",
   slimming: "Slimming",
+};
+
+// Canonical brand palette — `dark` for solid bar fills.
+const BRAND_FILL: Record<string, string> = {
+  spa:        BRAND.spa.dark,
+  aesthetics: BRAND.aesthetics.dark,
+  slimming:   BRAND.slimming.dark,
 };
 
 export function LeadsPerHour({
@@ -152,7 +159,7 @@ export function LeadsPerHour({
                       key={b}
                       dataKey={b}
                       name={BRAND_LABELS[b] ?? b}
-                      fill={chartColors[b as keyof typeof chartColors] ?? "#888"}
+                      fill={BRAND_FILL[b] ?? "#888"}
                       radius={isTop ? [2, 2, 0, 0] : [0, 0, 0, 0]}
                       stackId="leads"
                     >
@@ -161,7 +168,8 @@ export function LeadsPerHour({
                         <LabelList
                           dataKey="_total"
                           position="top"
-                          style={{ fontSize: 11, fontWeight: 700, fill: "#374151" }}
+                          style={{ fontSize: 11, fontWeight: 700, fill: "#111827" }}
+                          formatter={(v: unknown) => Number(v).toLocaleString()}
                         />
                       )}
                     </Bar>
@@ -182,7 +190,7 @@ export function LeadsPerHour({
                     <span className="flex items-center gap-2">
                       <span
                         className="h-2.5 w-2.5 rounded-full"
-                        style={{ backgroundColor: chartColors[b as keyof typeof chartColors] ?? "#888" }}
+                        style={{ backgroundColor: BRAND_FILL[b] ?? "#888" }}
                       />
                       <span className="font-medium text-gray-700">{BRAND_LABELS[b]}</span>
                     </span>
@@ -202,7 +210,7 @@ export function LeadsPerHour({
                     <span className="flex items-center gap-2">
                       <span
                         className="h-2.5 w-2.5 rounded-full"
-                        style={{ backgroundColor: chartColors[b as keyof typeof chartColors] ?? "#888" }}
+                        style={{ backgroundColor: BRAND_FILL[b] ?? "#888" }}
                       />
                       <span className="font-medium text-gray-700">{BRAND_LABELS[b]}</span>
                     </span>
