@@ -5,6 +5,7 @@ import { SalesPerformance } from "@/components/crm/SalesPerformance";
 import { MessageQueueHealth } from "@/components/crm/MessageQueueHealth";
 import { LeadReconciliation } from "@/components/crm/LeadReconciliation";
 import { LeadsPerHour } from "@/components/crm/LeadsPerHour";
+import { PipelineFunnel } from "@/components/crm/PipelineFunnel";
 import { GHLSyncBadge } from "@/components/crm/GHLSyncBadge";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 
@@ -45,6 +46,12 @@ function CRMContent({
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-3">Lead Reconciliation</h2>
         <LeadReconciliation dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
+      </section>
+
+      {/* Pipeline Funnel */}
+      <section>
+        <h2 className="text-lg font-semibold text-foreground mb-3">Pipeline Funnel</h2>
+        <PipelineFunnel dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
       </section>
 
       {/* Leads per Hour Distribution */}
