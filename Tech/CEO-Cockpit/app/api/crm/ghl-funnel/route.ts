@@ -13,10 +13,10 @@ export const maxDuration = 45;
 const GHL_BASE = "https://services.leadconnectorhq.com";
 const GHL_V    = "2021-07-28";
 
-const BRAND_CONFIG: Record<string, { apiKey: string; locationId: string }> = {
-  spa:        { apiKey: process.env.GHL_API_KEY ?? "",           locationId: "TrtSnBSSKBOkVVNxJ3AM" },
-  aesthetics: { apiKey: process.env.GHL_API_KEY_AESTHETICS ?? "", locationId: "Goi7kzVK7iwe2woxUHkT" },
-  slimming:   { apiKey: process.env.GHL_API_KEY_SLIMMING ?? "",   locationId: "imWIWDcnmOfijW0lltPq" },
+const BRAND_CONFIG: Record<string, { apiKey: string; locationId: string; pipelineId: string }> = {
+  spa:        { apiKey: process.env.GHL_API_KEY ?? "",           locationId: "TrtSnBSSKBOkVVNxJ3AM", pipelineId: "4vgVsqiN12VGdloyzyxD" },
+  aesthetics: { apiKey: process.env.GHL_API_KEY_AESTHETICS ?? "", locationId: "Goi7kzVK7iwe2woxUHkT", pipelineId: "PaSsbcOAeRURF2Hc2V3F" },
+  slimming:   { apiKey: process.env.GHL_API_KEY_SLIMMING ?? "",   locationId: "imWIWDcnmOfijW0lltPq", pipelineId: "N3usvWAkWpUppJj1ggtM" },
 };
 
 export const STAGE_ORDER = [
@@ -66,7 +66,7 @@ interface StageInfo {
   normalizedName: string;
 }
 
-async function fetchStages(apiKey: string, locationId: string): Promise<StageInfo[]> {
+async function fetchStages(apiKey: string, locationId: string, pipelineId: string): Promise<StageInfo[]> {
   const data = await ghlGet("/opportunities/pipelines", apiKey, { location_id: locationId }) as {
     pipelines?: Array<{
       id: string;
@@ -75,10 +75,10 @@ async function fetchStages(apiKey: string, locationId: string): Promise<StageInf
     }>;
   };
 
-  // Only use the Call Pipeline — excludes Dashboard, Warm Leads AI, etc.
-  const callPipeline = (data.pipelines ?? []).find(
-    (p) => p.name.toLowerCase().includes("call pipeline"),
-  );
+  // Match by hardcoded pipeline ID first; fall back to name search
+  const callPipeline =
+    (data.pipelines ?? []).find((p) => p.id === pipelineId) ??
+    (data.pipelines ?? []).find((p) => p.name.toLowerCase().includes("call pipeline"));
   if (!callPipeline) return [];
 
   return callPipeline.stages.map((stage) => ({
@@ -92,10 +92,12 @@ async function fetchStageCount(
   apiKey: string,
   locationId: string,
   stageId: string,
+  pipelineId: string,
 ): Promise<number> {
   try {
     const data = await ghlGet("/opportunities/search", apiKey, {
       location_id: locationId,
+      pipeline_id: pipelineId,
       pipeline_stage_id: stageId,
       limit: "1",
     }) as { meta?: { total?: number } };
@@ -117,16 +119,16 @@ export async function GET(req: NextRequest) {
   };
 
   await Promise.all(
-    Object.entries(BRAND_CONFIG).map(async ([slug, { apiKey, locationId }]) => {
+    Object.entries(BRAND_CONFIG).map(async ([slug, { apiKey, locationId, pipelineId }]) => {
       if (!apiKey) return;
       try {
-        const stages = await fetchStages(apiKey, locationId);
+        const stages = await fetchStages(apiKey, locationId, pipelineId);
 
         // Dedup: if multiple stages map to the same normalizedName, sum them
         const countsByNorm: Record<string, number> = {};
         await Promise.all(
           stages.map(async ({ stageId, normalizedName }) => {
-            const count = await fetchStageCount(apiKey, locationId, stageId);
+            const count = await fetchStageCount(apiKey, locationId, stageId, pipelineId);
             countsByNorm[normalizedName] = (countsByNorm[normalizedName] ?? 0) + count;
           }),
         );

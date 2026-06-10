@@ -95,9 +95,14 @@ export function PipelineFunnel({
     return t;
   }, [data, brands]);
 
-  const totalLeads = brands.reduce((s, b) => s + (data?.brands[b]?.["New Lead"] ?? 0), 0);
-  const totalWon   = brands.reduce((s, b) => s + (data?.brands[b]?.["Booking Won"] ?? 0), 0);
-  const convPct    = totalLeads > 0 ? ((totalWon / totalLeads) * 100).toFixed(1) : "—";
+  const ACTIVE_STAGES = ["New Leads", "Call Back", "Contacted", "Booking Won", "Active Member"];
+  const totalActive = brands.reduce(
+    (s, b) => s + ACTIVE_STAGES.reduce((st, stage) => st + (data?.brands[b]?.[stage] ?? 0), 0),
+    0,
+  );
+  const totalNewLeads = brands.reduce((s, b) => s + (data?.brands[b]?.["New Leads"] ?? 0), 0);
+  const totalWon      = brands.reduce((s, b) => s + (data?.brands[b]?.["Booking Won"] ?? 0), 0);
+  const convPct       = totalNewLeads > 0 ? ((totalWon / totalNewLeads) * 100).toFixed(1) : "—";
 
   if (isLoading) {
     return <div className="h-96 rounded-xl bg-gray-100 animate-pulse" />;
@@ -114,8 +119,8 @@ export function PipelineFunnel({
         </div>
         <div className="flex gap-4 text-right shrink-0">
           <div>
-            <p className="text-xs text-muted-foreground">New Leads</p>
-            <p className="text-lg font-bold text-foreground">{totalLeads}</p>
+            <p className="text-xs text-muted-foreground">Total Active</p>
+            <p className="text-lg font-bold text-foreground">{totalActive}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Booking Won</p>
@@ -179,7 +184,7 @@ export function PipelineFunnel({
           {brands.map((b) => {
             const brandTotal = STAGE_ORDER.reduce((s, st) => s + (totals[b]?.[st] ?? 0), 0);
             const brandWon = totals[b]?.["Booking Won"] ?? 0;
-            const brandNew = totals[b]?.["New Lead"] ?? 0;
+            const brandNew = totals[b]?.["New Leads"] ?? 0;
             const cv = brandNew > 0 ? ((brandWon / brandNew) * 100).toFixed(1) : "—";
             return (
               <div key={b} className="rounded-lg bg-gray-50 p-3">
