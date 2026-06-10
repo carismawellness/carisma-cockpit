@@ -192,7 +192,7 @@ async function fetchReport(
   );
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    lastReportError = `${endpoint} ${res.status}: ${txt.slice(0, 120)}`;
+    lastReportError = `${endpoint} ${res.status}: ${txt.slice(0, 400)}`;
     return [];
   }
   const json = (await res.json()) as {
