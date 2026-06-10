@@ -362,6 +362,9 @@ export async function runSpaRevenueDaily(
         product_purest:   +(cols.product_purest   ?? 0).toFixed(2),
         product_other:    +(cols.product_other    ?? 0).toFixed(2),
         lapis_synced_at:  nowTs,
+        // Explicit tag prevents drift away from the column DEFAULT — if the
+        // default ever changes, live-ETL rows still land as cockpit_live.
+        data_source:      "cockpit_live",
       };
     });
 

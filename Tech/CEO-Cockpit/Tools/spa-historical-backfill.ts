@@ -143,12 +143,12 @@ async function loadCsv(): Promise<string[][]> {
 function parseSheetDate(raw: string): Date | null {
   raw = raw.trim();
   if (!raw) return null;
-  // Sheet uses D/M/YYYY or DD/MM/YYYY
+  // Sheet uses D/M/YYYY or DD/MM/YYYY exclusively. Reject anything else (e.g.
+  // "Oct 10 2019", "10-3-2019") rather than letting `new Date()` guess —
+  // locale-dependent parsing silently produces wrong dates.
   const m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (m) return new Date(Date.UTC(+m[3], +m[2] - 1, +m[1]));
-  // Fallback: ISO
-  const d = new Date(raw);
-  return isNaN(d.getTime()) ? null : d;
+  return null;
 }
 
 function parseSheetTime(raw: string): string | null {

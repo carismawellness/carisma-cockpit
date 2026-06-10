@@ -162,6 +162,11 @@ interface SpaAnalyticsResponse {
   payment_types: PaymentType[];
   payment_by_location: PaymentTypeByLocation[];
   discounts: DiscountEntry[];
+  // Optional. Populated only when the requested date range straddles
+  // 2025-01-01 AND part of it falls in a known data-gap window (e.g. the
+  // 2023-09 → 2024-12 hole between the historic backfill and live ETL).
+  // The UI surfaces this so users don't read a silent zero as "no activity".
+  gaps?: { date_from: string; date_to: string; reason: string }[];
 }
 
 // ── Analytics computation ─────────────────────────────────────────────────────
@@ -169,9 +174,11 @@ interface SpaAnalyticsResponse {
 function isHotelGuest(guestGroup: string): boolean {
   const lower = guestGroup.toLowerCase().trim();
   if (!lower) return false;
-  // "non-hotel" / "non hotel" / leading "non " must classify as NON-hotel even
-  // though the literal substring "hotel" appears. Without this guard every
-  // "NON-HOTEL GUEST" row gets misattributed to the hotel column.
+  // Audited Guest Group tokens from the historic sheet + live Cockpit Datasheet:
+  //   HOTEL GUEST, NON-HOTEL GUEST, RESIDENT, WALK-IN, MEMBER, COMP, (blank)
+  // The "non-hotel" / "non hotel" / leading "non " guard catches the only
+  // false-positive case: NON-HOTEL GUEST contains the substring "hotel".
+  // If a new separator ever appears (NON_HOTEL, NON.HOTEL), add it here.
   if (lower.includes("non-hotel") || lower.includes("non hotel") || lower.startsWith("non ")) return false;
   return lower.includes("hotel") || lower.includes("resident");
 }
@@ -661,7 +668,25 @@ export async function GET(req: NextRequest) {
     ]);
     const historic = computeAnalyticsFromRaw(rawRows, dateFrom, histTo);
     const live     = computeAnalytics(serviceRows, productRows, LIVE_ETL_FIRST_DATE, dateTo);
-    return NextResponse.json(mergeAnalytics(historic, live));
+    const merged   = mergeAnalytics(historic, live);
+
+    // Surface the 2023-09 → 2024-12 data hole if the historic side overlapped
+    // it. Without this the merged response looks like "0 spa activity all of
+    // 2024" instead of "we don't have 2024 data yet".
+    const HISTORIC_LAST_DATE = new Date(2023, 7, 27); // 2023-08-27 (verified via spa_transactions_raw)
+    if (dateFrom < LIVE_ETL_FIRST_DATE && histTo > HISTORIC_LAST_DATE) {
+      const gapFromMs = Math.max(dateFrom.getTime(), HISTORIC_LAST_DATE.getTime() + 86_400_000);
+      const gapToMs   = histTo.getTime();
+      if (gapToMs >= gapFromMs) {
+        const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        merged.gaps = [{
+          date_from: fmt(new Date(gapFromMs)),
+          date_to:   fmt(new Date(gapToMs)),
+          reason:    "Spa data not yet imported for this range (historic sheet ends 2023-08-27; live ETL starts 2025-01-01).",
+        }];
+      }
+    }
+    return NextResponse.json(merged);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: message }, { status: 500 });
