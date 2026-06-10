@@ -1,7 +1,6 @@
 "use client";
 
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
-import { CRMKPICards } from "@/components/crm/CRMKPICards";
 import { SalesPerformance } from "@/components/crm/SalesPerformance";
 import { SpeedToLeadSection } from "@/components/crm/SpeedToLeadSection";
 import { MessageQueueHealth } from "@/components/crm/MessageQueueHealth";
@@ -33,11 +32,6 @@ function CRMContent({
         </div>
         <GHLSyncBadge />
       </div>
-
-      {/* KPI Summary Cards */}
-      <section>
-        <CRMKPICards dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
-      </section>
 
       {/* Sales Performance by Brand */}
       <section>
