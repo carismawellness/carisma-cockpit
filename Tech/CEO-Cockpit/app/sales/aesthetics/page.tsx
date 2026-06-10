@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
 import { SalesKPICard } from "@/components/sales/SalesKPICard";
@@ -17,6 +18,17 @@ function fmtK(v: number): string {
   if (Math.abs(v) >= 1_000_000) return `€${(v / 1_000_000).toFixed(1)}M`;
   if (Math.abs(v) >= 1_000)     return `€${(v / 1_000).toFixed(1)}K`;
   return `€${v.toFixed(0)}`;
+}
+
+function toDateParam(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+interface PractitionerRow {
+  employee_name: string;
+  salary: number | null;
+  k_pct: number | null;
+  flag: string;
 }
 
 function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
@@ -49,6 +61,59 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
       bookings: calc(totals.tx_count,    lyTotals.tx_count),
     };
   }, [totals, lyTotals]);
+
+  const { data: productivityData } = useQuery({
+    queryKey: ["practitioner-productivity", toDateParam(dateFrom), toDateParam(dateTo)],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/finance/practitioner-productivity?date_from=${toDateParam(dateFrom)}&date_to=${toDateParam(dateTo)}`
+      );
+      if (!res.ok) return null;
+      return res.json() as Promise<{ aesthetics: PractitionerRow[] }>;
+    },
+    staleTime: 5 * 60_000,
+  });
+
+  // Build lookup: lowercase token → cost data
+  const aesKMap = useMemo(() => {
+    const map = new Map<string, { salary: number; k_pct: number | null }>();
+    if (!productivityData?.aesthetics) return map;
+    for (const p of productivityData.aesthetics) {
+      if (!p.salary) continue;
+      for (const token of p.employee_name.toLowerCase().split(/\s+/)) {
+        if (token.length >= 3) map.set(token, { salary: p.salary, k_pct: p.k_pct });
+      }
+    }
+    return map;
+  }, [productivityData]);
+
+  // Enrich byPerson with salary overlay
+  const byPersonEnriched = useMemo(() =>
+    byPerson.map(bp => {
+      const cost = aesKMap.get(bp.person.toLowerCase());
+      const revStr = bp.revenue_ex >= 1000 ? `€${(bp.revenue_ex / 1000).toFixed(1)}K` : `€${bp.revenue_ex}`;
+      if (!cost) return {
+        ...bp,
+        salary_cost: 0,
+        revenue_net: bp.revenue_ex,
+        k_pct: null as number | null,
+        bar_label: revStr,
+      };
+      const salary_cost = Math.min(cost.salary, bp.revenue_ex);
+      const k_pct = cost.k_pct;
+      const kStr = k_pct != null ? ` · K=${k_pct.toFixed(0)}%` : "";
+      return {
+        ...bp,
+        salary_cost,
+        revenue_net: Math.max(0, bp.revenue_ex - salary_cost),
+        k_pct,
+        bar_label: `${revStr}${kStr}`,
+      };
+    }),
+    [byPerson, aesKMap]
+  );
+
+  const hasCostData = byPersonEnriched.some(b => b.salary_cost > 0);
 
   return (
     <>
@@ -101,17 +166,29 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
         <div className="flex items-center gap-2 mb-4">
           <h2 className="text-base font-semibold text-foreground">Revenue by Employee</h2>
           <span className="text-xs text-muted-foreground">(col H — Employee)</span>
+          {hasCostData && (
+            <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: chartColors.aesthetics }} />
+                Net revenue
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-400" />
+                Salary cost (K%)
+              </span>
+            </div>
+          )}
         </div>
-        {byPerson.length === 0 ? (
+        {byPersonEnriched.length === 0 ? (
           <p className="text-sm text-muted-foreground py-4 text-center">
             {isFetching || isSyncing ? "Loading…" : "No data for selected period"}
           </p>
         ) : (
-          <ResponsiveContainer width="100%" height={Math.max(180, byPerson.length * 48)}>
+          <ResponsiveContainer width="100%" height={Math.max(180, byPersonEnriched.length * 48)}>
             <BarChart
               layout="vertical"
-              data={byPerson}
-              margin={{ top: 0, right: 72, left: 0, bottom: 0 }}
+              data={byPersonEnriched}
+              margin={{ top: 0, right: 100, left: 0, bottom: 0 }}
             >
               <CartesianGrid strokeDasharray="3 3" horizontal={false} />
               <XAxis
@@ -130,20 +207,41 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
                 tickLine={false}
               />
               <Tooltip
-                formatter={(value, _name, entry) => [
-                  `${formatCurrency(Number(value ?? 0))} · ${entry.payload.tx_count} bookings · VAT ${(entry.payload.vat_rate * 100).toFixed(0)}%`,
-                  "Revenue ex-VAT",
-                ]}
+                formatter={(value, name, entry) => {
+                  const n = Number(value ?? 0);
+                  const p = entry.payload as typeof byPersonEnriched[0];
+                  if (name === "revenue_net") {
+                    const label = hasCostData && p.salary_cost > 0
+                      ? `${formatCurrency(p.revenue_ex)} total · K%=${p.k_pct != null ? p.k_pct.toFixed(0) : "—"}% · ${p.tx_count} bookings`
+                      : `${formatCurrency(n)} · ${p.tx_count} bookings · VAT ${(p.vat_rate * 100).toFixed(0)}%`;
+                    return [label, "Revenue ex-VAT"];
+                  }
+                  return [`${formatCurrency(n)} salary cost`, "Salary (K%)"];
+                }}
                 contentStyle={{ fontSize: 12 }}
               />
-              <Bar dataKey="revenue_ex" fill={chartColors.aesthetics} radius={[0, 4, 4, 0]}>
-                <LabelList
-                  dataKey="revenue_ex"
-                  position="right"
-                  formatter={(v: unknown) => { const n = Number(v); return n >= 1000 ? `€${(n / 1000).toFixed(1)}K` : `€${n}`; }}
-                  style={{ fontSize: 11, fill: "#64748b", fontWeight: 600 }}
-                />
-              </Bar>
+              {hasCostData ? (
+                <>
+                  <Bar dataKey="revenue_net" stackId="rev" fill={chartColors.aesthetics} radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="salary_cost" stackId="rev" fill="#fbbf24" radius={[0, 4, 4, 0]}>
+                    <LabelList
+                      dataKey="bar_label"
+                      position="right"
+                      formatter={(v: unknown) => String(v ?? "")}
+                      style={{ fontSize: 11, fill: "#64748b", fontWeight: 600 }}
+                    />
+                  </Bar>
+                </>
+              ) : (
+                <Bar dataKey="revenue_ex" fill={chartColors.aesthetics} radius={[0, 4, 4, 0]}>
+                  <LabelList
+                    dataKey="revenue_ex"
+                    position="right"
+                    formatter={(v: unknown) => { const n = Number(v); return n >= 1000 ? `€${(n / 1000).toFixed(1)}K` : `€${n}`; }}
+                    style={{ fontSize: 11, fill: "#64748b", fontWeight: 600 }}
+                  />
+                </Bar>
+              )}
             </BarChart>
           </ResponsiveContainer>
         )}
