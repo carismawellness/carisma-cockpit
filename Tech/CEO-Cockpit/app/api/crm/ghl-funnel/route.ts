@@ -113,13 +113,98 @@ async function fetchStageCount(
   }
 }
 
+// Diagnostic: try multiple date filter formats to find which one GHL accepts
+async function diagnoseFilters(
+  apiKey: string,
+  locationId: string,
+  stageId: string,
+  pipelineId: string,
+  dateFromIso: string,
+  dateToIso: string,
+  _startAfterMs: number,
+  _startBeforeMs: number,
+): Promise<Record<string, number | string>> {
+  const base = {
+    location_id: locationId,
+    pipeline_id: pipelineId,
+    pipeline_stage_id: stageId,
+    limit: "1",
+  };
+  const variants: Record<string, Record<string, string>> = {
+    "noDate":             base,
+    "date_only":          { ...base, date: dateFromIso },
+    "startDate_endDate":  { ...base, startDate: dateFromIso, endDate: dateToIso },
+    "date_added":         { ...base, dateAdded: dateFromIso },
+  };
+  const out: Record<string, number | string> = {};
+  for (const [name, params] of Object.entries(variants)) {
+    try {
+      const r = await ghlGet("/opportunities/search", apiKey, params) as { meta?: { total?: number } };
+      out[name] = r.meta?.total ?? 0;
+    } catch (e) {
+      out[name] = e instanceof Error ? e.message.slice(0, 150) : "err";
+    }
+  }
+
+  // Try POST advanced search
+  try {
+    const resp = await fetch(`${GHL_BASE}/opportunities/search`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Version: GHL_V,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        locationId,
+        pipelineId,
+        pipelineStageId: stageId,
+        filters: [
+          { field: "dateAdded", operator: "between", value: [dateFromIso, dateToIso] },
+        ],
+        limit: 1,
+      }),
+    });
+    const txt = await resp.text();
+    if (!resp.ok) {
+      out["POST_filters"] = `${resp.status}: ${txt.slice(0, 150)}`;
+    } else {
+      const j = JSON.parse(txt);
+      out["POST_filters"] = j.meta?.total ?? 0;
+    }
+  } catch (e) {
+    out["POST_filters"] = e instanceof Error ? e.message.slice(0, 100) : "err";
+  }
+
+  return out;
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const dateFrom = searchParams.get("dateFrom") ?? new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0];
   const dateTo   = searchParams.get("dateTo")   ?? new Date().toISOString().split("T")[0];
+  const debug    = searchParams.get("debug") === "1";
 
   const startAfter  = new Date(`${dateFrom}T00:00:00.000Z`).getTime();
   const startBefore = new Date(`${dateTo}T23:59:59.999Z`).getTime();
+
+  if (debug) {
+    // Diagnostic: probe filter variants on Aesthetics "Booking Won" stage
+    // (large volume, easy to verify which filter returns matches)
+    const aes = BRAND_CONFIG.aesthetics;
+    if (!aes.apiKey) {
+      return NextResponse.json({ error: "no aesthetics API key" });
+    }
+    const stages = await fetchStages(aes.apiKey, aes.locationId, aes.pipelineId);
+    const won = stages.find((s) => s.normalizedName === "Booking Won");
+    if (!won) return NextResponse.json({ error: "no won stage found", stages });
+    const variants = await diagnoseFilters(
+      aes.apiKey, aes.locationId, won.stageId, aes.pipelineId,
+      dateFrom, dateTo, startAfter, startBefore,
+    );
+    return NextResponse.json({ dateFrom, dateTo, stage: "Booking Won (Aesthetics)", variants });
+  }
 
   const result: Record<string, Record<string, number>> = {
     spa:        {},
