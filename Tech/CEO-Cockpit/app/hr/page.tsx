@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { SyncButton } from "@/components/dashboard/SyncButton";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
@@ -77,10 +77,6 @@ function getStatusBadge(status: string, className: string) {
       {status}
     </span>
   );
-}
-
-function currentMonthYYYYMM(d: Date = new Date()): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function prettyMonth(yyyymm: string): string {
@@ -285,8 +281,8 @@ const leaveColumns = [
 // MAIN CONTENT
 // ════════════════════════════════════════════════════════════════════════════
 
-function HRContent() {
-  const [month, setMonth] = useState<string>(currentMonthYYYYMM());
+function HRContent({ dateFrom }: { dateFrom: Date }) {
+  const month = `${dateFrom.getFullYear()}-${String(dateFrom.getMonth() + 1).padStart(2, "0")}`;
   const queryClient = useQueryClient();
 
   // ── Live data: Talexio ────────────────────────────────────────────────────
@@ -448,9 +444,8 @@ function HRContent() {
   })();
 
   const subtitle = useMemo(() => {
-    const monthLabel = prettyMonth(payrollData.latestMonth);
-    return `${monthLabel} — ${resolvedHeadcount} active employees`;
-  }, [payrollData.latestMonth, resolvedHeadcount]);
+    return `${prettyMonth(month)} — ${resolvedHeadcount} active employees`;
+  }, [month, resolvedHeadcount]);
 
   // ── Unused-import guard ───────────────────────────────────────────────────
   void activeEmployees;
@@ -462,16 +457,6 @@ function HRContent() {
         <div>
           <h1 className="text-xl md:text-2xl font-bold text-foreground">Human Resources</h1>
           <p className="text-sm text-muted-foreground mt-1">{subtitle}</p>
-          <div className="mt-2 flex items-center gap-2">
-            <label className="text-xs text-muted-foreground" htmlFor="hr-month">Month</label>
-            <input
-              id="hr-month"
-              type="month"
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              className="text-xs border rounded-md px-2 py-1 bg-background"
-            />
-          </div>
         </div>
         <div className="flex flex-col items-end gap-2">
           {headerBadge}
@@ -843,5 +828,9 @@ function HRContent() {
 // ════════════════════════════════════════════════════════════════════════════
 
 export default function HRPage() {
-  return <DashboardShell>{() => <HRContent />}</DashboardShell>;
+  return (
+    <DashboardShell>
+      {({ dateFrom }) => <HRContent dateFrom={dateFrom} />}
+    </DashboardShell>
+  );
 }
