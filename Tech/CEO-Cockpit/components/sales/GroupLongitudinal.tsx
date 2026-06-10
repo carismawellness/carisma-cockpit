@@ -5,17 +5,21 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  BarChart, Bar, LineChart, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ComposedChart, Bar, Line,
+  LineChart,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList,
   ResponsiveContainer,
 } from "recharts";
 import type { GroupMonthlyPoint } from "@/lib/hooks/useGroupRevenue";
 
-const BRAND_COLORS = {
-  spa:        "#8C7A5A",
-  aesthetics: "#6366f1",
-  slimming:   "#3D6B3D",
+// Canonical Carisma brand palette
+const BRAND = {
+  spa:        { dark: "#8C7A5A", soft: "#EFE7D7" },
+  aesthetics: { dark: "#3B7676", soft: "#DEEBEB" },
+  slimming:   { dark: "#3D6B3D", soft: "#C9D8C1" },
 } as const;
+
+const LY_TOTAL_LINE = "#9CA3AF"; // neutral gray for LY trajectory overlay
 
 function fmtK(v: number) {
   if (Math.abs(v) >= 1_000_000) return `€${(v / 1_000_000).toFixed(1)}M`;
@@ -61,6 +65,10 @@ export function GroupLongitudinal({ monthly, isFetching }: Props) {
     ? ((latest.total - latest.total_ly) / latest.total_ly * 100)
     : null;
 
+  // Derive year suffixes from the data so labels stay correct over time.
+  const curYearTwo = monthly[monthly.length - 1].month.substring(2, 4); // "YY" of latest current month
+  const lyYearTwo  = monthly[monthly.length - 1].ly_month.substring(2, 4);
+
   const chartData = monthly.map((p) => ({
     label:         monthLabel(p.month),
     spa:           p.spa,
@@ -99,36 +107,60 @@ export function GroupLongitudinal({ monthly, isFetching }: Props) {
       <div className="h-[280px] md:h-[340px]">
         <ResponsiveContainer width="100%" height="100%">
           {view === "bars" ? (
-            <BarChart data={chartData} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} />
-              <YAxis tickFormatter={(v) => fmtK(Number(v))} tick={{ fontSize: 11 }} width={56} />
-              <Tooltip formatter={(v: unknown) => fmtK(Number(v))} />
+            <ComposedChart data={chartData} margin={{ top: 20, right: 8, left: 8, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#374151" }} interval={0} />
+              <YAxis tickFormatter={(v) => fmtK(Number(v))} tick={{ fontSize: 11, fill: "#6b7280" }} width={56} />
+              <Tooltip
+                formatter={(v: unknown, name) => [fmtK(Number(v)), String(name ?? "")]}
+                cursor={{ fill: "rgba(0,0,0,0.03)" }}
+              />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="spa"        name="Spa"        stackId="a" fill={BRAND_COLORS.spa}        />
-              <Bar dataKey="aesthetics" name="Aesthetics" stackId="a" fill={BRAND_COLORS.aesthetics} />
-              <Bar dataKey="slimming"   name="Slimming"   stackId="a" fill={BRAND_COLORS.slimming}   radius={[3, 3, 0, 0]} />
-            </BarChart>
+              <Bar dataKey="spa"        name="Spa"        stackId="a" fill={BRAND.spa.dark}        />
+              <Bar dataKey="aesthetics" name="Aesthetics" stackId="a" fill={BRAND.aesthetics.dark} />
+              <Bar dataKey="slimming"   name="Slimming"   stackId="a" fill={BRAND.slimming.dark}   radius={[3, 3, 0, 0]}>
+                {/* Total label sits above the topmost stacked segment */}
+                <LabelList
+                  dataKey="total"
+                  position="top"
+                  formatter={(v: unknown) => fmtK(Number(v))}
+                  style={{ fontSize: 9, fontWeight: 600, fill: "#111827" }}
+                />
+              </Bar>
+              {/* LY total trajectory overlay — neutral gray dashed line */}
+              <Line
+                type="monotone"
+                dataKey="total_ly"
+                name="Total LY"
+                stroke={LY_TOTAL_LINE}
+                strokeWidth={2}
+                strokeDasharray="5 3"
+                dot={{ r: 2.5, fill: LY_TOTAL_LINE, strokeWidth: 0 }}
+                activeDot={{ r: 4 }}
+              />
+            </ComposedChart>
           ) : (
             <LineChart data={chartData} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} />
-              <YAxis tickFormatter={(v) => fmtK(Number(v))} tick={{ fontSize: 11 }} width={56} />
-              <Tooltip formatter={(v: unknown) => fmtK(Number(v))} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#374151" }} interval={0} />
+              <YAxis tickFormatter={(v) => fmtK(Number(v))} tick={{ fontSize: 11, fill: "#6b7280" }} width={56} />
+              <Tooltip
+                formatter={(v: unknown, name) => [fmtK(Number(v)), String(name ?? "")]}
+              />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="spa"        name="Spa 26"        stroke={BRAND_COLORS.spa}        strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="aesthetics" name="Aesthetics 26" stroke={BRAND_COLORS.aesthetics} strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="slimming"   name="Slimming 26"   stroke={BRAND_COLORS.slimming}   strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="spa_ly"        name="Spa 25"        stroke={BRAND_COLORS.spa}        strokeWidth={1.5} strokeDasharray="4 2" strokeOpacity={0.5} dot={false} />
-              <Line type="monotone" dataKey="aesthetics_ly" name="Aesthetics 25" stroke={BRAND_COLORS.aesthetics} strokeWidth={1.5} strokeDasharray="4 2" strokeOpacity={0.5} dot={false} />
-              <Line type="monotone" dataKey="slimming_ly"   name="Slimming 25"   stroke={BRAND_COLORS.slimming}   strokeWidth={1.5} strokeDasharray="4 2" strokeOpacity={0.5} dot={false} />
+              <Line type="monotone" dataKey="spa"        name={`Spa ${curYearTwo}`}        stroke={BRAND.spa.dark}        strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="aesthetics" name={`Aesthetics ${curYearTwo}`} stroke={BRAND.aesthetics.dark} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="slimming"   name={`Slimming ${curYearTwo}`}   stroke={BRAND.slimming.dark}   strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="spa_ly"        name={`Spa ${lyYearTwo}`}        stroke={BRAND.spa.dark}        strokeWidth={1.5} strokeDasharray="4 2" strokeOpacity={0.5} dot={false} />
+              <Line type="monotone" dataKey="aesthetics_ly" name={`Aesthetics ${lyYearTwo}`} stroke={BRAND.aesthetics.dark} strokeWidth={1.5} strokeDasharray="4 2" strokeOpacity={0.5} dot={false} />
+              <Line type="monotone" dataKey="slimming_ly"   name={`Slimming ${lyYearTwo}`}   stroke={BRAND.slimming.dark}   strokeWidth={1.5} strokeDasharray="4 2" strokeOpacity={0.5} dot={false} />
             </LineChart>
           )}
         </ResponsiveContainer>
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Rolling 13 months · Same period last year shown as dashed lines in Trend view
+        Rolling 13 months · Dashed gray line = total revenue last year, brand bars = current year
       </p>
     </Card>
   );

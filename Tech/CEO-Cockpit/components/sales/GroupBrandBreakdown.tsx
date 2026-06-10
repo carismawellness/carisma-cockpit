@@ -6,14 +6,15 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell,
+  ResponsiveContainer, Cell, LabelList,
 } from "recharts";
 import type { GroupPeriod, GroupLocationRow } from "@/lib/hooks/useGroupRevenue";
 
-const BRAND_COLORS = {
-  spa:        "#8C7A5A",
-  aesthetics: "#6366f1",
-  slimming:   "#3D6B3D",
+// Canonical Carisma brand palette
+const BRAND = {
+  spa:        { dark: "#8C7A5A", soft: "#EFE7D7" },
+  aesthetics: { dark: "#3B7676", soft: "#DEEBEB" },
+  slimming:   { dark: "#3D6B3D", soft: "#C9D8C1" },
 } as const;
 
 function fmtK(v: number) {
@@ -22,16 +23,10 @@ function fmtK(v: number) {
   return `€${v.toFixed(0)}`;
 }
 
-function yoyBadge(curr: number, ly: number) {
+function fmtPct(curr: number, ly: number): string | null {
   if (!ly) return null;
   const pct = ((curr - ly) / ly) * 100;
-  const sign = pct >= 0 ? "+" : "";
-  const cls = pct >= 0 ? "text-emerald-700 bg-emerald-50" : "text-red-600 bg-red-50";
-  return (
-    <span className={`text-[11px] font-semibold rounded-full px-2 py-0.5 ${cls}`}>
-      {sign}{pct.toFixed(1)}%
-    </span>
-  );
+  return `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
 }
 
 interface Props {
@@ -44,26 +39,22 @@ interface Props {
 export function GroupBrandBreakdown({ period, ly, spaLocations, isFetching }: Props) {
   const [view, setView] = useState<"brand" | "location">("brand");
 
+  // Brand view — grouped bars: current + LY per brand
   const brandData = useMemo(() => [
-    { name: "Spa",        revenue: period.spa,        color: BRAND_COLORS.spa },
-    { name: "Aesthetics", revenue: period.aesthetics, color: BRAND_COLORS.aesthetics },
-    { name: "Slimming",   revenue: period.slimming,   color: BRAND_COLORS.slimming },
-  ], [period]);
+    { name: "Spa",        current: period.spa,        ly: ly.spa,         dark: BRAND.spa.dark,         soft: BRAND.spa.soft         },
+    { name: "Aesthetics", current: period.aesthetics, ly: ly.aesthetics,  dark: BRAND.aesthetics.dark,  soft: BRAND.aesthetics.soft  },
+    { name: "Slimming",   current: period.slimming,   ly: ly.slimming,    dark: BRAND.slimming.dark,    soft: BRAND.slimming.soft    },
+  ], [period, ly]);
 
+  // Location view — single bars (LY not available per Spa location)
   const locationData = useMemo(() => [
-    ...spaLocations.map((l) => ({ name: l.name, revenue: l.revenue, color: l.color })),
-    { name: "Aesthetics", revenue: period.aesthetics, color: BRAND_COLORS.aesthetics },
-    { name: "Slimming",   revenue: period.slimming,   color: BRAND_COLORS.slimming },
+    ...spaLocations.map((l) => ({ name: l.name, current: l.revenue, dark: BRAND.spa.dark })),
+    { name: "Aesthetics", current: period.aesthetics, dark: BRAND.aesthetics.dark },
+    { name: "Slimming",   current: period.slimming,   dark: BRAND.slimming.dark },
   ], [spaLocations, period]);
 
-  const chartData = view === "brand" ? brandData : locationData;
-
-  const tableRows = [
-    { label: "Spa",         curr: period.spa,        ly_val: ly.spa        },
-    { label: "Aesthetics",  curr: period.aesthetics, ly_val: ly.aesthetics },
-    { label: "Slimming",    curr: period.slimming,   ly_val: ly.slimming   },
-    { label: "Group Total", curr: period.total,      ly_val: ly.total, isBold: true },
-  ];
+  const groupYoY = fmtPct(period.total, ly.total);
+  const groupYoYPositive = (period.total - ly.total) >= 0;
 
   if (isFetching) {
     return (
@@ -75,8 +66,24 @@ export function GroupBrandBreakdown({ period, ly, spaLocations, isFetching }: Pr
 
   return (
     <Card className="p-4 md:p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-foreground">Revenue by Brand</h3>
+      {/* Header with group total callout + tabs */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="space-y-0.5">
+          <h3 className="text-sm font-semibold text-foreground">Revenue by Brand</h3>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-foreground tabular-nums">{fmtK(period.total)}</span>
+            <span className="text-xs text-muted-foreground">vs {fmtK(ly.total)} LY</span>
+            {groupYoY && (
+              <span
+                className={`text-[11px] font-semibold rounded-full px-2 py-0.5 ${
+                  groupYoYPositive ? "text-emerald-700 bg-emerald-50" : "text-red-600 bg-red-50"
+                }`}
+              >
+                {groupYoY}
+              </span>
+            )}
+          </div>
+        </div>
         <Tabs value={view} onValueChange={(v) => setView(v as "brand" | "location")}>
           <TabsList className="h-7">
             <TabsTrigger value="brand"    className="text-xs px-3 h-6">By Brand</TabsTrigger>
@@ -85,53 +92,121 @@ export function GroupBrandBreakdown({ period, ly, spaLocations, isFetching }: Pr
         </Tabs>
       </div>
 
-      <div className="h-[220px] md:h-[280px]">
+      {/* Chart */}
+      <div className="h-[240px] md:h-[300px]">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={chartData} margin={{ top: 4, right: 8, left: 8, bottom: view === "location" ? 32 : 4 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis
-              dataKey="name"
-              tick={{ fontSize: 11 }}
-              angle={view === "location" ? -30 : 0}
-              textAnchor={view === "location" ? "end" : "middle"}
-              interval={0}
-            />
-            <YAxis tickFormatter={(v) => fmtK(v)} tick={{ fontSize: 11 }} width={56} />
-            <Tooltip formatter={(v: unknown) => fmtK(Number(v))} />
-            <Bar dataKey="revenue" barSize={view === "location" ? 28 : 48} radius={[3, 3, 0, 0]}>
-              {chartData.map((entry, i) => (
-                <Cell key={i} fill={entry.color} />
-              ))}
-            </Bar>
-          </BarChart>
+          {view === "brand" ? (
+            <BarChart
+              data={brandData}
+              margin={{ top: 40, right: 8, left: 8, bottom: 4 }}
+              barCategoryGap="25%"
+            >
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+              <XAxis dataKey="name" tick={{ fontSize: 12, fill: "#374151" }} interval={0} />
+              <YAxis tickFormatter={(v) => fmtK(Number(v))} tick={{ fontSize: 11, fill: "#6b7280" }} width={56} />
+              <Tooltip
+                formatter={(v: unknown, name) => [fmtK(Number(v)), String(name ?? "")]}
+                cursor={{ fill: "rgba(0,0,0,0.03)" }}
+              />
+              {/* LY bar — soft brand color (rendered first, sits to the left in the group) */}
+              <Bar dataKey="ly" name="Same Period LY" barSize={28} radius={[3, 3, 0, 0]}>
+                {brandData.map((d, i) => <Cell key={`ly-${i}`} fill={d.soft} />)}
+                <LabelList
+                  dataKey="ly"
+                  position="top"
+                  formatter={(v: unknown) => fmtK(Number(v))}
+                  style={{ fontSize: 10, fontWeight: 500, fill: "#9ca3af" }}
+                />
+              </Bar>
+              {/* Current bar — dark brand color, with value + YoY label on top */}
+              <Bar dataKey="current" name="This Period" barSize={28} radius={[3, 3, 0, 0]}>
+                {brandData.map((d, i) => <Cell key={`cur-${i}`} fill={d.dark} />)}
+                <LabelList
+                  dataKey="current"
+                  position="top"
+                  content={(props: { x?: number | string; y?: number | string; width?: number | string; index?: number }) => {
+                    const i = props.index ?? 0;
+                    const row = brandData[i];
+                    if (!row) return null;
+                    const x = Number(props.x ?? 0);
+                    const y = Number(props.y ?? 0);
+                    const w = Number(props.width ?? 0);
+                    const cx = x + w / 2;
+                    const valueTxt = fmtK(row.current);
+                    const pctTxt = fmtPct(row.current, row.ly);
+                    const positive = row.current - row.ly >= 0;
+                    return (
+                      <g>
+                        <text
+                          x={cx}
+                          y={y - 20}
+                          textAnchor="middle"
+                          fontSize="12"
+                          fontWeight="700"
+                          fill="#111827"
+                        >
+                          {valueTxt}
+                        </text>
+                        {pctTxt && (
+                          <text
+                            x={cx}
+                            y={y - 6}
+                            textAnchor="middle"
+                            fontSize="10"
+                            fontWeight="600"
+                            fill={positive ? "#047857" : "#dc2626"}
+                          >
+                            {pctTxt}
+                          </text>
+                        )}
+                      </g>
+                    );
+                  }}
+                />
+              </Bar>
+            </BarChart>
+          ) : (
+            <BarChart
+              data={locationData}
+              margin={{ top: 20, right: 8, left: 8, bottom: 32 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+              <XAxis
+                dataKey="name"
+                tick={{ fontSize: 11, fill: "#374151" }}
+                angle={-30}
+                textAnchor="end"
+                interval={0}
+              />
+              <YAxis tickFormatter={(v) => fmtK(Number(v))} tick={{ fontSize: 11, fill: "#6b7280" }} width={56} />
+              <Tooltip formatter={(v: unknown) => fmtK(Number(v))} cursor={{ fill: "rgba(0,0,0,0.03)" }} />
+              <Bar dataKey="current" name="Revenue" barSize={28} radius={[3, 3, 0, 0]}>
+                {locationData.map((d, i) => <Cell key={i} fill={d.dark} />)}
+                <LabelList
+                  dataKey="current"
+                  position="top"
+                  formatter={(v: unknown) => fmtK(Number(v))}
+                  style={{ fontSize: 10, fontWeight: 600, fill: "#111827" }}
+                />
+              </Bar>
+            </BarChart>
+          )}
         </ResponsiveContainer>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b text-xs text-muted-foreground">
-              <th className="text-left py-1.5 pr-4 font-medium">Brand</th>
-              <th className="text-right py-1.5 px-4 font-medium">This Period</th>
-              <th className="text-right py-1.5 px-4 font-medium">Same Period LY</th>
-              <th className="text-right py-1.5 pl-4 font-medium">vs LY</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tableRows.map((row) => (
-              <tr
-                key={row.label}
-                className={`border-b last:border-0 ${row.isBold ? "font-semibold bg-muted/30" : ""}`}
-              >
-                <td className="py-2 pr-4">{row.label}</td>
-                <td className="py-2 px-4 text-right tabular-nums">{fmtK(row.curr)}</td>
-                <td className="py-2 px-4 text-right tabular-nums text-muted-foreground">{fmtK(row.ly_val)}</td>
-                <td className="py-2 pl-4 text-right">{yoyBadge(row.curr, row.ly_val)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {/* Compact legend for "By Brand" view */}
+      {view === "brand" && (
+        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: BRAND.spa.dark }} />
+            <span>This Period</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: BRAND.spa.soft }} />
+            <span>Same Period Last Year</span>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }
