@@ -53,7 +53,7 @@ export const departments: Department[] = [
     slug: "sales",
     label: "Sales",
     icon: DollarSign,
-    path: "/sales/spa",
+    path: "/sales",
     group: "Sales",
     children: [
       { slug: "spa", label: "Spa", path: "/sales/spa", icon: Sparkles },
