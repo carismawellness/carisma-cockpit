@@ -417,7 +417,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
     },
     {
       label: "Avg RevPAH",
-      value: formatCurrency(avgRevPAH),
+      value: avgRevPAH > 0 ? formatCurrency(avgRevPAH) : "N/A",
       target: `${formatCurrency(REVPAH_TARGET)}/hr`,
       targetValue: REVPAH_TARGET,
       currentValue: avgRevPAH,
@@ -487,9 +487,9 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
 
       {/* ── KPI Row ────────────────────────────────────────────────────── */}
       {talexioLoading && headcountActive === null ? (
-        <KPIGridSkeleton count={8} className="grid-cols-2 md:grid-cols-3 lg:grid-cols-4" />
+        <KPIGridSkeleton count={8} className="grid-cols-2 md:grid-cols-4" />
       ) : (
-        <KPICardRow kpis={kpis} />
+        <KPICardRow kpis={kpis} className="grid grid-cols-2 md:grid-cols-4 gap-4" />
       )}
 
       {/* ══════════════════════════════════════════════════════════════════
@@ -718,28 +718,6 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           )}
         </Card>
       </div>
-
-      {/* ══════════════════════════════════════════════════════════════════
-          SECTION 4: Annual Leave Entitlement
-          ══════════════════════════════════════════════════════════════════ */}
-      <Card className="p-3 md:p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
-          Annual Leave Entitlement — {new Date().getFullYear()}
-          {isLeaveReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
-        </h2>
-        <p className="text-xs text-muted-foreground mb-4">
-          Statutory annual allowance per employee — remaining balance not available from Talexio
-        </p>
-        {leaveQ.isLoading ? (
-          <TableSkeleton rows={8} columns={4} />
-        ) : (
-          <DataTable
-            columns={leaveColumns}
-            data={leaves as unknown as Record<string, unknown>[]}
-            pageSize={15}
-          />
-        )}
-      </Card>
 
       {/* ══════════════════════════════════════════════════════════════════
           SECTION 5: Productivity Leaderboard (WE360)
