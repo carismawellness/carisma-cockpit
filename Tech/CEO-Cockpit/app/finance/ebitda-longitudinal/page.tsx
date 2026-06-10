@@ -16,6 +16,7 @@ import {
   ReferenceLine,
 } from "recharts";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
+import { SyncButton } from "@/components/dashboard/SyncButton";
 import {
   EbitdaSummaryHeader,
   SummaryData,
@@ -409,6 +410,7 @@ function LongitudinalContent({
   const [data, setData]               = useState<LongitudinalResponse | null>(null);
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState<string | null>(null);
+  const [refreshKey, setRefreshKey]   = useState(0);
 
   // Fetch
   useEffect(() => {
@@ -435,7 +437,7 @@ function LongitudinalContent({
         }
       });
     return () => controller.abort();
-  }, [dfStr, dtStr, granularity]);
+  }, [dfStr, dtStr, granularity, refreshKey]);
 
   // ── Visible periods (all) ───────────────────────────────────────────────────
 
@@ -658,6 +660,18 @@ function LongitudinalContent({
             Weekly
           </button>
         </div>
+
+        <SyncButton
+          onSync={async () => {
+            await Promise.all([
+              fetch("/api/etl/zoho-spa-transactions", { method: "POST" }),
+              fetch("/api/etl/zoho-aesthetics-transactions", { method: "POST" }),
+              fetch("/api/etl/slimming-sales", { method: "POST" }),
+            ]);
+            setRefreshKey(k => k + 1);
+          }}
+          isExternalBusy={loading}
+        />
 
       </div>
 

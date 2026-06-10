@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { SyncButton } from "@/components/dashboard/SyncButton";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { Card } from "@/components/ui/card";
@@ -111,6 +113,7 @@ function SlimmingMarketingContent({
   dateTo: Date;
   brandFilter: string | null;
 }) {
+  const queryClient = useQueryClient();
   /* ---------- Data fetching via Meta & Google Ads APIs ---------- */
 
   const metaQuery = useMetaCampaigns("slimming", dateFrom, dateTo);
@@ -303,11 +306,26 @@ function SlimmingMarketingContent({
 
   return (
     <>
-      <div>
-        <h1 className="text-xl md:text-2xl font-bold text-gray-900">Slimming Marketing Dashboard</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          {formatDateRangeLabel(dateFrom, dateTo)} · Carisma Slimming — course-based model, launched Feb 2026
-        </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Slimming Marketing Dashboard</h1>
+          <p className="text-sm text-text-secondary mt-1">
+            {formatDateRangeLabel(dateFrom, dateTo)} · Carisma Slimming — course-based model, launched Feb 2026
+          </p>
+        </div>
+        <SyncButton
+          onSync={async () => {
+            await Promise.all([
+              fetch("/api/etl/meta-campaigns", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ brand_slug: "slimming" }) }),
+              fetch("/api/etl/google-campaigns", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ brand_slug: "slimming" }) }),
+              fetch("/api/etl/klaviyo-sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ brand_slug: "slimming" }) }),
+            ]);
+            await queryClient.invalidateQueries({ queryKey: ["meta-campaigns-db"] });
+            await queryClient.invalidateQueries({ queryKey: ["google-campaigns-db"] });
+            await queryClient.invalidateQueries({ queryKey: ["klaviyo"] });
+          }}
+          isExternalBusy={isLoading}
+        />
       </div>
 
       {/* Loading / Error / Token-expired banners */}

@@ -10,6 +10,8 @@ import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { CommissionHeroBanner, CommissionHeroBannerSkeleton } from "@/components/crm/CommissionHeroBanner";
 import { AGENT_META_BY_SLUG } from "@/lib/constants/agents";
 import { ChevronLeft, ExternalLink } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { SyncButton } from "@/components/dashboard/SyncButton";
 
 const CRM_MASTER_SHEET_ID = "1bHF_7bXic08pcyXQhq310zG6McqXD50oT0EuVkjzDdI";
 
@@ -33,6 +35,7 @@ function AgentPageContent({
   const commissionRate   = meta?.commissionRate ?? 0.01;
   const commissionEarned = (agent?.totals.total_sales ?? 0) * commissionRate;
   const periodLabel      = formatDateRangeLabel(dateFrom, dateTo);
+  const queryClient = useQueryClient();
   const sheetUrl = `https://docs.google.com/spreadsheets/d/${CRM_MASTER_SHEET_ID}/edit`;
 
   return (
@@ -54,15 +57,24 @@ function AgentPageContent({
             {periodLabel} · CRM performance
           </p>
         </div>
-        <a
-          href={sheetUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors"
-        >
-          <ExternalLink className="h-3 w-3" />
-          CRM Master Sheet ↗
-        </a>
+        <div className="flex flex-col items-end gap-2">
+          <SyncButton
+            onSync={async () => {
+              await fetch("/api/etl/crm-agents", { method: "POST" });
+              await queryClient.invalidateQueries({ queryKey: ["crm-agents"] });
+            }}
+            isExternalBusy={isLoading}
+          />
+          <a
+            href={sheetUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors"
+          >
+            <ExternalLink className="h-3 w-3" />
+            CRM Master Sheet ↗
+          </a>
+        </div>
       </div>
 
       {/* Commission Hero — skeleton while loading */}

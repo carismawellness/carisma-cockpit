@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
+import { SyncButton } from "@/components/dashboard/SyncButton";
 import { KPICardRow, KPIData } from "@/components/dashboard/KPICardRow";
 import { Card } from "@/components/ui/card";
 import { CIChat } from "@/components/ci/CIChat";
@@ -262,20 +263,18 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
           </p>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={() => spa.triggerSync(true)}
-            disabled={spa.isSyncing}
-            className="text-xs px-3 py-1.5 rounded-md border border-border bg-background hover:bg-muted disabled:opacity-50 transition-colors"
-          >
-            {spa.isSyncing ? "Syncing Spa…" : "Re-Sync Spa"}
-          </button>
-          <button
-            onClick={() => aesth.triggerSync(true)}
-            disabled={aesth.isSyncing}
-            className="text-xs px-3 py-1.5 rounded-md border border-border bg-background hover:bg-muted disabled:opacity-50 transition-colors"
-          >
-            {aesth.isSyncing ? "Syncing Aesth…" : "Re-Sync Aesth"}
-          </button>
+          <SyncButton
+            label="Re-Sync Spa"
+            onSync={async () => { spa.triggerSync(true); }}
+            isExternalBusy={spa.isSyncing}
+            lastSynced={spa.locations[0]?.lastSyncedAt ?? null}
+          />
+          <SyncButton
+            label="Re-Sync Aesthetics"
+            onSync={async () => { aesth.triggerSync(true); }}
+            isExternalBusy={aesth.isSyncing}
+            lastSynced={aesth.depts.find(d => d.dept === "aesthetics")?.lastSyncedAt ?? null}
+          />
         </div>
       </div>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useCallback } from "react";
+import { SyncButton } from "@/components/dashboard/SyncButton";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { KPICardRow, KPIData } from "@/components/dashboard/KPICardRow";
 import { Card } from "@/components/ui/card";
@@ -622,26 +623,17 @@ function AestheticsEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo:
           </p>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={syncFromSheet}
-            disabled={sheetSyncing || isSyncing}
-            className="text-xs px-3 py-1.5 rounded-md border border-border bg-background hover:bg-muted disabled:opacity-50 transition-colors flex items-center gap-1.5"
-          >
-            {sheetSyncing && (
-              <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-              </svg>
-            )}
-            {sheetSyncing ? "Syncing Sheet…" : "Sync from Sales Sheet"}
-          </button>
-          <button
-            onClick={() => triggerSync(true)}
-            disabled={isSyncing || sheetSyncing}
-            className="text-xs px-3 py-1.5 rounded-md border border-border bg-background hover:bg-muted disabled:opacity-50 transition-colors"
-          >
-            {isSyncing ? "Syncing…" : "Re-Sync from Zoho"}
-          </button>
+          <SyncButton
+            label="Sync from Sales Sheet"
+            onSync={syncFromSheet}
+            isExternalBusy={isSyncing}
+          />
+          <SyncButton
+            label="Re-Sync from Zoho"
+            onSync={async () => { triggerSync(true); }}
+            isExternalBusy={isSyncing || sheetSyncing}
+            lastSynced={dept.lastSyncedAt ?? null}
+          />
         </div>
       </div>
 

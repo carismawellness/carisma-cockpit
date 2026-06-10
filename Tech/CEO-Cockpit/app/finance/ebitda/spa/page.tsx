@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useCallback } from "react";
+import { SyncButton } from "@/components/dashboard/SyncButton";
 import Link from "next/link";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
@@ -586,13 +587,11 @@ function SpaEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }
           >
             Account Breakdown →
           </Link>
-          <button
-            onClick={() => triggerSync(true)}
-            disabled={isSyncing}
-            className="text-xs px-3 py-1.5 rounded-md border border-border bg-background hover:bg-muted disabled:opacity-50 transition-colors"
-          >
-            {isSyncing ? "Syncing…" : "Re-Sync"}
-          </button>
+          <SyncButton
+            onSync={async () => { triggerSync(true); }}
+            isExternalBusy={isSyncing}
+            lastSynced={locations[0]?.lastSyncedAt ?? null}
+          />
         </div>
       </div>
 

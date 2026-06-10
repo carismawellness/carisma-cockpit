@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { SyncButton } from "@/components/dashboard/SyncButton";
 import { CIChat } from "@/components/ci/CIChat";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { KPICardRow, KPIData } from "@/components/dashboard/KPICardRow";
@@ -384,6 +386,7 @@ const leaveBalanceColumns = [
 
 function HRContent() {
   const [month, setMonth] = useState<string>(currentMonthYYYYMM());
+  const queryClient = useQueryClient();
 
   // ── Live data: Talexio ────────────────────────────────────────────────────
   const headcountQ = useTalexioHeadcount();
@@ -599,7 +602,16 @@ function HRContent() {
             />
           </div>
         </div>
-        {headerBadge}
+        <div className="flex flex-col items-end gap-2">
+          {headerBadge}
+          <SyncButton
+            onSync={async () => {
+              await fetch("/api/etl/talexio-hr", { method: "POST" });
+              await queryClient.invalidateQueries({ queryKey: ["talexio"] });
+            }}
+            isExternalBusy={talexioLoading}
+          />
+        </div>
       </div>
 
       {/* Soft error banner — only when Talexio actually errored. */}

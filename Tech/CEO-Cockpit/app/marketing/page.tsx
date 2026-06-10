@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { SyncButton } from "@/components/dashboard/SyncButton";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
 import { CIChat } from "@/components/ci/CIChat";
@@ -115,6 +117,7 @@ function MarketingMasterContent({
   dateTo: Date;
   brandFilter: string | null;
 }) {
+  const queryClient = useQueryClient();
   /* Fetch real Meta + Google data for all 3 brands */
   const metaSpa = useMetaCampaigns("spa", dateFrom, dateTo);
   const metaAes = useMetaCampaigns("aesthetics", dateFrom, dateTo);
@@ -277,11 +280,26 @@ function MarketingMasterContent({
   return (
     <div className="space-y-6 md:space-y-10">
       {/* -- Page header -- */}
-      <div>
-        <h1 className="text-xl md:text-2xl font-bold tracking-tight">Marketing Master</h1>
-        <p className="text-sm text-muted-foreground">
-          {formatDateRangeLabel(dateFrom, dateTo)} · Cross-brand marketing performance overview
-        </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-xl md:text-2xl font-bold tracking-tight">Marketing Master</h1>
+          <p className="text-sm text-muted-foreground">
+            {formatDateRangeLabel(dateFrom, dateTo)} · Cross-brand marketing performance overview
+          </p>
+        </div>
+        <SyncButton
+          onSync={async () => {
+            await Promise.all([
+              fetch("/api/etl/meta-campaigns", { method: "POST" }),
+              fetch("/api/etl/google-campaigns", { method: "POST" }),
+              fetch("/api/etl/klaviyo-sync", { method: "POST" }),
+            ]);
+            await queryClient.invalidateQueries({ queryKey: ["meta-campaigns-db"] });
+            await queryClient.invalidateQueries({ queryKey: ["google-campaigns-db"] });
+            await queryClient.invalidateQueries({ queryKey: ["klaviyo"] });
+          }}
+          isExternalBusy={isLoading}
+        />
       </div>
 
       {/* -- Token / error warnings -- */}

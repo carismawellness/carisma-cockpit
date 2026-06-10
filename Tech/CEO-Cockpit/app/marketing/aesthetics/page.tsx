@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { SyncButton } from "@/components/dashboard/SyncButton";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { Card } from "@/components/ui/card";
@@ -127,6 +129,7 @@ function AestheticsMarketingContent({
   dateTo: Date;
   brandFilter: string | null;
 }) {
+  const queryClient = useQueryClient();
   /* ---- fetch campaign data from Meta & Google APIs ---- */
   const metaQuery = useMetaCampaigns("aesthetics", dateFrom, dateTo);
   const googleQuery = useGoogleCampaigns("aesthetics", dateFrom, dateTo);
@@ -336,14 +339,29 @@ function AestheticsMarketingContent({
 
   return (
     <>
-      <div>
-        <h1 className="text-xl md:text-2xl font-bold text-gray-900">
-          Aesthetics Marketing Dashboard
-        </h1>
-        <p className="text-sm text-text-secondary mt-1">
-          {formatDateRangeLabel(dateFrom, dateTo)} · Carisma Aesthetics — consult-driven
-          performance
-        </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">
+            Aesthetics Marketing Dashboard
+          </h1>
+          <p className="text-sm text-text-secondary mt-1">
+            {formatDateRangeLabel(dateFrom, dateTo)} · Carisma Aesthetics — consult-driven
+            performance
+          </p>
+        </div>
+        <SyncButton
+          onSync={async () => {
+            await Promise.all([
+              fetch("/api/etl/meta-campaigns", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ brand_slug: "aesthetics" }) }),
+              fetch("/api/etl/google-campaigns", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ brand_slug: "aesthetics" }) }),
+              fetch("/api/etl/klaviyo-sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ brand_slug: "aesthetics" }) }),
+            ]);
+            await queryClient.invalidateQueries({ queryKey: ["meta-campaigns-db"] });
+            await queryClient.invalidateQueries({ queryKey: ["google-campaigns-db"] });
+            await queryClient.invalidateQueries({ queryKey: ["klaviyo"] });
+          }}
+          isExternalBusy={isLoading}
+        />
       </div>
 
       {/* API status banners */}

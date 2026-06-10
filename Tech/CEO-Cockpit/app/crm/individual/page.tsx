@@ -1,36 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
+import { SyncButton } from "@/components/dashboard/SyncButton";
 import { AgentTeamBanner } from "@/components/crm/AgentTeamBanner";
 import { AgentLeaderboardCards } from "@/components/crm/AgentLeaderboardCards";
 import { AgentComparisonTable } from "@/components/crm/AgentComparisonTable";
 import { useCrmAgents } from "@/lib/hooks/useCrmAgents";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
-import { RefreshCw, AlertCircle } from "lucide-react";
-import { formatDistanceToNow, parseISO } from "date-fns";
-
-function LastSyncedBadge() {
-  const [lastSynced, setLastSynced] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch("/api/crm/sync-status")
-      .then((r) => r.json())
-      .then(({ last_synced }: { last_synced: string | null }) => {
-        setLastSynced(last_synced);
-      })
-      .catch(() => {});
-  }, []);
-
-  if (!lastSynced) return null;
-
-  return (
-    <span className="text-xs text-muted-foreground">
-      Last synced {formatDistanceToNow(parseISO(lastSynced), { addSuffix: true })}
-    </span>
-  );
-}
+import { AlertCircle } from "lucide-react";
 
 function IndividualKPIsContent({
   dateFrom,
@@ -41,37 +20,24 @@ function IndividualKPIsContent({
   brandFilter: string | null;
 }) {
   const { agents, isLoading, isError, error } = useCrmAgents(dateFrom, dateTo);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncDone, setSyncDone] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const handleSync = useCallback(async () => {
-    setIsSyncing(true);
     setSyncError(null);
-    try {
-      const res = await fetch("/api/etl/crm-agents", { method: "POST" });
-      const json = await res.json().catch(() => ({})) as {
-        status?: string;
-        errors?: string[];
-        error?: string;
-      };
-      if (!res.ok) {
-        setSyncError(json.error ?? `HTTP ${res.status}`);
-        return;
-      }
-      if (json.errors?.length) {
-        setSyncError(`Partial sync — ${json.errors.length} agent(s) failed: ${json.errors[0]}`);
-      }
-      // Invalidate so useCrmAgents re-fetches fresh data from Supabase
-      await queryClient.invalidateQueries({ queryKey: ["crm-agents"] });
-      setSyncDone(true);
-      setTimeout(() => setSyncDone(false), 4000);
-    } catch (e) {
-      setSyncError(String(e));
-    } finally {
-      setIsSyncing(false);
+    const res = await fetch("/api/etl/crm-agents", { method: "POST" });
+    const json = await res.json().catch(() => ({})) as {
+      errors?: string[];
+      error?: string;
+    };
+    if (!res.ok) {
+      setSyncError(json.error ?? `HTTP ${res.status}`);
+      return;
     }
+    if (json.errors?.length) {
+      setSyncError(`Partial sync — ${json.errors.length} agent(s) failed: ${json.errors[0]}`);
+    }
+    await queryClient.invalidateQueries({ queryKey: ["crm-agents"] });
   }, [queryClient]);
 
   return (
@@ -86,21 +52,7 @@ function IndividualKPIsContent({
             Carisma Wellness Group · Sales Team · {formatDateRangeLabel(dateFrom, dateTo)}
           </p>
         </div>
-        <div className="flex flex-col items-end gap-1">
-          <button
-            onClick={handleSync}
-            disabled={isSyncing || isLoading}
-            className={`flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg border transition-colors disabled:opacity-50 ${
-              syncDone
-                ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                : "hover:bg-muted"
-            }`}
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin" : ""}`} />
-            {isSyncing ? "Pulling from sheet…" : syncDone ? "Updated ✓" : "Re-Sync"}
-          </button>
-          <LastSyncedBadge />
-        </div>
+        <SyncButton onSync={handleSync} isExternalBusy={isLoading} />
       </div>
 
       {/* Error states */}
