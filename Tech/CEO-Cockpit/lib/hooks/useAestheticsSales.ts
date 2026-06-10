@@ -5,6 +5,41 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { fetchAll } from "@/lib/supabase/fetch-all";
 
+// ── Fuzzy cash classification ─────────────────────────────────────────────────
+
+function levDist(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const row = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    let prev = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = a[i - 1] === b[j - 1] ? row[j - 1] : 1 + Math.min(prev, row[j], row[j - 1]);
+      row[j - 1] = prev;
+      prev = tmp;
+    }
+    row[n] = prev;
+  }
+  return row[n];
+}
+
+/**
+ * Classifies a raw payment method string as "Cash" or "Non-Cash".
+ * Uses word-boundary regex first, then Levenshtein (≤1 edit) for single short words
+ * to catch typos ("cas", "cassh", "cahs"). Multi-word strings and "(Unspecified)"
+ * are conservatively treated as "Non-Cash".
+ */
+export function categorizeCash(raw: string): "Cash" | "Non-Cash" {
+  const clean = (raw ?? "").toLowerCase().trim();
+  if (!clean || clean === "(unspecified)") return "Non-Cash";
+  if (/\bcash\b/.test(clean)) return "Cash";
+  // Fuzzy only for single short words — prevents "card" (dist 2) from matching
+  const letters = clean.replace(/[^a-z]/g, "");
+  if (!/ /.test(clean) && letters.length >= 3 && letters.length <= 6) {
+    if (levDist(letters, "cash") <= 1) return "Cash";
+  }
+  return "Non-Cash";
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export interface AestheticsSaleRow {
@@ -42,9 +77,18 @@ export interface ServiceBreakdown {
 
 export interface PaymentMethodBreakdown {
   method:     string;
+  category:   "Cash" | "Non-Cash";
   tx_count:   number;
   revenue_ex: number;
   pct:        number;
+}
+
+export interface CashTypeBreakdown {
+  category:   "Cash" | "Non-Cash";
+  tx_count:   number;
+  revenue_ex: number;
+  pct:        number;
+  methods:    string[];  // raw method labels that mapped to this category
 }
 
 export interface AestheticsSalesTotals {
@@ -60,6 +104,7 @@ export interface UseAestheticsSalesResult {
   byPerson:         PersonBreakdown[];
   byService:        ServiceBreakdown[];
   byPaymentMethod:  PaymentMethodBreakdown[];
+  byCashType:       CashTypeBreakdown[];
   totals:           AestheticsSalesTotals;
   isFetching:       boolean;
   isSyncing:        boolean;
@@ -399,13 +444,43 @@ export function useAestheticsSales(dateFrom: Date, dateTo: Date, { skipSync = fa
     }
     const totalEx = Array.from(map.values()).reduce((s, v) => s + v.revenue_ex, 0) || 1;
     return Array.from(map.entries())
-      .map(([key, v]) => ({
-        method:     labelMap.get(key) ?? key,
+      .map(([key, v]) => {
+        const method = labelMap.get(key) ?? key;
+        return {
+          method,
+          category:   categorizeCash(method),
+          tx_count:   v.tx_count,
+          revenue_ex: Math.round(v.revenue_ex),
+          pct:        Math.round((v.revenue_ex / totalEx) * 1000) / 10,
+        };
+      })
+      .sort((a, b) => b.revenue_ex - a.revenue_ex);
+  }, [rows]);
+
+  const byCashType = useMemo<CashTypeBreakdown[]>(() => {
+    const cashMap = new Map<"Cash" | "Non-Cash", { tx_count: number; revenue_ex: number; methods: Set<string> }>([
+      ["Cash",     { tx_count: 0, revenue_ex: 0, methods: new Set() }],
+      ["Non-Cash", { tx_count: 0, revenue_ex: 0, methods: new Set() }],
+    ]);
+    for (const r of rows) {
+      const raw = r.payment_method?.trim() || "(Unspecified)";
+      const cat = categorizeCash(raw);
+      const agg = cashMap.get(cat)!;
+      agg.tx_count++;
+      agg.revenue_ex += r.price_ex_vat ?? 0;
+      agg.methods.add(raw);
+    }
+    const totalEx = Array.from(cashMap.values()).reduce((s, v) => s + v.revenue_ex, 0) || 1;
+    return (["Cash", "Non-Cash"] as const).map(cat => {
+      const v = cashMap.get(cat)!;
+      return {
+        category:   cat,
         tx_count:   v.tx_count,
         revenue_ex: Math.round(v.revenue_ex),
         pct:        Math.round((v.revenue_ex / totalEx) * 1000) / 10,
-      }))
-      .sort((a, b) => b.revenue_ex - a.revenue_ex);
+        methods:    [...v.methods].sort(),
+      };
+    });
   }, [rows]);
 
   const totals = useMemo<AestheticsSalesTotals>(() => {
@@ -429,6 +504,7 @@ export function useAestheticsSales(dateFrom: Date, dateTo: Date, { skipSync = fa
     byPerson,
     byService,
     byPaymentMethod,
+    byCashType,
     totals,
     isFetching,
     isSyncing:     syncMutation.isPending,
