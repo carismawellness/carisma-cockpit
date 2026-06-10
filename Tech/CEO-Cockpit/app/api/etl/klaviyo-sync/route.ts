@@ -25,6 +25,8 @@ export async function POST(req: NextRequest) {
   try { body = (await req.json()) as Record<string, unknown>; } catch { /* no body */ }
 
   const date      = typeof body.date       === "string" ? body.date       : yesterday();
+  const dateFrom  = typeof body.date_from   === "string" ? body.date_from   : undefined;
+  const dateTo    = typeof body.date_to     === "string" ? body.date_to     : undefined;
   const brandSlug = typeof body.brand_slug === "string" ? body.brand_slug : undefined;
 
   const VALID = new Set(["spa", "aesthetics", "slimming"]);
@@ -35,6 +37,8 @@ export async function POST(req: NextRequest) {
   try {
     const result = await runKlaviyoDailyEtl({
       date,
+      dateFrom,
+      dateTo,
       brandSlug: brandSlug as "spa" | "aesthetics" | "slimming" | undefined,
     });
 

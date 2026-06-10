@@ -244,10 +244,16 @@ export interface KlaviyoDailyEtlResult {
 }
 
 export async function runKlaviyoDailyEtl(opts: {
-  date:      string;   // YYYY-MM-DD — the day to snapshot
+  /** YYYY-MM-DD — the snapshot date (stored as date column). */
+  date:      string;
+  /** Optional date range. If omitted, both default to `date` (single-day). */
+  dateFrom?: string;
+  dateTo?:   string;
   brandSlug?: BrandSlug;
 }): Promise<KlaviyoDailyEtlResult> {
   const { date, brandSlug } = opts;
+  const dateFrom = opts.dateFrom ?? date;
+  const dateTo   = opts.dateTo   ?? date;
 
   const brandsToProcess = brandSlug
     ? [brandSlug]
@@ -266,12 +272,12 @@ export async function runKlaviyoDailyEtl(opts: {
     try {
       const brandId = await getBrandId(slug);
 
-      log.push(`[${slug}] fetching Klaviyo data for ${date}`);
+      log.push(`[${slug}] fetching Klaviyo data for ${dateFrom}…${dateTo} (stored as ${date})`);
 
       const [subscriberCount, activeFlows, aggregates] = await Promise.all([
         fetchSubscriberCount(apiKey),
         fetchActiveFlowCount(apiKey),
-        fetchCampaignAggregates(apiKey, date, date),
+        fetchCampaignAggregates(apiKey, dateFrom, dateTo),
       ]);
 
       const row: Record<string, unknown> = {

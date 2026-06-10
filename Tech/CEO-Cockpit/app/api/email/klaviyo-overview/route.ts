@@ -62,11 +62,12 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = getAdminClient();
+  const cols =
+    "date,total_subscribers,active_flows,campaigns_sent,total_recipients,total_delivered,open_rate_pct,click_rate_pct,unsubscribe_rate_pct,bounce_rate_pct,etl_synced_at";
+
   const { data, error } = await supabase
     .from("klaviyo_daily")
-    .select(
-      "date,total_subscribers,active_flows,campaigns_sent,total_recipients,total_delivered,open_rate_pct,click_rate_pct,unsubscribe_rate_pct,bounce_rate_pct,etl_synced_at",
-    )
+    .select(cols)
     .eq("brand_id", BRAND_ID[brand])
     .gte("date", from)
     .lte("date", to)
@@ -79,7 +80,20 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const rows = data ?? [];
+  let rows = data ?? [];
+
+  // Fallback: if no rows in the requested range (ETL hasn't backfilled it),
+  // show the most recent snapshot so the dashboard isn't blank.
+  if (rows.length === 0) {
+    const { data: latest } = await supabase
+      .from("klaviyo_daily")
+      .select(cols)
+      .eq("brand_id", BRAND_ID[brand])
+      .order("date", { ascending: false })
+      .limit(1);
+    rows = latest ?? [];
+  }
+
   if (rows.length === 0) {
     return NextResponse.json(EMPTY);
   }
