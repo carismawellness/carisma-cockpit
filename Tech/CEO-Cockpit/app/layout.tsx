@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { QueryProvider } from "@/lib/query-client";
 import { ThemeProvider } from "@/components/theme-provider";
+import { DateRangeProvider } from "@/lib/providers/DateRangeProvider";
 import "./globals.css";
 
 // All pages need Supabase at runtime — skip static prerendering
@@ -39,7 +40,9 @@ export default function RootLayout({
       </head>
       <body className={inter.className} suppressHydrationWarning>
         <ThemeProvider>
-          <QueryProvider>{children}</QueryProvider>
+          <QueryProvider>
+            <DateRangeProvider>{children}</DateRangeProvider>
+          </QueryProvider>
         </ThemeProvider>
       </body>
     </html>
