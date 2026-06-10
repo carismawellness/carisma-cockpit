@@ -11,7 +11,6 @@ import {
   Heart,
   Filter,
   BookOpen,
-  ClipboardList,
   type LucideIcon,
 } from "lucide-react";
 
@@ -44,16 +43,11 @@ export interface Department {
 
 export const departments: Department[] = [
   {
-    slug: "todo",
-    label: "To Do",
-    icon: ClipboardList,
-    path: "",
+    slug: "funnel",
+    label: "Funnel",
+    icon: Filter,
+    path: "/funnel",
     group: "General",
-    children: [
-      { slug: "funnel",     label: "Funnel",     path: "/funnel",     icon: Filter },
-      { slug: "hr",         label: "HR",         path: "/hr",         icon: Users },
-      { slug: "operations", label: "Operations", path: "/operations", icon: Settings },
-    ],
   },
   {
     slug: "sales",

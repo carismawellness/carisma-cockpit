@@ -15,22 +15,29 @@ export const dynamic = "force-dynamic";
 
 const BRAND_SLUGS = ["spa", "aesthetics", "slimming"] as const;
 
-// Default AOV per brand (€). Campaign-name keywords can override.
+// Default AOV per brand (€) — sourced from carismaspa.com, carismaaesthetics.com, carismaslimming.com (Jun 2026)
 const BRAND_AOV_DEFAULT: Record<string, number> = {
-  spa:        180,
-  aesthetics: 350,
-  slimming:  1200,
+  spa:        129,  // Spa Deluxe / mid-tier spa day package
+  aesthetics: 179,  // 1–2 area botox; most common aesthetic treatment
+  slimming:   199,  // Standardised entry package (Fat Freeze / EMSculpt Starter)
 };
 
 // Keyword → AOV overrides (checked against lowercased campaign name)
 const AOV_OVERRIDES: Array<{ keywords: string[]; aov: number }> = [
-  { keywords: ["fat freeze", "cryolipolysis"],    aov: 450  },
-  { keywords: ["hifu", "ultrasound"],             aov: 600  },
-  { keywords: ["laser", "ipl"],                   aov: 300  },
-  { keywords: ["facial", "hydrafacial"],          aov: 200  },
-  { keywords: ["botox", "filler", "injectables"], aov: 500  },
-  { keywords: ["weight loss", "slimming plan"],   aov: 1200 },
-  { keywords: ["massage", "spa day"],             aov: 180  },
+  // Spa
+  { keywords: ["couple", "couples", "romantic"],                              aov: 249 },
+  { keywords: ["hammam"],                                                      aov: 129 },
+  { keywords: ["spa day", "body ritual", "body treatment", "ritual"],         aov: 129 },
+  { keywords: ["massage"],                                                     aov:  99 },
+  // Aesthetics
+  { keywords: ["filler", "lip filler", "dermal filler"],                     aov: 269 },
+  { keywords: ["botox", "wrinkle", "anti-wrinkle", "injectable"],            aov: 179 },
+  { keywords: ["facial", "hydrafacial", "peel", "skin", "microneedling"],    aov: 149 },
+  { keywords: ["laser", "ipl", "hair removal"],                              aov: 199 },
+  // Slimming
+  { keywords: ["fat freeze", "coolsculpt", "cryolipolysis"],                 aov: 199 },
+  { keywords: ["emsculpt", "hifu", "body sculpt", "velashape", "cavitation"],aov: 199 },
+  { keywords: ["weight loss", "slimming plan", "glp", "ozempic", "mounjaro"],aov: 350 },
 ];
 
 function resolveAov(brandSlug: string, campaignName: string): number {
