@@ -9,7 +9,8 @@ import { Card } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/charts/config";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useMetaCampaignsFromDb as useMetaCampaigns, useGoogleCampaignsFromDb as useGoogleCampaigns } from "@/lib/hooks/useAdsCampaigns";
-import { useKlaviyoData } from "@/lib/hooks/useKlaviyoData";
+import { useKlaviyoOverview } from "@/lib/hooks/useKlaviyoOverview";
+import { FlowsTable } from "@/components/marketing/FlowsTable";
 import type { CampaignData } from "@/lib/types/ads";
 import {
   BarChart,
@@ -126,7 +127,7 @@ function SpaMarketingContent({
   /* --- Fetch real data from Meta, Google & Klaviyo APIs --- */
   const metaQuery = useMetaCampaigns("spa", dateFrom, dateTo);
   const googleQuery = useGoogleCampaigns("spa", dateFrom, dateTo);
-  const klaviyo = useKlaviyoData({ brand: "spa", dateFrom, dateTo });
+  const klaviyo = useKlaviyoOverview({ brand: "spa", dateFrom, dateTo });
 
   const metaCampaigns: CampaignData[] = metaQuery.data?.campaigns ?? [];
   const googleCampaigns: CampaignData[] = googleQuery.data?.campaigns ?? [];
@@ -136,12 +137,12 @@ function SpaMarketingContent({
   const tokenExpired = metaQuery.data?.tokenExpired || googleQuery.data?.tokenExpired;
 
   /* --- Klaviyo email metrics --- */
-  const emailOpenRate = Math.round(klaviyo.overview.overallOpenRate * 1000) / 10;
-  const emailClickRate = Math.round(klaviyo.overview.overallClickRate * 1000) / 10;
-  const emailUnsubRate = Math.round(klaviyo.overview.overallUnsubscribeRate * 1000) / 10;
+  const emailOpenRate = Math.round(klaviyo.overview.openRate * 1000) / 10;
+  const emailClickRate = Math.round(klaviyo.overview.clickRate * 1000) / 10;
+  const emailUnsubRate = Math.round(klaviyo.overview.unsubscribeRate * 1000) / 10;
   const emailTotalSubscribers = klaviyo.overview.totalSubscribers;
-  const campaignCount = klaviyo.overview.totalCampaignsSent;
-  const flowCount = klaviyo.overview.totalActiveFlows;
+  const campaignCount = klaviyo.overview.campaignsSent;
+  const flowCount = klaviyo.overview.activeFlows;
 
   /* --- Email revenue (Klaviyo API doesn't expose revenue — placeholder until integrated) --- */
   const emailCampaignRev = 0;
@@ -433,12 +434,6 @@ function SpaMarketingContent({
         </div>
       )}
 
-      {klaviyo.tokenMissing && (
-        <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-3 flex items-center justify-center gap-2">
-          <span className="text-sm font-semibold text-yellow-700">Klaviyo API key not configured for this brand</span>
-        </div>
-      )}
-
       {/* Ad Fatigue Alert Banner */}
       {anyFatigued && (
         <div className="rounded-lg bg-red-50 border border-red-200 p-3 flex items-center justify-center gap-2">
@@ -669,6 +664,12 @@ function SpaMarketingContent({
             <p className="text-xs font-medium uppercase tracking-wide" style={{ color: BRAND_COLOR }}>Active Flows</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900 mt-1">{flowCount}</p>
           </Card>
+        </div>
+
+        {/* Flow breakdown table */}
+        <div className="mt-6">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Flow Performance</h3>
+          <FlowsTable brand="spa" dateFrom={dateFrom} dateTo={dateTo} brandColor={BRAND_COLOR} />
         </div>
       </Card>
 

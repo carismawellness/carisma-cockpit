@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/charts/config";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useMetaCampaignsFromDb as useMetaCampaigns, useGoogleCampaignsFromDb as useGoogleCampaigns } from "@/lib/hooks/useAdsCampaigns";
-import { useKlaviyoData } from "@/lib/hooks/useKlaviyoData";
+import { useKlaviyoOverview } from "@/lib/hooks/useKlaviyoOverview";
 import type { CampaignData } from "@/lib/types/ads";
 
 /* ---------- brand colours ---------- */
@@ -124,9 +124,9 @@ function MarketingMasterContent({
   const googleSpa = useGoogleCampaigns("spa", dateFrom, dateTo);
   const googleAes = useGoogleCampaigns("aesthetics", dateFrom, dateTo);
   const googleSlim = useGoogleCampaigns("slimming", dateFrom, dateTo);
-  const { overview: klavSpa, loading: klavSpaLoading, tokenMissing: klavSpaTokenMissing } = useKlaviyoData({ brand: "spa", dateFrom, dateTo });
-  const { overview: klavAes, loading: klavAesLoading, tokenMissing: klavAesTokenMissing } = useKlaviyoData({ brand: "aesthetics", dateFrom, dateTo });
-  const { overview: klavSlim, loading: klavSlimLoading, tokenMissing: klavSlimTokenMissing } = useKlaviyoData({ brand: "slimming", dateFrom, dateTo });
+  const { overview: klavSpa, loading: klavSpaLoading } = useKlaviyoOverview({ brand: "spa", dateFrom, dateTo });
+  const { overview: klavAes, loading: klavAesLoading } = useKlaviyoOverview({ brand: "aesthetics", dateFrom, dateTo });
+  const { overview: klavSlim, loading: klavSlimLoading } = useKlaviyoOverview({ brand: "slimming", dateFrom, dateTo });
 
   const isLoading =
     metaSpa.isLoading || metaAes.isLoading || metaSlim.isLoading ||
@@ -252,9 +252,10 @@ function MarketingMasterContent({
         channel: "Email (Klaviyo)",
         rows: [
           { metric: "Subscribers", spa: fmtSubs(klavSpa.totalSubscribers), aesthetics: fmtSubs(klavAes.totalSubscribers), slimming: fmtSubs(klavSlim.totalSubscribers) },
-          { metric: "Campaigns Sent", spa: fmtSubs(klavSpa.totalCampaignsSent), aesthetics: fmtSubs(klavAes.totalCampaignsSent), slimming: fmtSubs(klavSlim.totalCampaignsSent) },
-          { metric: "Open Rate", spa: fmtPct(klavSpa.overallOpenRate), aesthetics: fmtPct(klavAes.overallOpenRate), slimming: fmtPct(klavSlim.overallOpenRate) },
-          { metric: "Click Rate", spa: fmtPct(klavSpa.overallClickRate), aesthetics: fmtPct(klavAes.overallClickRate), slimming: fmtPct(klavSlim.overallClickRate) },
+          { metric: "Campaigns Sent", spa: fmtSubs(klavSpa.campaignsSent), aesthetics: fmtSubs(klavAes.campaignsSent), slimming: fmtSubs(klavSlim.campaignsSent) },
+          { metric: "Active Flows", spa: fmtSubs(klavSpa.activeFlows), aesthetics: fmtSubs(klavAes.activeFlows), slimming: fmtSubs(klavSlim.activeFlows) },
+          { metric: "Open Rate", spa: fmtPct(klavSpa.openRate), aesthetics: fmtPct(klavAes.openRate), slimming: fmtPct(klavSlim.openRate) },
+          { metric: "Click Rate", spa: fmtPct(klavSpa.clickRate), aesthetics: fmtPct(klavAes.clickRate), slimming: fmtPct(klavSlim.clickRate) },
           { metric: "Revenue", spa: "—", aesthetics: "—", slimming: "—" },
           { metric: "ROAS", spa: "—", aesthetics: "—", slimming: "—" },
         ] as TableRow[],
@@ -267,12 +268,8 @@ function MarketingMasterContent({
     (metaSpa.data?.campaigns?.length ?? 0) + (metaAes.data?.campaigns?.length ?? 0) +
     (metaSlim.data?.campaigns?.length ?? 0) + (googleSpa.data?.campaigns?.length ?? 0) +
     (googleAes.data?.campaigns?.length ?? 0) + (googleSlim.data?.campaigns?.length ?? 0);
-  const hasKlaviyoData =
-    klavSpa.totalCampaignsSent > 0 || klavSpa.totalActiveFlows > 0 || klavSpa.totalRecipients > 0 ||
-    klavAes.totalCampaignsSent > 0 || klavAes.totalActiveFlows > 0 || klavAes.totalRecipients > 0 ||
-    klavSlim.totalCampaignsSent > 0 || klavSlim.totalActiveFlows > 0 || klavSlim.totalRecipients > 0;
+  const hasKlaviyoData = klavSpa.hasData || klavAes.hasData || klavSlim.hasData;
   const hasAnyData = totalCampaigns > 0 || hasKlaviyoData;
-  const anyKlaviyoTokenMissing = klavSpaTokenMissing || klavAesTokenMissing || klavSlimTokenMissing;
 
   if (isLoading) return <LoadingSkeleton />;
 
@@ -315,14 +312,6 @@ function MarketingMasterContent({
         <Card className="p-4 border-red-300 bg-red-50 dark:bg-red-950/20">
           <p className="text-sm text-red-800 dark:text-red-200">
             Error loading ad data: {anyError}
-          </p>
-        </Card>
-      )}
-
-      {anyKlaviyoTokenMissing && (
-        <Card className="p-4 border-amber-300 bg-amber-50 dark:bg-amber-950/20">
-          <p className="text-sm text-amber-800 dark:text-amber-200">
-            Klaviyo API key is missing for one or more brands. Email data may be incomplete.
           </p>
         </Card>
       )}

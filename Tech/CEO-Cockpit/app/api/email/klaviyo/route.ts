@@ -226,20 +226,36 @@ async function fetchCampaigns(apiKey: string): Promise<Record<string, unknown>[]
   return allCampaigns;
 }
 
-/** Fetch subscriber count by summing profile_count across all lists */
+/** Fetch subscriber count by summing per-list profile_count.
+ *
+ * Klaviyo's /lists/ collection endpoint does NOT expose profile_count as a
+ * sparse field. The count is only available on the single-list endpoint via
+ * `additional-fields[list]=profile_count`. So we list all lists, then issue
+ * one GET per list, with delays to stay under the 75/sec, 750/min limit.
+ *
+ * Returns the sum (may double-count contacts in multiple lists; treat as
+ * "reach" rather than "unique subscribers"). */
 async function fetchSubscriberCount(apiKey: string): Promise<number> {
   const hdrs = headers(apiKey);
   try {
-    const res = await fetch(
-      `${KLAVIYO_BASE}/lists/?fields[list]=name,profile_count`,
-      { headers: hdrs, next: { revalidate: 300 } },
-    );
-    if (!res.ok) return 0;
-    const json = await res.json() as { data?: { attributes?: { profile_count?: number } }[] };
-    const lists = json?.data ?? [];
+    const listsRes = await fetch(`${KLAVIYO_BASE}/lists/`, {
+      headers: hdrs,
+      next: { revalidate: 300 },
+    });
+    if (!listsRes.ok) return 0;
+    const listsJson = (await listsRes.json()) as { data?: { id: string }[] };
+    const lists = listsJson?.data ?? [];
+
     let total = 0;
     for (const list of lists) {
-      total += list?.attributes?.profile_count ?? 0;
+      const url = `${KLAVIYO_BASE}/lists/${list.id}/?additional-fields%5Blist%5D=profile_count`;
+      const r = await fetchWithRetry(url, { headers: hdrs });
+      if (!r.ok) continue;
+      const j = (await r.json()) as {
+        data?: { attributes?: { profile_count?: number } };
+      };
+      total += j?.data?.attributes?.profile_count ?? 0;
+      await sleep(150);
     }
     return total;
   } catch {

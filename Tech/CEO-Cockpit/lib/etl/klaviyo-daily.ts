@@ -62,24 +62,32 @@ async function getBrandId(slug: string): Promise<string> {
   return rows[0].id as string;
 }
 
-/** Get total subscriber count via profiles endpoint */
+/** Get total subscriber count by summing per-list profile_count.
+ *
+ * Klaviyo's /lists/ collection endpoint does NOT expose profile_count as a
+ * sparse field. The count is only available on the single-list endpoint via
+ * `additional-fields[list]=profile_count`. Sequential GET per list with
+ * delays to stay under the 75/sec, 750/min limit. Returns the sum (treat as
+ * "reach"; contacts in multiple lists are counted multiple times). */
 async function fetchSubscriberCount(apiKey: string): Promise<number> {
   try {
-    // Fetch lists with profile_count field
-    const res = await fetchWithRetry(
-      `${KLAVIYO_BASE}/lists/?fields[list]=name,profile_count`,
-      { headers: klaviyoHeaders(apiKey) },
-    );
-    if (!res.ok) return 0;
+    const listsRes = await fetchWithRetry(`${KLAVIYO_BASE}/lists/`, {
+      headers: klaviyoHeaders(apiKey),
+    });
+    if (!listsRes.ok) return 0;
+    const listsJson = (await listsRes.json()) as { data?: { id: string }[] };
+    const lists = listsJson.data ?? [];
 
-    const json = await res.json() as { data?: { attributes?: { profile_count?: number } }[] };
-    const lists = json.data ?? [];
-
-    // Sum profile_count across all lists (may double-count contacts in multiple lists)
-    // Use the largest single list as a proxy if sums seem unreliable
     let sum = 0;
     for (const list of lists) {
-      sum += list.attributes?.profile_count ?? 0;
+      const url = `${KLAVIYO_BASE}/lists/${list.id}/?additional-fields%5Blist%5D=profile_count`;
+      const r = await fetchWithRetry(url, { headers: klaviyoHeaders(apiKey) });
+      if (!r.ok) continue;
+      const j = (await r.json()) as {
+        data?: { attributes?: { profile_count?: number } };
+      };
+      sum += j.data?.attributes?.profile_count ?? 0;
+      await sleep(150);
     }
     return sum;
   } catch {
@@ -129,7 +137,49 @@ interface CampaignAggregates {
   bounce_rate_pct:       number | null;
 }
 
-/** Fetch campaign aggregate metrics for a date range */
+/** Run a *-values-report POST and return results. */
+async function fetchReport(
+  apiKey: string,
+  endpoint: "campaign-values-reports" | "flow-values-reports",
+  reportType: "campaign-values-report" | "flow-values-report",
+  dateFrom: string,
+  dateTo: string,
+  conversionMetricId: string,
+): Promise<Record<string, number>[]> {
+  const body = {
+    data: {
+      type: reportType,
+      attributes: {
+        statistics: [
+          "recipients", "delivered", "open_rate", "click_rate",
+          "unsubscribe_rate", "bounce_rate",
+        ],
+        timeframe: {
+          key:   "custom",
+          start: `${dateFrom}T00:00:00+00:00`,
+          end:   `${dateTo}T23:59:59+00:00`,
+        },
+        conversion_metric_id: conversionMetricId,
+        ...(reportType === "campaign-values-report"
+          ? { filter: 'equals(send_channel,"email")' }
+          : {}),
+      },
+    },
+  };
+  const res = await fetchWithRetry(
+    `${KLAVIYO_BASE}/${endpoint}/`,
+    { method: "POST", headers: klaviyoHeaders(apiKey), body: JSON.stringify(body) },
+  );
+  if (!res.ok) return [];
+  const json = (await res.json()) as {
+    data?: { attributes?: { results?: Record<string, number>[] } };
+  };
+  return json.data?.attributes?.results ?? [];
+}
+
+/** Fetch campaign + flow aggregate metrics for a date range.
+ *  The aggregate combines both send channels so dashboards reflect total
+ *  email reach, regardless of whether the account uses campaigns or flows. */
 async function fetchCampaignAggregates(
   apiKey: string,
   dateFrom: string,
@@ -149,37 +199,15 @@ async function fetchCampaignAggregates(
   if (!conversionMetricId) return empty;
 
   await sleep(1000);
-
-  const body = {
-    data: {
-      type: "campaign-values-report",
-      attributes: {
-        statistics: [
-          "recipients", "delivered", "open_rate", "click_rate",
-          "unsubscribe_rate", "bounce_rate",
-        ],
-        timeframe: {
-          key:   "custom",
-          start: `${dateFrom}T00:00:00+00:00`,
-          end:   `${dateTo}T23:59:59+00:00`,
-        },
-        conversion_metric_id: conversionMetricId,
-        filter: 'equals(send_channel,"email")',
-      },
-    },
-  };
-
-  const res = await fetchWithRetry(
-    `${KLAVIYO_BASE}/campaign-values-reports/`,
-    { method: "POST", headers: klaviyoHeaders(apiKey), body: JSON.stringify(body) },
+  const campaignResults = await fetchReport(
+    apiKey, "campaign-values-reports", "campaign-values-report",
+    dateFrom, dateTo, conversionMetricId,
   );
-
-  if (!res.ok) return empty;
-
-  const json = await res.json() as {
-    data?: { attributes?: { results?: Record<string, number>[] } };
-  };
-  const results = json.data?.attributes?.results ?? [];
+  await sleep(1000);
+  const flowResults = await fetchReport(
+    apiKey, "flow-values-reports", "flow-values-report",
+    dateFrom, dateTo, conversionMetricId,
+  );
 
   let totalRecipients = 0;
   let totalDelivered  = 0;
@@ -188,7 +216,7 @@ async function fetchCampaignAggregates(
   let weightedUnsub   = 0;
   let weightedBounce  = 0;
 
-  for (const r of results) {
+  for (const r of [...campaignResults, ...flowResults]) {
     const recipients = r.recipients ?? 0;
     const delivered  = r.delivered  ?? 0;
     totalRecipients += recipients;
@@ -200,7 +228,7 @@ async function fetchCampaignAggregates(
   }
 
   return {
-    campaigns_sent:       results.length,
+    campaigns_sent:       campaignResults.length,
     total_recipients:     totalRecipients,
     total_delivered:      totalDelivered,
     open_rate_pct:        totalDelivered > 0 ? Math.round((weightedOpen   / totalDelivered) * 100 * 10000) / 10000 : null,

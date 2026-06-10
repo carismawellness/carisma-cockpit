@@ -9,7 +9,8 @@ import { Card } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/charts/config";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useMetaCampaignsFromDb as useMetaCampaigns, useGoogleCampaignsFromDb as useGoogleCampaigns } from "@/lib/hooks/useAdsCampaigns";
-import { useKlaviyoData } from "@/lib/hooks/useKlaviyoData";
+import { useKlaviyoOverview } from "@/lib/hooks/useKlaviyoOverview";
+import { FlowsTable } from "@/components/marketing/FlowsTable";
 import type { CampaignData } from "@/lib/types/ads";
 import {
   BarChart,
@@ -309,7 +310,7 @@ function AestheticsMarketingContent({
   }, [metaCampaigns, googleCampaigns]);
 
   /* ---- Email data (Klaviyo API) ---- */
-  const { overview: klaviyo, loading: klaviyoLoading } = useKlaviyoData({
+  const { overview: klaviyo, loading: klaviyoLoading } = useKlaviyoOverview({
     brand: "aesthetics",
     dateFrom,
     dateTo,
@@ -687,7 +688,7 @@ function AestheticsMarketingContent({
               <div className="rounded-lg border bg-white p-4 h-20" />
             </div>
           </div>
-        ) : klaviyo.totalRecipients === 0 && klaviyo.totalCampaignsSent === 0 && klaviyo.totalActiveFlows === 0 ? (
+        ) : !klaviyo.hasData ? (
           <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-6 py-8 text-center">
             <p className="text-sm font-medium text-gray-600">No email data available for this period.</p>
           </div>
@@ -713,19 +714,13 @@ function AestheticsMarketingContent({
 
             {/* Middle: Key Rates as Progress Bars */}
             <div className="space-y-4 mb-6">
-              <EmailRateBar label="Open Rate" value={parseFloat((klaviyo.overallOpenRate * 100).toFixed(1))} max={100} />
-              <EmailRateBar label="Click Rate" value={parseFloat((klaviyo.overallClickRate * 100).toFixed(1))} max={10} />
-              <EmailRateBar label="Unsubscribe Rate" value={parseFloat((klaviyo.overallUnsubscribeRate * 100).toFixed(1))} max={2} />
+              <EmailRateBar label="Open Rate" value={parseFloat((klaviyo.openRate * 100).toFixed(1))} max={100} />
+              <EmailRateBar label="Click Rate" value={parseFloat((klaviyo.clickRate * 100).toFixed(1))} max={10} />
+              <EmailRateBar label="Unsubscribe Rate" value={parseFloat((klaviyo.unsubscribeRate * 100).toFixed(1))} max={2} />
             </div>
 
             {/* Bottom: Summary Stats */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <Card className="p-4 text-center">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                  Email ROAS
-                </p>
-                <p className="text-xl md:text-2xl font-bold text-gray-400 mt-1">&mdash;</p>
-              </Card>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
               <Card className="p-4 text-center">
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                   Total Subscribers
@@ -734,10 +729,28 @@ function AestheticsMarketingContent({
               </Card>
               <Card className="p-4 text-center">
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                  Pop-up Capture Rate
+                  Campaigns Sent
+                </p>
+                <p className="text-xl md:text-2xl font-bold text-gray-900 mt-1">{klaviyo.campaignsSent}</p>
+              </Card>
+              <Card className="p-4 text-center">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  Active Flows
+                </p>
+                <p className="text-xl md:text-2xl font-bold text-gray-900 mt-1">{klaviyo.activeFlows}</p>
+              </Card>
+              <Card className="p-4 text-center">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  Email ROAS
                 </p>
                 <p className="text-xl md:text-2xl font-bold text-gray-400 mt-1">&mdash;</p>
               </Card>
+            </div>
+
+            {/* Flow breakdown table */}
+            <div className="mt-6">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">Flow Performance</h3>
+              <FlowsTable brand="aesthetics" dateFrom={dateFrom} dateTo={dateTo} brandColor="#DEEBEB" />
             </div>
           </>
         )}
