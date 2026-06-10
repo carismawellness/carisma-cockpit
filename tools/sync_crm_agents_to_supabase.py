@@ -194,28 +194,56 @@ def parse_percent(val: str) -> float:
         return 0.0
 
 
-def parse_date(val: str) -> str | None:
+def parse_date(val: str, fmt: str | None = None) -> str | None:
     """
     Parse DD/MM/YYYY or D/M/YYYY → ISO 'YYYY-MM-DD'.
     Returns None if the cell is empty, equals 'Date', or is not parseable.
+    If `fmt` is given, only that format is tried (used after auto-detection).
     """
     v = val.strip()
     if not v or v.lower() == "date":
         return None
-    for fmt in ("%d/%m/%Y", "%d/%m/%y"):
+    formats = [fmt] if fmt else ("%m/%d/%Y", "%d/%m/%Y", "%m/%d/%y", "%d/%m/%y", "%Y-%m-%d")
+    for f in formats:
         try:
-            return datetime.strptime(v, fmt).strftime("%Y-%m-%d")
+            return datetime.strptime(v, f).strftime("%Y-%m-%d")
         except ValueError:
             continue
     return None
 
 
+def classify_date_string(s: str) -> str:
+    """Classify a single date string as 'mdy', 'dmy', 'iso', 'ambig', or 'unknown'."""
+    s = s.strip()
+    if not s or s.lower() == "date":
+        return "unknown"
+    if re.match(r"^\d{4}-\d{1,2}-\d{1,2}$", s):
+        return "iso"
+    m = re.match(r"^(\d{1,2})/(\d{1,2})/\d{2,4}$", s)
+    if not m:
+        return "unknown"
+    a, b = int(m.group(1)), int(m.group(2))
+    if a > 12 and b <= 12:
+        return "dmy"
+    if b > 12 and a <= 12:
+        return "mdy"
+    return "ambig"
+
+
+def detect_layout(rows: list[list[str]]) -> str:
+    """Inspect the first 2 header rows. Returns 'sdr' if the tab uses the
+    Outbound/Inbound/Chat/Total/KPIs layout, else 'chat'."""
+    text = " ".join(c.lower() for r in rows[:2] for c in r)
+    return "sdr" if ("outbound" in text and "inbound" in text) else "chat"
+
+
 # ── Main sync logic ───────────────────────────────────────────────────────────
 
-# Agents whose tab uses the SDR structure instead of the standard chat structure.
-# SDR columns: Date | Outbound(Sales,Dials,Answered,Booked,Dep) | Inbound(Sales,Recv,Booked,Dep) |
-#              Chat(Sales,Conv,Booked,Dep) | Total(Sales,Booked,Dep,Rate,Dials,Dep%)
-SDR_AGENTS = {"nathalia"}
+# Layout is auto-detected per tab from the header rows (see detect_layout).
+# Two templates exist in the CRM Master sheet:
+#   • chat: Date | Live Chat(Sales,Msg,Booked,Dep) | CRM(...) | Other(...) | Total(...)
+#   • sdr:  Date | Outbound(Sales,Dials,Answered,Booked,Dep) | Inbound(Sales,Recv,Booked,Dep)
+#                | Chat(Sales,Conv,Booked,Dep) | Total(Sales,Booked,Dep,Rate,Dials,Dep%)
 
 
 def _build_chat_row(slug: str, date_iso: str, row: list) -> dict:
@@ -284,22 +312,52 @@ def _build_sdr_row(slug: str, date_iso: str, row: list) -> dict:
     }
 
 
-def sync_agent(slug: str, tab_name: str, sh: gspread.Spreadsheet) -> int:
-    """Read one agent tab, build rows, upsert to Supabase. Returns row count synced."""
+def sync_agent(slug: str, tab_name: str, sh: gspread.Spreadsheet, *, verbose: bool = False) -> tuple[int, str, dict]:
+    """Read one agent tab, build rows, upsert to Supabase.
+    Returns (rows_synced, layout, per_format_count).
+
+    Date format handling: classifies each row's date as mdy/dmy/iso/ambig and
+    parses with the matching format. Ambiguous dates (day≤12 AND month≤12)
+    inherit the format used by the most recent UNAMBIGUOUS row above them,
+    falling back to M/D/Y (which matches the Google Sheets default + the bulk
+    of recent rows in the CRM Master sheet)."""
     ws  = sh.worksheet(tab_name)
     raw = ws.get_all_values()
-    is_sdr = slug in SDR_AGENTS
+    layout = detect_layout(raw[:2])
+    is_sdr = layout == "sdr"
 
-    # Use a dict keyed by date so later rows overwrite earlier duplicates
+    fmt_map = {"mdy": "%m/%d/%Y", "dmy": "%d/%m/%Y", "iso": "%Y-%m-%d"}
     rows_by_date: dict[str, dict] = {}
-    for row in raw[2:]:
-        date_iso = parse_date(_cell(row, 0))
-        if date_iso is None:
-            continue
-        record = _build_sdr_row(slug, date_iso, row) if is_sdr else _build_chat_row(slug, date_iso, row)
-        rows_by_date[date_iso] = record  # last entry for a date wins
+    counts = {"mdy": 0, "dmy": 0, "iso": 0, "ambig": 0, "skipped": 0}
+    last_unambig_fmt = "mdy"  # default — most recent CRM Master rows are M/D/Y
 
-    return _supabase_upsert("crm_agent_daily", list(rows_by_date.values()), "agent_slug,date")
+    for row in raw[2:]:
+        raw_date = _cell(row, 0)
+        if not raw_date:
+            continue
+        kind = classify_date_string(raw_date)
+        if kind in fmt_map:
+            chosen_fmt = fmt_map[kind]
+            last_unambig_fmt = kind
+        elif kind == "ambig":
+            chosen_fmt = fmt_map[last_unambig_fmt]
+        else:
+            counts["skipped"] += 1
+            continue
+
+        date_iso = parse_date(raw_date, fmt=chosen_fmt)
+        if date_iso is None:
+            counts["skipped"] += 1
+            continue
+        counts[kind if kind in counts else "ambig"] += 1
+        record = _build_sdr_row(slug, date_iso, row) if is_sdr else _build_chat_row(slug, date_iso, row)
+        rows_by_date[date_iso] = record
+
+    if verbose:
+        print(f"  [{slug}] layout={layout}, counts={counts}")
+
+    n = _supabase_upsert("crm_agent_daily", list(rows_by_date.values()), "agent_slug,date")
+    return n, layout, counts
 
 
 def main() -> None:
@@ -307,8 +365,8 @@ def main() -> None:
     total = 0
     for slug, tab_name in AGENTS:
         try:
-            count = sync_agent(slug, tab_name, sh)
-            print(f"Synced {slug}: {count} rows")
+            count, layout, counts = sync_agent(slug, tab_name, sh, verbose=True)
+            print(f"Synced {slug}: {count} rows (layout={layout})")
             total += count
         except gspread.exceptions.WorksheetNotFound:
             print(f"WARNING: Tab '{tab_name}' not found — skipping {slug}")
