@@ -48,6 +48,11 @@ function BrandFunnel({
   const den    = won + lost + noShow;
   const winRate = den > 0 ? ((won / den) * 100).toFixed(1) : "—";
 
+  const totalInPeriod =
+    active + won + (stages["Active Member"] ?? 0) +
+    (outcomes["Booking Lost"] ?? 0) + (outcomes["No Show"] ?? 0) + (outcomes["Nurturing"] ?? 0);
+  const leadConvRate = totalInPeriod > 0 ? ((won / totalInPeriod) * 100).toFixed(1) : "—";
+
   return (
     <div className="rounded-xl border border-gray-200 p-4">
       <div className="flex items-center gap-2 mb-3">
@@ -57,7 +62,7 @@ function BrandFunnel({
         </h4>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 mb-4">
+      <div className="grid grid-cols-4 gap-2 mb-4">
         <div>
           <p className="text-[10px] uppercase tracking-wide text-gray-500">Active</p>
           <p className="text-lg font-bold text-gray-900 tabular-nums">{active.toLocaleString()}</p>
@@ -70,6 +75,12 @@ function BrandFunnel({
           <p className="text-[10px] uppercase tracking-wide text-gray-500">Win Rate</p>
           <p className="text-lg font-bold text-gray-900 tabular-nums">
             {winRate === "—" ? "—" : `${winRate}%`}
+          </p>
+        </div>
+        <div>
+          <p className="text-[10px] uppercase tracking-wide text-gray-500">Lead Conv.</p>
+          <p className="text-lg font-bold text-blue-600 tabular-nums">
+            {leadConvRate === "—" ? "—" : `${leadConvRate}%`}
           </p>
         </div>
       </div>
@@ -151,12 +162,15 @@ export function PipelineFunnel({
       0,
     );
 
-  const totalActive = sumByStages(["New Leads", "Call Back", "Contacted"]);
-  const totalWon    = sumByStages(["Booking Won"]);
-  const totalLost   = sumByStages(["Booking Lost"]);
-  const totalNoShow = sumByStages(["No Show"]);
-  const closeDen    = totalWon + totalLost + totalNoShow;
-  const winRate     = closeDen > 0 ? ((totalWon / closeDen) * 100).toFixed(1) : "—";
+  const totalActive      = sumByStages(["New Leads", "Call Back", "Contacted"]);
+  const totalWon         = sumByStages(["Booking Won"]);
+  const totalLost        = sumByStages(["Booking Lost"]);
+  const totalNoShow      = sumByStages(["No Show"]);
+  const closeDen         = totalWon + totalLost + totalNoShow;
+  const winRate          = closeDen > 0 ? ((totalWon / closeDen) * 100).toFixed(1) : "—";
+
+  const totalAllLeads    = sumByStages(["New Leads", "Call Back", "Contacted", "Booking Won", "Active Member", "Booking Lost", "No Show", "Nurturing"]);
+  const groupLeadConv    = totalAllLeads > 0 ? ((totalWon / totalAllLeads) * 100).toFixed(1) : "—";
 
   if (isLoading) {
     return <div className="h-[500px] rounded-xl bg-gray-100 animate-pulse" />;
@@ -206,6 +220,12 @@ export function PipelineFunnel({
             <p className="text-xs text-muted-foreground">Group Win Rate</p>
             <p className="text-2xl font-bold text-foreground tabular-nums">
               {winRate === "—" ? "—" : `${winRate}%`}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Lead Conv.</p>
+            <p className="text-2xl font-bold text-blue-600 tabular-nums">
+              {groupLeadConv === "—" ? "—" : `${groupLeadConv}%`}
             </p>
           </div>
         </div>

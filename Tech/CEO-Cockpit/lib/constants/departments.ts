@@ -68,7 +68,6 @@ export const departments: Department[] = [
     path: "/crm",
     group: "CRM",
     children: [
-      { slug: "crm-overview", label: "Overview", path: "/crm", icon: Headphones },
       {
         slug: "crm-individual",
         label: "Agent KPIs",
