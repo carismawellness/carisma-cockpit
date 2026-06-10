@@ -16,6 +16,17 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CrmAgent, CrmAgentRow } from "@/lib/hooks/useCrmAgents";
 import { chartColors, formatCurrency, formatPercent } from "@/lib/charts/config";
+import { AGENT_META_BY_SLUG } from "@/lib/constants/agents";
+
+// Channel labels differ by agent role:
+//   Chat agents → Live Chat / GHL / Email  (matches their sheet column headers)
+//   SDR agents  → Chat / Inbound / Outbound
+function channelLabels(slug: string): [string, string, string] {
+  const role = AGENT_META_BY_SLUG[slug]?.role;
+  return role === "Chat"
+    ? ["Live Chat", "GHL", "Email"]
+    : ["Chat", "Inbound", "Outbound"];
+}
 
 const TARGET_CONV_RATE = 25;
 const TARGET_DEPOSIT_PCT = 70;
@@ -87,6 +98,7 @@ interface AgentDetailPanelProps {
 
 export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
   const { totals, rows } = agent;
+  const [ch1, ch2, ch3] = channelLabels(agent.slug);
 
   const chartRows = rows.map((r: CrmAgentRow) => {
     // Sheet's total_sales column is often empty for SDR — derive from channels
@@ -95,9 +107,9 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
       date:          format(parseISO(r.date), "d MMM"),
       "Total Sales": channelSum > 0 ? channelSum : (r.total_sales ?? 0),
       "Conv %":      Number((r.conversion_rate_pct ?? 0).toFixed(1)),
-      "LC":          r.lc_sales,
-      "CRM":         r.crm_sales,
-      "Other":       r.other_sales,
+      [ch1]:         r.lc_sales,
+      [ch2]:         r.crm_sales,
+      [ch3]:         r.other_sales,
     };
   });
 
@@ -184,9 +196,9 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
                 <YAxis tickFormatter={(v) => `€${v}`} tick={{ fontSize: 11 }} />
                 <Tooltip content={<CustomTooltip />} />
                 <Legend wrapperStyle={{ paddingTop: 8 }} />
-                <Bar dataKey="LC"    stackId="ch" fill={chartColors.spa}        radius={[0, 0, 0, 0]} />
-                <Bar dataKey="CRM"   stackId="ch" fill={chartColors.aesthetics} radius={[0, 0, 0, 0]} />
-                <Bar dataKey="Other" stackId="ch" fill={chartColors.slimming}   radius={[4, 4, 0, 0]} />
+                <Bar dataKey={ch1} stackId="ch" fill={chartColors.spa}        radius={[0, 0, 0, 0]} />
+                <Bar dataKey={ch2} stackId="ch" fill={chartColors.aesthetics} radius={[0, 0, 0, 0]} />
+                <Bar dataKey={ch3} stackId="ch" fill={chartColors.slimming}   radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
