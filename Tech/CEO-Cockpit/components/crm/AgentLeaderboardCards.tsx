@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import {
   ComposedChart,
   Bar,
+  Cell,
   Line,
   XAxis,
   YAxis,
@@ -19,13 +20,29 @@ import { AGENT_META_BY_SLUG, BRAND_ORDER, type AgentBrand } from "@/lib/constant
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatPercent } from "@/lib/charts/config";
 
-// ── Channel colours — consistent across all agents ───────────────────────────
-// Role determines the display name, not the color.
+// ── Google brand palette — one distinct colour per channel ───────────────────
+// Chat agents:  lc=Live Chat  crm=GHL      other=Email
+// SDR  agents:  lc=Chat       crm=Inbound  other=Outbound
 const CH = {
-  lc:    { color: "#7BA7BC" }, // Live Chat (Chat agents) / Chat (SDR agents)
-  crm:   { color: "#C9A96E" }, // GHL (Chat agents) / Inbound (SDR agents)
-  other: { color: "#9CAF88" }, // Email (Chat agents) / Outbound (SDR agents)
+  liveChat: "#4285F4", // Google Blue
+  ghl:      "#F9AB00", // Google Yellow
+  email:    "#EA4335", // Google Red
+  chat:     "#9334E6", // Google Purple
+  inbound:  "#12B5CB", // Google Cyan
+  outbound: "#34A853", // Google Green
 };
+
+function slotColor(role: string, slot: "lc" | "crm" | "other"): string {
+  if (role === "Chat") return ({ lc: CH.liveChat, crm: CH.ghl,     other: CH.email    })[slot];
+  return                       ({ lc: CH.chat,     crm: CH.inbound, other: CH.outbound })[slot];
+}
+
+function slotLabel(role: string, slot: "lc" | "crm" | "other"): string {
+  if (role === "Chat") return ({ lc: "Live Chat", crm: "GHL",     other: "Email"    })[slot];
+  return                       ({ lc: "Chat",      crm: "Inbound", other: "Outbound" })[slot];
+}
+
+// ── Brand colours ─────────────────────────────────────────────────────────────
 
 const BRAND_BG: Record<AgentBrand, string> = {
   SPA:        "#FBF9F7",
@@ -77,9 +94,7 @@ function toRow(agent: CrmAgent): ChartRow | null {
     brand:      meta.brand,
     role:       meta.role,
     revenue,
-    lc,
-    crm,
-    other,
+    lc, crm, other,
     bookings:   agent.totals.total_bookings,
     depositPct: Math.round(depositPct * 10) / 10,
     convRate:   agent.totals.avg_conversion_rate,
@@ -88,21 +103,13 @@ function toRow(agent: CrmAgent): ChartRow | null {
   };
 }
 
-// Brand-first sort: Spa → Aesthetics → Slimming, revenue desc within each brand
 function sortRows(rows: ChartRow[]): ChartRow[] {
   const result: ChartRow[] = [];
   for (const brand of BRAND_ORDER) {
-    const group = rows
-      .filter((r) => r.brand === brand)
-      .sort((a, b) => b.revenue - a.revenue);
+    const group = rows.filter((r) => r.brand === brand).sort((a, b) => b.revenue - a.revenue);
     result.push(...group);
   }
   return result;
-}
-
-function chLabel(role: string, ch: "lc" | "crm" | "other"): string {
-  if (role === "Chat") return { lc: "Live Chat", crm: "GHL", other: "Email" }[ch];
-  return { lc: "Chat", crm: "Inbound", other: "Outbound" }[ch];
 }
 
 // ── Custom X-axis tick ────────────────────────────────────────────────────────
@@ -144,15 +151,13 @@ function MetricTick({
 // ── Custom tooltip ────────────────────────────────────────────────────────────
 
 function CustomTooltip({
-  active,
-  payload,
+  active, payload,
 }: {
   active?: boolean;
   payload?: Array<{ payload: ChartRow }>;
 }) {
   if (!active || !payload || payload.length === 0) return null;
   const row = payload[0].payload;
-  const isChat = row.role === "Chat";
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-lg space-y-0.5 min-w-[190px]">
@@ -161,19 +166,19 @@ function CustomTooltip({
       <div className="border-t border-gray-100 my-1.5" />
       {row.lc > 0 && (
         <div className="flex justify-between gap-4">
-          <span style={{ color: CH.lc.color }} className="font-medium">{isChat ? "Live Chat" : "Chat"}</span>
+          <span style={{ color: slotColor(row.role, "lc") }} className="font-medium">{slotLabel(row.role, "lc")}</span>
           <span className="font-semibold tabular-nums">{formatCurrency(row.lc)}</span>
         </div>
       )}
       {row.crm > 0 && (
         <div className="flex justify-between gap-4">
-          <span style={{ color: CH.crm.color }} className="font-medium">{isChat ? "GHL" : "Inbound"}</span>
+          <span style={{ color: slotColor(row.role, "crm") }} className="font-medium">{slotLabel(row.role, "crm")}</span>
           <span className="font-semibold tabular-nums">{formatCurrency(row.crm)}</span>
         </div>
       )}
       {row.other > 0 && (
         <div className="flex justify-between gap-4">
-          <span style={{ color: CH.other.color }} className="font-medium">{isChat ? "Email" : "Outbound"}</span>
+          <span style={{ color: slotColor(row.role, "other") }} className="font-medium">{slotLabel(row.role, "other")}</span>
           <span className="font-semibold tabular-nums">{formatCurrency(row.other)}</span>
         </div>
       )}
@@ -204,10 +209,7 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
     );
   }
 
-  const allRows = agents
-    .map(toRow)
-    .filter((r): r is ChartRow => r !== null);
-
+  const allRows = agents.map(toRow).filter((r): r is ChartRow => r !== null);
   const rows = sortRows(allRows.filter((r) => r.revenue > 0 || r.activeDays > 0));
   const inactiveRows = allRows.filter((r) => r.revenue === 0 && r.activeDays === 0);
 
@@ -219,14 +221,12 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
     );
   }
 
-  // Team median revenue
   const teamMedianRevenue = (() => {
     const sorted = [...rows].map((r) => r.revenue).sort((a, b) => a - b);
     const mid = Math.floor(sorted.length / 2);
     return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
   })();
 
-  // Brand section boundaries for background shading
   const brandSections: Array<{ brand: AgentBrand; x1: string; x2: string }> = [];
   for (const brand of BRAND_ORDER) {
     const group = rows.filter((r) => r.brand === brand);
@@ -235,36 +235,41 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
     }
   }
 
+  // Legend items: Chat-role channels left, SDR-role channels right
+  const legendItems = [
+    { color: CH.liveChat, label: "Live Chat" },
+    { color: CH.ghl,      label: "GHL"       },
+    { color: CH.email,    label: "Email"      },
+    { color: CH.chat,     label: "Chat"       },
+    { color: CH.inbound,  label: "Inbound"    },
+    { color: CH.outbound, label: "Outbound"   },
+  ];
+
   return (
     <Card>
       <CardHeader className="pb-1">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <CardTitle className="text-base font-semibold">Agent Leaderboard</CardTitle>
-          {/* Channel colour legend */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: CH.lc.color }} />
-              Live Chat · Chat
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: CH.crm.color }} />
-              GHL · Inbound
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: CH.other.color }} />
-              Email · Outbound
-            </span>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base font-semibold">Agent Leaderboard</CardTitle>
+            <div className="mt-1 flex gap-3 text-[10px] font-semibold uppercase tracking-widest">
+              {brandSections.map(({ brand }) => (
+                <span key={brand} style={{ color: BRAND_LABEL_COLOR[brand] }}>{brand}</span>
+              ))}
+            </div>
+          </div>
+          {/* Channel legend */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+            {legendItems.map(({ color, label }) => (
+              <span key={label} className="flex items-center gap-1">
+                <span className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: color }} />
+                {label}
+              </span>
+            ))}
             <span className="flex items-center gap-1">
               <span className="inline-block h-2 w-5 rounded-full" style={{ backgroundColor: "#E07A5F" }} />
               Deposit %
             </span>
           </div>
-        </div>
-        {/* Brand group labels */}
-        <div className="mt-1 flex gap-3 text-[10px] font-semibold uppercase tracking-widest">
-          {brandSections.map(({ brand }) => (
-            <span key={brand} style={{ color: BRAND_LABEL_COLOR[brand] }}>{brand}</span>
-          ))}
         </div>
       </CardHeader>
 
@@ -275,16 +280,9 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
               <ComposedChart data={rows} margin={{ top: 22, right: 30, left: 0, bottom: 130 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
 
-                {/* Brand background sections */}
+                {/* Brand background shading */}
                 {brandSections.map(({ brand, x1, x2 }) => (
-                  <ReferenceArea
-                    key={brand}
-                    x1={x1}
-                    x2={x2}
-                    fill={BRAND_BG[brand]}
-                    fillOpacity={1}
-                    stroke="none"
-                  />
+                  <ReferenceArea key={brand} x1={x1} x2={x2} fill={BRAND_BG[brand]} fillOpacity={1} stroke="none" />
                 ))}
 
                 <XAxis
@@ -319,50 +317,24 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
                 />
                 <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(0,0,0,0.03)" }} />
 
-                {/* Team median reference line */}
                 <ReferenceLine
                   yAxisId="rev"
                   y={teamMedianRevenue}
                   stroke="#A1A1AA"
                   strokeDasharray="4 4"
                   strokeWidth={1}
-                  label={{
-                    value: `Median ${formatCurrency(teamMedianRevenue)}`,
-                    position: "insideTopRight",
-                    fill: "#71717A",
-                    fontSize: 10,
-                  }}
+                  label={{ value: `Median ${formatCurrency(teamMedianRevenue)}`, position: "insideTopRight", fill: "#71717A", fontSize: 10 }}
                 />
 
-                {/* Stacked channel bars — lc bottom, crm middle, other top */}
-                <Bar
-                  yAxisId="rev"
-                  dataKey="lc"
-                  stackId="ch"
-                  name={`${chLabel("Chat", "lc")} / ${chLabel("SDR", "lc")}`}
-                  fill={CH.lc.color}
-                  barSize={52}
-                  radius={[0, 0, 0, 0]}
-                />
-                <Bar
-                  yAxisId="rev"
-                  dataKey="crm"
-                  stackId="ch"
-                  name={`${chLabel("Chat", "crm")} / ${chLabel("SDR", "crm")}`}
-                  fill={CH.crm.color}
-                  barSize={52}
-                  radius={[0, 0, 0, 0]}
-                />
-                <Bar
-                  yAxisId="rev"
-                  dataKey="other"
-                  stackId="ch"
-                  name={`${chLabel("Chat", "other")} / ${chLabel("SDR", "other")}`}
-                  fill={CH.other.color}
-                  barSize={52}
-                  radius={[6, 6, 0, 0]}
-                >
-                  {/* Total revenue label above the full stacked bar */}
+                {/* Stacked bars: bottom=lc, middle=crm, top=other — Cell applies per-row channel colour */}
+                <Bar yAxisId="rev" dataKey="lc" stackId="ch" barSize={52} radius={[0, 0, 0, 0]}>
+                  {rows.map((r) => <Cell key={r.slug} fill={slotColor(r.role, "lc")} />)}
+                </Bar>
+                <Bar yAxisId="rev" dataKey="crm" stackId="ch" barSize={52} radius={[0, 0, 0, 0]}>
+                  {rows.map((r) => <Cell key={r.slug} fill={slotColor(r.role, "crm")} />)}
+                </Bar>
+                <Bar yAxisId="rev" dataKey="other" stackId="ch" barSize={52} radius={[6, 6, 0, 0]}>
+                  {rows.map((r) => <Cell key={r.slug} fill={slotColor(r.role, "other")} />)}
                   <LabelList
                     dataKey="revenue"
                     position="top"
@@ -374,7 +346,6 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
                   />
                 </Bar>
 
-                {/* Deposit % overlay line */}
                 <Line
                   yAxisId="dep"
                   type="monotone"
@@ -390,7 +361,6 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
           </div>
         </div>
 
-        {/* Inactive agents */}
         {inactiveRows.length > 0 && (
           <div className="mt-4 border-t border-gray-100 pt-3">
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
