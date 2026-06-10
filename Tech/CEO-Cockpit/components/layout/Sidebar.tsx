@@ -52,21 +52,33 @@ function SubNavItem({
 
   return (
     <div>
-      <button
-        onClick={() => setOpen(!open)}
+      <div
         className={cn(
-          "w-full flex items-center gap-2.5 rounded-lg text-[13px] font-medium transition-all px-3 py-2 cursor-pointer",
+          "w-full flex items-center gap-2.5 rounded-lg text-[13px] font-medium transition-all pr-1",
           isActive || isSubActive
-            ? "text-gold"
+            ? "text-gold bg-gold-bg/40"
             : "text-text-secondary hover:bg-warm-gray hover:text-charcoal"
         )}
       >
-        {ChildIcon && (
-          <ChildIcon className={cn("h-[15px] w-[15px] shrink-0", isActive || isSubActive ? "text-gold" : "text-text-secondary")} />
-        )}
-        <span className="truncate flex-1 text-left">{child.label}</span>
-        <ChevronDown className={cn("h-3 w-3 transition-transform duration-200", open ? "rotate-0" : "-rotate-90")} />
-      </button>
+        <Link
+          href={child.path}
+          onClick={onMobileClose}
+          className="flex items-center gap-2.5 px-3 py-2 flex-1 min-w-0"
+        >
+          {ChildIcon && (
+            <ChildIcon className={cn("h-[15px] w-[15px] shrink-0", isActive || isSubActive ? "text-gold" : "text-text-secondary")} />
+          )}
+          <span className="truncate flex-1 text-left">{child.label}</span>
+        </Link>
+        <button
+          type="button"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(!open); }}
+          aria-label={open ? "Collapse" : "Expand"}
+          className="p-1.5 rounded-md hover:bg-warm-gray cursor-pointer"
+        >
+          <ChevronDown className={cn("h-3 w-3 transition-transform duration-200", open ? "rotate-0" : "-rotate-90")} />
+        </button>
+      </div>
       {open && child.children && (
         <div className="ml-3 pl-3 border-l border-warm-border space-y-0.5 mt-0.5">
           {child.children.map((sub) => {

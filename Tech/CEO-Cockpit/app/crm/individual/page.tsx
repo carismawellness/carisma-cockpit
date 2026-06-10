@@ -66,10 +66,10 @@ function IndividualKPIsContent({
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl font-bold text-foreground md:text-2xl">
-            Agent KPIs
+            Team Performance Dashboard
           </h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {formatDateRangeLabel(dateFrom, dateTo)} · Per-agent CRM performance
+            Carisma Wellness Group · Sales Team · {formatDateRangeLabel(dateFrom, dateTo)}
           </p>
           <div className="mt-1">
             <LastSyncedBadge />
