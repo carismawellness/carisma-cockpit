@@ -151,11 +151,11 @@ export async function GET(req: NextRequest) {
             "unsubscribe_rate", "bounce_rate", "clicks", "opens_unique",
           ],
           timeframe: {
-            key: "custom",
             start: `${dateFrom}T00:00:00+00:00`,
             end: `${dateTo}T23:59:59+00:00`,
           },
           conversion_metric_id: conversionMetricId,
+          filter: 'equals(send_channel,"email")',
         },
       },
     };

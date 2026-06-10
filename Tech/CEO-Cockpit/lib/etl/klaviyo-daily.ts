@@ -167,6 +167,9 @@ async function fetchReport(
   dateTo: string,
   conversionMetricId: string,
 ): Promise<ReportResult[]> {
+  // Klaviyo's custom_timeframe resource accepts only { start, end } — NO `key`
+  // field (despite many examples online showing `key: "custom"`). Sending the
+  // key triggers 400 "'key' is not a valid field for the resource 'custom_timeframe'".
   const body = {
     data: {
       type: reportType,
@@ -177,7 +180,6 @@ async function fetchReport(
           "opens_unique",
         ],
         timeframe: {
-          key:   "custom",
           start: `${dateFrom}T00:00:00+00:00`,
           end:   `${dateTo}T23:59:59+00:00`,
         },

@@ -105,8 +105,8 @@ function reportBody(
           "clicks_unique",
           "opens_unique",
         ],
+        // custom_timeframe resource accepts { start, end } — no `key` field
         timeframe: {
-          key: "custom",
           start: `${from}T00:00:00+00:00`,
           end: `${to}T23:59:59+00:00`,
         },
