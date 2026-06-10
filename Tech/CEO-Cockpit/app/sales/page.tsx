@@ -47,10 +47,11 @@ function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
           subtitle="Spa + Aesthetics + Slimming"
           yoyChange={isFetching ? undefined : yoy.total}
         />
-        <div
-          className="cursor-pointer"
+        <button
+          type="button"
+          className="text-left cursor-pointer rounded-2xl focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-ring focus-visible:outline-none"
           onClick={() => router.push("/sales/spa")}
-          title="Click to view Spa dashboard"
+          aria-label="View Spa dashboard"
         >
           <SalesKPICard
             label="Spa Revenue"
@@ -59,11 +60,12 @@ function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
             yoyChange={isFetching ? undefined : yoy.spa}
             icon={Building2}
           />
-        </div>
-        <div
-          className="cursor-pointer"
+        </button>
+        <button
+          type="button"
+          className="text-left cursor-pointer rounded-2xl focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-ring focus-visible:outline-none"
           onClick={() => router.push("/sales/aesthetics")}
-          title="Click to view Aesthetics dashboard"
+          aria-label="View Aesthetics dashboard"
         >
           <SalesKPICard
             label="Aesthetics Revenue"
@@ -72,11 +74,12 @@ function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
             yoyChange={isFetching ? undefined : yoy.aesthetics}
             icon={Sparkles}
           />
-        </div>
-        <div
-          className="cursor-pointer"
+        </button>
+        <button
+          type="button"
+          className="text-left cursor-pointer rounded-2xl focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-ring focus-visible:outline-none"
           onClick={() => router.push("/sales/slimming")}
-          title="Click to view Slimming dashboard"
+          aria-label="View Slimming dashboard"
         >
           <SalesKPICard
             label="Slimming Revenue"
@@ -85,7 +88,7 @@ function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
             yoyChange={isFetching ? undefined : yoy.slimming}
             icon={Scale}
           />
-        </div>
+        </button>
       </SalesKPIGrid>
 
       <GroupBrandBreakdown

@@ -77,7 +77,7 @@ async function fetchSpaRevenue(
       color: SPA_LOC_META[id]?.color ?? "#888",
       revenue: Math.round(revenue),
     }))
-    .sort((a, b) => b.revenue - a.revenue);
+    .sort((a, b) => b.revenue - a.revenue || a.location_id - b.location_id);
 
   return { total: Math.round(total), byLocation };
 }
