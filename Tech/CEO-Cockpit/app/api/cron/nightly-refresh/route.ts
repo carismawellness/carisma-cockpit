@@ -70,8 +70,11 @@ export async function GET(req: NextRequest) {
   const today = fmt(now);
 
   // Phase 1: run source ETLs in parallel
+  // NOTE: google-reviews fails until GOOGLE_PLACES_API_KEY is set — harmless,
+  // Promise.allSettled keeps one failing job from breaking the others.
   const [revenueRes, spaRes, aestheticsRes, crmAgentsRes, ghlCrmRes,
-         metaCampaignsRes, googleCampaignsRes, klaviyoRes, talexioHrRes, we360Res] = await Promise.allSettled([
+         metaCampaignsRes, googleCampaignsRes, klaviyoRes, talexioHrRes, we360Res,
+         googleReviewsRes, diligenceAuditRes, brandStandardsRes] = await Promise.allSettled([
     fetch(`${BASE_URL}/api/etl/revenue-refresh`,              { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/zoho-spa-transactions`,        { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/zoho-aesthetics-transactions`, { method: "POST", headers, body: payload }),
@@ -81,7 +84,10 @@ export async function GET(req: NextRequest) {
     fetch(`${BASE_URL}/api/etl/google-campaigns`,             { method: "POST", headers, body: mktPayload }),
     fetch(`${BASE_URL}/api/etl/klaviyo-sync`,                 { method: "POST", headers, body: klaviyoPayload }),
     fetch(`${BASE_URL}/api/etl/talexio-hr?date=${today}`,     { method: "POST", headers }),
-    fetch(`${BASE_URL}/api/etl/we360`,                        { method: "POST", headers }),
+    fetch(`${BASE_URL}/api/etl/we360`,                        { method: "POST", headers, body: payload }),
+    fetch(`${BASE_URL}/api/etl/google-reviews`,               { method: "POST", headers }),
+    fetch(`${BASE_URL}/api/etl/diligence-audit`,              { method: "POST", headers }),
+    fetch(`${BASE_URL}/api/etl/brand-standards`,              { method: "POST", headers }),
   ]);
 
   // Phase 2: lead reconciliation depends on ghl-crm + meta-campaigns completing first
@@ -113,6 +119,9 @@ export async function GET(req: NextRequest) {
     ["klaviyo",             klaviyoRes],
     ["talexio_hr",          talexioHrRes],
     ["we360",               we360Res],
+    ["google_reviews",      googleReviewsRes],
+    ["diligence_audit",     diligenceAuditRes],
+    ["brand_standards",     brandStandardsRes],
     ["lead_reconciliation", leadReconRes],
   ];
 

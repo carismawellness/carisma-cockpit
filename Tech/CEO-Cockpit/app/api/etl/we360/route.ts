@@ -31,9 +31,13 @@ export async function POST(req: NextRequest) {
   let body: Record<string, unknown> = {};
   try { body = (await req.json()) as Record<string, unknown>; } catch { /* no body */ }
 
-  const single = typeof body.date === "string" ? body.date : undefined;
-  const start  = typeof body.start_date === "string" ? body.start_date : single ?? yesterday();
-  const end    = typeof body.end_date   === "string" ? body.end_date   : single ?? start;
+  // Accept start_date/end_date (native), date (single day), or date_from/date_to
+  // (the generic sync-infrastructure params used by the nightly cron and the
+  // Settings → Data Sources / "Sync All" trigger).
+  const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+  const single = str(body.date);
+  const start  = str(body.start_date) ?? str(body.date_from) ?? single ?? yesterday();
+  const end    = str(body.end_date)   ?? str(body.date_to)   ?? single ?? start;
 
   const logger = new ETLLogger("we360");
   await logger.start();
