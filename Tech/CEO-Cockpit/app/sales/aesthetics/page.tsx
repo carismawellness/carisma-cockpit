@@ -20,11 +20,8 @@ function fmtK(v: number): string {
   return `€${v.toFixed(0)}`;
 }
 
-const CASH_COLOR    = "#d97706"; // amber — cash
-const NONCASH_COLOR = "#6366f1"; // indigo — card / transfer / other
-
 function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
-  const { byPerson, byService, byPaymentMethod, byCashType, totals, isFetching, isSyncing, syncError, triggerSync } =
+  const { byPerson, byService, byCashType, totals, isFetching, isSyncing, syncError, triggerSync } =
     useAestheticsSales(dateFrom, dateTo);
 
   const syncedRef = useRef(false);
@@ -262,109 +259,6 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
               )}
             </BarChart>
           </ResponsiveContainer>
-        )}
-      </Card>
-
-      {/* ── Revenue by Payment Type ───────────────────────────────────── */}
-      <Card className="p-4 md:p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <h2 className="text-base font-semibold text-foreground">Revenue by Payment Type</h2>
-          <span className="text-xs text-muted-foreground">(col F — Payment)</span>
-        </div>
-        {byPaymentMethod.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">
-            {isFetching || isSyncing ? "Loading…" : "No data for selected period"}
-          </p>
-        ) : (
-          <div className="space-y-5">
-            {/* Cash vs Non-Cash summary bar */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                <span>Cash vs Non-Cash split · % of revenue ex-VAT</span>
-                <span>{fmtK(totals.revenue_ex)} total</span>
-              </div>
-              <div className="flex h-8 rounded-lg overflow-hidden">
-                {byCashType.map(ct => (
-                  ct.revenue_ex > 0 && (
-                    <div
-                      key={ct.category}
-                      style={{ width: `${ct.pct}%`, backgroundColor: ct.category === "Cash" ? CASH_COLOR : NONCASH_COLOR }}
-                      className="flex items-center justify-center transition-all"
-                    >
-                      {ct.pct >= 8 && (
-                        <span className="text-xs font-bold text-white">{ct.pct}%</span>
-                      )}
-                    </div>
-                  )
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-5">
-                {byCashType.map(ct => (
-                  <div key={ct.category} className="flex items-center gap-2">
-                    <span className="inline-block w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: ct.category === "Cash" ? CASH_COLOR : NONCASH_COLOR }} />
-                    <span className="text-sm font-semibold">{ct.category}</span>
-                    <span className="text-sm text-muted-foreground">
-                      {fmtK(ct.revenue_ex)} · {ct.tx_count} txns · <span className="font-semibold text-foreground">{ct.pct}%</span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Detailed raw-method breakdown */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
-                    <th className="text-left pb-2 font-medium">Payment Method</th>
-                    <th className="text-left pb-2 font-medium">Category</th>
-                    <th className="text-right pb-2 font-medium">Transactions</th>
-                    <th className="text-right pb-2 font-medium">Revenue ex-VAT</th>
-                    <th className="text-left pb-2 pl-4 font-medium">Share</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {byPaymentMethod.map((p, i) => (
-                    <tr key={p.method} className={`border-b last:border-0 ${i % 2 === 0 ? "" : "bg-muted/20"}`}>
-                      <td className="py-2.5 font-medium">{p.method}</td>
-                      <td className="py-2.5">
-                        <span
-                          className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full"
-                          style={{
-                            backgroundColor: p.category === "Cash" ? "#fef3c7" : "#eef2ff",
-                            color:           p.category === "Cash" ? "#92400e"  : "#3730a3",
-                          }}
-                        >
-                          {p.category}
-                        </span>
-                      </td>
-                      <td className="py-2.5 text-right text-muted-foreground">{p.tx_count}</td>
-                      <td className="py-2.5 text-right font-medium">{formatCurrency(p.revenue_ex)}</td>
-                      <td className="py-2.5 pl-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-24 h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full"
-                              style={{ width: `${p.pct}%`, backgroundColor: p.category === "Cash" ? CASH_COLOR : NONCASH_COLOR }}
-                            />
-                          </div>
-                          <span className="text-xs text-muted-foreground">{p.pct}%</span>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 font-semibold">
-                    <td className="pt-2.5" colSpan={2}>Total</td>
-                    <td className="pt-2.5 text-right text-muted-foreground">{totals.tx_count}</td>
-                    <td className="pt-2.5 text-right">{formatCurrency(totals.revenue_ex)}</td>
-                    <td />
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
         )}
       </Card>
 
