@@ -114,11 +114,20 @@ function parsePercent(val: string): number {
 function parseDate(val: string): string | null {
   const v = val.trim();
   if (!v || v.toLowerCase() === "date") return null;
-  // CRM sheet uses M/D/YYYY (US format), e.g. "4/14/2026"
+  // CRM sheet has mixed date formats:
+  //   • Older rows entered as text strings — M/D/YYYY (US), e.g. "4/14/2026"
+  //   • Newer rows auto-formatted by Sheets — D/M/YYYY (Malta locale),
+  //     e.g. "27/8/2027" (Google's CSV export honours the sheet's locale)
+  // Strategy: parse as M/D first; if month > 12, swap to D/M.
   const m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
   if (!m) return null;
-  const [, mo, d, y] = m;
+  let [, mo, d] = m;
+  const y = m[3];
   const year = y.length === 2 ? `20${y}` : y;
+  if (parseInt(mo, 10) > 12) {
+    [mo, d] = [d, mo]; // value was D/M/YYYY — swap
+  }
+  if (parseInt(mo, 10) > 12 || parseInt(d, 10) > 31) return null;
   return `${year}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
 }
 
