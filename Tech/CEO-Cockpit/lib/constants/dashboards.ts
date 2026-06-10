@@ -36,6 +36,16 @@ function buildDashboards(depts: Department[]): DashboardDef[] {
         // Nav containers (path: "") use just child.label; real parents prefix it
         const label = !dept.path ? child.label : `${dept.label} — ${child.label}`;
         if (!seen.has(key)) { seen.add(key); result.push({ key, label, group }); }
+
+        // Recurse into SubSubItem (e.g. individual agent pages)
+        if (child.children?.length) {
+          for (const sub of child.children) {
+            const subKey = sub.path.replace(/^\//, "");
+            if (!subKey) continue;
+            const subLabel = `${child.label} — ${sub.label}`;
+            if (!seen.has(subKey)) { seen.add(subKey); result.push({ key: subKey, label: subLabel, group }); }
+          }
+        }
       }
     }
   }
