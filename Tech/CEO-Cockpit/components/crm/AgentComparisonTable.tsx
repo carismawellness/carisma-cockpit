@@ -10,6 +10,7 @@ import {
   BRAND_ORDER,
   type AgentBrand,
 } from "@/lib/constants/agents";
+import { BRAND } from "@/lib/constants/design-tokens";
 
 interface AgentComparisonTableProps {
   agents: CrmAgent[];
@@ -32,12 +33,12 @@ function depositClass(val: number, inactive: boolean): string {
   return val >= DEPOSIT_TARGET ? "text-emerald-600 font-semibold" : "text-rose-600 font-semibold";
 }
 
-// ── Brand label colours ───────────────────────────────────────────────────────
+// ── Brand label colours — canonical palette (soft bg + dark text) ────────────
 
-const BRAND_STYLE: Record<AgentBrand, string> = {
-  SPA:        "bg-sky-50 text-sky-700",
-  AESTHETICS: "bg-violet-50 text-violet-700",
-  SLIMMING:   "bg-teal-50 text-teal-700",
+const BRAND_BG_STYLE: Record<AgentBrand, { bg: string; fg: string }> = {
+  SPA:        { bg: BRAND.spa.soft,        fg: BRAND.spa.dark        },
+  AESTHETICS: { bg: BRAND.aesthetics.soft, fg: BRAND.aesthetics.dark },
+  SLIMMING:   { bg: BRAND.slimming.soft,   fg: BRAND.slimming.dark   },
 };
 
 // ── Subtotal helper ───────────────────────────────────────────────────────────
@@ -146,7 +147,11 @@ export function AgentComparisonTable({ agents }: AgentComparisonTableProps) {
                     <tr>
                       <td
                         colSpan={COLS + 1}
-                        className={`py-1.5 pl-2 text-xs font-bold uppercase tracking-widest ${BRAND_STYLE[brand]}`}
+                        className="py-1.5 pl-2 text-xs font-bold uppercase tracking-widest"
+                        style={{
+                          backgroundColor: BRAND_BG_STYLE[brand].bg,
+                          color:           BRAND_BG_STYLE[brand].fg,
+                        }}
                       >
                         {brand}
                       </td>
