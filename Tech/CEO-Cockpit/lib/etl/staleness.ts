@@ -38,6 +38,9 @@ export const SOURCE_CADENCES: Array<{ source: string; log_key: string; expectedC
   { source: "talexio_hr",                  log_key: "talexio-hr",                   expectedCadenceHours: 26 },
   { source: "lead_reconciliation",         log_key: "lead_reconciliation",          expectedCadenceHours: 26 },
   { source: "token_canary",                log_key: "token-canary",                 expectedCadenceHours: 26 },
+  { source: "google_reviews",              log_key: "google_reviews",               expectedCadenceHours: 26 },
+  { source: "diligence_audit",             log_key: "diligence_audit",              expectedCadenceHours: 26 },
+  { source: "brand_standards",             log_key: "brand_standards",              expectedCadenceHours: 26 },
 ];
 
 /**

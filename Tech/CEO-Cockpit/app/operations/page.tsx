@@ -3,10 +3,19 @@
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { KPICardRow, KPIData } from "@/components/dashboard/KPICardRow";
 import { Card } from "@/components/ui/card";
+import { SkeletonKPIRow, ChartSkeleton } from "@/components/ui/skeleton";
 import {
   formatCurrency,
 } from "@/lib/charts/config";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
+import {
+  useGoogleReviews,
+  useDiligenceAudit,
+  useStandardsScores,
+  type DiligenceRow,
+  type StandardsLocationRow,
+} from "@/lib/hooks/useOperationsData";
+import { format, parseISO } from "date-fns";
 import {
   Bar,
   BarChart,
@@ -30,101 +39,47 @@ import {
 } from "lucide-react";
 
 /* ═══════════════════════════════════════════════════════════════════════
-   SECTION 1 — REVIEW DATA
+   LOCATION DISPLAY CONSTANTS (data itself is live from Supabase)
    ═══════════════════════════════════════════════════════════════════════ */
 
-const REVIEW_LOCATIONS = [
-  // Spa-hotel locations use a categorical palette (not brand colors).
-  // Carisma Aesthetics + Slimming use their canonical BRAND.x.dark.
-  { name: "InterContinental", short: "Inter",  totalReviews: 190, avgScore: 4.5, prevScore: 4.4, color: BRAND.spa.dark },
-  { name: "Hugos",            short: "Hugos",  totalReviews: 151, avgScore: 4.8, prevScore: 4.7, color: "#B8C9E0" },
-  { name: "Ramla Bay",        short: "Ramla",  totalReviews: 99,  avgScore: 4.9, prevScore: 4.8, color: "#E5B8B0" },
-  { name: "Hyatt",            short: "Hyatt",  totalReviews: 64,  avgScore: 4.8, prevScore: 4.7, color: "#E5C088" },
-  { name: "Excelsior",        short: "Excel",  totalReviews: 52,  avgScore: 4.8, prevScore: 4.6, color: "#D5C0E5" },
-  { name: "Novotel",          short: "Novo",   totalReviews: 45,  avgScore: 4.8, prevScore: 4.5, color: "#B5DCDC" },
-  { name: "Labranda",         short: "Labr",   totalReviews: 36,  avgScore: 4.7, prevScore: 4.6, color: "#C7C4BD" },
-  { name: "Sunny",            short: "Sunny",  totalReviews: 32,  avgScore: 4.9, prevScore: 4.9, color: "#E5B5D0" },
-  { name: "Carisma Aesthetics", short: "Aes",  totalReviews: 36,  avgScore: 4.8, prevScore: 4.7, color: BRAND.aesthetics.dark },
-  { name: "Carisma Slimming",   short: "Slim", totalReviews: 10,  avgScore: 4.9, prevScore: 4.9, color: BRAND.slimming.dark },
-];
+// Spa-hotel locations use a categorical palette (not brand colors).
+// Carisma Aesthetics + Slimming use their canonical BRAND.x.dark.
+const LOCATION_COLORS: Record<string, string> = {
+  inter:               BRAND.spa.dark,
+  hugos:               "#B8C9E0",
+  ramla:               "#E5B8B0",
+  hyatt:               "#E5C088",
+  excelsior:           "#D5C0E5",
+  novotel:             "#B5DCDC",
+  labranda:            "#C7C4BD",
+  odycy:               "#E5B5D0",
+  "aesthetics-clinic": BRAND.aesthetics.dark,
+  "slimming-clinic":   BRAND.slimming.dark,
+};
+const FALLBACK_COLOR = "#9CA3AF";
 
-/* ═══════════════════════════════════════════════════════════════════════
-   SECTION 2 — DILIGENCE AUDIT DATA (Latest Period)
-   ═══════════════════════════════════════════════════════════════════════ */
-
-interface DiligenceRow {
-  location: string;
-  totalSales: number;
-  deleted: number;
-  deletedPct: number;
-  cancelled: number;
-  cancelledPct: number;
-  complementary: number;
-  complementaryPct: number;
-  cashSales: number;
-  cashPct: number;
-  discountedCash: number;
-  discountedCashPct: number;
-  unattended: number;
-}
-
-const DILIGENCE_DATA: DiligenceRow[] = [
-  { location: "Inter",     totalSales: 38828, deleted: 9924, deletedPct: 26, cancelled: 1419, cancelledPct: 4, complementary: 1587, complementaryPct: 4, cashSales: 5047, cashPct: 13, discountedCash: 0, discountedCashPct: 0, unattended: 29 },
-  { location: "Hugos",     totalSales: 39561, deleted: 14931, deletedPct: 38, cancelled: 1102, cancelledPct: 3, complementary: 1583, complementaryPct: 4, cashSales: 6330, cashPct: 16, discountedCash: 0, discountedCashPct: 0, unattended: 24 },
-  { location: "Hyatt",     totalSales: 18039, deleted: 7880, deletedPct: 44, cancelled: 562, cancelledPct: 3, complementary: 218, complementaryPct: 1, cashSales: 1263, cashPct: 7, discountedCash: 0, discountedCashPct: 0, unattended: 4 },
-  { location: "Ramla",     totalSales: 15332, deleted: 4929, deletedPct: 32, cancelled: 613, cancelledPct: 4, complementary: 567, complementaryPct: 4, cashSales: 1687, cashPct: 11, discountedCash: 1533, discountedCashPct: 10, unattended: 16 },
-  { location: "Labranda",  totalSales: 9026,  deleted: 0,    deletedPct: 0,  cancelled: 0,   cancelledPct: 0, complementary: 144, complementaryPct: 2, cashSales: 1625, cashPct: 18, discountedCash: 0, discountedCashPct: 0, unattended: 0 },
-  { location: "Sunny",     totalSales: 8316,  deleted: 2341, deletedPct: 28, cancelled: 250, cancelledPct: 3, complementary: 0,   complementaryPct: 0, cashSales: 2578, cashPct: 31, discountedCash: 0, discountedCashPct: 0, unattended: 6 },
-  { location: "Excelsior", totalSales: 22967, deleted: 4823, deletedPct: 21, cancelled: 459, cancelledPct: 2, complementary: 230, complementaryPct: 1, cashSales: 1378, cashPct: 6, discountedCash: 459, discountedCashPct: 2, unattended: 6 },
-  { location: "Novotel",   totalSales: 18679, deleted: 3175, deletedPct: 17, cancelled: 374, cancelledPct: 2, complementary: 374, complementaryPct: 2, cashSales: 1308, cashPct: 7, discountedCash: 747, discountedCashPct: 4, unattended: 2 },
-  { location: "C. Aesthetics",totalSales: 12400, deleted: 1240, deletedPct: 10, cancelled: 248, cancelledPct: 2, complementary: 124, complementaryPct: 1, cashSales: 868, cashPct: 7, discountedCash: 0, discountedCashPct: 0, unattended: 0 },
-  { location: "C. Slimming",  totalSales: 10566, deleted: 845,  deletedPct: 8,  cancelled: 211, cancelledPct: 2, complementary: 106, complementaryPct: 1, cashSales: 634, cashPct: 6, discountedCash: 0, discountedCashPct: 0, unattended: 0 },
-];
+// Compact labels for the diligence heatmap column headers.
+const SHORT_NAMES: Record<string, string> = {
+  inter:               "Inter",
+  hugos:               "Hugos",
+  hyatt:               "Hyatt",
+  ramla:               "Ramla",
+  labranda:            "Labranda",
+  odycy:               "Sunny",
+  excelsior:           "Excelsior",
+  novotel:             "Novotel",
+  "aesthetics-clinic": "C. Aesthetics",
+  "slimming-clinic":   "C. Slimming",
+};
 
 const DILIGENCE_THRESHOLDS = {
-  deletedPct: 10,
-  cancelledPct: 5,
-  complementaryPct: 2,
+  // Source report combines deleted + cancelled into one figure (<10% of sales).
+  deletedCancelledPct: 10,
+  complimentaryPct: 2,
   cashPct: 12,
   discountedCashPct: 5,
   unattended: 0,
 };
-
-/* ═══════════════════════════════════════════════════════════════════════
-   SECTION 3 — FACILITY & MYSTERY GUEST STANDARDS
-   ═══════════════════════════════════════════════════════════════════════ */
-
-interface StandardsRow {
-  location: string;
-  score: number;
-  issues: string[];
-}
-
-const FACILITY_STANDARDS: StandardsRow[] = [
-  { location: "InterContinental", score: 92, issues: [] },
-  { location: "Hugos",            score: 88, issues: ["Treatment room towel replacement frequency below standard"] },
-  { location: "Hyatt",            score: 95, issues: [] },
-  { location: "Ramla Bay",        score: 78, issues: ["Pool area cleanliness flagged", "Changing room maintenance overdue"] },
-  { location: "Excelsior",        score: 91, issues: [] },
-  { location: "Novotel",          score: 73, issues: ["Sauna temperature not meeting standard", "Lighting in corridor needs repair", "Product expiry labels not checked"] },
-  { location: "Labranda",         score: 81, issues: ["Equipment calibration overdue"] },
-  { location: "Sunny",            score: 86, issues: ["Ventilation system scheduled for maintenance"] },
-  { location: "Carisma Aesthetics", score: 94, issues: [] },
-  { location: "Carisma Slimming",   score: 90, issues: [] },
-];
-
-const MYSTERY_GUEST: StandardsRow[] = [
-  { location: "InterContinental", score: 89, issues: ["Front desk wait time exceeded 3 minutes"] },
-  { location: "Hugos",            score: 93, issues: [] },
-  { location: "Hyatt",            score: 91, issues: [] },
-  { location: "Ramla Bay",        score: 72, issues: ["No welcome drink offered", "Therapist didn't introduce themselves", "Post-treatment recommendations missing"] },
-  { location: "Excelsior",        score: 88, issues: ["Upselling opportunity missed at checkout"] },
-  { location: "Novotel",          score: 68, issues: ["Incorrect booking details at check-in", "Music not playing in treatment room", "No follow-up call post-visit", "Retail area not pointed out"] },
-  { location: "Labranda",         score: 79, issues: ["Consent form not explained properly", "No escort to treatment room"] },
-  { location: "Sunny",            score: 82, issues: ["Locker allocation disorganized"] },
-  { location: "Carisma Aesthetics", score: 87, issues: ["Consultation room booking overlap noted"] },
-  { location: "Carisma Slimming",   score: 83, issues: ["Waiting area comfort below standard", "Measurement tools not calibrated"] },
-];
 
 /* ═══════════════════════════════════════════════════════════════════════
    HELPERS
@@ -167,6 +122,21 @@ function unattendedBg(value: number): string {
   return "bg-red-100 text-red-900";
 }
 
+/** Percentage of total sales, rounded — 0 when there are no sales. */
+function pctOf(amount: number, totalSales: number): number {
+  return totalSales > 0 ? Math.round((amount / totalSales) * 100) : 0;
+}
+
+function monthLabel(month: string | null): string {
+  return month ? format(parseISO(month), "MMMM yyyy") : "—";
+}
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <p className="text-sm text-muted-foreground py-6 text-center">{message}</p>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    MAIN CONTENT
    ═══════════════════════════════════════════════════════════════════════ */
@@ -178,34 +148,58 @@ function OperationsContent({
   dateFrom: Date;
   dateTo: Date;
 }) {
-  void dateFrom;
-  void dateTo;
+  /* ── Live data ─────────────────────────────────────────────────────── */
+  const reviews   = useGoogleReviews(dateTo);
+  const diligence = useDiligenceAudit(dateFrom, dateTo);
+  const facility  = useStandardsScores("facility", dateFrom, dateTo);
+  const mystery   = useStandardsScores("mystery_guest", dateFrom, dateTo);
+
+  const loading =
+    reviews.loading || diligence.loading || facility.loading || mystery.loading;
 
   /* ── Computed Review KPIs ─────────────────────────────────────────── */
-  const totalReviews = REVIEW_LOCATIONS.reduce((s, l) => s + l.totalReviews, 0);
-  const weightedAvg = +(
-    REVIEW_LOCATIONS.reduce((s, l) => s + l.avgScore * l.totalReviews, 0) / totalReviews
-  ).toFixed(1);
-  const weightedPrevAvg = +(
-    REVIEW_LOCATIONS.reduce((s, l) => s + l.prevScore * l.totalReviews, 0) / totalReviews
-  ).toFixed(1);
-  const ratingDelta = +(weightedAvg - weightedPrevAvg).toFixed(1);
-  const reviewVelocity = 25.4;
-  const complaints4wk = 3;
-  const maintenanceOpen = 8;
+  const totalReviews = reviews.snapshots.reduce((s, l) => s + l.totalReviews, 0);
+  const weightedAvg = totalReviews > 0
+    ? +(
+        reviews.snapshots.reduce((s, l) => s + l.avgRating * l.totalReviews, 0) /
+        totalReviews
+      ).toFixed(1)
+    : 0;
+  // Trend vs ~1-month-earlier snapshots — only across locations that have one.
+  const withPrev = reviews.snapshots.filter((l) => l.prevRating !== null);
+  const prevWeight = withPrev.reduce((s, l) => s + l.totalReviews, 0);
+  const ratingDelta = prevWeight > 0
+    ? +(
+        weightedAvg -
+        withPrev.reduce((s, l) => s + (l.prevRating ?? 0) * l.totalReviews, 0) /
+          prevWeight
+      ).toFixed(1)
+    : null;
 
   /* ── Facility & Mystery Guest Aggregates ──────────────────────────── */
-  const avgFacility = Math.round(avg(FACILITY_STANDARDS.map((s) => s.score)));
-  const avgMystery = Math.round(avg(MYSTERY_GUEST.map((s) => s.score)));
+  const avgFacility = Math.round(avg(facility.rows.map((s) => s.score)));
+  const avgMystery = Math.round(avg(mystery.rows.map((s) => s.score)));
 
-  /* ── KPI Cards ────────────────────────────────────────────────────── */
+  /* ── Diligence totals (latest month shown) ────────────────────────── */
+  const diligenceTotals = {
+    totalSales:       diligence.rows.reduce((s, d) => s + d.totalSales, 0),
+    deletedCancelled: diligence.rows.reduce((s, d) => s + d.deletedCancelled, 0),
+    complimentary:    diligence.rows.reduce((s, d) => s + d.complimentary, 0),
+    cashSales:        diligence.rows.reduce((s, d) => s + d.cashSales, 0),
+    discountedCash:   diligence.rows.reduce((s, d) => s + d.discountedCash, 0),
+    unattended:       diligence.rows.reduce((s, d) => s + d.unattended, 0),
+  };
+  const totPct = (n: number) => pctOf(n, diligenceTotals.totalSales);
+
+  /* ── KPI Cards (derived from live data) ───────────────────────────── */
   const kpis: KPIData[] = [
-    { label: "Total Reviews", value: totalReviews.toLocaleString(), trend: 1 },
+    { label: "Total Reviews", value: totalReviews.toLocaleString() },
     { label: "Avg Rating", value: `${weightedAvg} ★`, target: "4.5", targetValue: 4.5, currentValue: weightedAvg },
-    { label: "Rating Change", value: `${ratingDelta > 0 ? "+" : ""}${ratingDelta}`, trend: ratingDelta >= 0 ? 1 : -1 },
-    { label: "Review Velocity", value: `${reviewVelocity}/wk`, trend: 1 },
-    { label: "Complaints (4wk)", value: String(complaints4wk), trend: -1 },
-    { label: "Open Maintenance", value: String(maintenanceOpen), trend: 1 },
+    ...(ratingDelta !== null
+      ? [{ label: "Rating Change", value: `${ratingDelta > 0 ? "+" : ""}${ratingDelta}`, trend: ratingDelta >= 0 ? 1 : -1 } as KPIData]
+      : []),
+    { label: "Deleted & Cancelled", value: `${totPct(diligenceTotals.deletedCancelled)}%`, target: "<10%", targetValue: 10, currentValue: totPct(diligenceTotals.deletedCancelled) },
+    { label: "Unattended (mo)", value: String(diligenceTotals.unattended), trend: diligenceTotals.unattended === 0 ? 1 : -1 },
     { label: "Facility Std %", value: `${avgFacility}%`, target: "85%", targetValue: 85, currentValue: avgFacility },
     { label: "Mystery Guest %", value: `${avgMystery}%`, target: "85%", targetValue: 85, currentValue: avgMystery },
   ];
@@ -213,44 +207,63 @@ function OperationsContent({
   /* ── Collect all attention items ──────────────────────────────────── */
   const attentionItems: { type: "facility" | "mystery" | "diligence"; location: string; details: string[] }[] = [];
 
-  for (const loc of FACILITY_STANDARDS) {
+  // Cap per-card issue lists — full lists live in the section cards below.
+  const capIssues = (details: string[], max = 4) =>
+    details.length > max
+      ? [...details.slice(0, max), `… +${details.length - max} more below`]
+      : details;
+
+  for (const loc of facility.rows) {
     if (loc.score < 85 && loc.issues.length > 0) {
-      attentionItems.push({ type: "facility", location: loc.location, details: loc.issues.map((i) => `[Facility ${loc.score}%] ${i}`) });
+      attentionItems.push({ type: "facility", location: loc.name, details: capIssues(loc.issues.map((i) => `[Facility ${loc.score}%] ${i.item}`)) });
     }
   }
-  for (const loc of MYSTERY_GUEST) {
+  for (const loc of mystery.rows) {
     if (loc.score < 85 && loc.issues.length > 0) {
-      attentionItems.push({ type: "mystery", location: loc.location, details: loc.issues.map((i) => `[Mystery Guest ${loc.score}%] ${i}`) });
+      attentionItems.push({ type: "mystery", location: loc.name, details: capIssues(loc.issues.map((i) => `[Mystery Guest ${loc.score}%] ${i.item}`)) });
     }
   }
-  for (const d of DILIGENCE_DATA) {
+  for (const d of diligence.rows) {
     const issues: string[] = [];
-    if (d.cashPct > DILIGENCE_THRESHOLDS.cashPct) issues.push(`Cash at ${d.cashPct}% (threshold: <${DILIGENCE_THRESHOLDS.cashPct}%)`);
-    if (d.deletedPct > DILIGENCE_THRESHOLDS.deletedPct) issues.push(`Deleted at ${d.deletedPct}% (threshold: <${DILIGENCE_THRESHOLDS.deletedPct}%)`);
+    const delCanPct = pctOf(d.deletedCancelled, d.totalSales);
+    const cashPct = pctOf(d.cashSales, d.totalSales);
+    const discCashPct = pctOf(d.discountedCash, d.totalSales);
+    if (cashPct > DILIGENCE_THRESHOLDS.cashPct) issues.push(`Cash at ${cashPct}% (threshold: <${DILIGENCE_THRESHOLDS.cashPct}%)`);
+    if (delCanPct > DILIGENCE_THRESHOLDS.deletedCancelledPct) issues.push(`Deleted & cancelled at ${delCanPct}% (threshold: <${DILIGENCE_THRESHOLDS.deletedCancelledPct}%)`);
     if (d.unattended > 10) issues.push(`${d.unattended} unattended bookings`);
-    if (d.discountedCashPct > DILIGENCE_THRESHOLDS.discountedCashPct) issues.push(`Discounted cash at ${d.discountedCashPct}% (threshold: <${DILIGENCE_THRESHOLDS.discountedCashPct}%)`);
-    if (issues.length > 0) attentionItems.push({ type: "diligence", location: d.location, details: issues.map((i) => `[Diligence] ${i}`) });
+    if (discCashPct > DILIGENCE_THRESHOLDS.discountedCashPct) issues.push(`Discounted cash at ${discCashPct}% (threshold: <${DILIGENCE_THRESHOLDS.discountedCashPct}%)`);
+    if (issues.length > 0) attentionItems.push({ type: "diligence", location: d.name, details: issues.map((i) => `[Diligence] ${i}`) });
   }
 
   /* ── Review chart data — merged: bars = total reviews, label = rating ── */
-  const reviewChartData = [...REVIEW_LOCATIONS]
-    .sort((a, b) => b.totalReviews - a.totalReviews);
+  const reviewChartData = [...reviews.snapshots]
+    .sort((a, b) => b.totalReviews - a.totalReviews)
+    .map((l) => ({ ...l, color: LOCATION_COLORS[l.slug] ?? FALLBACK_COLOR }));
 
-  /* ── Facility & Mystery bar data ──────────────────────────────────── */
-  const facilityBarData = [...FACILITY_STANDARDS].sort((a, b) => a.score - b.score);
-  const mysteryBarData = [...MYSTERY_GUEST].sort((a, b) => a.score - b.score);
+  /* ── Facility & Mystery bar data (worst first) ────────────────────── */
+  const facilityBarData = [...facility.rows].sort((a, b) => a.score - b.score);
+  const mysteryBarData = [...mystery.rows].sort((a, b) => a.score - b.score);
 
-  /* ── Diligence totals ─────────────────────────────────────────────── */
-  const diligenceTotals = {
-    totalSales: DILIGENCE_DATA.reduce((s, d) => s + d.totalSales, 0),
-    deleted: DILIGENCE_DATA.reduce((s, d) => s + d.deleted, 0),
-    cancelled: DILIGENCE_DATA.reduce((s, d) => s + d.cancelled, 0),
-    complementary: DILIGENCE_DATA.reduce((s, d) => s + d.complementary, 0),
-    cashSales: DILIGENCE_DATA.reduce((s, d) => s + d.cashSales, 0),
-    discountedCash: DILIGENCE_DATA.reduce((s, d) => s + d.discountedCash, 0),
-    unattended: DILIGENCE_DATA.reduce((s, d) => s + d.unattended, 0),
-  };
-  const totPct = (n: number) => diligenceTotals.totalSales > 0 ? Math.round((n / diligenceTotals.totalSales) * 100) : 0;
+  const shortName = (d: DiligenceRow) => SHORT_NAMES[d.slug] ?? d.name;
+
+  /* ── Loading state ────────────────────────────────────────────────── */
+  if (loading) {
+    return (
+      <>
+        <div>
+          <h1 className="text-xl md:text-2xl font-bold text-foreground">Operations Dashboard</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {formatDateRangeLabel(dateFrom, dateTo)} · Facility standards, compliance &amp; reviews
+          </p>
+        </div>
+        <SkeletonKPIRow count={7} />
+        <ChartSkeleton height={380} />
+        <ChartSkeleton height={300} />
+        <ChartSkeleton height={360} />
+        <ChartSkeleton height={360} />
+      </>
+    );
+  }
 
   return (
     <>
@@ -302,332 +315,308 @@ function OperationsContent({
           <h2 className="text-lg font-semibold text-foreground">Reviews by Location</h2>
         </div>
         <p className="text-sm text-muted-foreground mb-4">
-          Total Google reviews per location with average rating — {totalReviews} company-wide
+          Total Google reviews per location with average rating — {totalReviews.toLocaleString()} company-wide
+          {reviews.snapshotDate ? ` · snapshot ${format(parseISO(reviews.snapshotDate), "d MMM yyyy")}` : ""}
         </p>
-        <div className="h-[380px] md:h-[440px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={reviewChartData}
-              layout="vertical"
-              margin={{ top: 5, right: 90, left: 10, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-              <XAxis type="number" tick={{ fontSize: 11 }} />
-              <YAxis type="category" dataKey="name" width={145} tick={{ fontSize: 12 }} />
-              <Tooltip
-                formatter={(value: unknown, name) => {
-                  if (name === "Total Reviews") return [String(Number(value)), String(name ?? "")];
-                  return [`${Number(value).toFixed(1)} ★`, String(name ?? "")];
-                }}
-              />
-              <Bar dataKey="totalReviews" name="Total Reviews" radius={[0, 4, 4, 0]} barSize={22}>
-                {reviewChartData.map((entry, i) => (
-                  <Cell key={i} fill={entry.color} fillOpacity={0.85} />
-                ))}
-                <LabelList
-                  dataKey="totalReviews"
-                  position="right"
-                  content={(props) => {
-                    const { x, y, width, height, index } = props as Record<string, unknown>;
-                    if (!x || !width || !y || !height || index === undefined) return <></>;
-                    const loc = reviewChartData[index as number];
-                    const xPos = (x as number) + (width as number) + 8;
-                    const yPos = (y as number) + (height as number) / 2 + 4;
-                    return (
-                      <g>
-                        <text x={xPos} y={yPos} fontSize={12} fontWeight={600} fill="#374151">
-                          {loc.totalReviews}
-                        </text>
-                        <text x={xPos + 32} y={yPos} fontSize={12} fontWeight={700} fill={scoreColor(loc.avgScore)}>
-                          {loc.avgScore.toFixed(1)} ★
-                        </text>
-                      </g>
-                    );
+        {reviewChartData.length === 0 ? (
+          <EmptyState message="No review snapshots available — run the google-reviews ETL first." />
+        ) : (
+          <div className="h-[380px] md:h-[440px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={reviewChartData}
+                layout="vertical"
+                margin={{ top: 5, right: 90, left: 10, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="name" width={145} tick={{ fontSize: 12 }} />
+                <Tooltip
+                  formatter={(value: unknown, name) => {
+                    if (name === "Total Reviews") return [String(Number(value)), String(name ?? "")];
+                    return [`${Number(value).toFixed(1)} ★`, String(name ?? "")];
                   }}
                 />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+                <Bar dataKey="totalReviews" name="Total Reviews" radius={[0, 4, 4, 0]} barSize={22}>
+                  {reviewChartData.map((entry, i) => (
+                    <Cell key={i} fill={entry.color} fillOpacity={0.85} />
+                  ))}
+                  <LabelList
+                    dataKey="totalReviews"
+                    position="right"
+                    content={(props) => {
+                      const { x, y, width, height, index } = props as Record<string, unknown>;
+                      if (!x || !width || !y || !height || index === undefined) return <></>;
+                      const loc = reviewChartData[index as number];
+                      const xPos = (x as number) + (width as number) + 8;
+                      const yPos = (y as number) + (height as number) / 2 + 4;
+                      return (
+                        <g>
+                          <text x={xPos} y={yPos} fontSize={12} fontWeight={600} fill="#374151">
+                            {loc.totalReviews}
+                          </text>
+                          <text x={xPos + 38} y={yPos} fontSize={12} fontWeight={700} fill={scoreColor(loc.avgRating)}>
+                            {loc.avgRating.toFixed(1)} ★
+                          </text>
+                        </g>
+                      );
+                    }}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </Card>
 
       {/* ═══════ DILIGENCE AUDIT TABLE (Heatmap) ═════════════════════ */}
       <Card className="p-3 md:p-6">
         <div className="flex items-center gap-2 mb-1">
           <ShieldAlert className="h-5 w-5 text-[#B79E61]" />
-          <h2 className="text-lg font-semibold text-foreground">Diligence Audit</h2>
+          <h2 className="text-lg font-semibold text-foreground">Diligence Audit — {monthLabel(diligence.month)}</h2>
         </div>
         <p className="text-sm text-muted-foreground mb-2">
           Financial compliance by location — heatmap: <span className="inline-block w-3 h-3 rounded bg-emerald-100 align-middle mx-0.5" /> within threshold <span className="inline-block w-3 h-3 rounded bg-amber-100 align-middle mx-0.5" /> above threshold <span className="inline-block w-3 h-3 rounded bg-red-100 align-middle mx-0.5" /> breach
         </p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="border-b-2 border-warm-border bg-muted/30">
-                <th className="text-left py-2.5 px-3 font-semibold text-foreground sticky left-0 bg-muted/30 z-10 min-w-[155px]">Metric</th>
-                {DILIGENCE_DATA.map((d) => (
-                  <th key={d.location} className="text-center py-2.5 px-1.5 font-semibold text-foreground min-w-[85px] text-xs">
-                    {d.location}
-                  </th>
-                ))}
-                <th className="text-center py-2.5 px-3 font-bold text-foreground bg-muted/50 min-w-[90px] text-xs">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* Total Sales — no heatmap, just numbers */}
-              <tr className="border-b border-warm-border/50">
-                <td className="py-2 px-3 font-semibold text-foreground sticky left-0 bg-white z-10">Total Sales</td>
-                {DILIGENCE_DATA.map((d) => (
-                  <td key={d.location} className="text-center py-2 px-1.5 font-medium text-foreground text-xs tabular-nums">
-                    {formatCurrency(d.totalSales)}
+        {diligence.rows.length === 0 ? (
+          <EmptyState message="No diligence audit data for the selected period." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="border-b-2 border-warm-border bg-muted/30">
+                  <th className="text-left py-2.5 px-3 font-semibold text-foreground sticky left-0 bg-muted/30 z-10 min-w-[155px]">Metric</th>
+                  {diligence.rows.map((d) => (
+                    <th key={d.slug} className="text-center py-2.5 px-1.5 font-semibold text-foreground min-w-[85px] text-xs">
+                      {shortName(d)}
+                    </th>
+                  ))}
+                  <th className="text-center py-2.5 px-3 font-bold text-foreground bg-muted/50 min-w-[90px] text-xs">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* Total Sales — no heatmap, just numbers */}
+                <tr className="border-b border-warm-border/50">
+                  <td className="py-2 px-3 font-semibold text-foreground sticky left-0 bg-white z-10">Total Sales</td>
+                  {diligence.rows.map((d) => (
+                    <td key={d.slug} className="text-center py-2 px-1.5 font-medium text-foreground text-xs tabular-nums">
+                      {formatCurrency(d.totalSales)}
+                    </td>
+                  ))}
+                  <td className="text-center py-2 px-3 font-bold text-foreground bg-muted/20 text-xs tabular-nums">
+                    {formatCurrency(diligenceTotals.totalSales)}
                   </td>
-                ))}
-                <td className="text-center py-2 px-3 font-bold text-foreground bg-muted/20 text-xs tabular-nums">
-                  {formatCurrency(diligenceTotals.totalSales)}
-                </td>
-              </tr>
-              {/* Deleted */}
-              <tr className="border-b border-warm-border/50">
-                <td className="py-2 px-3 font-medium text-foreground sticky left-0 bg-white z-10">
-                  Deleted <span className="text-xs text-muted-foreground">(&lt;10%)</span>
-                </td>
-                {DILIGENCE_DATA.map((d) => (
-                  <td key={d.location} className={cn("text-center py-1.5 px-1", heatBg(d.deletedPct, DILIGENCE_THRESHOLDS.deletedPct))}>
-                    <div className="text-xs font-semibold">{d.deleted.toLocaleString()}</div>
-                    <div className="text-[10px] font-bold">{d.deletedPct}%</div>
+                </tr>
+                {/* Deleted & Cancelled (combined in source report) */}
+                <tr className="border-b border-warm-border/50">
+                  <td className="py-2 px-3 font-medium text-foreground sticky left-0 bg-white z-10">
+                    Deleted &amp; Cancelled <span className="text-xs text-muted-foreground">(&lt;10%)</span>
                   </td>
-                ))}
-                <td className={cn("text-center py-1.5 px-2", heatBg(totPct(diligenceTotals.deleted), DILIGENCE_THRESHOLDS.deletedPct))}>
-                  <div className="text-xs font-semibold">{diligenceTotals.deleted.toLocaleString()}</div>
-                  <div className="text-[10px] font-bold">{totPct(diligenceTotals.deleted)}%</div>
-                </td>
-              </tr>
-              {/* Cancelled */}
-              <tr className="border-b border-warm-border/50">
-                <td className="py-2 px-3 font-medium text-foreground sticky left-0 bg-white z-10">
-                  Cancelled <span className="text-xs text-muted-foreground">(&lt;5%)</span>
-                </td>
-                {DILIGENCE_DATA.map((d) => (
-                  <td key={d.location} className={cn("text-center py-1.5 px-1", heatBg(d.cancelledPct, DILIGENCE_THRESHOLDS.cancelledPct))}>
-                    <div className="text-xs font-semibold">{d.cancelled.toLocaleString()}</div>
-                    <div className="text-[10px] font-bold">{d.cancelledPct}%</div>
+                  {diligence.rows.map((d) => (
+                    <td key={d.slug} className={cn("text-center py-1.5 px-1", heatBg(pctOf(d.deletedCancelled, d.totalSales), DILIGENCE_THRESHOLDS.deletedCancelledPct))}>
+                      <div className="text-xs font-semibold">{Math.round(d.deletedCancelled).toLocaleString()}</div>
+                      <div className="text-[10px] font-bold">{pctOf(d.deletedCancelled, d.totalSales)}%</div>
+                    </td>
+                  ))}
+                  <td className={cn("text-center py-1.5 px-2", heatBg(totPct(diligenceTotals.deletedCancelled), DILIGENCE_THRESHOLDS.deletedCancelledPct))}>
+                    <div className="text-xs font-semibold">{Math.round(diligenceTotals.deletedCancelled).toLocaleString()}</div>
+                    <div className="text-[10px] font-bold">{totPct(diligenceTotals.deletedCancelled)}%</div>
                   </td>
-                ))}
-                <td className={cn("text-center py-1.5 px-2", heatBg(totPct(diligenceTotals.cancelled), DILIGENCE_THRESHOLDS.cancelledPct))}>
-                  <div className="text-xs font-semibold">{diligenceTotals.cancelled.toLocaleString()}</div>
-                  <div className="text-[10px] font-bold">{totPct(diligenceTotals.cancelled)}%</div>
-                </td>
-              </tr>
-              {/* Complementary */}
-              <tr className="border-b border-warm-border/50">
-                <td className="py-2 px-3 font-medium text-foreground sticky left-0 bg-white z-10">
-                  Complementary <span className="text-xs text-muted-foreground">(~2%)</span>
-                </td>
-                {DILIGENCE_DATA.map((d) => (
-                  <td key={d.location} className={cn("text-center py-1.5 px-1", heatBg(d.complementaryPct, DILIGENCE_THRESHOLDS.complementaryPct))}>
-                    <div className="text-xs font-semibold">{d.complementary.toLocaleString()}</div>
-                    <div className="text-[10px] font-bold">{d.complementaryPct}%</div>
+                </tr>
+                {/* Complimentary */}
+                <tr className="border-b border-warm-border/50">
+                  <td className="py-2 px-3 font-medium text-foreground sticky left-0 bg-white z-10">
+                    Complimentary <span className="text-xs text-muted-foreground">(~2%)</span>
                   </td>
-                ))}
-                <td className={cn("text-center py-1.5 px-2", heatBg(totPct(diligenceTotals.complementary), DILIGENCE_THRESHOLDS.complementaryPct))}>
-                  <div className="text-xs font-semibold">{diligenceTotals.complementary.toLocaleString()}</div>
-                  <div className="text-[10px] font-bold">{totPct(diligenceTotals.complementary)}%</div>
-                </td>
-              </tr>
-              {/* Cash Sales */}
-              <tr className="border-b border-warm-border/50">
-                <td className="py-2 px-3 font-medium text-foreground sticky left-0 bg-white z-10">
-                  Cash Sales <span className="text-xs text-muted-foreground">(&lt;12%)</span>
-                </td>
-                {DILIGENCE_DATA.map((d) => (
-                  <td key={d.location} className={cn("text-center py-1.5 px-1", heatBg(d.cashPct, DILIGENCE_THRESHOLDS.cashPct))}>
-                    <div className="text-xs font-semibold">{d.cashSales.toLocaleString()}</div>
-                    <div className="text-[10px] font-bold">{d.cashPct}%</div>
+                  {diligence.rows.map((d) => (
+                    <td key={d.slug} className={cn("text-center py-1.5 px-1", heatBg(pctOf(d.complimentary, d.totalSales), DILIGENCE_THRESHOLDS.complimentaryPct))}>
+                      <div className="text-xs font-semibold">{Math.round(d.complimentary).toLocaleString()}</div>
+                      <div className="text-[10px] font-bold">{pctOf(d.complimentary, d.totalSales)}%</div>
+                    </td>
+                  ))}
+                  <td className={cn("text-center py-1.5 px-2", heatBg(totPct(diligenceTotals.complimentary), DILIGENCE_THRESHOLDS.complimentaryPct))}>
+                    <div className="text-xs font-semibold">{Math.round(diligenceTotals.complimentary).toLocaleString()}</div>
+                    <div className="text-[10px] font-bold">{totPct(diligenceTotals.complimentary)}%</div>
                   </td>
-                ))}
-                <td className={cn("text-center py-1.5 px-2", heatBg(totPct(diligenceTotals.cashSales), DILIGENCE_THRESHOLDS.cashPct))}>
-                  <div className="text-xs font-semibold">{diligenceTotals.cashSales.toLocaleString()}</div>
-                  <div className="text-[10px] font-bold">{totPct(diligenceTotals.cashSales)}%</div>
-                </td>
-              </tr>
-              {/* Discounted Cash */}
-              <tr className="border-b border-warm-border/50">
-                <td className="py-2 px-3 font-medium text-foreground sticky left-0 bg-white z-10">
-                  Disc. Cash <span className="text-xs text-muted-foreground">(&lt;5%)</span>
-                </td>
-                {DILIGENCE_DATA.map((d) => (
-                  <td key={d.location} className={cn("text-center py-1.5 px-1", heatBg(d.discountedCashPct, DILIGENCE_THRESHOLDS.discountedCashPct))}>
-                    <div className="text-xs font-semibold">{d.discountedCash.toLocaleString()}</div>
-                    <div className="text-[10px] font-bold">{d.discountedCashPct}%</div>
+                </tr>
+                {/* Cash Sales */}
+                <tr className="border-b border-warm-border/50">
+                  <td className="py-2 px-3 font-medium text-foreground sticky left-0 bg-white z-10">
+                    Cash Sales <span className="text-xs text-muted-foreground">(&lt;12%)</span>
                   </td>
-                ))}
-                <td className={cn("text-center py-1.5 px-2", heatBg(totPct(diligenceTotals.discountedCash), DILIGENCE_THRESHOLDS.discountedCashPct))}>
-                  <div className="text-xs font-semibold">{diligenceTotals.discountedCash.toLocaleString()}</div>
-                  <div className="text-[10px] font-bold">{totPct(diligenceTotals.discountedCash)}%</div>
-                </td>
-              </tr>
-              {/* Unattended */}
-              <tr className="border-b border-warm-border/50">
-                <td className="py-2 px-3 font-medium text-foreground sticky left-0 bg-white z-10">
-                  Unattended <span className="text-xs text-muted-foreground">(must be 0)</span>
-                </td>
-                {DILIGENCE_DATA.map((d) => (
-                  <td key={d.location} className={cn("text-center py-1.5 px-1", unattendedBg(d.unattended))}>
-                    <div className="text-xs font-bold">{d.unattended}</div>
+                  {diligence.rows.map((d) => (
+                    <td key={d.slug} className={cn("text-center py-1.5 px-1", heatBg(pctOf(d.cashSales, d.totalSales), DILIGENCE_THRESHOLDS.cashPct))}>
+                      <div className="text-xs font-semibold">{Math.round(d.cashSales).toLocaleString()}</div>
+                      <div className="text-[10px] font-bold">{pctOf(d.cashSales, d.totalSales)}%</div>
+                    </td>
+                  ))}
+                  <td className={cn("text-center py-1.5 px-2", heatBg(totPct(diligenceTotals.cashSales), DILIGENCE_THRESHOLDS.cashPct))}>
+                    <div className="text-xs font-semibold">{Math.round(diligenceTotals.cashSales).toLocaleString()}</div>
+                    <div className="text-[10px] font-bold">{totPct(diligenceTotals.cashSales)}%</div>
                   </td>
-                ))}
-                <td className={cn("text-center py-1.5 px-2", unattendedBg(diligenceTotals.unattended))}>
-                  <div className="text-xs font-bold">{diligenceTotals.unattended}</div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+                </tr>
+                {/* Discounted Cash */}
+                <tr className="border-b border-warm-border/50">
+                  <td className="py-2 px-3 font-medium text-foreground sticky left-0 bg-white z-10">
+                    Disc. Cash <span className="text-xs text-muted-foreground">(&lt;5%)</span>
+                  </td>
+                  {diligence.rows.map((d) => (
+                    <td key={d.slug} className={cn("text-center py-1.5 px-1", heatBg(pctOf(d.discountedCash, d.totalSales), DILIGENCE_THRESHOLDS.discountedCashPct))}>
+                      <div className="text-xs font-semibold">{Math.round(d.discountedCash).toLocaleString()}</div>
+                      <div className="text-[10px] font-bold">{pctOf(d.discountedCash, d.totalSales)}%</div>
+                    </td>
+                  ))}
+                  <td className={cn("text-center py-1.5 px-2", heatBg(totPct(diligenceTotals.discountedCash), DILIGENCE_THRESHOLDS.discountedCashPct))}>
+                    <div className="text-xs font-semibold">{Math.round(diligenceTotals.discountedCash).toLocaleString()}</div>
+                    <div className="text-[10px] font-bold">{totPct(diligenceTotals.discountedCash)}%</div>
+                  </td>
+                </tr>
+                {/* Unattended */}
+                <tr className="border-b border-warm-border/50">
+                  <td className="py-2 px-3 font-medium text-foreground sticky left-0 bg-white z-10">
+                    Unattended <span className="text-xs text-muted-foreground">(must be 0)</span>
+                  </td>
+                  {diligence.rows.map((d) => (
+                    <td key={d.slug} className={cn("text-center py-1.5 px-1", unattendedBg(d.unattended))}>
+                      <div className="text-xs font-bold">{d.unattended}</div>
+                    </td>
+                  ))}
+                  <td className={cn("text-center py-1.5 px-2", unattendedBg(diligenceTotals.unattended))}>
+                    <div className="text-xs font-bold">{diligenceTotals.unattended}</div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
 
       {/* ═══════ FACILITY STANDARDS BY LOCATION ══════════════════════ */}
-      <Card className="p-3 md:p-6">
-        <div className="flex items-center gap-2 mb-1">
-          <ClipboardCheck className="h-5 w-5 text-[#22C55E]" />
-          <h2 className="text-lg font-semibold text-foreground">Facility Standards by Location</h2>
-        </div>
-        <p className="text-sm text-muted-foreground mb-4">
-          Aggregate: {avgFacility}% — green &ge;85%, amber 60-84%, red &lt;60%
-        </p>
-        <div className="h-[360px] md:h-[400px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={facilityBarData}
-              layout="vertical"
-              margin={{ top: 5, right: 50, left: 10, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-              <XAxis type="number" domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11 }} />
-              <YAxis type="category" dataKey="location" width={145} tick={{ fontSize: 12 }} />
-              <Tooltip formatter={(v: unknown, name) => [`${Number(v)}%`, String(name ?? "")]} />
-              <Bar dataKey="score" name="Facility %" radius={[0, 4, 4, 0]} barSize={22}>
-                {facilityBarData.map((entry, i) => (
-                  <Cell key={i} fill={complianceColor(entry.score)} fillOpacity={0.85} />
-                ))}
-                <LabelList
-                  dataKey="score"
-                  position="right"
-                  content={(props) => {
-                    const { x, y, width, height, value } = props as Record<string, unknown>;
-                    if (!x || !width || !y || !height) return <></>;
-                    return (
-                      <text
-                        x={(x as number) + (width as number) + 6}
-                        y={(y as number) + (height as number) / 2 + 4}
-                        fontSize={12}
-                        fontWeight={700}
-                        fill={complianceColor(value as number)}
-                      >
-                        {String(value)}%
-                      </text>
-                    );
-                  }}
-                />
-              </Bar>
-              <ReferenceLine x={85} stroke="#D97706" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: "Target 85%", position: "top", fill: "#D97706", fontSize: 10 }} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {facilityBarData.filter((l) => l.score < 85 && l.issues.length > 0).length > 0 && (
-          <div className="mt-4 space-y-3">
-            <h3 className="text-sm font-semibold text-foreground">Issues</h3>
-            {facilityBarData
-              .filter((l) => l.score < 85 && l.issues.length > 0)
-              .map((loc) => (
-                <div key={loc.location} className="rounded-lg border border-amber-200 bg-amber-50/30 p-3">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <span className={cn("px-2 py-0.5 rounded text-xs font-bold", complianceBg(loc.score))}>{loc.score}%</span>
-                    <span className="text-sm font-semibold text-foreground">{loc.location}</span>
-                  </div>
-                  <ul className="space-y-1 ml-4">
-                    {loc.issues.map((issue, i) => (
-                      <li key={i} className="text-xs text-muted-foreground list-disc">{issue}</li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-          </div>
-        )}
-      </Card>
+      <StandardsCard
+        title="Facility Standards by Location"
+        icon={<ClipboardCheck className="h-5 w-5 text-[#22C55E]" />}
+        month={facility.month}
+        aggregate={avgFacility}
+        barData={facilityBarData}
+        barName="Facility %"
+        emptyMessage="No facility standards data for the selected period."
+      />
 
       {/* ═══════ MYSTERY GUEST STANDARDS BY LOCATION ═════════════════ */}
-      <Card className="p-3 md:p-6">
-        <div className="flex items-center gap-2 mb-1">
-          <UserSearch className="h-5 w-5 text-[#7C3AED]" />
-          <h2 className="text-lg font-semibold text-foreground">Mystery Guest Standards by Location</h2>
-        </div>
-        <p className="text-sm text-muted-foreground mb-4">
-          Aggregate: {avgMystery}% — green &ge;85%, amber 60-84%, red &lt;60%
-        </p>
-        <div className="h-[360px] md:h-[400px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={mysteryBarData}
-              layout="vertical"
-              margin={{ top: 5, right: 50, left: 10, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-              <XAxis type="number" domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11 }} />
-              <YAxis type="category" dataKey="location" width={145} tick={{ fontSize: 12 }} />
-              <Tooltip formatter={(v: unknown, name) => [`${Number(v)}%`, String(name ?? "")]} />
-              <Bar dataKey="score" name="Mystery Guest %" radius={[0, 4, 4, 0]} barSize={22}>
-                {mysteryBarData.map((entry, i) => (
-                  <Cell key={i} fill={complianceColor(entry.score)} fillOpacity={0.85} />
-                ))}
-                <LabelList
-                  dataKey="score"
-                  position="right"
-                  content={(props) => {
-                    const { x, y, width, height, value } = props as Record<string, unknown>;
-                    if (!x || !width || !y || !height) return <></>;
-                    return (
-                      <text
-                        x={(x as number) + (width as number) + 6}
-                        y={(y as number) + (height as number) / 2 + 4}
-                        fontSize={12}
-                        fontWeight={700}
-                        fill={complianceColor(value as number)}
-                      >
-                        {String(value)}%
-                      </text>
-                    );
-                  }}
-                />
-              </Bar>
-              <ReferenceLine x={85} stroke="#D97706" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: "Target 85%", position: "top", fill: "#D97706", fontSize: 10 }} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {mysteryBarData.filter((l) => l.score < 85 && l.issues.length > 0).length > 0 && (
-          <div className="mt-4 space-y-3">
-            <h3 className="text-sm font-semibold text-foreground">Issues</h3>
-            {mysteryBarData
-              .filter((l) => l.score < 85 && l.issues.length > 0)
-              .map((loc) => (
-                <div key={loc.location} className="rounded-lg border border-amber-200 bg-amber-50/30 p-3">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <span className={cn("px-2 py-0.5 rounded text-xs font-bold", complianceBg(loc.score))}>{loc.score}%</span>
-                    <span className="text-sm font-semibold text-foreground">{loc.location}</span>
-                  </div>
-                  <ul className="space-y-1 ml-4">
-                    {loc.issues.map((issue, i) => (
-                      <li key={i} className="text-xs text-muted-foreground list-disc">{issue}</li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-          </div>
-        )}
-      </Card>
+      <StandardsCard
+        title="Mystery Guest Standards by Location"
+        icon={<UserSearch className="h-5 w-5 text-[#7C3AED]" />}
+        month={mystery.month}
+        aggregate={avgMystery}
+        barData={mysteryBarData}
+        barName="Mystery Guest %"
+        emptyMessage="No mystery guest data for the selected period."
+      />
 
     </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   STANDARDS CARD (Facility / Mystery Guest — identical layout)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function StandardsCard({
+  title,
+  icon,
+  month,
+  aggregate,
+  barData,
+  barName,
+  emptyMessage,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  month: string | null;
+  aggregate: number;
+  barData: StandardsLocationRow[];
+  barName: string;
+  emptyMessage: string;
+}) {
+  return (
+    <Card className="p-3 md:p-6">
+      <div className="flex items-center gap-2 mb-1">
+        {icon}
+        <h2 className="text-lg font-semibold text-foreground">{title} — {monthLabel(month)}</h2>
+      </div>
+      <p className="text-sm text-muted-foreground mb-4">
+        Aggregate: {aggregate}% — green &ge;85%, amber 60-84%, red &lt;60%
+      </p>
+      {barData.length === 0 ? (
+        <EmptyState message={emptyMessage} />
+      ) : (
+        <>
+          <div className="h-[360px] md:h-[400px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={barData}
+                layout="vertical"
+                margin={{ top: 5, right: 50, left: 10, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="name" width={145} tick={{ fontSize: 12 }} />
+                <Tooltip formatter={(v: unknown, name) => [`${Number(v)}%`, String(name ?? "")]} />
+                <Bar dataKey="score" name={barName} radius={[0, 4, 4, 0]} barSize={22}>
+                  {barData.map((entry, i) => (
+                    <Cell key={i} fill={complianceColor(entry.score)} fillOpacity={0.85} />
+                  ))}
+                  <LabelList
+                    dataKey="score"
+                    position="right"
+                    content={(props) => {
+                      const { x, y, width, height, value } = props as Record<string, unknown>;
+                      if (!x || !width || !y || !height) return <></>;
+                      return (
+                        <text
+                          x={(x as number) + (width as number) + 6}
+                          y={(y as number) + (height as number) / 2 + 4}
+                          fontSize={12}
+                          fontWeight={700}
+                          fill={complianceColor(value as number)}
+                        >
+                          {String(value)}%
+                        </text>
+                      );
+                    }}
+                  />
+                </Bar>
+                <ReferenceLine x={85} stroke="#D97706" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: "Target 85%", position: "top", fill: "#D97706", fontSize: 10 }} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {barData.filter((l) => l.score < 85 && l.issues.length > 0).length > 0 && (
+            <div className="mt-4 space-y-3">
+              <h3 className="text-sm font-semibold text-foreground">Issues</h3>
+              {barData
+                .filter((l) => l.score < 85 && l.issues.length > 0)
+                .map((loc) => (
+                  <div key={loc.slug} className="rounded-lg border border-amber-200 bg-amber-50/30 p-3">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className={cn("px-2 py-0.5 rounded text-xs font-bold", complianceBg(loc.score))}>{loc.score}%</span>
+                      <span className="text-sm font-semibold text-foreground">{loc.name}</span>
+                      <span className="text-xs text-muted-foreground">{loc.passed}/{loc.total} items passed</span>
+                    </div>
+                    <ul className="space-y-1 ml-4">
+                      {loc.issues.map((issue, i) => (
+                        <li key={i} className="text-xs text-muted-foreground list-disc">
+                          <span className="font-medium text-foreground/70">{issue.category}:</span> {issue.item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+            </div>
+          )}
+        </>
+      )}
+    </Card>
   );
 }
 
