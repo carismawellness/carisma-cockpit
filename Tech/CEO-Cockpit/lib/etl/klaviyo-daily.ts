@@ -148,7 +148,13 @@ interface CampaignAggregates {
   bounce_rate_pct:       number | null;
 }
 
-/** Run a *-values-report POST and return results. */
+interface ReportResult {
+  groupings?: Record<string, string>;
+  statistics?: Record<string, number>;
+}
+
+/** Run a *-values-report POST and return results.
+ *  Each result row has shape: { groupings: {campaign_id|flow_id}, statistics: {recipients, delivered, ...} } */
 async function fetchReport(
   apiKey: string,
   endpoint: "campaign-values-reports" | "flow-values-reports",
@@ -156,7 +162,7 @@ async function fetchReport(
   dateFrom: string,
   dateTo: string,
   conversionMetricId: string,
-): Promise<Record<string, number>[]> {
+): Promise<ReportResult[]> {
   const body = {
     data: {
       type: reportType,
@@ -183,7 +189,7 @@ async function fetchReport(
   );
   if (!res.ok) return [];
   const json = (await res.json()) as {
-    data?: { attributes?: { results?: Record<string, number>[] } };
+    data?: { attributes?: { results?: ReportResult[] } };
   };
   return json.data?.attributes?.results ?? [];
 }
@@ -228,14 +234,15 @@ async function fetchCampaignAggregates(
   let weightedBounce  = 0;
 
   for (const r of [...campaignResults, ...flowResults]) {
-    const recipients = r.recipients ?? 0;
-    const delivered  = r.delivered  ?? 0;
+    const s = r.statistics ?? {};
+    const recipients = Number(s.recipients ?? 0);
+    const delivered  = Number(s.delivered  ?? 0);
     totalRecipients += recipients;
     totalDelivered  += delivered;
-    weightedOpen    += (r.open_rate         ?? 0) * delivered;
-    weightedClick   += (r.click_rate        ?? 0) * delivered;
-    weightedUnsub   += (r.unsubscribe_rate  ?? 0) * delivered;
-    weightedBounce  += (r.bounce_rate       ?? 0) * recipients;
+    weightedOpen    += Number(s.open_rate         ?? 0) * delivered;
+    weightedClick   += Number(s.click_rate        ?? 0) * delivered;
+    weightedUnsub   += Number(s.unsubscribe_rate  ?? 0) * delivered;
+    weightedBounce  += Number(s.bounce_rate       ?? 0) * recipients;
   }
 
   return {
