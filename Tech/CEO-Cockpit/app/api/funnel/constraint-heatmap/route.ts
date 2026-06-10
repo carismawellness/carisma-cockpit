@@ -196,7 +196,8 @@ export async function GET(req: NextRequest) {
     // ── 3. Revenue ────────────────────────────────────────────────────────────
     // GROSS (inc-VAT) for all marketing/funnel surfaces. Only EBITDA reports
     // net of VAT. Canonical gross definitions:
-    //   - Spa:        services + products from Cockpit datasheet (already gross)
+    //   - Spa:        services + products from Cockpit, multiplied by 1.18
+    //                 (ETL divides by 1.18 before storing — columns are ex-VAT)
     //   - Aesthetics: price_inc_vat from aesthetics_sales_daily
     //   - Slimming:   paid from slimming_sales_daily (actually-collected, inc-VAT)
     let total_revenue: number | null = null;
@@ -207,11 +208,12 @@ export async function GET(req: NextRequest) {
         .gte("date", from)
         .lte("date", to);
       type SpaRevRow = { services: number | null; product_phytomer: number | null; product_purest: number | null; product_other: number | null };
-      const sum = (spaRevRows ?? []).reduce(
+      const sumEx = (spaRevRows ?? []).reduce(
         (s: number, r: SpaRevRow) =>
           s + (r.services ?? 0) + (r.product_phytomer ?? 0) + (r.product_purest ?? 0) + (r.product_other ?? 0),
         0,
       );
+      const sum = sumEx * 1.18; // reconstruct inc-VAT
       total_revenue = sum > 0 ? Math.round(sum * 100) / 100 : null;
     } else if (slug === "aesthetics") {
       const { data: revenueRows } = await supabase
