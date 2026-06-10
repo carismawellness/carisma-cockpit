@@ -105,6 +105,20 @@ export const departments: Department[] = [
     ],
   },
   {
+    slug: "hr",
+    label: "HR",
+    icon: Users,
+    path: "/hr",
+    group: "HR",
+  },
+  {
+    slug: "operations",
+    label: "Operations",
+    icon: Settings,
+    path: "/operations",
+    group: "Operations",
+  },
+  {
     slug: "finance",
     label: "EBITDA",
     icon: TrendingUp,
