@@ -279,9 +279,9 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
         {/* Mobile scroll hint */}
         <p className="mb-1 text-center text-[10px] text-muted-foreground md:hidden">← swipe to scroll →</p>
         <div className="overflow-x-auto">
-          <div className="h-[640px]" style={{ minWidth: `max(100%, ${rows.length * 72}px)` }}>
+          <div className="h-[480px]" style={{ minWidth: `max(100%, ${rows.length * 72}px)` }}>
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={rows} margin={{ top: 28, right: 20, left: 0, bottom: 160 }}>
+              <ComposedChart data={rows} margin={{ top: 28, right: 20, left: 0, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
 
                 {/* Brand background shading */}
