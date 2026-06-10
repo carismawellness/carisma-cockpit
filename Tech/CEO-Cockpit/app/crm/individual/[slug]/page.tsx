@@ -66,7 +66,7 @@ function AgentPageContent({
             {agentName}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {formatDateRangeLabel(dateFrom, dateTo)} · CRM performance
+            {periodLabel} · CRM performance
           </p>
         </div>
         <a
