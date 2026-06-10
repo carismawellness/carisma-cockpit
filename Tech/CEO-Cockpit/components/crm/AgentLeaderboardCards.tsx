@@ -17,8 +17,11 @@ import { CrmAgent } from "@/lib/hooks/useCrmAgents";
 import { AGENT_META_BY_SLUG, BRAND_ORDER, type AgentBrand } from "@/lib/constants/agents";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatPercent } from "@/lib/charts/config";
+import { BRAND } from "@/lib/constants/design-tokens";
 
 // ── Google brand palette — one distinct colour per channel ───────────────────
+// Channels (Live Chat / GHL / Email / Chat / Inbound / Outbound) are non-brand
+// categories, so they intentionally keep this palette for max distinguishability.
 const CH = {
   liveChat: "#4285F4",
   ghl:      "#F9AB00",
@@ -38,21 +41,21 @@ function slotLabel(role: string, slot: "lc" | "crm" | "other"): string {
   return                       ({ lc: "Chat",      crm: "Inbound", other: "Outbound" })[slot];
 }
 
-// ── Brand colours ─────────────────────────────────────────────────────────────
+// ── Brand colours — canonical palette (`soft` for backgrounds, `dark` for labels/marks) ──
 
 const BRAND_BG: Record<AgentBrand, string> = {
-  SPA:        "#FBF9F7",
-  AESTHETICS: "#F4F9F9",
-  SLIMMING:   "#F6FAF4",
+  SPA:        BRAND.spa.soft,
+  AESTHETICS: BRAND.aesthetics.soft,
+  SLIMMING:   BRAND.slimming.soft,
 };
 
 const BRAND_LABEL_COLOR: Record<AgentBrand, string> = {
-  SPA:        "#B5936B",
-  AESTHETICS: "#5A9090",
-  SLIMMING:   "#6A9455",
+  SPA:        BRAND.spa.dark,
+  AESTHETICS: BRAND.aesthetics.dark,
+  SLIMMING:   BRAND.slimming.dark,
 };
 
-const SLIMMING_BAR_COLOR = "#6A9455";
+const SLIMMING_BAR_COLOR = BRAND.slimming.dark;
 
 // ── Data shaping ──────────────────────────────────────────────────────────────
 
