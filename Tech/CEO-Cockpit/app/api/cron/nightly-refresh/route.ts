@@ -30,8 +30,9 @@ export async function GET(req: NextRequest) {
   const payload = JSON.stringify({ date_from, date_to, force: true });
   const headers = { "Content-Type": "application/json" };
 
-  // Marketing ETLs use a rolling 30-day window for campaign data
-  const mktFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+  // Marketing ETLs use the same window as the main ETL (first of 2 months ago → today)
+  // This ensures Meta/Google data aligns with CRM and revenue data in all dashboards.
+  const mktFrom = from;
   const mktPayload = JSON.stringify({ date_from: fmt(mktFrom), date_to: fmt(now) });
 
   // Klaviyo syncs yesterday's aggregate snapshot
