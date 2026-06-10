@@ -41,7 +41,14 @@ const AGENTS: [string, string][] = [
   ["queenee",  "Queenee"],
 ];
 
-const SDR_AGENTS = new Set(["nathalia"]);
+// Agents whose source sheet uses the SDR layout (Outbound / Inbound / Chat,
+// columns A–U). Verified by reading each tab's header row — see commit message
+// for the QC sweep.
+//   Chat layout: abid, rana, km, adeel
+//   SDR layout:  everyone else
+const SDR_AGENTS = new Set([
+  "vj", "nicci", "dorianne", "juliana", "anni", "april", "queenee", "nathalia",
+]);
 const CHUNK_SIZE = 200;
 
 // ── Google OAuth ──────────────────────────────────────────────────────────────
