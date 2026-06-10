@@ -255,8 +255,6 @@ function MarketingMasterContent({
           { metric: "Active Flows", spa: fmtSubs(klavSpa.activeFlows), aesthetics: fmtSubs(klavAes.activeFlows), slimming: fmtSubs(klavSlim.activeFlows) },
           { metric: "Open Rate", spa: fmtPct(klavSpa.openRate), aesthetics: fmtPct(klavAes.openRate), slimming: fmtPct(klavSlim.openRate) },
           { metric: "Click Rate", spa: fmtPct(klavSpa.clickRate), aesthetics: fmtPct(klavAes.clickRate), slimming: fmtPct(klavSlim.clickRate) },
-          { metric: "Revenue", spa: "—", aesthetics: "—", slimming: "—" },
-          { metric: "ROAS", spa: "—", aesthetics: "—", slimming: "—" },
         ] as TableRow[],
       },
     ];

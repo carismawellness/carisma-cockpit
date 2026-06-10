@@ -578,22 +578,7 @@ function SpaMarketingContent({
       <Card className="p-3 md:p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Email Marketing</h2>
 
-        {/* Top row: Campaign Revenue vs Flow Revenue — Klaviyo doesn't expose
-            revenue for service businesses without order-tracking integration. */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          <Card className="p-3 md:p-5 text-center">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Campaign Revenue</p>
-            <p className="text-3xl font-bold text-gray-400 mt-2">&mdash;</p>
-            <p className="text-xs text-gray-400 mt-1">Not tracked</p>
-          </Card>
-          <Card className="p-3 md:p-5 text-center">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Flow Revenue</p>
-            <p className="text-3xl font-bold text-gray-400 mt-2">&mdash;</p>
-            <p className="text-xs text-gray-400 mt-1">Not tracked</p>
-          </Card>
-        </div>
-
-        {/* Middle row: Key rates as progress bars */}
+        {/* Key rates as progress bars */}
         <div className="flex flex-col md:flex-row gap-6 mb-6 p-4 bg-gray-50 rounded-lg">
           <EmailRateBar label="Open Rate" value={emailOpenRate || 0} max={60} color="#22C55E" />
           <EmailRateBar label="Click Rate" value={emailClickRate || 0} max={10} color={BRAND_COLOR} />

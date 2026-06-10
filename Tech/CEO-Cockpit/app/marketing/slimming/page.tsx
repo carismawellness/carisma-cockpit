@@ -578,29 +578,15 @@ function SlimmingMarketingContent({
           </div>
         ) : (
           <>
-            {/* Top: Campaign Revenue + Flow Revenue (not tracked in Klaviyo for service business) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-              <Card className="p-3 md:p-5 text-center" style={{ borderColor: BRAND_COLOR, borderWidth: 2 }}>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Campaign Revenue</p>
-                <p className="text-3xl font-bold text-gray-400 mt-2">&mdash;</p>
-                <p className="text-xs text-gray-400 mt-1">Not tracked</p>
-              </Card>
-              <Card className="p-3 md:p-5 text-center" style={{ borderColor: BRAND_COLOR, borderWidth: 2 }}>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Flow Revenue</p>
-                <p className="text-3xl font-bold text-gray-400 mt-2">&mdash;</p>
-                <p className="text-xs text-gray-400 mt-1">Not tracked</p>
-              </Card>
-            </div>
-
-            {/* Middle: Progress bars for key rates */}
+            {/* Progress bars for key rates */}
             <div className="space-y-4 mb-6">
               <ProgressMetric label="Open Rate" value={parseFloat((klaviyo.openRate * 100).toFixed(1))} max={50} color={BRAND_COLOR} />
               <ProgressMetric label="Click Rate" value={parseFloat((klaviyo.clickRate * 100).toFixed(1))} max={10} color={BRAND_COLOR} />
               <ProgressMetric label="Unsubscribe Rate" value={parseFloat((klaviyo.unsubscribeRate * 100).toFixed(1))} max={2} color="#ef4444" />
             </div>
 
-            {/* Bottom: Subscribers, Campaigns, Flows, Email ROAS */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {/* Subscribers, Campaigns, Flows */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <Card className="p-4 text-center">
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Subscribers</p>
                 <p className="text-xl md:text-2xl font-bold text-gray-900 mt-1">{klaviyo.totalSubscribers.toLocaleString()}</p>
@@ -612,10 +598,6 @@ function SlimmingMarketingContent({
               <Card className="p-4 text-center">
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Active Flows</p>
                 <p className="text-xl md:text-2xl font-bold text-gray-900 mt-1">{klaviyo.activeFlows}</p>
-              </Card>
-              <Card className="p-4 text-center">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Email ROAS</p>
-                <p className="text-xl md:text-2xl font-bold text-gray-400 mt-1">&mdash;</p>
               </Card>
             </div>
 
