@@ -434,6 +434,18 @@ function DrillDialog({
   );
 }
 
+// ── Period label from ISO date strings ────────────────────────────────────────
+
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+function fmtPeriodLabel(fromStr: string, toStr: string): string {
+  const [fy, fm] = fromStr.split("-").map(Number);
+  const [ty, tm] = toStr.split("-").map(Number);
+  const f = `${MONTHS[fm-1]} '${String(fy).slice(2)}`;
+  const t = `${MONTHS[tm-1]} '${String(ty).slice(2)}`;
+  return fy === ty && fm === tm ? f : `${f} – ${t}`;
+}
+
 // ── Inner content (receives dateFrom/dateTo from DashboardShell) ──────────────
 
 function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
@@ -510,11 +522,7 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
     const aes   = data.venues["aesthetics"] ?? emptyVenue();
     const slim  = data.venues["slimming"]   ?? emptyVenue();
     const group = data.group;
-    const days  = data.days_in_period;
-    const periodLabel = days <= 31 ? "1 month"
-      : days <= 92  ? `${Math.round(days / 30)} months`
-      : days <= 366 ? `${Math.round(days / 30)} months`
-      : `${Math.round(days / 365)} year`;
+    const periodLabel = fmtPeriodLabel(dfStr, dtStr);
 
     let sppy: SppyData | null = null;
     if (sppyData) {

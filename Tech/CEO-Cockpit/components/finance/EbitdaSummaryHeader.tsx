@@ -230,7 +230,7 @@ function RevenueQCWidget({
   const groupAdj  = groupEbt - groupSrc;
 
   const rows: QcRow[] = [
-    { label: "Spa",        sourceRev: spaLapis,    ebitdaRev: spaRevenue,  sourceNote: "Lapis daily" },
+    { label: "Spa",        sourceRev: spaLapis,    ebitdaRev: spaRevenue,  sourceNote: "Cockpit daily" },
     { label: "Aesthetics", sourceRev: aesRevenue,  ebitdaRev: aesRevenue,  sourceNote: "Direct (price_ex_vat)" },
     { label: "Slimming",   sourceRev: slimRevenue, ebitdaRev: slimRevenue, sourceNote: "Direct (price_ex_vat)" },
   ];
