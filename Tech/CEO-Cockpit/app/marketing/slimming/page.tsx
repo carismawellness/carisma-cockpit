@@ -11,6 +11,7 @@ import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useMetaCampaignsFromDb as useMetaCampaigns, useGoogleCampaignsFromDb as useGoogleCampaigns } from "@/lib/hooks/useAdsCampaigns";
 import { useKlaviyoOverview } from "@/lib/hooks/useKlaviyoOverview";
 import { FlowsTable } from "@/components/marketing/FlowsTable";
+import { BRAND } from "@/lib/constants/design-tokens";
 import type { CampaignData } from "@/lib/types/ads";
 import {
   BarChart,
@@ -26,7 +27,7 @@ import {
 
 /* ---------- constants ---------- */
 
-const BRAND_COLOR = "#3D6B3D";  // slimming text-dark (readable for text + borders)
+const BRAND_COLOR = BRAND.slimming.dark;  // canonical slimming brand color
 
 /* ---------- helpers ---------- */
 

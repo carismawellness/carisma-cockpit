@@ -11,6 +11,7 @@ import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useMetaCampaignsFromDb as useMetaCampaigns, useGoogleCampaignsFromDb as useGoogleCampaigns } from "@/lib/hooks/useAdsCampaigns";
 import { useKlaviyoOverview } from "@/lib/hooks/useKlaviyoOverview";
 import { FlowsTable } from "@/components/marketing/FlowsTable";
+import { BRAND } from "@/lib/constants/design-tokens";
 import type { CampaignData } from "@/lib/types/ads";
 import {
   BarChart,
@@ -26,7 +27,7 @@ import {
 
 /* ---------- constants ---------- */
 
-const BRAND_COLOR = "#3B7676";  // aesthetics text-dark (readable for text + borders)
+const BRAND_COLOR = BRAND.aesthetics.dark;  // canonical aesthetics brand color
 
 /* ---------- helpers ---------- */
 
@@ -686,7 +687,7 @@ function AestheticsMarketingContent({
             {/* Flow breakdown table */}
             <div className="mt-6">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Flow Performance</h3>
-              <FlowsTable brand="aesthetics" dateFrom={dateFrom} dateTo={dateTo} brandColor="#DEEBEB" />
+              <FlowsTable brand="aesthetics" dateFrom={dateFrom} dateTo={dateTo} brandColor={BRAND.aesthetics.dark} />
             </div>
           </>
         )}

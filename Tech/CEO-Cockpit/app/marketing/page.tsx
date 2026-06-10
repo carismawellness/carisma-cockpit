@@ -9,17 +9,17 @@ import { formatCurrency } from "@/lib/charts/config";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useMetaCampaignsFromDb as useMetaCampaigns, useGoogleCampaignsFromDb as useGoogleCampaigns } from "@/lib/hooks/useAdsCampaigns";
 import { useKlaviyoOverview } from "@/lib/hooks/useKlaviyoOverview";
+import { BRAND as BRAND_TOKENS, type BrandKey } from "@/lib/constants/design-tokens";
 import type { CampaignData } from "@/lib/types/ads";
 
-/* ---------- brand colours ---------- */
+/* ---------- brand colours (canonical palette) ---------- */
 
 const BRAND = {
-  spa: { name: "Spa", color: "#EFE7D7" },
-  aesthetics: { name: "Aesthetics", color: "#DEEBEB" },
-  slimming: { name: "Slimming", color: "#C9D8C1" },
+  spa:        { name: "Spa",        color: BRAND_TOKENS.spa.dark },
+  aesthetics: { name: "Aesthetics", color: BRAND_TOKENS.aesthetics.dark },
+  slimming:   { name: "Slimming",   color: BRAND_TOKENS.slimming.dark },
 } as const;
 
-type BrandKey = keyof typeof BRAND;
 const BRAND_KEYS: BrandKey[] = ["spa", "aesthetics", "slimming"];
 
 /* ---------- helpers ---------- */
@@ -80,7 +80,7 @@ function BrandTable({
                 const isRoas = colorCodeRoas && row.roasValues;
                 const colorClass = isRoas ? roasColor(row.roasValues![key]) : "";
                 return (
-                  <td key={key} className={`py-3 px-4 text-right font-bold ${colorClass}`}>
+                  <td key={key} className={`py-3 px-4 text-right tabular-nums font-bold ${colorClass}`}>
                     {row[key]}
                   </td>
                 );

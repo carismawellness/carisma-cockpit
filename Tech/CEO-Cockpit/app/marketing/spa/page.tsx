@@ -11,6 +11,7 @@ import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useMetaCampaignsFromDb as useMetaCampaigns, useGoogleCampaignsFromDb as useGoogleCampaigns } from "@/lib/hooks/useAdsCampaigns";
 import { useKlaviyoOverview } from "@/lib/hooks/useKlaviyoOverview";
 import { FlowsTable } from "@/components/marketing/FlowsTable";
+import { BRAND } from "@/lib/constants/design-tokens";
 import type { CampaignData } from "@/lib/types/ads";
 import {
   BarChart,
@@ -26,7 +27,7 @@ import {
 
 /* ---------- constants ---------- */
 
-const BRAND_COLOR = "#8C7A5A";  // spa text-dark (readable for text + borders)
+const BRAND_COLOR = BRAND.spa.dark;  // canonical spa brand color
 
 /* ---------- helpers ---------- */
 
@@ -596,12 +597,12 @@ function SpaMarketingContent({
               <span className="text-xs font-medium text-gray-500">{campaignPct}% of total</span>
             </div>
           </Card>
-          <Card className="p-3 md:p-5 border-2" style={{ borderColor: "#8B7A4A" }}>
+          <Card className="p-3 md:p-5 border-2" style={{ borderColor: BRAND_COLOR }}>
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Flow Revenue</p>
             <p className="text-3xl font-bold text-gray-900 mt-1">{formatCurrency(emailFlowRev)}</p>
             <div className="mt-3 flex items-center gap-2">
               <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                <div className="h-full rounded-full" style={{ width: `${flowPct}%`, backgroundColor: "#8B7A4A" }} />
+                <div className="h-full rounded-full" style={{ width: `${flowPct}%`, backgroundColor: BRAND_COLOR }} />
               </div>
               <span className="text-xs font-medium text-gray-500">{flowPct}% of total</span>
             </div>
