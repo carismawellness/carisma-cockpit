@@ -28,7 +28,7 @@ export function ServiceBreakdownChart({
     <Card className="p-6">
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-        <span className="text-sm font-medium text-muted-foreground">
+        <span className="text-sm font-medium text-muted-foreground tabular-nums">
           Total: {formatCurrency(total)}
         </span>
       </div>
@@ -47,13 +47,13 @@ export function ServiceBreakdownChart({
                 }}
               >
                 {svc.pct >= 12 && (
-                  <span className="text-[10px] font-semibold text-white">
+                  <span className="text-[10px] font-semibold text-white tabular-nums">
                     {svc.pct.toFixed(1)}%
                   </span>
                 )}
               </div>
             </div>
-            <span className="text-sm font-semibold text-foreground w-20 text-right">
+            <span className="text-sm font-semibold text-foreground w-20 text-right tabular-nums">
               {formatCurrency(svc.revenue)}
             </span>
           </div>
