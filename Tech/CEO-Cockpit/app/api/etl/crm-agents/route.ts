@@ -128,7 +128,14 @@ function parseDate(val: string): string | null {
     [mo, d] = [d, mo]; // value was D/M/YYYY — swap
   }
   if (parseInt(mo, 10) > 12 || parseInt(d, 10) > 31) return null;
-  return `${year}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  const iso = `${year}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  // Reject dates more than 14 days in the future — guards against 2-digit year typos
+  // (e.g. "29" → 2029) and copy-paste errors that produce far-future rows.
+  const today = new Date();
+  const cutoff = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 14)
+    .toISOString().slice(0, 10);
+  if (iso > cutoff) return null;
+  return iso;
 }
 
 // ── Row builders ──────────────────────────────────────────────────────────────
