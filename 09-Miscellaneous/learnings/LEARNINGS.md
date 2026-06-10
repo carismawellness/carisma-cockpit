@@ -41,7 +41,19 @@ Entry format:
 **Distilled to:** [file path where the rule was added]
 -->
 
-_No entries yet. The system will learn as it operates._
+### 2026-06-10 — Sheet-driven ETLs need per-tab header QC before deploy
+
+**What happened:** The CEO-Cockpit `/api/etl/crm-agents` ETL was treating 7 of 12 CRM agents as the wrong layout (Chat vs SDR), because `SDR_AGENTS` only contained `nathalia`. As a result the Team Performance Dashboard showed values like Juliana = 25,251 bookings (which was actually her revenue €25,251 — written into the wrong DB column for months).
+
+**Root cause:** I assumed sheet structure from the agent's role title (SDR vs Chat in the org chart) without reading each tab's header row in Google Sheets. The CRM Master Sheet has two layouts: Chat (A–T, LC/CRM/Other) and SDR (A–U, Outbound/Inbound/Chat) — and an agent's job title doesn't predict which layout their sheet owner used.
+
+**Rule:** **ALWAYS** read every source-sheet tab's header row (`mcp__google-workspace__sheets_read_values <SheetId>!<Tab>!A1:Z2`) before wiring or modifying a sheet-backed ETL, and document the verified column→field map in the route file as a comment. Cell index assumptions silently produce wrong values; the dashboard will render plausible-looking numbers and nobody notices until a CEO QCs against the sheet.
+
+**Rule:** **ALWAYS** after fixing a column-mapping bug in an ETL, force a full re-sync (TRUNCATE the target table or run with a wide date window) — `UPSERT on conflict (key, date)` won't overwrite rows that the new ETL no longer visits for those same dates. Stale rows persist invisibly.
+
+**Rule:** **ALWAYS** verify the relevant OAuth refresh token works before claiming an ETL change is "live" (call the ETL endpoint, check for `invalid_grant`). The Vercel `GOOGLE_SHEETS_REFRESH_TOKEN` for the Cockpit project expires/revokes silently — re-auth flow lives at `~/.go-google-mcp/`.
+
+**Distilled to:** Root `CLAUDE.md` Active Rules (sheet-ETL QC), and Tech/CEO-Cockpit/`CLAUDE.md` (post-fix re-sync requirement, Google token re-auth).
 
 ---
 

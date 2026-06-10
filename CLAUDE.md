@@ -87,7 +87,9 @@ Cross-pollination: If a brand-specific learning applies universally, promote it 
 <!-- This section grows over time as the system learns -->
 <!-- Format: ALWAYS/NEVER [directive] — [rationale] -->
 
-_No active rules yet. The system will learn as it operates._
+- **ALWAYS** read every source-sheet tab's header row before wiring or modifying a sheet-backed ETL — because cell-index assumptions silently produce plausible-looking but wrong numbers (e.g., "Total Sales" column being written into `total_bookings` rendered Juliana as 25,251 bookings for months). Example: `mcp__google-workspace__sheets_read_values <SheetId>!<Tab>!A1:Z2` for each tab, then document the verified column→field map in the route file.
+- **ALWAYS** after fixing a column-mapping bug in an ETL, force a full re-sync (TRUNCATE the target table or run with a wide date window) — because `UPSERT on conflict (key, date)` won't overwrite rows the new ETL no longer visits, so stale rows persist invisibly. Example: bad: hit Re-Sync only; good: `TRUNCATE crm_agent_daily;` then trigger ETL.
+- **ALWAYS** verify the relevant OAuth refresh token works before claiming an ETL change is "live" — because Vercel env-var tokens (especially `GOOGLE_SHEETS_REFRESH_TOKEN`) expire/revoke silently. Example: `curl -X POST .../api/etl/<name>` and check for `invalid_grant` before reporting success.
 
 ## File Structure
 
