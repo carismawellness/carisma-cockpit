@@ -40,6 +40,15 @@ const AOV_OVERRIDES: Array<{ keywords: string[]; aov: number }> = [
   { keywords: ["weight loss", "slimming plan", "glp", "ozempic", "mounjaro"],aov: 350 },
 ];
 
+// Weighted outbound conversion rates per brand — sourced from CRM Master Sheet agent tabs
+// Spa: Juliana + VJ  |  Aesthetics: April  |  Slimming: Dorianne + Queenee
+// Last computed: last 30 days ending Jun 10, 2026 — update quarterly
+const BRAND_OUTBOUND_CONV: Record<string, number> = {
+  spa:        17.6,
+  aesthetics: 16.4,
+  slimming:   17.0,
+};
+
 function resolveAov(brandSlug: string, campaignName: string): number {
   const lower = campaignName.toLowerCase();
   for (const { keywords, aov } of AOV_OVERRIDES) {
@@ -127,17 +136,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Brand-level booking conversion from crm_daily
-    const { data: crmRows } = await supabase
-      .from("crm_daily")
-      .select("total_leads, appointments_booked")
-      .eq("brand_id", brandId)
-      .gte("date", from)
-      .lte("date", to);
-
-    const crmLeads  = (crmRows ?? []).reduce((s: number, r: { total_leads: number }) => s + (r.total_leads ?? 0), 0);
-    const crmBooked = (crmRows ?? []).reduce((s: number, r: { appointments_booked: number }) => s + (r.appointments_booked ?? 0), 0);
-    const conversionPct = crmLeads > 0 ? Math.round((crmBooked / crmLeads) * 1000) / 10 : null;
+    const conversionPct = BRAND_OUTBOUND_CONV[slug] ?? null;
 
     // Build campaign rows
     const campaigns: DrilldownCampaign[] = [];
