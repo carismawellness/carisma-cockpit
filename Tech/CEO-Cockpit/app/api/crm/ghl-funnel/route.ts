@@ -121,48 +121,21 @@ async function diagnoseFilters(
   pipelineId: string,
   dateFromIso: string,
   dateToIso: string,
-  startAfterMs: number,
-  startBeforeMs: number,
+  _startAfterMs: number,
+  _startBeforeMs: number,
 ): Promise<Record<string, number | string>> {
+  const base = {
+    location_id: locationId,
+    pipeline_id: pipelineId,
+    pipeline_stage_id: stageId,
+    limit: "1",
+  };
   const variants: Record<string, Record<string, string>> = {
-    "noDate": {
-      location_id: locationId,
-      pipeline_id: pipelineId,
-      pipeline_stage_id: stageId,
-      limit: "1",
-    },
-    "startAfter_ms": {
-      location_id: locationId,
-      pipeline_id: pipelineId,
-      pipeline_stage_id: stageId,
-      startAfter: String(startAfterMs),
-      startBefore: String(startBeforeMs),
-      limit: "1",
-    },
-    "date_iso_added": {
-      location_id: locationId,
-      pipeline_id: pipelineId,
-      pipeline_stage_id: stageId,
-      date: `${dateFromIso},${dateToIso}`,
-      date_type: "added",
-      limit: "1",
-    },
-    "dateAddedAfter_iso": {
-      location_id: locationId,
-      pipeline_id: pipelineId,
-      pipeline_stage_id: stageId,
-      dateAddedAfter: dateFromIso,
-      dateAddedBefore: dateToIso,
-      limit: "1",
-    },
-    "startAfter_iso": {
-      location_id: locationId,
-      pipeline_id: pipelineId,
-      pipeline_stage_id: stageId,
-      startAfter: dateFromIso,
-      startBefore: dateToIso,
-      limit: "1",
-    },
+    "noDate":             base,
+    "date_only":          { ...base, date: dateFromIso },
+    "startDate_endDate":  { ...base, startDate: dateFromIso, endDate: dateToIso },
+    "date_added":         { ...base, dateAdded: dateFromIso },
+    "q_dateRange":        { ...base, q: `dateAdded:[${dateFromIso} TO ${dateToIso}]` },
   };
   const out: Record<string, number | string> = {};
   for (const [name, params] of Object.entries(variants)) {
@@ -170,9 +143,41 @@ async function diagnoseFilters(
       const r = await ghlGet("/opportunities/search", apiKey, params) as { meta?: { total?: number } };
       out[name] = r.meta?.total ?? 0;
     } catch (e) {
-      out[name] = e instanceof Error ? e.message.slice(0, 100) : "err";
+      out[name] = e instanceof Error ? e.message.slice(0, 200) : "err";
     }
   }
+
+  // Try POST advanced search
+  try {
+    const resp = await fetch(`${GHL_BASE}/opportunities/search`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Version: GHL_V,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        locationId,
+        pipelineId,
+        pipelineStageId: stageId,
+        filters: [
+          { field: "dateAdded", operator: "between", value: [dateFromIso, dateToIso] },
+        ],
+        limit: 1,
+      }),
+    });
+    const txt = await resp.text();
+    if (!resp.ok) {
+      out["POST_filters"] = `${resp.status}: ${txt.slice(0, 200)}`;
+    } else {
+      const j = JSON.parse(txt);
+      out["POST_filters"] = j.meta?.total ?? 0;
+    }
+  } catch (e) {
+    out["POST_filters"] = e instanceof Error ? e.message.slice(0, 150) : "err";
+  }
+
   return out;
 }
 
