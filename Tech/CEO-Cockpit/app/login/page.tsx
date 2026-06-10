@@ -55,7 +55,7 @@ export default function LoginPage() {
         sessionStorage.removeItem("sessionOnly");
       }
 
-      router.push("/ceo");
+      router.push("/sales/spa");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");

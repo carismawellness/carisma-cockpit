@@ -56,7 +56,7 @@ export default function RegisterPage() {
     setLoading(false);
 
     // If email confirmation is disabled in Supabase, redirect immediately
-    setTimeout(() => router.push("/ceo"), 1500);
+    setTimeout(() => router.push("/sales/spa"), 1500);
   }
 
   return (

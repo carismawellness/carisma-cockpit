@@ -5,7 +5,6 @@ export interface DashboardDef {
 }
 
 export const DASHBOARDS: DashboardDef[] = [
-  { key: "ceo",                       label: "CEO Overview",              group: "General"    },
   { key: "funnel",                     label: "Funnel",                    group: "General"    },
   { key: "hr",                         label: "HR",                        group: "General"    },
   { key: "operations",                 label: "Operations",                group: "General"    },

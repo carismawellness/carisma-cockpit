@@ -1,5 +1,4 @@
 import {
-  LayoutDashboard,
   Megaphone,
   DollarSign,
   Headphones,
@@ -46,7 +45,6 @@ export const departments: Department[] = [
     icon: ClipboardList,
     path: "",
     children: [
-      { slug: "ceo",        label: "CEO",        path: "/ceo",        icon: LayoutDashboard },
       { slug: "funnel",     label: "Funnel",     path: "/funnel",     icon: Filter },
       { slug: "hr",         label: "HR",         path: "/hr",         icon: Users },
       { slug: "operations", label: "Operations", path: "/operations", icon: Settings },
@@ -122,7 +120,7 @@ export const departments: Department[] = [
     children: [
       { slug: "ebitda-rules",   label: "EBITDA Rules",   path: "/settings/ebitda-rules",   icon: BookOpen },
       { slug: "ebitda-mapping", label: "EBITDA Mapping", path: "/settings/ebitda-mapping", icon: BookOpen },
-      { slug: "data-sources",   label: "EBITDA Sources",  path: "/settings/data-sources",   icon: Activity },
+      { slug: "data-sources",   label: "Data Sources",    path: "/settings/data-sources",   icon: Activity },
       { slug: "user-access",    label: "User Access",    path: "/settings/user-access",    icon: Users },
     ],
   },

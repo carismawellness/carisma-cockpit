@@ -12,7 +12,7 @@ export function useKeyboardShortcuts() {
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
       // Number keys 1-7 for department navigation
-      const routes = ["/ceo", "/marketing", "/sales", "/finance", "/hr", "/operations", "/data"];
+      const routes = ["/marketing", "/sales", "/finance", "/hr", "/operations", "/data"];
       const num = parseInt(e.key);
       if (num >= 1 && num <= 7 && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
