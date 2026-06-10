@@ -56,9 +56,24 @@ export const departments: Department[] = [
     path: "/sales",
     group: "Sales",
     children: [
-      { slug: "spa", label: "Spa", path: "/sales/spa", icon: Sparkles },
-      { slug: "aesthetics", label: "Aesthetics", path: "/sales/aesthetics", icon: Heart },
-      { slug: "slimming", label: "Slimming", path: "/sales/slimming", icon: Activity },
+      {
+        slug: "spa", label: "Spa", path: "/sales/spa", icon: Sparkles,
+        children: [
+          { slug: "spa-employees", label: "Employees", path: "/sales/spa/employees", icon: Users },
+        ],
+      },
+      {
+        slug: "aesthetics", label: "Aesthetics", path: "/sales/aesthetics", icon: Heart,
+        children: [
+          { slug: "aesthetics-employees", label: "Employees", path: "/sales/aesthetics/employees", icon: Users },
+        ],
+      },
+      {
+        slug: "slimming", label: "Slimming", path: "/sales/slimming", icon: Activity,
+        children: [
+          { slug: "slimming-employees", label: "Employees", path: "/sales/slimming/employees", icon: Users },
+        ],
+      },
     ],
   },
   {
@@ -138,6 +153,7 @@ export const departments: Department[] = [
       { slug: "ebitda-rules",        label: "EBITDA Rules",       path: "/settings/ebitda-rules",        icon: BookOpen },
       { slug: "ebitda-mapping",      label: "EBITDA Mapping",     path: "/settings/ebitda-mapping",      icon: BookOpen },
       { slug: "crm-agent-mapping",   label: "CRM Agent Mapping",  path: "/settings/crm-agent-mapping",   icon: Users },
+      { slug: "sales-employees",     label: "Sales Employees",    path: "/settings/sales-employees",     icon: Users },
       { slug: "data-sources",        label: "Data Sources",       path: "/settings/data-sources",        icon: Activity },
       { slug: "user-access",         label: "User Access",        path: "/settings/user-access",         icon: User },
     ],

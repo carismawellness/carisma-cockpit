@@ -26,12 +26,13 @@ export async function POST(req: NextRequest) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (process.env.CRON_SECRET) headers["Authorization"] = `Bearer ${process.env.CRON_SECRET}`;
 
-  const [cockpitRes, aestheticsRes, slimmingSalesRes, slimmingTxRes, spaEmpRes] = await Promise.allSettled([
+  const [cockpitRes, aestheticsRes, slimmingSalesRes, slimmingTxRes, spaEmpRes, spaRetailEmpRes] = await Promise.allSettled([
     fetch(`${BASE_URL}/api/etl/cockpit-revenue`,        { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/aesthetics-sales`,     { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/slimming-sales`,       { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/slimming-treatments`,  { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/spa-services-by-employee`, { method: "POST", headers, body: payload }),
+    fetch(`${BASE_URL}/api/etl/spa-retail-by-employee`,   { method: "POST", headers, body: payload }),
   ]);
 
   const outcome = (r: PromiseSettledResult<Response>) =>
@@ -45,6 +46,7 @@ export async function POST(req: NextRequest) {
       slimming_sales:     outcome(slimmingSalesRes),
       slimming_treatments: outcome(slimmingTxRes),
       spa_employees:      outcome(spaEmpRes),
+      spa_retail_employees: outcome(spaRetailEmpRes),
     },
   });
 }

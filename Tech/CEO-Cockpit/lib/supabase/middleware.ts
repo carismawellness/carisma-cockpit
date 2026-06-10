@@ -116,6 +116,23 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // ── Sales-employee self-access ─────────────────────────────────────────────
+  // A mapped sales employee may always view their own personal dashboard, even
+  // with zero dashboard permissions (mapping lives in sales_employees.user_email).
+  const empMatch = pathname.match(
+    /^\/sales\/(spa|aesthetics|slimming)\/employees\/([^/]+)\/?$/
+  );
+  if (empMatch) {
+    const { data: emp } = await supabase
+      .from("sales_employees")
+      .select("id")
+      .eq("user_email", email)
+      .eq("brand_slug", empMatch[1])
+      .eq("slug", decodeURIComponent(empMatch[2]))
+      .maybeSingle();
+    if (emp) return supabaseResponse;
+  }
+
   // ── Check dashboard permission ─────────────────────────────────────────────
   const permKey = pathToPermissionKey(pathname);
 
@@ -143,7 +160,18 @@ export async function updateSession(request: NextRequest) {
       if (firstKey && DASHBOARD_KEYS.includes(firstKey)) {
         url.pathname = `/${firstKey}`;
       } else {
-        url.pathname = "/unauthorized";
+        // Mapped sales employees with no dashboard permissions land on their
+        // own personal dashboard instead of /unauthorized.
+        const { data: selfEmp } = await supabase
+          .from("sales_employees")
+          .select("brand_slug, slug")
+          .eq("user_email", email)
+          .eq("is_active", true)
+          .limit(1);
+        const se = selfEmp?.[0];
+        url.pathname = se
+          ? `/sales/${se.brand_slug}/employees/${se.slug}`
+          : "/unauthorized";
       }
 
       return NextResponse.redirect(url);
