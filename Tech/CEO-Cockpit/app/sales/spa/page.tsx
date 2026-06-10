@@ -10,6 +10,7 @@ import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useSpaRevenue } from "@/lib/hooks/useSpaRevenue";
 import { useSpaDeepaAnalytics } from "@/lib/hooks/useSpaDeepaAnalytics";
 import { useSalaryRoster } from "@/lib/hooks/useSalaryRoster";
+import { BRAND } from "@/lib/constants/design-tokens";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LabelList, Legend, Cell,
@@ -20,7 +21,7 @@ import { SyncButton } from "@/components/dashboard/SyncButton";
 const VAT_RATE = 0.18;
 
 const PAYMENT_COLORS: Record<string, string> = {
-  "Credit Card":        "#8C7A5A",  // spa-dark (primary)
+  "Credit Card":        BRAND.spa.dark,  // spa-dark (primary)
   "Cash":               "#E5C088",  // soft amber
   "Hotel Room Account": "#B8C9E0",  // soft Meta blue (hotel-channel)
   "Payment Center":     "#A8D4A8",  // soft green (settled)
@@ -282,8 +283,8 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                 <YAxis tickFormatter={(v: number) => fmtShort(v)} tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(v: unknown, name: unknown) => [fmtShort(Number(v)), String(name)]} />
                 <Legend />
-                <Bar dataKey="Services" stackId="a" fill="#8C7A5A" barSize={40} />
-                <Bar dataKey="Products" stackId="a" fill="#D4C5A8" barSize={40} radius={[4, 4, 0, 0]}>
+                <Bar dataKey="Services" stackId="a" fill={BRAND.spa.dark} barSize={40} />
+                <Bar dataKey="Products" stackId="a" fill={BRAND.spa.soft} barSize={40} radius={[4, 4, 0, 0]}>
                   <LabelList
                     dataKey="prodPct"
                     position="inside"
@@ -328,7 +329,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                       </td>
                       <td className="py-2 text-right tabular-nums">
                         {row.yoyPct !== null ? (
-                          <span className={`font-semibold ${row.yoyPct >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                          <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-semibold ${row.yoyPct >= 0 ? "text-emerald-700 bg-emerald-50" : "text-red-600 bg-red-50"}`}>
                             {row.yoyPct >= 0 ? "+" : ""}{row.yoyPct}%
                           </span>
                         ) : "—"}
@@ -345,7 +346,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                     </td>
                     <td className="py-2 text-right tabular-nums">
                       {yoy.gross !== undefined ? (
-                        <span className={`font-bold ${yoy.gross >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                        <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-bold ${yoy.gross >= 0 ? "text-emerald-700 bg-emerald-50" : "text-red-600 bg-red-50"}`}>
                           {yoy.gross >= 0 ? "+" : ""}{Math.round(yoy.gross)}%
                         </span>
                       ) : "—"}
@@ -385,7 +386,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                     <YAxis tickFormatter={(v: number) => fmtShort(v)} tick={{ fontSize: 11 }} />
                     <Tooltip formatter={(v: unknown, name: unknown) => [fmtShort(Number(v)), String(name)]} />
                     <Legend />
-                    <Bar dataKey="Hotel Guests" stackId="a" fill="#8C7A5A">
+                    <Bar dataKey="Hotel Guests" stackId="a" fill={BRAND.spa.dark}>
                       <LabelList
                         dataKey="hotelPct"
                         position="inside"
@@ -393,7 +394,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                         style={{ fontSize: 10, fontWeight: 700, fill: "#fff" }}
                       />
                     </Bar>
-                    <Bar dataKey="Non-Hotel" stackId="a" fill="#D4C5A8" radius={[4, 4, 0, 0]}>
+                    <Bar dataKey="Non-Hotel" stackId="a" fill={BRAND.spa.soft} radius={[4, 4, 0, 0]}>
                       <LabelList
                         dataKey="Non-Hotel"
                         position="top"
@@ -513,7 +514,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
             title="Service Revenue by Therapist"
             subtitle="EUR inc-VAT · sorted by service"
             data={staffChartData}
-            serviceColor="#8C7A5A"
+            serviceColor={BRAND.spa.dark}
             retailColor="#E5C088"
             mode="service"
           />
@@ -521,7 +522,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
             title="Retail Revenue by Therapist"
             subtitle="EUR inc-VAT · sorted by retail"
             data={staffChartData}
-            serviceColor="#8C7A5A"
+            serviceColor={BRAND.spa.dark}
             retailColor="#E5C088"
             mode="retail"
           />
@@ -535,7 +536,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
             <h2 className="text-base font-semibold text-foreground">Revenue &amp; Salary Cost by Therapist</h2>
             <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 rounded-sm bg-[#8C7A5A]" />
+                <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: BRAND.spa.dark }} />
                 Net revenue
               </span>
               <span className="flex items-center gap-1">
@@ -548,7 +549,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
             <BarChart
               layout="vertical"
               data={therapistKData}
-              margin={{ top: 0, right: 100, left: 10, bottom: 0 }}
+              margin={{ top: 20, right: 100, left: 10, bottom: 0 }}
             >
               <CartesianGrid strokeDasharray="3 3" horizontal={false} />
               <XAxis
@@ -576,7 +577,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                 }}
                 contentStyle={{ fontSize: 12 }}
               />
-              <Bar dataKey="revenue_net" stackId="rev" fill="#8C7A5A" radius={[0, 0, 0, 0]} />
+              <Bar dataKey="revenue_net" stackId="rev" fill={BRAND.spa.dark} radius={[0, 0, 0, 0]} />
               <Bar dataKey="salary_cost" stackId="rev" fill="#4a7fa5" radius={[0, 4, 4, 0]}>
                 <LabelList
                   dataKey="k_label"
