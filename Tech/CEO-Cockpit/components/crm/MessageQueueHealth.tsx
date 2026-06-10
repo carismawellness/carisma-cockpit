@@ -33,8 +33,6 @@ function statusBg(count: number): string {
 }
 
 export function MessageQueueHealth({
-  dateFrom,
-  dateTo,
   brandFilter,
 }: {
   dateFrom: Date;
@@ -43,10 +41,12 @@ export function MessageQueueHealth({
 }) {
   const { brandMap } = useLookups();
 
+  // GHL unread count is a real-time daily snapshot — always query today, not the filtered range
+  const today = new Date();
   const { data, loading } = useKPIData<CrmDailyRow>({
     table: "crm_daily",
-    dateFrom,
-    dateTo,
+    dateFrom: today,
+    dateTo: today,
     brandFilter,
   });
 
