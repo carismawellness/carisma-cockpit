@@ -145,7 +145,7 @@ export function GroupBrandBreakdown({ period, ly, spaLocations, isFetching }: Pr
           <BarChart
             data={chartData}
             margin={{ top: 48, right: 16, left: 16, bottom: isWide ? 40 : 8 }}
-            barCategoryGap={isWide ? "22%" : "30%"}
+            barCategoryGap={isWide ? "12%" : "22%"}
           >
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
             <XAxis
@@ -165,7 +165,7 @@ export function GroupBrandBreakdown({ period, ly, spaLocations, isFetching }: Pr
             <Bar
               dataKey={(d: Row) => (d.hasLy ? d.ly : 0)}
               name="Same Period LY"
-              barSize={isWide ? 32 : 48}
+              barSize={isWide ? 56 : 72}
               radius={[4, 4, 0, 0]}
             >
               {chartData.map((d, i) => (
@@ -196,7 +196,7 @@ export function GroupBrandBreakdown({ period, ly, spaLocations, isFetching }: Pr
               />
             </Bar>
             {/* Current bar — dark brand color, with value + YoY label on top */}
-            <Bar dataKey="current" name="This Period" barSize={isWide ? 32 : 48} radius={[4, 4, 0, 0]}>
+            <Bar dataKey="current" name="This Period" barSize={isWide ? 56 : 72} radius={[4, 4, 0, 0]}>
               {chartData.map((d, i) => <Cell key={`cur-${i}`} fill={d.dark} />)}
               <LabelList
                 content={(props: { x?: number | string; y?: number | string; width?: number | string; index?: number }) => {

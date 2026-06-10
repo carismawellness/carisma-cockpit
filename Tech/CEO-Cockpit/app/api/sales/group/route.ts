@@ -145,10 +145,19 @@ async function fetchMonthlySeries(
   if (spaError) throw spaError;
 
   const spaByMonth = new Map<string, number>();
+  // month → { [hotelName]: revenue }
+  const spaByMonthByLocation = new Map<string, Record<string, number>>();
   for (const r of spaRows ?? []) {
     const m = (r.date as string).slice(0, 7) + "-01";
     const gross = computeSpaGrossRevenue(r);
     spaByMonth.set(m, (spaByMonth.get(m) ?? 0) + gross);
+
+    const hotelName = SPA_LOC_META[r.location_id as number]?.name;
+    if (hotelName) {
+      const bucket = spaByMonthByLocation.get(m) ?? {};
+      bucket[hotelName] = (bucket[hotelName] ?? 0) + gross;
+      spaByMonthByLocation.set(m, bucket);
+    }
   }
 
   // Fetch aesthetics monthly
@@ -187,6 +196,12 @@ async function fetchMonthlySeries(
     const spa_ly = Math.round(spaByMonth.get(lyM) ?? 0);
     const aes_ly = Math.round(aesByMonth.get(lyM) ?? 0);
     const slim_ly= Math.round(slimByMonth.get(lyM)?? 0);
+    // Round each location's revenue. Keys are hotel display names.
+    const spaLocRaw = spaByMonthByLocation.get(m) ?? {};
+    const spa_by_location: Record<string, number> = {};
+    for (const [name, val] of Object.entries(spaLocRaw)) {
+      spa_by_location[name] = Math.round(val);
+    }
     return {
       month:    m,
       ly_month: lyM,
@@ -198,6 +213,7 @@ async function fetchMonthlySeries(
       aesthetics_ly: aes_ly,
       slimming_ly:   slim_ly,
       total_ly:      spa_ly + aes_ly + slim_ly,
+      spa_by_location,
     };
   });
 }

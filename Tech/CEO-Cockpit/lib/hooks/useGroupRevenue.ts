@@ -18,16 +18,18 @@ export interface GroupPeriod {
 }
 
 export interface GroupMonthlyPoint {
-  month:         string;
-  ly_month:      string;
-  spa:           number;
-  aesthetics:    number;
-  slimming:      number;
-  total:         number;
-  spa_ly:        number;
-  aesthetics_ly: number;
-  slimming_ly:   number;
-  total_ly:      number;
+  month:            string;
+  ly_month:         string;
+  spa:              number;
+  aesthetics:       number;
+  slimming:         number;
+  total:            number;
+  spa_ly:           number;
+  aesthetics_ly:    number;
+  slimming_ly:      number;
+  total_ly:         number;
+  /** Per-hotel breakdown of the Spa total. Keys are hotel display names. */
+  spa_by_location?: Record<string, number>;
 }
 
 export interface UseGroupRevenueResult {
