@@ -205,20 +205,20 @@ export async function runSpaEbitdaCheck(dateFrom: string, dateTo: string) {
     }
   }
 
-  let lapisRevenue = 0;
+  let cockpitRevenue = 0;
   for (const mk of monthKeys) {
     const rows = await select("spa_revenue_monthly", { month: mk });
     for (const r of rows) {
-      lapisRevenue += Number(r.services ?? 0) + Number(r.product_phytomer ?? 0) +
+      cockpitRevenue += Number(r.services ?? 0) + Number(r.product_phytomer ?? 0) +
         Number(r.product_purest ?? 0) + Number(r.product_other ?? 0) +
         Number(r.wholesale ?? 0) - Number(r.sales_discount ?? 0) - Number(r.sales_refund ?? 0);
     }
   }
 
-  const revenueGap         = lapisRevenue - actualRevenue;
+  const revenueGap         = cockpitRevenue - actualRevenue;
   const frontendEbitda     = actualEbitda + revenueGap;
   const expectedEbitda     = zohoEbitda - salarySupplement;
-  const expectedWithLapis  = expectedEbitda + revenueGap;
+  const expectedWithCockpit  = expectedEbitda + revenueGap;
 
   return {
     period: { date_from: dateFrom, date_to: dateTo },
@@ -238,13 +238,13 @@ export async function runSpaEbitdaCheck(dateFrom: string, dateTo: string) {
       salary_supplement:      +salarySupplement.toFixed(2),
       expected_ebitda:        +expectedEbitda  .toFixed(2),
       actual_ebitda_zoho_rev: +actualEbitda    .toFixed(2),
-      lapis_revenue:          +lapisRevenue    .toFixed(2),
+      cockpit_revenue:          +cockpitRevenue    .toFixed(2),
       zoho_revenue:           +actualRevenue   .toFixed(2),
       revenue_gap:            +revenueGap      .toFixed(2),
       frontend_ebitda:        +frontendEbitda  .toFixed(2),
-      expected_with_lapis:    +expectedWithLapis.toFixed(2),
-      difference:             +(frontendEbitda - expectedWithLapis).toFixed(2),
-      status: Math.abs(frontendEbitda - expectedWithLapis) < 500 ? "ok" : "mismatch",
+      expected_with_cockpit:    +expectedWithCockpit.toFixed(2),
+      difference:             +(frontendEbitda - expectedWithCockpit).toFixed(2),
+      status: Math.abs(frontendEbitda - expectedWithCockpit) < 500 ? "ok" : "mismatch",
     },
     gap_analysis: gapAnalysis(accounts, activeCoaCodes, dbMap),
   };

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { runLapisRevenue, runLapisRevenueDaily } from "@/lib/etl/lapis-revenue";
+import { runCockpitRevenue, runCockpitRevenueDaily } from "@/lib/etl/cockpit-revenue";
 
 export const maxDuration = 60;
 
@@ -20,8 +20,8 @@ export async function POST(req: NextRequest) {
   try {
     // Run both monthly (for Zoho adjustments) and daily (for exact revenue by date range)
     const [monthly, daily] = await Promise.all([
-      runLapisRevenue(dateFrom, dateTo, force),
-      runLapisRevenueDaily(dateFrom, dateTo),
+      runCockpitRevenue(dateFrom, dateTo, force),
+      runCockpitRevenueDaily(dateFrom, dateTo),
     ]);
     return NextResponse.json({
       status: "ok",

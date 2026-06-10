@@ -83,7 +83,7 @@ export function useSpaDeepaAnalytics(dateFrom: Date, dateTo: Date): SpaDeepaAnal
     queryKey: ["spa-deepa-analytics", dateFromStr, dateToStr],
     queryFn: async () => {
       const res = await fetch(
-        `/api/lapis/spa-analytics?date_from=${dateFromStr}&date_to=${dateToStr}`
+        `/api/cockpit/spa-analytics?date_from=${dateFromStr}&date_to=${dateToStr}`
       );
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed to fetch spa analytics");

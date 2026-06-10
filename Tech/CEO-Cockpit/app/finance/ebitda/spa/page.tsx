@@ -123,11 +123,11 @@ interface CheckResult {
     salary_supplement: number;
     expected_ebitda: number;
     actual_ebitda_zoho_rev: number;
-    lapis_revenue: number;
+    cockpit_revenue: number;
     zoho_revenue: number;
     revenue_gap: number;
     frontend_ebitda: number;
-    expected_with_lapis: number;
+    expected_with_cockpit: number;
     difference: number;
     status: "ok" | "mismatch";
   };
@@ -407,9 +407,9 @@ function EbitdaReconciliation({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
               ))}
             <Row label="Total supplement" value={-result.salary_supplement.total} bold />
             <div className="mt-3 pt-2 border-t border-border">
-              <Row label="Revenue gap (Lapis − Zoho)" value={r.revenue_gap} sub="note" />
+              <Row label="Revenue gap (Cockpit − Zoho)" value={r.revenue_gap} sub="note" />
               <p className="text-xs text-muted-foreground/70 mt-1">
-                Frontend uses Lapis revenue; Zoho cost structure unchanged.
+                Frontend uses Cockpit revenue; Zoho cost structure unchanged.
               </p>
             </div>
           </div>
@@ -422,7 +422,7 @@ function EbitdaReconciliation({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
             <Row label="Zoho EBITDA"         value={r.zoho_ebitda} />
             <Row label="+ Revenue gap"        value={r.revenue_gap} indent />
             <Row label="− Salary supplement"  value={-r.salary_supplement} indent />
-            <Row label="Expected EBITDA"      value={r.expected_with_lapis} bold />
+            <Row label="Expected EBITDA"      value={r.expected_with_cockpit} bold />
             <Row label="Actual (frontend)"    value={r.frontend_ebitda}    bold />
             <div className="mt-3 pt-2 border-t border-border flex items-center justify-between">
               <span className="text-sm font-semibold text-foreground">Difference</span>

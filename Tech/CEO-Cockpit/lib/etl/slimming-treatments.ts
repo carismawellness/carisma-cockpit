@@ -1,5 +1,5 @@
 import { deleteWhere, insertRows } from "./supabase-etl";
-import { lapisCsvUrl, LAPIS_TABS } from "../constants/lapis-sheets";
+import { cockpitCsvUrl, COCKPIT_TABS } from "../constants/cockpit-sheets";
 
 const VAT_RATE = 0.18;
 
@@ -20,8 +20,8 @@ function parseCSVRow(line: string): string[] {
   return cells;
 }
 
-async function fetchLapisCsv(): Promise<Record<string, string>[]> {
-  const url = lapisCsvUrl(LAPIS_TABS.SLM_TRANSACTIONS.gid);
+async function fetchCockpitCsv(): Promise<Record<string, string>[]> {
+  const url = cockpitCsvUrl(COCKPIT_TABS.SLM_TRANSACTIONS.gid);
   const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) throw new Error(`Cockpit Datasheet fetch failed: ${resp.status}`);
   const text = await resp.text();
@@ -91,8 +91,8 @@ export async function runSlimmingTreatments(
   dateTo: string,
 ): Promise<{ rowsInserted: number; log: string[] }> {
   const log: string[] = [];
-  const allRows = await fetchLapisCsv();
-  log.push(`Fetched ${allRows.length} raw rows from Lapis SLM_TRANSACTIONS tab`);
+  const allRows = await fetchCockpitCsv();
+  log.push(`Fetched ${allRows.length} raw rows from Cockpit SLM_TRANSACTIONS tab`);
 
   const validMonths = monthsInRange(dateFrom, dateTo);
   const buckets = new Map<string, Record<string, unknown>[]>();
@@ -122,7 +122,7 @@ export async function runSlimmingTreatments(
 
     if (!buckets.has(monthKey)) buckets.set(monthKey, []);
     buckets.get(monthKey)!.push({
-      sheet_tab:       LAPIS_TABS.SLM_TRANSACTIONS.name,
+      sheet_tab:       COCKPIT_TABS.SLM_TRANSACTIONS.name,
       month:           monthKey,
       date_of_service: lastDate,
       client,

@@ -1,5 +1,5 @@
 import { deleteWhere, insertRows } from "./supabase-etl";
-import { lapisCsvUrl, LAPIS_TABS } from "../constants/lapis-sheets";
+import { cockpitCsvUrl, COCKPIT_TABS } from "../constants/cockpit-sheets";
 
 const LOW_VAT_PERSONS = new Set(["francesca", "giovanni", "kendra"]);
 const DEFAULT_VAT = 0.18;
@@ -22,8 +22,8 @@ function parseCSVRow(line: string): string[] {
   return cells;
 }
 
-async function fetchLapisCsv(): Promise<Record<string, string>[]> {
-  const url = lapisCsvUrl(LAPIS_TABS.AESTHETICS.gid);
+async function fetchCockpitCsv(): Promise<Record<string, string>[]> {
+  const url = cockpitCsvUrl(COCKPIT_TABS.AESTHETICS.gid);
   const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) throw new Error(`Cockpit Datasheet fetch failed: ${resp.status}`);
   const text = await resp.text();
@@ -89,8 +89,8 @@ export async function runAestheticsSales(
   dateTo: string,
 ): Promise<{ rowsInserted: number; log: string[] }> {
   const log: string[] = [];
-  const allRows = await fetchLapisCsv();
-  log.push(`Fetched ${allRows.length} raw rows from Lapis Aesthetics tab`);
+  const allRows = await fetchCockpitCsv();
+  log.push(`Fetched ${allRows.length} raw rows from Cockpit Aesthetics tab`);
 
   const validMonths = monthsInRange(dateFrom, dateTo);
   const buckets = new Map<string, Record<string, unknown>[]>();
@@ -124,7 +124,7 @@ export async function runAestheticsSales(
 
     if (!buckets.has(monthKey)) buckets.set(monthKey, []);
     buckets.get(monthKey)!.push({
-      sheet_tab:       LAPIS_TABS.AESTHETICS.name,
+      sheet_tab:       COCKPIT_TABS.AESTHETICS.name,
       month:           monthKey,
       date_of_service: lastDate,
       invoice,

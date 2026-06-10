@@ -119,7 +119,7 @@ export function AppointmentPipeline() {
         <div className="flex flex-col items-center justify-center h-48 text-gray-400 gap-3">
           <CalendarDays className="h-12 w-12" />
           <p className="text-sm text-center">
-            Connect Fresha/Lapis to see your booking pipeline
+            Connect Fresha/Cockpit to see your booking pipeline
           </p>
         </div>
       </Card>

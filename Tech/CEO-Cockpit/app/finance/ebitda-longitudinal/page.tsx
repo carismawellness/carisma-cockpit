@@ -474,7 +474,7 @@ function LongitudinalContent({
       groupEbitda:     c.ebitda,
       spaRevenue:      c.spa.revenue,
       spaEbitda:       c.spa.ebitda,
-      spaLapisRevenue: 0,  // not available in longitudinal data
+      spaCockpitRevenue: 0,  // not available in longitudinal data
       aesRevenue:      c.aes.revenue,
       aesEbitda:       c.aes.ebitda,
       slimRevenue:     c.slim.revenue,

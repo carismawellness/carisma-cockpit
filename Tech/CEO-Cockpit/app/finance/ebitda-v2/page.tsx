@@ -35,7 +35,7 @@ const SGA_SUBS     = [
 
 type VenueData = {
   revenue:        number;
-  lapis_revenue?: number;  // pure daily Lapis sales (Spa only); used for revenue QC
+  cockpit_revenue?: number;  // pure daily Cockpit sales (Spa only); used for revenue QC
   wages:          number;
   wage_by_role:   Record<string, number>;
   advertising:    number;
@@ -501,7 +501,7 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
     for (const slug of SPA_VENUES) {
       const v = data.venues[slug] ?? emptyVenue();
       acc.revenue                  += v.revenue;
-      acc.lapis_revenue             = (acc.lapis_revenue ?? 0) + (v.lapis_revenue ?? 0);
+      acc.cockpit_revenue             = (acc.cockpit_revenue ?? 0) + (v.cockpit_revenue ?? 0);
       acc.wages                    += v.wages;
       acc.advertising              += v.advertising;
       acc.sga                      += v.sga;
@@ -547,7 +547,7 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
       groupEbitda:     group.ebitda,
       spaRevenue:      spa.revenue,
       spaEbitda:       spa.ebitda,
-      spaLapisRevenue: spa.lapis_revenue ?? 0,
+      spaCockpitRevenue: spa.cockpit_revenue ?? 0,
       aesRevenue:      aes.revenue,
       aesEbitda:       aes.ebitda,
       slimRevenue:     slim.revenue,

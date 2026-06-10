@@ -23,8 +23,8 @@ export async function POST(req: NextRequest) {
   const payload = JSON.stringify({ date_from, date_to, force });
   const headers = { "Content-Type": "application/json" };
 
-  const [lapisRes, aestheticsRes, slimmingSalesRes, slimmingTxRes] = await Promise.allSettled([
-    fetch(`${BASE_URL}/api/etl/lapis-revenue`,        { method: "POST", headers, body: payload }),
+  const [cockpitRes, aestheticsRes, slimmingSalesRes, slimmingTxRes] = await Promise.allSettled([
+    fetch(`${BASE_URL}/api/etl/cockpit-revenue`,        { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/aesthetics-sales`,     { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/slimming-sales`,       { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/slimming-treatments`,  { method: "POST", headers, body: payload }),
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     status: "ok",
     results: {
-      lapis:              outcome(lapisRes),
+      cockpit:              outcome(cockpitRes),
       aesthetics:         outcome(aestheticsRes),
       slimming_sales:     outcome(slimmingSalesRes),
       slimming_treatments: outcome(slimmingTxRes),

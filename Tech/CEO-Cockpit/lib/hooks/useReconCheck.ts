@@ -54,11 +54,11 @@ export interface SpaReconResult {
     salary_supplement:      number;
     expected_ebitda:        number;
     actual_ebitda_zoho_rev: number;
-    lapis_revenue:          number;
+    cockpit_revenue:          number;
     zoho_revenue:           number;
     revenue_gap:            number;
     frontend_ebitda:        number;
-    expected_with_lapis:    number;
+    expected_with_cockpit:    number;
     difference:             number;
     status:                 "ok" | "mismatch";
   };

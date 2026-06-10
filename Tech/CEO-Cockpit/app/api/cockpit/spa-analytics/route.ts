@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { lapisCsvUrl, LAPIS_TABS } from "@/lib/constants/lapis-sheets";
+import { cockpitCsvUrl, COCKPIT_TABS } from "@/lib/constants/cockpit-sheets";
 
 export const maxDuration = 30;
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const SERVICE_GID = LAPIS_TABS.SPA_SERVICES.gid;
-const PRODUCT_GID = LAPIS_TABS.SPA_RETAIL.gid;
+const SERVICE_GID = COCKPIT_TABS.SPA_SERVICES.gid;
+const PRODUCT_GID = COCKPIT_TABS.SPA_RETAIL.gid;
 const VAT_RATE    = 0.18;
 
-const LAPIS_SPA_MAP: Record<string, number> = {
+const COCKPIT_SPA_LOCATION_MAP: Record<string, number> = {
   "HUGOS":                        2,
   "INTER":                        1,
   "RAMLA":                        4,
@@ -31,7 +31,7 @@ const SPA_LOCATION_META: Record<number, { name: string; color: string }> = {
   8: { name: "Novotel",   color: "#DC2626" },
 };
 
-// ── CSV helpers (copied verbatim from lib/etl/lapis-revenue.ts) ───────────────
+// ── CSV helpers (copied verbatim from lib/etl/cockpit-revenue.ts) ───────────────
 
 function parseCSVRow(line: string): string[] {
   const cells: string[] = [];
@@ -52,7 +52,7 @@ const MONTH_NAMES: Record<string, number> = {
   jan:0,feb:1,mar:2,apr:3,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11,
 };
 
-function parseLapisDate(raw: string): Date | null {
+function parseCockpitDate(raw: string): Date | null {
   raw = raw.trim();
   if (!raw) return null;
 
@@ -83,8 +83,8 @@ function safeFloat(val: string): number {
 
 // ── CSV fetch ─────────────────────────────────────────────────────────────────
 
-async function fetchLapisCsv(gid: string): Promise<Record<string, string>[]> {
-  const url  = lapisCsvUrl(gid);
+async function fetchCockpitCsv(gid: string): Promise<Record<string, string>[]> {
+  const url  = cockpitCsvUrl(gid);
   const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) throw new Error(`Cockpit Datasheet fetch failed: ${resp.status}`);
   const text  = await resp.text();
@@ -201,7 +201,7 @@ function computeAnalytics(
   for (const row of serviceRows) {
     if (!["Given", "Unplanned"].includes(stripCol(row, "Status"))) continue;
 
-    const d = parseLapisDate(stripCol(row, "Service Date"));
+    const d = parseCockpitDate(stripCol(row, "Service Date"));
     if (!d || d < dateFrom || d > dateTo) continue;
 
     const unitPriceInc = safeFloat(stripCol(row, "Unit Price"));
@@ -214,7 +214,7 @@ function computeAnalytics(
       staffServiceRev[soldBy] = (staffServiceRev[soldBy] ?? 0) + unitPriceEx;
     }
 
-    const locId = LAPIS_SPA_MAP[stripCol(row, "Sales Point")];
+    const locId = COCKPIT_SPA_LOCATION_MAP[stripCol(row, "Sales Point")];
     if (locId === undefined) continue;
 
     // Guest group
@@ -255,11 +255,11 @@ function computeAnalytics(
 
   // ── Process products sheet ──────────────────────────────────────────────────
   for (const row of productRows) {
-    const d = parseLapisDate(stripCol(row, "Date"));
+    const d = parseCockpitDate(stripCol(row, "Date"));
     if (!d || d < dateFrom || d > dateTo) continue;
 
     const pos   = stripCol(row, "Point of Sales") || stripCol(row, "Point of Sales ");
-    const locId = LAPIS_SPA_MAP[pos];
+    const locId = COCKPIT_SPA_LOCATION_MAP[pos];
     if (locId === undefined) continue;
 
     const amount = safeFloat(stripCol(row, "VAT Exclusive Amount") || stripCol(row, "VAT Exclusive Amount "));
@@ -390,8 +390,8 @@ export async function GET(req: NextRequest) {
 
   try {
     const [serviceRows, productRows] = await Promise.all([
-      fetchLapisCsv(SERVICE_GID),
-      fetchLapisCsv(PRODUCT_GID),
+      fetchCockpitCsv(SERVICE_GID),
+      fetchCockpitCsv(PRODUCT_GID),
     ]);
 
     const result = computeAnalytics(serviceRows, productRows, dateFrom, dateTo);

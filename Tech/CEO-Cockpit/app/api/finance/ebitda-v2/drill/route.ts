@@ -88,10 +88,10 @@ export async function GET(req: Request) {
       const baseMonthly = params.base_monthly  ?? 0;
       const pct         = params.revenue_pct   ?? 0;
 
-      // Fetch Lapis revenue for this venue+period
+      // Fetch Cockpit revenue for this venue+period
       const LOC_SLUG_TO_ID: Record<string,number> = { intercontinental:1, hugos:2, hyatt:3, ramla:4, labranda:5, sunny_coast:6, excelsior:7, novotel:8 };
       const locId = LOC_SLUG_TO_ID[venue!];
-      let lapisRevenue = 0;
+      let cockpitRevenue = 0;
       if (locId) {
         const months: string[] = [];
         let y=parseInt(dateFrom!.slice(0,4),10), m=parseInt(dateFrom!.slice(5,7),10);
@@ -105,16 +105,16 @@ export async function GET(req: Request) {
           const lastD=new Date(mY,mMo,0).getDate(), mEnd=`${mY}-${String(mMo).padStart(2,"0")}-${String(lastD).padStart(2,"0")}`;
           const rs=dateFrom!>mStr?dateFrom!:mStr, re=dateTo!<mEnd?dateTo!:mEnd;
           const dr=rs>re?0:Math.round((parseLocalHw(re).getTime()-parseLocalHw(rs).getTime())/86_400_000)+1;
-          lapisRevenue += (Number(r.services??0)+Number(r.product_phytomer??0)+Number(r.product_purest??0)+Number(r.product_other??0))*(dr/lastD);
+          cockpitRevenue += (Number(r.services??0)+Number(r.product_phytomer??0)+Number(r.product_purest??0)+Number(r.product_other??0))*(dr/lastD);
         }
       }
 
       const baseValue = baseMonthly * (dip / 30.4375);
-      const pctValue  = lapisRevenue * (pct / 100);
+      const pctValue  = cockpitRevenue * (pct / 100);
       if (baseMonthly > 0) {
         breakdown.push({ account_code:"BASE", account_name:"Base rent", rule_type:"fixed_monthly", ttm_total:baseMonthly*12, ttm_months:12, annualized:baseMonthly*12, monthly_avg:baseMonthly, days_in_period:dip, value:+baseValue.toFixed(2), formula:`€${baseMonthly.toFixed(0)}/month × ${dip}/30.4375 avg days = €${baseValue.toFixed(0)}` });
       }
-      breakdown.push({ account_code:"PCT", account_name:`Revenue share (${pct}% of Lapis)`, rule_type:"revenue_pct", ttm_total:+lapisRevenue.toFixed(2), ttm_months:0, annualized:0, monthly_avg:0, days_in_period:dip, value:+pctValue.toFixed(2), formula:`${pct}% × €${lapisRevenue.toFixed(0)} Lapis revenue = €${pctValue.toFixed(0)}` });
+      breakdown.push({ account_code:"PCT", account_name:`Revenue share (${pct}% of Cockpit)`, rule_type:"revenue_pct", ttm_total:+cockpitRevenue.toFixed(2), ttm_months:0, annualized:0, monthly_avg:0, days_in_period:dip, value:+pctValue.toFixed(2), formula:`${pct}% × €${cockpitRevenue.toFixed(0)} Cockpit revenue = €${pctValue.toFixed(0)}` });
     }
 
     if (breakdown.length > 0) {
@@ -130,8 +130,8 @@ export async function GET(req: Request) {
     });
   }
 
-  // ── Revenue cells: use spa_revenue_monthly (Lapis), not transactions_raw ──
-  // Revenue in V2 comes from the Google Sheet / Lapis system, not from Zoho.
+  // ── Revenue cells: use spa_revenue_monthly (Cockpit), not transactions_raw ──
+  // Revenue in V2 comes from the Google Sheet / Cockpit system, not from Zoho.
   // Zoho sales transactions in transactions_raw are double-counting noise that
   // should be excluded (sales accounts are excluded in COA mapping but the ETL
   // still writes income-section lines unless explicitly excluded).
@@ -182,8 +182,8 @@ export async function GET(req: Request) {
       const disc = Number(r.sales_discount ?? 0) * f;
       const ref  = Number(r.sales_refund ?? 0) * f;
 
-      if (svc  > 0) { txns.push({ txn_id: `rev-svc-${mStr}`,  date: rs, contact: "—", account_code: "LAPIS", account_name: "Services revenue",   txn_type: "lapis", sub_line: "revenue", amount: +svc.toFixed(2),   source: "google_sheet" }); total += svc; }
-      if (prd  > 0) { txns.push({ txn_id: `rev-prd-${mStr}`,  date: rs, contact: "—", account_code: "LAPIS", account_name: "Products revenue",   txn_type: "lapis", sub_line: "revenue", amount: +prd.toFixed(2),   source: "google_sheet" }); total += prd; }
+      if (svc  > 0) { txns.push({ txn_id: `rev-svc-${mStr}`,  date: rs, contact: "—", account_code: "COCKPIT", account_name: "Services revenue",   txn_type: "cockpit", sub_line: "revenue", amount: +svc.toFixed(2),   source: "google_sheet" }); total += svc; }
+      if (prd  > 0) { txns.push({ txn_id: `rev-prd-${mStr}`,  date: rs, contact: "—", account_code: "COCKPIT", account_name: "Products revenue",   txn_type: "cockpit", sub_line: "revenue", amount: +prd.toFixed(2),   source: "google_sheet" }); total += prd; }
       if (whl  > 0) { txns.push({ txn_id: `rev-whl-${mStr}`,  date: rs, contact: "—", account_code: "ZOHO",  account_name: "Wholesale",           txn_type: "zoho",  sub_line: "revenue", amount: +whl.toFixed(2),   source: "zoho" });         total += whl; }
       if (disc > 0) { txns.push({ txn_id: `rev-dsc-${mStr}`,  date: rs, contact: "—", account_code: "ZOHO",  account_name: "Sales discount",      txn_type: "zoho",  sub_line: "revenue", amount: +(-disc).toFixed(2), source: "zoho" });       total -= disc; }
       if (ref  > 0) { txns.push({ txn_id: `rev-ref-${mStr}`,  date: rs, contact: "—", account_code: "ZOHO",  account_name: "Sales refund",        txn_type: "zoho",  sub_line: "revenue", amount: +(-ref).toFixed(2),  source: "zoho" });       total -= ref; }
@@ -192,7 +192,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       is_fallback: false,
       total: +total.toFixed(2),
-      contacts:     [{ contact: "Lapis (Google Sheet)", amount: +total.toFixed(2), share: 100, source: "google_sheet", basis: "Google Sheet" }],
+      contacts:     [{ contact: "Cockpit (Google Sheet)", amount: +total.toFixed(2), share: 100, source: "google_sheet", basis: "Google Sheet" }],
       transactions: txns,
       wage_roles:   [],
       ad_channels:  [],

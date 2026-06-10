@@ -1,13 +1,13 @@
 import { ZohoBooksClient } from "./zoho-client";
 import { upsert, select } from "./supabase-etl";
 import { ETLLogger } from "./etl-logger";
-import { LAPIS_SHEET_ID, LAPIS_TABS } from "../constants/lapis-sheets";
+import { COCKPIT_SHEET_ID, COCKPIT_TABS } from "../constants/cockpit-sheets";
 
-const SERVICE_GID  = LAPIS_TABS.SPA_SERVICES.gid;
-const PRODUCT_GID  = LAPIS_TABS.SPA_RETAIL.gid;
+const SERVICE_GID  = COCKPIT_TABS.SPA_SERVICES.gid;
+const PRODUCT_GID  = COCKPIT_TABS.SPA_RETAIL.gid;
 const VAT_RATE     = 0.18;
 
-const LAPIS_SPA_MAP: Record<string, number> = {
+const COCKPIT_SPA_LOCATION_MAP: Record<string, number> = {
   "HUGOS":                        2,
   "INTER":                        1,
   "RAMLA":                        4,
@@ -28,16 +28,16 @@ const BRAND_MAP: Record<string, string> = {
   PUREST:   "product_purest",
 };
 
-// ── CSV fetch (public Lapis sheet) ────────────────────────────────────────────
+// ── CSV fetch (public Cockpit sheet) ────────────────────────────────────────────
 
-async function fetchLapisCsv(gid: string): Promise<Record<string, string>[]> {
-  const url  = `https://docs.google.com/spreadsheets/d/${LAPIS_SHEET_ID}/export?format=csv&gid=${gid}`;
+async function fetchCockpitCsv(gid: string): Promise<Record<string, string>[]> {
+  const url  = `https://docs.google.com/spreadsheets/d/${COCKPIT_SHEET_ID}/export?format=csv&gid=${gid}`;
   const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) throw new Error(`Cockpit Datasheet fetch failed: ${resp.status} — check sheet is shared as "Anyone with the link can view"`);
   const text  = await resp.text();
   const lines = text.split("\n").filter(l => l.trim());
   if (lines.length < 2) return [];
-  // The Lapis sheets prefix the data with a single-cell title row like
+  // The Cockpit sheets prefix the data with a single-cell title row like
   // "Service data is from 1 Jan 2025,,,,," — skip rows with fewer than 3
   // non-empty cells until we find the real header row.
   let headerIdx = 0;
@@ -74,7 +74,7 @@ const MONTH_NAMES: Record<string, number> = {
   jan:0,feb:1,mar:2,apr:3,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11,
 };
 
-function parseLapisDate(raw: string): Date | null {
+function parseCockpitDate(raw: string): Date | null {
   raw = raw.trim();
   if (!raw) return null;
 
@@ -113,20 +113,20 @@ function safeFloat(val: string): number {
 
 function daysInMonth(year: number, month: number) { return new Date(year, month, 0).getDate(); }
 
-// ── Lapis data fetch — monthly aggregation (for Zoho adjustment apportionment) ─
+// ── Cockpit data fetch — monthly aggregation (for Zoho adjustment apportionment) ─
 
-async function fetchLapisServices(
+async function fetchCockpitServices(
   dateFrom: Date,
   dateTo: Date,
 ): Promise<Record<number, Record<string, number>>> {
-  const rows   = await fetchLapisCsv(SERVICE_GID);
+  const rows   = await fetchCockpitCsv(SERVICE_GID);
   const totals: Record<number, Record<string, number>> = {};
 
   for (const row of rows) {
     if (!["Given", "Unplanned"].includes(stripCol(row, "Status"))) continue;
-    const d = parseLapisDate(stripCol(row, "Service Date"));
+    const d = parseCockpitDate(stripCol(row, "Service Date"));
     if (!d || d < dateFrom || d > dateTo) continue;
-    const locId = LAPIS_SPA_MAP[stripCol(row, "Sales Point")];
+    const locId = COCKPIT_SPA_LOCATION_MAP[stripCol(row, "Sales Point")];
     if (locId === undefined) continue;
     const unitPrice = safeFloat(stripCol(row, "Unit Price"));
     const amountEx  = +(unitPrice / (1 + VAT_RATE)).toFixed(2);
@@ -137,19 +137,19 @@ async function fetchLapisServices(
   return totals;
 }
 
-async function fetchLapisProducts(
+async function fetchCockpitProducts(
   dateFrom: Date,
   dateTo: Date,
 ): Promise<Record<number, Record<string, Record<string, number>>>> {
   let rows: Record<string, string>[];
-  try { rows = await fetchLapisCsv(PRODUCT_GID); } catch { return {}; }
+  try { rows = await fetchCockpitCsv(PRODUCT_GID); } catch { return {}; }
   const totals: Record<number, Record<string, Record<string, number>>> = {};
 
   for (const row of rows) {
-    const d = parseLapisDate(stripCol(row, "Date"));
+    const d = parseCockpitDate(stripCol(row, "Date"));
     if (!d || d < dateFrom || d > dateTo) continue;
     const spa    = stripCol(row, "Point of Sales") || stripCol(row, "Point of Sales ");
-    const locId  = LAPIS_SPA_MAP[spa];
+    const locId  = COCKPIT_SPA_LOCATION_MAP[spa];
     if (locId === undefined) continue;
     const amount = safeFloat(stripCol(row, "VAT Exclusive Amount") || stripCol(row, "VAT Exclusive Amount "));
     if (amount <= 0) continue;
@@ -163,19 +163,19 @@ async function fetchLapisProducts(
   return totals;
 }
 
-// ── Lapis data fetch — daily aggregation (for spa_revenue_daily) ──────────────
+// ── Cockpit data fetch — daily aggregation (for spa_revenue_daily) ──────────────
 
 type DailyServiceTotals  = Record<number, Record<string, number>>;              // locId → dateStr → exVAT
 type DailyProductTotals  = Record<number, Record<string, Record<string, number>>>; // locId → dateStr → brand → amt
 
-async function fetchLapisServicesByDay(dateFrom: Date, dateTo: Date): Promise<DailyServiceTotals> {
-  const rows   = await fetchLapisCsv(SERVICE_GID);
+async function fetchCockpitServicesByDay(dateFrom: Date, dateTo: Date): Promise<DailyServiceTotals> {
+  const rows   = await fetchCockpitCsv(SERVICE_GID);
   const totals: DailyServiceTotals = {};
   for (const row of rows) {
     if (!["Given", "Unplanned"].includes(stripCol(row, "Status"))) continue;
-    const d = parseLapisDate(stripCol(row, "Service Date"));
+    const d = parseCockpitDate(stripCol(row, "Service Date"));
     if (!d || d < dateFrom || d > dateTo) continue;
-    const locId = LAPIS_SPA_MAP[stripCol(row, "Sales Point")];
+    const locId = COCKPIT_SPA_LOCATION_MAP[stripCol(row, "Sales Point")];
     if (locId === undefined) continue;
     const unitPrice = safeFloat(stripCol(row, "Unit Price"));
     const amountEx  = +(unitPrice / (1 + VAT_RATE)).toFixed(2);
@@ -186,15 +186,15 @@ async function fetchLapisServicesByDay(dateFrom: Date, dateTo: Date): Promise<Da
   return totals;
 }
 
-async function fetchLapisProductsByDay(dateFrom: Date, dateTo: Date): Promise<DailyProductTotals> {
+async function fetchCockpitProductsByDay(dateFrom: Date, dateTo: Date): Promise<DailyProductTotals> {
   let rows: Record<string, string>[];
-  try { rows = await fetchLapisCsv(PRODUCT_GID); } catch { return {}; }
+  try { rows = await fetchCockpitCsv(PRODUCT_GID); } catch { return {}; }
   const totals: DailyProductTotals = {};
   for (const row of rows) {
-    const d = parseLapisDate(stripCol(row, "Date"));
+    const d = parseCockpitDate(stripCol(row, "Date"));
     if (!d || d < dateFrom || d > dateTo) continue;
     const spa   = stripCol(row, "Point of Sales") || stripCol(row, "Point of Sales ");
-    const locId = LAPIS_SPA_MAP[spa];
+    const locId = COCKPIT_SPA_LOCATION_MAP[spa];
     if (locId === undefined) continue;
     const amount = safeFloat(stripCol(row, "VAT Exclusive Amount") || stripCol(row, "VAT Exclusive Amount "));
     if (amount <= 0) continue;
@@ -243,8 +243,8 @@ async function fetchZohoRevenueAccounts(
 async function runMonth(
   year: number,
   month: number,
-  lapisServices: Record<number, Record<string, number>>,
-  lapisProducts: Record<number, Record<string, Record<string, number>>>,
+  cockpitServices: Record<number, Record<string, number>>,
+  cockpitProducts: Record<number, Record<string, Record<string, number>>>,
   zohoClient: ZohoBooksClient,
   force: boolean,
   log: string[],
@@ -268,11 +268,11 @@ async function runMonth(
   log.push(`  Processing ${mk}…`);
 
   const locServices: Record<number, number> = {};
-  for (const id of ALL_LOCATION_IDS) locServices[id] = lapisServices[id]?.[mk] ?? 0;
+  for (const id of ALL_LOCATION_IDS) locServices[id] = cockpitServices[id]?.[mk] ?? 0;
 
   const locProducts: Record<number, Record<string, number>> = {};
   for (const id of ALL_LOCATION_IDS) {
-    const cols = lapisProducts[id]?.[mk] ?? {};
+    const cols = cockpitProducts[id]?.[mk] ?? {};
     locProducts[id] = {
       product_phytomer: cols.product_phytomer ?? 0,
       product_purest:   cols.product_purest   ?? 0,
@@ -294,14 +294,14 @@ async function runMonth(
   const totalDiscount  = Math.abs(zohoTotals["20000"]  ?? 0);
   const totalRefund    = Math.abs(zohoTotals["SALREF"] ?? 0);
 
-  const totalLapis = ALL_LOCATION_IDS.reduce(
+  const totalCockpit = ALL_LOCATION_IDS.reduce(
     (s, id) => s + locServices[id] + Object.values(locProducts[id]).reduce((a, b) => a + b, 0),
     0,
   );
 
   const rows = ALL_LOCATION_IDS.map(id => {
     const locTotal = locServices[id] + Object.values(locProducts[id]).reduce((a, b) => a + b, 0);
-    const ratio    = totalLapis > 0 ? locTotal / totalLapis : 1 / ALL_LOCATION_IDS.length;
+    const ratio    = totalCockpit > 0 ? locTotal / totalCockpit : 1 / ALL_LOCATION_IDS.length;
     return {
       location_id:      id,
       month:            mk,
@@ -326,22 +326,22 @@ async function runMonth(
 
 // ── Daily upsert — spa_revenue_daily ─────────────────────────────────────────
 
-export async function runLapisRevenueDaily(
+export async function runCockpitRevenueDaily(
   dateFrom: string,
   dateTo: string,
 ): Promise<{ rowsUpserted: number; log: string[] }> {
   const log: string[] = [];
-  const logger = new ETLLogger("lapis_spa_revenue_daily");
+  const logger = new ETLLogger("cockpit_spa_revenue_daily");
   await logger.start();
 
   try {
     const fromD = new Date(dateFrom);
     const toD   = new Date(dateTo);
 
-    log.push("Fetching Lapis daily data…");
+    log.push("Fetching Cockpit daily data…");
     const [svcByDay, prodByDay] = await Promise.all([
-      fetchLapisServicesByDay(fromD, toD),
-      fetchLapisProductsByDay(fromD, toD),
+      fetchCockpitServicesByDay(fromD, toD),
+      fetchCockpitProductsByDay(fromD, toD),
     ]);
 
     // Collect all (locId, date) combos that have any data
@@ -378,23 +378,23 @@ export async function runLapisRevenueDaily(
 
 // ── Main run ──────────────────────────────────────────────────────────────────
 
-export async function runLapisRevenue(
+export async function runCockpitRevenue(
   dateFrom: string,
   dateTo: string,
   force = false,
 ): Promise<{ rowsUpserted: number; log: string[] }> {
   const log: string[] = [];
-  const logger = new ETLLogger("lapis_spa_revenue");
+  const logger = new ETLLogger("cockpit_spa_revenue");
   await logger.start();
 
   try {
     const fromD = new Date(dateFrom);
     const toD   = new Date(dateTo);
 
-    log.push("Fetching Lapis data (one-time fetch for full date range)…");
-    const lapisServices = await fetchLapisServices(fromD, toD);
-    const lapisProducts = await fetchLapisProducts(fromD, toD);
-    log.push(`  → ${Object.keys(lapisServices).length} locations with service data`);
+    log.push("Fetching Cockpit data (one-time fetch for full date range)…");
+    const cockpitServices = await fetchCockpitServices(fromD, toD);
+    const cockpitProducts = await fetchCockpitProducts(fromD, toD);
+    log.push(`  → ${Object.keys(cockpitServices).length} locations with service data`);
 
     const zohoClient = new ZohoBooksClient("spa");
     let totalUpserted = 0;
@@ -403,7 +403,7 @@ export async function runLapisRevenue(
     while (d <= toD) {
       const count = await runMonth(
         d.getFullYear(), d.getMonth() + 1,
-        lapisServices, lapisProducts, zohoClient, force, log,
+        cockpitServices, cockpitProducts, zohoClient, force, log,
       );
       totalUpserted += count;
       d = new Date(d.getFullYear(), d.getMonth() + 1, 1);

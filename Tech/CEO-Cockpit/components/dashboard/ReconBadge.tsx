@@ -194,10 +194,10 @@ export function ReconBadge({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
             <div className="space-y-1">
               <Row
                 label="Expected EBITDA (Zoho – supplement)"
-                value={fmtEur(recon.spa.reconciliation.expected_with_lapis)}
+                value={fmtEur(recon.spa.reconciliation.expected_with_cockpit)}
               />
               <Row
-                label="Dashboard EBITDA (Lapis + Zoho costs)"
+                label="Dashboard EBITDA (Cockpit + Zoho costs)"
                 value={fmtEur(recon.spa.reconciliation.frontend_ebitda)}
               />
               <Row

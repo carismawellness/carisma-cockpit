@@ -23,7 +23,7 @@ export interface SummaryData {
   groupEbitda:     number;
   spaRevenue:      number;
   spaEbitda:       number;
-  spaLapisRevenue: number;  // pure daily Lapis sales (no monthly adjustments)
+  spaCockpitRevenue: number;  // pure daily Cockpit sales (no monthly adjustments)
   aesRevenue:      number;
   aesEbitda:       number;
   slimRevenue:     number;
@@ -217,20 +217,20 @@ interface QcRow {
 }
 
 function RevenueQCWidget({
-  spaLapis, spaRevenue, aesRevenue, slimRevenue,
+  spaCockpit, spaRevenue, aesRevenue, slimRevenue,
 }: {
-  spaLapis:    number;
+  spaCockpit:    number;
   spaRevenue:  number;
   aesRevenue:  number;
   slimRevenue: number;
 }) {
-  const spaAdj    = spaRevenue - spaLapis;
-  const groupSrc  = spaLapis + aesRevenue + slimRevenue;
+  const spaAdj    = spaRevenue - spaCockpit;
+  const groupSrc  = spaCockpit + aesRevenue + slimRevenue;
   const groupEbt  = spaRevenue + aesRevenue + slimRevenue;
   const groupAdj  = groupEbt - groupSrc;
 
   const rows: QcRow[] = [
-    { label: "Spa",        sourceRev: spaLapis,    ebitdaRev: spaRevenue,  sourceNote: "Cockpit daily" },
+    { label: "Spa",        sourceRev: spaCockpit,    ebitdaRev: spaRevenue,  sourceNote: "Cockpit daily" },
     { label: "Aesthetics", sourceRev: aesRevenue,  ebitdaRev: aesRevenue,  sourceNote: "Direct (price_ex_vat)" },
     { label: "Slimming",   sourceRev: slimRevenue, ebitdaRev: slimRevenue, sourceNote: "Direct (price_ex_vat)" },
   ];
@@ -279,7 +279,7 @@ function RevenueQCWidget({
                   </td>
                   <td className="py-1.5 text-center">
                     {isSpa && hasAdj
-                      ? <span className="inline-flex items-center gap-0.5 text-amber-600" title="Expected: monthly Lapis adjustments (wholesale, refunds, discounts)">
+                      ? <span className="inline-flex items-center gap-0.5 text-amber-600" title="Expected: monthly Cockpit adjustments (wholesale, refunds, discounts)">
                           <Info className="h-3 w-3" /> adj.
                         </span>
                       : <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 mx-auto" />
@@ -311,7 +311,7 @@ function RevenueQCWidget({
       {Math.abs(spaAdj) > 1 && (
         <p className="text-[10px] text-muted-foreground mt-2 leading-relaxed">
           <span className="font-medium text-amber-700">ℹ Spa Δ {spaAdj > 0 ? "+" : ""}{fmtC(spaAdj)}:</span>
-          {" "}Monthly Lapis adjustments (wholesale revenue, refunds, manual corrections) not captured in daily transactions.
+          {" "}Monthly Cockpit adjustments (wholesale revenue, refunds, manual corrections) not captured in daily transactions.
         </p>
       )}
       {allClear && Math.abs(spaAdj) <= 1 && (
@@ -331,7 +331,7 @@ export function EbitdaSummaryHeader({ data, loading }: EbitdaSummaryHeaderProps)
     groupEbitda:     0,
     spaRevenue:      0,
     spaEbitda:       0,
-    spaLapisRevenue: 0,
+    spaCockpitRevenue: 0,
     aesRevenue:      0,
     aesEbitda:       0,
     slimRevenue:     0,
@@ -472,9 +472,9 @@ export function EbitdaSummaryHeader({ data, loading }: EbitdaSummaryHeaderProps)
       </div>
 
       {/* Row 3 — Revenue QC */}
-      {!loading && data && (d.spaLapisRevenue > 0 || d.aesRevenue > 0 || d.slimRevenue > 0) && (
+      {!loading && data && (d.spaCockpitRevenue > 0 || d.aesRevenue > 0 || d.slimRevenue > 0) && (
         <RevenueQCWidget
-          spaLapis={d.spaLapisRevenue}
+          spaCockpit={d.spaCockpitRevenue}
           spaRevenue={d.spaRevenue}
           aesRevenue={d.aesRevenue}
           slimRevenue={d.slimRevenue}

@@ -16,14 +16,14 @@ export const dynamic = "force-dynamic";
 
 export const DATA_SOURCE_DEFS = [
   {
-    id:          "lapis_revenue",
-    name:        "Lapis Revenue (SPA Services & Products)",
-    description: "SPA service and product sales exported from the Lapis spa management system via Google Sheets. Also pulls Wholesale, Sales Discount and Sales Refund from Zoho SPA P&L.",
+    id:          "cockpit_revenue",
+    name:        "Cockpit Revenue (SPA Services & Products)",
+    description: "SPA service and product sales exported from the Cockpit Datasheet (Google Sheets). Also pulls Wholesale, Sales Discount and Sales Refund from Zoho SPA P&L.",
     tables:      ["spa_revenue_monthly"],
     brand:       "SPA",
     frequency:   "Nightly cron + auto on dashboard load for missing months",
-    log_key:     "lapis_spa_revenue",
-    endpoint:    "/api/etl/lapis-revenue",
+    log_key:     "cockpit_spa_revenue",
+    endpoint:    "/api/etl/cockpit-revenue",
     coverage_table: "spa_revenue_monthly",
     coverage_col:   "month",
     manual_note: null,

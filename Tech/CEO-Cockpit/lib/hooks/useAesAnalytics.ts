@@ -56,7 +56,7 @@ export function useAesAnalytics(dateFrom: Date, dateTo: Date): AesAnalyticsResul
     queryKey: ["aes-analytics", dateFromStr, dateToStr],
     queryFn: async () => {
       const res = await fetch(
-        `/api/lapis/aes-analytics?date_from=${dateFromStr}&date_to=${dateToStr}`
+        `/api/cockpit/aes-analytics?date_from=${dateFromStr}&date_to=${dateToStr}`
       );
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed to fetch aesthetics analytics");

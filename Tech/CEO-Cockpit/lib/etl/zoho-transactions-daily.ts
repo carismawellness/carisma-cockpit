@@ -430,7 +430,7 @@ export async function fetchZohoTransactionsDaily(
   log.push(`  filtered to window: ${lines.length} line(s)`);
 
   // NOTE: we no longer early-return on empty `lines`. Cockpit-side revenue
-  // (Lapis for SPA, Supabase POS tables for AES/SLIM) still needs to flow
+  // (Cockpit for SPA, Supabase POS tables for AES/SLIM) still needs to flow
   // into the EBIDA Layer sheet even when Zoho returns nothing for the window.
 
   if (org === "spa") return buildSpaRows(client, lines, dates, period, log, fromDate, toDate);
@@ -476,39 +476,39 @@ async function buildSpaRows(
   fromDate: string,
   toDate:   string,
 ): Promise<DailyResult> {
-  log.push("Loading SPA CoA mapping + advertising contact mapping + Lapis POS revenue…");
-  // Do NOT swallow Lapis fetch failures: a silent fallback to [] would emit
+  log.push("Loading SPA CoA mapping + advertising contact mapping + Cockpit POS revenue…");
+  // Do NOT swallow Cockpit fetch failures: a silent fallback to [] would emit
   // gross-of-adjustments revenue and diverge from spa_revenue_monthly. The
   // chunk runner already retries on failure, so propagating the error is
   // safer than silently writing wrong totals to the EBIDA Layer.
-  const [coaMapMaybe, adContactMap, lapisRows, suppSalaryRows] = await Promise.all([
+  const [coaMapMaybe, adContactMap, cockpitRows, suppSalaryRows] = await Promise.all([
     loadSpaCoaFromSupabase(),
     loadAdvertisingContactMapping(),
     loadSpaCockpitRevenue(fromDate, toDate),
     loadSalarySupplementMonthly(fromDate, toDate),
   ]);
   const coaMap = coaMapMaybe ?? COA_MAP;
-  log.push(`  Lapis rows fetched: ${lapisRows.length}`);
+  log.push(`  Cockpit rows fetched: ${cockpitRows.length}`);
   log.push(`  advertising contact patterns loaded: ${adContactMap.length}`);
   log.push(`  supplementary-salary rows fetched: ${suppSalaryRows.length}`);
 
-  // Per-day per-venue revenue from Lapis — the authoritative sales_ratio base.
-  // Lapis is service+product ex-VAT, daily granularity, so a day's shared SG&A
+  // Per-day per-venue revenue from Cockpit — the authoritative sales_ratio base.
+  // Cockpit is service+product ex-VAT, daily granularity, so a day's shared SG&A
   // is split by THAT day's actual revenue mix per venue (not a window-wide avg).
-  const lapisByDate: Record<string, Record<string, number>> = {};
-  const lapisWindowTotal: Record<string, number> = Object.fromEntries(SPA_VENUE_SLUGS.map(s => [s, 0]));
-  for (const r of lapisRows) {
+  const cockpitByDate: Record<string, Record<string, number>> = {};
+  const cockpitWindowTotal: Record<string, number> = Object.fromEntries(SPA_VENUE_SLUGS.map(s => [s, 0]));
+  for (const r of cockpitRows) {
     if (!SPA_VENUE_SLUGS.includes(r.venue_slug)) continue;
-    if (!lapisByDate[r.date]) lapisByDate[r.date] = Object.fromEntries(SPA_VENUE_SLUGS.map(s => [s, 0]));
-    lapisByDate[r.date][r.venue_slug] += r.amount;
-    lapisWindowTotal[r.venue_slug] += r.amount;
+    if (!cockpitByDate[r.date]) cockpitByDate[r.date] = Object.fromEntries(SPA_VENUE_SLUGS.map(s => [s, 0]));
+    cockpitByDate[r.date][r.venue_slug] += r.amount;
+    cockpitWindowTotal[r.venue_slug] += r.amount;
   }
-  const lapisWindowSum = Object.values(lapisWindowTotal).reduce((a, b) => a + b, 0);
-  const lapisWindowPct: Record<string, number> | null = lapisWindowSum > 0
-    ? Object.fromEntries(SPA_VENUE_SLUGS.map(s => [s, lapisWindowTotal[s] / lapisWindowSum]))
+  const cockpitWindowSum = Object.values(cockpitWindowTotal).reduce((a, b) => a + b, 0);
+  const cockpitWindowPct: Record<string, number> | null = cockpitWindowSum > 0
+    ? Object.fromEntries(SPA_VENUE_SLUGS.map(s => [s, cockpitWindowTotal[s] / cockpitWindowSum]))
     : null;
-  if (lapisWindowPct) {
-    log.push(`SPA Lapis window revPct: ${SPA_VENUE_SLUGS.map(s => `${s}=${(lapisWindowPct[s] * 100).toFixed(1)}%`).join(" ")}`);
+  if (cockpitWindowPct) {
+    log.push(`SPA Cockpit window revPct: ${SPA_VENUE_SLUGS.map(s => `${s}=${(cockpitWindowPct[s] * 100).toFixed(1)}%`).join(" ")}`);
   }
 
   type Classified = {
@@ -601,24 +601,24 @@ async function buildSpaRows(
   log.push(`SPA salPct: ${SPA_VENUE_SLUGS.map(s => `${s}=${(salPct[s] * 100).toFixed(1)}%`).join(" ")}`);
 
   // sales_ratio precedence for a given line date:
-  //   1. Lapis revenue per venue on that exact date  (truthiest signal)
-  //   2. Lapis revenue per venue across the pull window  (smooths empty days)
-  //   3. Zoho venue-tagged revenue across the window  (Lapis unavailable)
+  //   1. Cockpit revenue per venue on that exact date  (truthiest signal)
+  //   2. Cockpit revenue per venue across the pull window  (smooths empty days)
+  //   3. Zoho venue-tagged revenue across the window  (Cockpit unavailable)
   //   4. Equal 1/8 share  (degenerate fallback baked into zohoRevPct above)
   function dailyRevPctSpa(date: string): Record<string, number> {
-    const day = lapisByDate[date];
+    const day = cockpitByDate[date];
     if (day) {
       const total = SPA_VENUE_SLUGS.reduce((a, s) => a + (day[s] ?? 0), 0);
       if (total > 0) {
         return Object.fromEntries(SPA_VENUE_SLUGS.map(s => [s, (day[s] ?? 0) / total]));
       }
     }
-    if (lapisWindowPct) return lapisWindowPct;
+    if (cockpitWindowPct) return cockpitWindowPct;
     return zohoRevPct;
   }
 
   // 3. Bucket per (account, venue, tag_source, contact) — daily values inside.
-  // Brand is "SPA" for Zoho-derived rows + Lapis revenue, plus "HQ" for the
+  // Brand is "SPA" for Zoho-derived rows + Cockpit revenue, plus "HQ" for the
   // Supplementary Salary rows whose Cockpit slug = "hq" (HQ is a separate
   // EBITDA department, not a SPA venue), plus "AES" for SPA-org lines that
   // carry the "Aesthetic" reporting tag (cross-org re-route — CoA 3104 today).
@@ -705,24 +705,24 @@ async function buildSpaRows(
   }
   log.push(`SPA allocation: ${tagCount.tagged} tagged, ${tagCount.split} split-rule, ${tagCount.crossOrgAes} cross-org Aesthetic`);
 
-  // 4. Cockpit-side revenue (Lapis POS) — one bucket per (date, venue_slug).
+  // 4. Cockpit-side revenue (Cockpit POS) — one bucket per (date, venue_slug).
   //    Layered on TOP of Zoho-derived revenue so the EBIDA Layer sheet shows
   //    both authoritative POS revenue and Zoho's non-excluded revenue CoA.
-  //    Reuses lapisRows already loaded above for the sales_ratio base.
-  let lapisAdded = 0;
-  for (const r of lapisRows) {
+  //    Reuses cockpitRows already loaded above for the sales_ratio base.
+  let cockpitAdded = 0;
+  for (const r of cockpitRows) {
     if (!SPA_VENUE_SLUGS.includes(r.venue_slug)) continue;
-    const key = `LAPIS_REV::${r.venue_slug}::split::`;
+    const key = `COCKPIT_SPA_REV::${r.venue_slug}::split::`;
     let b = buckets.get(key);
     if (!b) {
       b = {
         brand:           "SPA",
         venue:           venueDisplay(r.venue_slug),
         venue_slug:      r.venue_slug,
-        account_name:    "SPA Revenue (Lapis)",
-        account_code:    "LAPIS_REV",
+        account_name:    "SPA Revenue (Cockpit)",
+        account_code:    "COCKPIT_SPA_REV",
         ebitda_category: "revenue",
-        split_rule:      "lapis_pos",
+        split_rule:      "cockpit_pos",
         tag_source:      "split",
         contact:         "",
         daily:           {},
@@ -730,9 +730,9 @@ async function buildSpaRows(
       buckets.set(key, b);
     }
     b.daily[r.date] = (b.daily[r.date] ?? 0) + r.amount;
-    lapisAdded++;
+    cockpitAdded++;
   }
-  log.push(`  Lapis bucket entries added: ${lapisAdded}`);
+  log.push(`  Cockpit bucket entries added: ${cockpitAdded}`);
 
   // 5. Supplementary Salary (Cockpit salary_supplement_monthly) — SPA + HQ
   //    brands only. AES and SLIM SUPP_SAL rows are emitted in buildAesthRows.

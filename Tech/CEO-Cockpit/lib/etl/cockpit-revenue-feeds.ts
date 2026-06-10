@@ -1,34 +1,34 @@
 // Per-venue / per-brand DAILY revenue feeds that come from Cockpit's
-// authoritative sales sources (Lapis POS for SPA, Supabase POS tables for
+// authoritative sales sources (Cockpit POS for SPA, Supabase POS tables for
 // Aesthetics + Slimming). These are used by the "EBIDA Layer" daily ETL so
 // the Zoho Raw Layer sheet contains revenue rows from BOTH Cockpit's sales
 // pipeline AND Zoho's non-excluded revenue CoA accounts.
 //
-// IMPORTANT: this module is independent of lib/etl/lapis-revenue.ts (which
-// rolls Lapis up to MONTHLY granularity for spa_revenue_monthly). Here we
+// IMPORTANT: this module is independent of lib/etl/cockpit-revenue.ts (which
+// rolls Cockpit up to MONTHLY granularity for spa_revenue_monthly). Here we
 // keep daily granularity and group by (date, venue).
 
 import { ZohoBooksClient } from "./zoho-client";
 
-// ── Lapis CSV (public Google Sheet, no auth) ────────────────────────────────
+// ── Cockpit CSV (public Google Sheet, no auth) ────────────────────────────────
 
-const LAPIS_SHEET_ID = "195RvbNuZd-oNL-rziKC3Wz6ndy0cDA_a";
-const LAPIS_SERVICE_GID = "683143306";
-const LAPIS_PRODUCT_GID = "1271322967";
-const LAPIS_VAT_RATE = 0.18;
+const COCKPIT_SHEET_ID = "195RvbNuZd-oNL-rziKC3Wz6ndy0cDA_a";
+const COCKPIT_SERVICE_GID = "683143306";
+const COCKPIT_PRODUCT_GID = "1271322967";
+const COCKPIT_VAT_RATE = 0.18;
 
-// Zoho CoA accounts that lapis-revenue.ts (Path A → spa_revenue_monthly, the
+// Zoho CoA accounts that cockpit-revenue.ts (Path A → spa_revenue_monthly, the
 // AUTHORITATIVE Cockpit dashboard source) folds into SPA net revenue alongside
-// the Lapis service+product figures. Mirrors WHOLESALE/DISCOUNT/REFUND_ACCOUNTS
-// in lapis-revenue.ts exactly — keep in sync.
-const LAPIS_WHOLESALE_ACCOUNTS = new Set(["506000", "506200", "506300"]);
-const LAPIS_DISCOUNT_ACCOUNTS  = new Set(["20000"]);
-const LAPIS_REFUND_ACCOUNTS    = new Set(["SALREF"]);
+// the Cockpit service+product figures. Mirrors WHOLESALE/DISCOUNT/REFUND_ACCOUNTS
+// in cockpit-revenue.ts exactly — keep in sync.
+const COCKPIT_WHOLESALE_ACCOUNTS = new Set(["506000", "506200", "506300"]);
+const COCKPIT_DISCOUNT_ACCOUNTS  = new Set(["20000"]);
+const COCKPIT_REFUND_ACCOUNTS    = new Set(["SALREF"]);
 
-// Maps Lapis "Sales Point" / "Point of Sales" labels → Cockpit venue slug.
-// (This is the inverse of LAPIS_SPA_MAP in lapis-revenue.ts, but keyed by
+// Maps Cockpit "Sales Point" / "Point of Sales" labels → Cockpit venue slug.
+// (This is the inverse of COCKPIT_SPA_LOCATION_MAP in cockpit-revenue.ts, but keyed by
 // slug directly so we never have to round-trip through the legacy 1-8 ID.)
-const LAPIS_VENUE_TO_SLUG: Record<string, string> = {
+const COCKPIT_VENUE_TO_SLUG: Record<string, string> = {
   "HUGOS":                        "hugos",
   "INTER":                        "intercontinental",
   "RAMLA":                        "ramla",
@@ -39,7 +39,7 @@ const LAPIS_VENUE_TO_SLUG: Record<string, string> = {
   "SALES POINT OF NOV":           "novotel",
 };
 
-// ── Generic CSV parsing (mirrors lapis-revenue.ts) ──────────────────────────
+// ── Generic CSV parsing (mirrors cockpit-revenue.ts) ──────────────────────────
 
 function parseCSVRow(line: string): string[] {
   const cells: string[] = [];
@@ -59,8 +59,8 @@ function parseCSVRow(line: string): string[] {
   return cells;
 }
 
-async function fetchLapisCsv(gid: string): Promise<Record<string, string>[]> {
-  const url  = `https://docs.google.com/spreadsheets/d/${LAPIS_SHEET_ID}/export?format=csv&gid=${gid}`;
+async function fetchCockpitCsv(gid: string): Promise<Record<string, string>[]> {
+  const url  = `https://docs.google.com/spreadsheets/d/${COCKPIT_SHEET_ID}/export?format=csv&gid=${gid}`;
   const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) throw new Error(`Cockpit Datasheet fetch failed: ${resp.status}`);
   const text  = await resp.text();
@@ -87,10 +87,10 @@ function safeFloat(val: string): number {
   return parseFloat(String(val).replace(/,/g, "").trim() || "0") || 0;
 }
 
-// Parses Lapis date strings into an ISO YYYY-MM-DD string (UTC-stable).
-// Mirrors the formats lapis-revenue.ts handles: D/M/YYYY, D/M/YY, and a
+// Parses Cockpit date strings into an ISO YYYY-MM-DD string (UTC-stable).
+// Mirrors the formats cockpit-revenue.ts handles: D/M/YYYY, D/M/YY, and a
 // JS-native parser fallback.
-function parseLapisDateIso(raw: string): string | null {
+function parseCockpitDateIso(raw: string): string | null {
   raw = raw.trim();
   if (!raw) return null;
   const slash = raw.split("/");
@@ -117,10 +117,10 @@ function withinWindow(iso: string, fromDate: string, toDate: string): boolean {
   return iso >= fromDate && iso <= toDate;
 }
 
-// ── Zoho P&L walk (mirrors lapis-revenue.ts fetchZohoRevenueAccounts) ────────
+// ── Zoho P&L walk (mirrors cockpit-revenue.ts fetchZohoRevenueAccounts) ────────
 
 // Recursively collects `total` for any node whose account_code is in
-// `targetCodes`. Identical traversal to lapis-revenue.ts walkPl().
+// `targetCodes`. Identical traversal to cockpit-revenue.ts walkPl().
 function walkPl(obj: unknown, targetCodes: Set<string>, result: Record<string, number>): void {
   if (Array.isArray(obj)) { for (const item of obj) walkPl(item, targetCodes, result); return; }
   if (!obj || typeof obj !== "object") return;
@@ -139,7 +139,7 @@ function daysInMonth(year: number, month: number): number {
 // Retries a Zoho call on rate-limit failures with linear back-off. Zoho returns
 // HTTP 429 with messages like "too many requests continuously" when the daily
 // request budget is hit or parallel calls saturate the org limit. Without this
-// the EBIDA Layer would silently emit gross Lapis revenue (no wholesale/discount/
+// the EBIDA Layer would silently emit gross Cockpit revenue (no wholesale/discount/
 // refund applied) and diverge from spa_revenue_monthly.
 async function withZohoRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
   const delays = [30_000, 60_000, 120_000];
@@ -160,7 +160,7 @@ async function withZohoRetry<T>(label: string, fn: () => Promise<T>): Promise<T>
   }
 }
 
-// Pulls the per-calendar-month NET Zoho adjustment that lapis-revenue.ts adds
+// Pulls the per-calendar-month NET Zoho adjustment that cockpit-revenue.ts adds
 // to SPA net revenue: + wholesale (506000/506200/506300) − discount (20000)
 // − refund (SALREF). Path A always evaluates these over the FULL calendar
 // month, so we do the same here regardless of the (possibly sub-month) window.
@@ -170,9 +170,9 @@ async function fetchSpaZohoMonthlyAdjustment(
 ): Promise<Record<string, number>> {
   const adj: Record<string, number> = {};
   const targetCodes = new Set([
-    ...LAPIS_WHOLESALE_ACCOUNTS,
-    ...LAPIS_DISCOUNT_ACCOUNTS,
-    ...LAPIS_REFUND_ACCOUNTS,
+    ...COCKPIT_WHOLESALE_ACCOUNTS,
+    ...COCKPIT_DISCOUNT_ACCOUNTS,
+    ...COCKPIT_REFUND_ACCOUNTS,
   ]);
   const client = new ZohoBooksClient("spa");
 
@@ -190,9 +190,9 @@ async function fetchSpaZohoMonthlyAdjustment(
     const totals: Record<string, number> = {};
     walkPl(data, targetCodes, totals);
 
-    // Same sign convention as lapis-revenue.ts runMonth(): wholesale added,
+    // Same sign convention as cockpit-revenue.ts runMonth(): wholesale added,
     // discount + refund subtracted, all via Math.abs of the P&L total.
-    const wholesale = [...LAPIS_WHOLESALE_ACCOUNTS].reduce((s, c) => s + Math.abs(totals[c] ?? 0), 0);
+    const wholesale = [...COCKPIT_WHOLESALE_ACCOUNTS].reduce((s, c) => s + Math.abs(totals[c] ?? 0), 0);
     const discount  = Math.abs(totals["20000"]  ?? 0);
     const refund    = Math.abs(totals["SALREF"] ?? 0);
     adj[ym] = wholesale - discount - refund;
@@ -200,42 +200,42 @@ async function fetchSpaZohoMonthlyAdjustment(
   return adj;
 }
 
-// ── SPA (Lapis) daily revenue per venue ─────────────────────────────────────
+// ── SPA (Cockpit) daily revenue per venue ─────────────────────────────────────
 
 // Returns one row per (date, venue_slug) whose ex-VAT amounts SUM to the
 // AUTHORITATIVE Cockpit dashboard figure (spa_revenue_monthly.net_revenue,
-// built by lib/etl/lapis-revenue.ts — Path A).
+// built by lib/etl/cockpit-revenue.ts — Path A).
 //
 // Path A's monthly net revenue is:
-//     services + product_phytomer + product_purest + product_other   (Lapis)
+//     services + product_phytomer + product_purest + product_other   (Cockpit)
 //   + wholesale (Zoho 506000/506200/506300)
 //   − sales_discount (Zoho 20000) − sales_refund (Zoho SALREF)
 //
 // We reproduce it identically, just kept at daily granularity:
-//   1. Lapis service+product ex-VAT per (date, venue) — per-row service
+//   1. Cockpit service+product ex-VAT per (date, venue) — per-row service
 //      rounding (`.toFixed(2)`) matches Path A exactly.
 //   2. The Zoho wholesale/discount/refund NET adjustment is pulled per
 //      calendar month (Path A's basis) and distributed across that month's
-//      (date, venue) rows in proportion to each row's Lapis revenue, so the
+//      (date, venue) rows in proportion to each row's Cockpit revenue, so the
 //      per-day rows sum back to Path A's monthly net.
 //
 // Note: the Zoho wholesale/discount/refund CoA accounts are SPA-revenue CoA
 // codes; they are NOT among the codes the zoho-line-extractor path treats as
 // revenue for the EBIDA Layer (those flow through real invoice/creditnote
-// lines), so folding them into LAPIS_REV here does not double-count.
+// lines), so folding them into COCKPIT_SPA_REV here does not double-count.
 export async function loadSpaCockpitRevenue(
   fromDate: string,
   toDate:   string,
 ): Promise<Array<{ date: string; venue_slug: string; amount: number }>> {
-  // We need TWO views of Lapis revenue:
-  //  • lapis      — per (date, venue) rows INSIDE the requested window (output)
+  // We need TWO views of Cockpit revenue:
+  // cockpit      — per (date, venue) rows INSIDE the requested window (output)
   //  • monthTotal — per calendar-month TOTAL across the WHOLE month, even days
   //                 outside the window. This is the denominator for spreading
   //                 the Zoho adjustment: a sub-month window must receive only
   //                 its proportional slice of the month's adjustment, otherwise
   //                 summing N weekly windows applies the adjustment N times.
-  const lapis: Map<string, number> = new Map();        // key = `${date}::${slug}` (in-window)
-  const lapisMonthTotal: Record<string, number> = {};  // "YYYY-MM" → full-month Lapis revenue
+  const cockpit: Map<string, number> = new Map();        // key = `${date}::${slug}` (in-window)
+  const cockpitMonthTotal: Record<string, number> = {};  // "YYYY-MM" → full-month Cockpit revenue
 
   // The full calendar months the window touches — used to widen the month-total
   // scan beyond the window boundaries.
@@ -252,68 +252,68 @@ export async function loadSpaCockpitRevenue(
 
   // Services CSV: "Service Date", "Sales Point", "Unit Price" (inc-VAT),
   // "Status" — only Given / Unplanned count.
-  const svcRows = await fetchLapisCsv(LAPIS_SERVICE_GID);
+  const svcRows = await fetchCockpitCsv(COCKPIT_SERVICE_GID);
   for (const row of svcRows) {
     const status = stripCol(row, "Status");
     if (status !== "Given" && status !== "Unplanned") continue;
-    const iso = parseLapisDateIso(stripCol(row, "Service Date"));
+    const iso = parseCockpitDateIso(stripCol(row, "Service Date"));
     if (!iso) continue;
     const ym = iso.slice(0, 7);
     if (!monthsTouched.has(ym)) continue;
-    const slug = LAPIS_VENUE_TO_SLUG[stripCol(row, "Sales Point")];
+    const slug = COCKPIT_VENUE_TO_SLUG[stripCol(row, "Sales Point")];
     if (!slug) continue;
     const unitPrice = safeFloat(stripCol(row, "Unit Price"));
     if (unitPrice === 0) continue;
     // Path A parity: each service line is rounded to 2dp ex-VAT before summing
-    // (lapis-revenue.ts: `+(unitPrice / (1 + VAT_RATE)).toFixed(2)`).
-    const amountEx = Math.round((unitPrice / (1 + LAPIS_VAT_RATE)) * 100) / 100;
-    lapisMonthTotal[ym] = (lapisMonthTotal[ym] ?? 0) + amountEx;
+    // (cockpit-revenue.ts: `+(unitPrice / (1 + VAT_RATE)).toFixed(2)`).
+    const amountEx = Math.round((unitPrice / (1 + COCKPIT_VAT_RATE)) * 100) / 100;
+    cockpitMonthTotal[ym] = (cockpitMonthTotal[ym] ?? 0) + amountEx;
     if (withinWindow(iso, fromDate, toDate)) {
       const key = `${iso}::${slug}`;
-      lapis.set(key, (lapis.get(key) ?? 0) + amountEx);
+      cockpit.set(key, (cockpit.get(key) ?? 0) + amountEx);
     }
   }
 
   // Products CSV: "Date", "Point of Sales", "VAT Exclusive Amount".
-  const prodRows = await fetchLapisCsv(LAPIS_PRODUCT_GID);
+  const prodRows = await fetchCockpitCsv(COCKPIT_PRODUCT_GID);
   for (const row of prodRows) {
-    const iso = parseLapisDateIso(stripCol(row, "Date"));
+    const iso = parseCockpitDateIso(stripCol(row, "Date"));
     if (!iso) continue;
     const ym = iso.slice(0, 7);
     if (!monthsTouched.has(ym)) continue;
     const spaName = stripCol(row, "Point of Sales") || stripCol(row, "Point of Sales ");
-    const slug = LAPIS_VENUE_TO_SLUG[spaName];
+    const slug = COCKPIT_VENUE_TO_SLUG[spaName];
     if (!slug) continue;
     const amount = safeFloat(
       stripCol(row, "VAT Exclusive Amount") || stripCol(row, "VAT Exclusive Amount "),
     );
     if (amount <= 0) continue;
-    lapisMonthTotal[ym] = (lapisMonthTotal[ym] ?? 0) + amount;
+    cockpitMonthTotal[ym] = (cockpitMonthTotal[ym] ?? 0) + amount;
     if (withinWindow(iso, fromDate, toDate)) {
       const key = `${iso}::${slug}`;
-      lapis.set(key, (lapis.get(key) ?? 0) + amount);
+      cockpit.set(key, (cockpit.get(key) ?? 0) + amount);
     }
   }
 
   // Pull the Zoho wholesale/discount/refund NET adjustment per month. The
   // call has its own rate-limit retry (withZohoRetry); we deliberately do NOT
-  // swallow exceptions here. Silently falling back to Lapis-only emits gross
+  // swallow exceptions here. Silently falling back to Cockpit-only emits gross
   // revenue and diverges from spa_revenue_monthly — better to surface the
   // failure so the chunk runner retries the whole window.
   const zohoAdj: Record<string, number> = await fetchSpaZohoMonthlyAdjustment([...monthsTouched]);
 
   const out: Array<{ date: string; venue_slug: string; amount: number }> = [];
-  for (const [key, lapisAmount] of lapis.entries()) {
+  for (const [key, cockpitAmount] of cockpit.entries()) {
     const [date, venue_slug] = key.split("::");
     const ym       = key.slice(0, 7);
-    const monthSum = lapisMonthTotal[ym] ?? 0;
+    const monthSum = cockpitMonthTotal[ym] ?? 0;
     const adj      = zohoAdj[ym] ?? 0;
     // Distribute the month's net Zoho adjustment in proportion to this
-    // (date, venue) row's share of the WHOLE month's Lapis revenue. A
+    // (date, venue) row's share of the WHOLE month's Cockpit revenue. A
     // sub-month window therefore receives only its slice — summing all
     // windows of a month reproduces Path A's monthly net exactly.
-    const share  = monthSum > 0 ? lapisAmount / monthSum : 0;
-    const amount = lapisAmount + adj * share;
+    const share  = monthSum > 0 ? cockpitAmount / monthSum : 0;
+    const amount = cockpitAmount + adj * share;
     const rounded = Math.round(amount * 100) / 100;
     if (rounded === 0) continue;
     out.push({ date, venue_slug, amount: rounded });

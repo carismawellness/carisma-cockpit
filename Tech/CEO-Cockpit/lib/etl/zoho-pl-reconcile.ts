@@ -22,7 +22,7 @@ import { DailyRow } from "./zoho-transactions-daily";
 //     already signed-positive (income revenue ≥ 0, expense cost ≥ 0)
 //     thanks to the line-extractor's sign-multiplier handling.
 //   • Filter zero-amount rows on both sides before comparing.
-//   • Skip API-side sentinel codes (LAPIS_REV / POS_*_REV) that are
+//   • Skip API-side sentinel codes (COCKPIT_SPA_REV / POS_*_REV) that are
 //     intentional Cockpit-only additions with no P&L equivalent.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -40,7 +40,7 @@ export type PlReconcileResult = {
 // them keeps the "in API only" section uncluttered (it would otherwise
 // always report these as drift).
 const API_SENTINEL_CODES = new Set<string>([
-  "LAPIS_REV",      // SPA Lapis POS revenue
+  "COCKPIT_SPA_REV",      // SPA Cockpit POS revenue
   "POS_AES_REV",    // Aesthetics POS revenue
   "POS_SLIM_REV",   // Slimming POS revenue
   "SUPP_SAL",       // Supplementary salary (Cockpit salary_supplement_monthly)

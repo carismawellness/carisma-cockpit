@@ -29,7 +29,7 @@
  *     periods) and HARDWIRED rent rules (Novotel fixed, Excelsior turnover)
  *     have NO 1:1 transaction backing. We flag `reconciles=false` with a note
  *     instead of pretending the transactions add up.
- *   • Revenue from Lapis/Cockpit POS (account_code LAPIS_REV / POS_*_REV) and
+ *   • Revenue from Cockpit POS (account_code COCKPIT_SPA_REV / POS_*_REV) and
  *     Salary Supplement (SUPP_SAL) are non-Zoho synthetic line items — listed
  *     as single summary rows, not Zoho transactions.
  */
@@ -253,7 +253,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
 
   // 3. Group contributing accounts by org. Skip synthetic (non-Zoho) accounts
   //    and fallback-smoothed lines — those can't be backed 1:1 by transactions.
-  const SYNTHETIC_PREFIXES = ["LAPIS_REV", "POS_AES_REV", "POS_SLIM_REV", "SUPP_SAL"];
+  const SYNTHETIC_PREFIXES = ["COCKPIT_SPA_REV", "POS_AES_REV", "POS_SLIM_REV", "SUPP_SAL"];
   const isSynthetic = (code: string) => SYNTHETIC_PREFIXES.some((p) => code === p);
 
   // Pseudo codes are EBITDA category slugs used by Supabase-aggregated rows.

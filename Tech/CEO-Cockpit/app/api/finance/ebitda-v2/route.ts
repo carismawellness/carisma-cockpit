@@ -61,7 +61,7 @@ const AD_CHANNELS = ["meta","google","klaviyo","misc"] as const;
 
 type VenueData = {
   revenue:        number;
-  lapis_revenue:  number;   // services + products only (no wholesale/adjustments) — used for turnover-based rent
+  cockpit_revenue:  number;   // services + products only (no wholesale/adjustments) — used for turnover-based rent
   wages:          number;
   wage_by_role:   Record<WageRole, number>;
   advertising:    number;
@@ -77,7 +77,7 @@ type VenueData = {
 function emptyVenueData(): VenueData {
   return {
     revenue:       0,
-    lapis_revenue: 0,
+    cockpit_revenue: 0,
     wages:         0,
     wage_by_role:  Object.fromEntries(WAGE_ROLES.map(r => [r, 0])) as Record<WageRole, number>,
     advertising:   0,
@@ -359,19 +359,19 @@ export async function GET(req: Request) {
   }
 
   // ── 4. Revenue ───────────────────────────────────────────────────────────
-  // 4a. SPA — sum actual daily LAPIS amounts for exact date range (no pro-rating)
+  // 4a. SPA — sum actual daily Cockpit amounts for exact date range (no pro-rating)
   overlappingMonths(dateFrom, dateTo);
   for (const row of revenueDaily) {
     const slug = LOC_ID_TO_SLUG[row.location_id as number];
     if (!slug || !venues[slug]) continue;
-    const lapisSales = (
+    const cockpitSales = (
       (row.services         as number) +
       (row.product_phytomer as number) +
       (row.product_purest   as number) +
       (row.product_other    as number)
     );
-    venues[slug].revenue       += lapisSales;
-    venues[slug].lapis_revenue += lapisSales;   // services+products only — for turnover rent
+    venues[slug].revenue       += cockpitSales;
+    venues[slug].cockpit_revenue += cockpitSales;   // services+products only — for turnover rent
   }
   // Zoho adjustments (wholesale, discount, refund) are still monthly — pro-rate to period
   for (const row of (revenueMonthly.data ?? [])) {
@@ -434,13 +434,13 @@ export async function GET(req: Request) {
       }
       case "advertising": {
         const ch = resolveAdChannel(contact);
-        // Klaviyo billed to HQ → split across 8 SPA venues by lapis_revenue ratio
+        // Klaviyo billed to HQ → split across 8 SPA venues by cockpit_revenue ratio
         if (ch === "klaviyo" && venue === "hq") {
           const SPA_SLUGS = ["intercontinental","hugos","hyatt","ramla","labranda","sunny_coast","excelsior","novotel"] as const;
-          const totalSpaRev = SPA_SLUGS.reduce((s, sv) => s + (venues[sv]?.lapis_revenue ?? 0), 0);
+          const totalSpaRev = SPA_SLUGS.reduce((s, sv) => s + (venues[sv]?.cockpit_revenue ?? 0), 0);
           for (const sv of SPA_SLUGS) {
             if (!venues[sv]) continue;
-            const ratio = totalSpaRev > 0 ? (venues[sv].lapis_revenue ?? 0) / totalSpaRev : 1 / 8;
+            const ratio = totalSpaRev > 0 ? (venues[sv].cockpit_revenue ?? 0) / totalSpaRev : 1 / 8;
             const share = amount * ratio;
             venues[sv].advertising += share;
             venues[sv].ad_by_channel["klaviyo"] = (venues[sv].ad_by_channel["klaviyo"] ?? 0) + share;
@@ -482,9 +482,9 @@ export async function GET(req: Request) {
     } else if (rule.rule_type === "base_plus_revenue_pct") {
       const pct  = (rule.params.revenue_pct  ?? 0) / 100;
       const base = (rule.params.base_monthly ?? 0) * (daysInPeriod / 30.4375);
-      // Use Lapis-only revenue (services + products, no wholesale/adjustments)
+      // Use Cockpit-only revenue (services + products, no wholesale/adjustments)
       // for turnover rent — that's the contractual basis for Excelsior.
-      const revenueBase = venues[venue].lapis_revenue || venues[venue].revenue;
+      const revenueBase = venues[venue].cockpit_revenue || venues[venue].revenue;
       value = base + revenueBase * pct;
     }
 

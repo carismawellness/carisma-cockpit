@@ -194,7 +194,7 @@ export function useSpaEbitda(dateFrom: Date, dateTo: Date): UseSpaEbitdaResult {
     staleTime: 0,
   });
 
-  // ── 1c. Lapis net revenue (still monthly — prorate by overlap days) ───────
+  // ── 1c. Cockpit net revenue (still monthly — prorate by overlap days) ───────
   const fromMonthStr = `${dateFrom.getFullYear()}-${String(dateFrom.getMonth() + 1).padStart(2, "0")}-01`;
   const toMonthStr   = `${dateTo.getFullYear()}-${String(dateTo.getMonth() + 1).padStart(2, "0")}-01`;
   const { data: revenueRows, isFetching: isFetchingRevenue } = useQuery({
@@ -253,8 +253,8 @@ export function useSpaEbitda(dateFrom: Date, dateTo: Date): UseSpaEbitdaResult {
     }
   }
 
-  // ── 3. Lapis net revenue per location, prorated by overlap ────────────────
-  const lapisByLoc = new Map<number, number>();
+  // ── 3. Cockpit net revenue per location, prorated by overlap ────────────────
+  const cockpitByLoc = new Map<number, number>();
   for (const r of (revenueRows ?? []) as {
     location_id: number; month: string;
     services: number; product_phytomer: number; product_purest: number; product_other: number;
@@ -269,7 +269,7 @@ export function useSpaEbitda(dateFrom: Date, dateTo: Date): UseSpaEbitdaResult {
               + (r.product_other ?? 0) + (r.wholesale ?? 0)
               - (r.sales_discount ?? 0) - (r.sales_refund ?? 0);
     const prorated = net * overlap / md;
-    lapisByLoc.set(r.location_id, (lapisByLoc.get(r.location_id) ?? 0) + prorated);
+    cockpitByLoc.set(r.location_id, (cockpitByLoc.get(r.location_id) ?? 0) + prorated);
   }
 
   // ── 4. Salary supplement (prorate by month overlap) ───────────────────────
@@ -377,9 +377,9 @@ export function useSpaEbitda(dateFrom: Date, dateTo: Date): UseSpaEbitdaResult {
     const slug = meta?.slug ?? "";
     const display = SPA_LOCATION_META[slug] ?? { name: meta?.name ?? "", color: "#6B7280" };
 
-    const lapRev = lapisByLoc.get(id);
+    const cockpitRev = cockpitByLoc.get(id);
     const t = curByLoc[id];
-    const revenue = lapRev !== undefined ? lapRev : t.revenue;
+    const revenue = cockpitRev !== undefined ? cockpitRev : t.revenue;
     const costs = t.cogs + t.wages + t.advertising + t.rent + t.utilities + t.sga;
 
     return {

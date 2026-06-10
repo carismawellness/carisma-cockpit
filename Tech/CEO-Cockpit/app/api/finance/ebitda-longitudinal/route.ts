@@ -249,7 +249,7 @@ function weekBounds(weekStr: string): [string, string] {
 
 type VenueMonth = {
   revenue:      number;
-  lapis_revenue: number;  // services+products (for Klaviyo split + turnover rent)
+  cockpit_revenue: number;  // services+products (for Klaviyo split + turnover rent)
   wages:        number;
   advertising:  number;
   sga:          number;
@@ -259,7 +259,7 @@ type VenueMonth = {
 };
 
 function emptyVM(): VenueMonth {
-  return { revenue: 0, lapis_revenue: 0, wages: 0, advertising: 0, sga: 0, cogs: 0, rent: 0, utilities: 0 };
+  return { revenue: 0, cockpit_revenue: 0, wages: 0, advertising: 0, sga: 0, cogs: 0, rent: 0, utilities: 0 };
 }
 
 /** Key: "PERIOD|venue"  where PERIOD is "YYYY-MM" (monthly) or "YYYY-Www" (weekly) */
@@ -497,20 +497,20 @@ async function aggregateRange(
   const allSlugs = new Set<string>(VENUE_CONFIG.map(v => v.slug));
 
   // ── 1. Revenue ────────────────────────────────────────────────────────────
-  // 1a. SPA daily LAPIS revenue
+  // 1a. SPA daily Cockpit revenue
   for (const row of revDaily) {
     const slug = LOC_ID_TO_SLUG[row.location_id];
     if (!slug) continue;
     const period = dateToPeriod(row.date as string, granularity);
-    const lapisSales = (
+    const cockpitSales = (
       Number(row.services         ?? 0) +
       Number(row.product_phytomer ?? 0) +
       Number(row.product_purest   ?? 0) +
       Number(row.product_other    ?? 0)
     );
     const vm = getVM(acc, period, slug);
-    vm.revenue       += lapisSales;
-    vm.lapis_revenue += lapisSales;
+    vm.revenue       += cockpitSales;
+    vm.cockpit_revenue += cockpitSales;
   }
 
   // 1b. SPA monthly adjustments (wholesale, discount, refund)
@@ -611,12 +611,12 @@ async function aggregateRange(
       case "advertising": {
         const ch = resolveAdChannel(contact);
         if (ch === "klaviyo" && venue === "hq") {
-          // Klaviyo HQ → split across SPA venues by lapis_revenue ratio for this period
+          // Klaviyo HQ → split across SPA venues by cockpit_revenue ratio for this period
           const totalSpaRev = SPA_SLUGS.reduce(
-            (s, sv) => s + (acc.get(`${period}|${sv}`)?.lapis_revenue ?? 0), 0,
+            (s, sv) => s + (acc.get(`${period}|${sv}`)?.cockpit_revenue ?? 0), 0,
           );
           for (const sv of SPA_SLUGS) {
-            const spaRev = acc.get(`${period}|${sv}`)?.lapis_revenue ?? 0;
+            const spaRev = acc.get(`${period}|${sv}`)?.cockpit_revenue ?? 0;
             const ratio  = totalSpaRev > 0 ? spaRev / totalSpaRev : 1 / 8;
             getVM(acc, period, sv).advertising += amount * ratio;
           }
@@ -654,7 +654,7 @@ async function aggregateRange(
         } else if (rule.rule_type === "base_plus_revenue_pct") {
           const pct  = (rule.params.revenue_pct  ?? 0) / 100;
           const base = (rule.params.base_monthly ?? 0) * (daysInRange / daysInMo);
-          const revBase = vm.lapis_revenue || vm.revenue;
+          const revBase = vm.cockpit_revenue || vm.revenue;
           value = base + revBase * pct;
         }
 
@@ -694,7 +694,7 @@ async function aggregateRange(
           } else if (rule.rule_type === "base_plus_revenue_pct") {
             const pct  = (rule.params.revenue_pct  ?? 0) / 100;
             const base = (rule.params.base_monthly ?? 0) * factor;
-            const revBase = vm.lapis_revenue || vm.revenue;
+            const revBase = vm.cockpit_revenue || vm.revenue;
             totalValue += base + revBase * pct;
           }
         }

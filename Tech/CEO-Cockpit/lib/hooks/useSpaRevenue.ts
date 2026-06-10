@@ -20,7 +20,7 @@ export interface SpaRevenueLocation {
   location_id:      number;
   name:             string;
   color:            string;
-  // Lapis
+  // Cockpit
   services:         number;
   product_phytomer: number;
   product_purest:   number;
@@ -113,7 +113,7 @@ export function useSpaRevenue(dateFrom: Date, dateTo: Date): UseSpaRevenueResult
       syncFrom?: Date;
       syncTo?: Date;
     }) => {
-      const res = await fetch("/api/etl/lapis-revenue", {
+      const res = await fetch("/api/etl/cockpit-revenue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -154,7 +154,7 @@ export function useSpaRevenue(dateFrom: Date, dateTo: Date): UseSpaRevenueResult
       setTimeout(() => syncMutation.mutate({ force: false }), 0);
     } else if (recentInRange && !autoRefreshFiredRef.current) {
       // Priority 2: once per mount, force-refresh current + previous month
-      // so data entered retroactively in Lapis is always picked up
+      // so data entered retroactively in Cockpit is always picked up
       autoRefreshFiredRef.current = true;
       setTimeout(() => syncMutation.mutate({
         force:    true,
