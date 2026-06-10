@@ -108,9 +108,6 @@ function IndividualKPIsContent({
 
       {/* Section 2: Agent Leaderboard Cards */}
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-foreground">
-          Agent Leaderboard
-        </h2>
         {isLoading ? (
           <div className="h-40 animate-pulse rounded-xl bg-gray-100" />
         ) : (
@@ -120,9 +117,6 @@ function IndividualKPIsContent({
 
       {/* Section 3: Team Performance Table */}
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-foreground">
-          Team Performance
-        </h2>
         {isLoading ? (
           <div className="h-64 animate-pulse rounded-xl bg-gray-100" />
         ) : (

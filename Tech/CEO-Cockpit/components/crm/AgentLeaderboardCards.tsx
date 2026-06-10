@@ -11,6 +11,7 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
+  LabelList,
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
@@ -235,12 +236,17 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
           </p>
         </div>
       </CardHeader>
-      <CardContent className="pt-2">
-        <div className="h-[420px] w-full">
+      <CardContent className="pt-2 px-2 md:px-6">
+        {/* Horizontal scroll on mobile so the per-agent tick labels never squash */}
+        <div className="overflow-x-auto -mx-2 md:mx-0">
+          <div
+            className="h-[520px]"
+            style={{ minWidth: Math.max(rows.length * 90, 360) }}
+          >
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
               data={rows}
-              margin={{ top: 12, right: 30, left: 0, bottom: 110 }}
+              margin={{ top: 22, right: 30, left: 0, bottom: 130 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
               <XAxis
@@ -248,7 +254,7 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
                 interval={0}
                 tickLine={false}
                 axisLine={{ stroke: "#E5E7EB" }}
-                height={140}
+                height={150}
                 tick={
                   <MetricTick
                     rows={rows}
@@ -304,11 +310,20 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
                 dataKey="revenue"
                 name="Revenue"
                 radius={[6, 6, 0, 0]}
-                barSize={42}
+                barSize={52}
               >
                 {rows.map((r) => (
                   <Cell key={r.slug} fill={r.fill} />
                 ))}
+                <LabelList
+                  dataKey="revenue"
+                  position="top"
+                  formatter={(v: unknown) => {
+                    const n = Number(v);
+                    return n >= 1000 ? `€${(n / 1000).toFixed(0)}k` : `€${n}`;
+                  }}
+                  style={{ fontSize: 10, fill: "#27272A", fontWeight: 700 }}
+                />
               </Bar>
 
               {/* Deposit % overlay */}
@@ -324,7 +339,8 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
               />
             </ComposedChart>
           </ResponsiveContainer>
-        </div>
+          </div>{/* inner fixed-width div */}
+        </div>{/* overflow-x-auto */}
 
         {/* Inactive agents row */}
         {inactiveAgents.length > 0 && (
