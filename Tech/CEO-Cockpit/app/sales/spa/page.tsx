@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useSpaRevenue } from "@/lib/hooks/useSpaRevenue";
 import { useSpaDeepaAnalytics } from "@/lib/hooks/useSpaDeepaAnalytics";
+import { useSalaryRoster } from "@/lib/hooks/useSalaryRoster";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LabelList, Legend, Cell,
@@ -108,6 +109,8 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
       });
   }, [locations, priorLocations]);
 
+  const { getSpaSalary } = useSalaryRoster(dateFrom, dateTo);
+
   /* ── Staff chart data (real data from analytics hook, inc-VAT) ── */
   const staffChartData = useMemo(() =>
     analytics.staff.map((s) => ({
@@ -117,6 +120,29 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
     })),
     [analytics.staff]
   );
+
+  /* ── Therapist K% data (salary cost vs revenue) ─────────────── */
+  const therapistKData = useMemo(() => {
+    return analytics.staff
+      .map((s) => {
+        const revenue_ex = s.service_revenue + s.retail_revenue;
+        const revenue_inc = Math.round(revenue_ex * (1 + VAT_RATE));
+        const salary = getSpaSalary(s.name) ?? 0;
+        const salary_cost = salary > 0 ? Math.min(salary, revenue_inc) : 0;
+        const k_pct = salary > 0 && revenue_ex > 0 ? +(salary / revenue_ex * 100).toFixed(0) : null;
+        const revStr = revenue_inc >= 1000 ? `€${(revenue_inc / 1000).toFixed(1)}K` : `€${revenue_inc}`;
+        return {
+          name:           s.name,
+          revenue_net:    Math.max(0, revenue_inc - salary_cost),
+          salary_cost,
+          k_label:        k_pct != null ? `${k_pct}%` : null as string | null,
+          bar_label:      revStr,
+        };
+      })
+      .filter(d => d.revenue_net + d.salary_cost > 0)
+      .sort((a, b) => (b.revenue_net + b.salary_cost) - (a.revenue_net + a.salary_cost));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analytics.staff, getSpaSalary]);
 
   /* ── Guest group chart data ──────────────────────────────────── */
   const guestChartData = useMemo(() =>
@@ -500,6 +526,74 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
             mode="retail"
           />
         </div>
+      )}
+
+      {/* ── Therapist Revenue + Salary Cost (K%) ─────────────────── */}
+      {therapistKData.length > 0 && (
+        <Card className="p-4 md:p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <h2 className="text-base font-semibold text-foreground">Revenue &amp; Salary Cost by Therapist</h2>
+            <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 rounded-sm bg-[#8C7A5A]" />
+                Net revenue
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 rounded-sm bg-[#4a7fa5]" />
+                Salary cost (K%)
+              </span>
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={Math.max(180, therapistKData.length * 44)}>
+            <BarChart
+              layout="vertical"
+              data={therapistKData}
+              margin={{ top: 0, right: 100, left: 10, bottom: 0 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis
+                type="number"
+                tickFormatter={(v: number) => `€${(v / 1000).toFixed(0)}k`}
+                tick={{ fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={140}
+                tick={{ fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip
+                formatter={(value: unknown, name: unknown) => {
+                  const n = Number(value ?? 0);
+                  return [
+                    `€${n.toLocaleString("en-GB", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`,
+                    name === "salary_cost" ? "Salary cost" : "Net revenue",
+                  ];
+                }}
+                contentStyle={{ fontSize: 12 }}
+              />
+              <Bar dataKey="revenue_net" stackId="rev" fill="#8C7A5A" radius={[0, 0, 0, 0]} />
+              <Bar dataKey="salary_cost" stackId="rev" fill="#4a7fa5" radius={[0, 4, 4, 0]}>
+                <LabelList
+                  dataKey="k_label"
+                  position="insideRight"
+                  formatter={(v: unknown) => v ? String(v) : ""}
+                  style={{ fontSize: 10, fill: "#fff", fontWeight: 700 }}
+                />
+                <LabelList
+                  dataKey="bar_label"
+                  position="right"
+                  formatter={(v: unknown) => String(v ?? "")}
+                  style={{ fontSize: 11, fill: "#64748b", fontWeight: 600 }}
+                />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
       )}
 
       {!isLoading && locations.length === 0 && (

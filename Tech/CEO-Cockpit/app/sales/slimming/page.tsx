@@ -49,8 +49,6 @@ function pct(part: number, total: number): string {
 
 // Recharts v3 formatters — accept unknown then narrow
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const labelFmtK   = (v: any): string => (typeof v === "number" ? fmtK(v)     : "");
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const labelFmtPct = (v: any): string => (typeof v === "number" ? `${v}%`     : "");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const tooltipFmt  = (value: any, name: any): [string, string] =>
@@ -302,14 +300,16 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
               <BarChart
                 layout="vertical"
                 data={regularChartData}
-                margin={{ top: 4, right: 72, left: 72, bottom: 4 }}
+                margin={{ top: 4, right: 100, left: 72, bottom: 4 }}
               >
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                 <XAxis type="number" tickFormatter={fmtK} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="name" width={68} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
                 <Tooltip content={<StaffTooltip />} />
-                <Bar dataKey="Revenue inc-VAT" fill={SLIMMING_GREEN} radius={[0, 4, 4, 0]} maxBarSize={28}>
-                  <LabelList dataKey="Revenue inc-VAT" position="right" formatter={labelFmtK} style={{ fontSize: 10, fill: "#374151" }} />
+                <Bar dataKey="revenue_net_inc" stackId="rev" fill={SLIMMING_GREEN} radius={[0, 0, 0, 0]} maxBarSize={28} name="Revenue inc-VAT" />
+                <Bar dataKey="salary_cost" stackId="rev" fill={SALARY_BLUE} radius={[0, 4, 4, 0]} maxBarSize={28} name="Salary cost">
+                  <LabelList dataKey="k_label" position="insideRight" formatter={(v: unknown) => v ? String(v) : ""} style={{ fontSize: 9, fill: "#fff", fontWeight: 700 }} />
+                  <LabelList dataKey="bar_label" position="right" formatter={(v: unknown) => String(v ?? "")} style={{ fontSize: 10, fill: "#374151" }} />
                 </Bar>
                 <Bar dataKey="Bookings" fill={NAVY} radius={[0, 4, 4, 0]} maxBarSize={12} opacity={0.55} />
               </BarChart>
@@ -331,14 +331,16 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
               <BarChart
                 layout="vertical"
                 data={retailChartData}
-                margin={{ top: 4, right: 72, left: 72, bottom: 4 }}
+                margin={{ top: 4, right: 100, left: 72, bottom: 4 }}
               >
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                 <XAxis type="number" tickFormatter={fmtK} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="name" width={68} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
                 <Tooltip content={<StaffTooltip />} />
-                <Bar dataKey="Revenue inc-VAT" fill={GOLD} radius={[0, 4, 4, 0]} maxBarSize={28}>
-                  <LabelList dataKey="Revenue inc-VAT" position="right" formatter={labelFmtK} style={{ fontSize: 10, fill: "#374151" }} />
+                <Bar dataKey="revenue_net_inc" stackId="rev" fill={GOLD} radius={[0, 0, 0, 0]} maxBarSize={28} name="Revenue inc-VAT" />
+                <Bar dataKey="salary_cost" stackId="rev" fill={SALARY_BLUE} radius={[0, 4, 4, 0]} maxBarSize={28} name="Salary cost">
+                  <LabelList dataKey="k_label" position="insideRight" formatter={(v: unknown) => v ? String(v) : ""} style={{ fontSize: 9, fill: "#fff", fontWeight: 700 }} />
+                  <LabelList dataKey="bar_label" position="right" formatter={(v: unknown) => String(v ?? "")} style={{ fontSize: 10, fill: "#374151" }} />
                 </Bar>
                 <Bar dataKey="Bookings" fill={NAVY} radius={[0, 4, 4, 0]} maxBarSize={12} opacity={0.55} />
               </BarChart>
@@ -492,7 +494,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
             <BarChart
               layout="vertical"
               data={txStaffData}
-              margin={{ top: 4, right: 80, left: 100, bottom: 4 }}
+              margin={{ top: 4, right: 100, left: 100, bottom: 4 }}
             >
               <CartesianGrid strokeDasharray="3 3" horizontal={false} />
               <XAxis
@@ -511,13 +513,10 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                 tickLine={false}
               />
               <Tooltip content={<GenericTooltip />} />
-              <Bar dataKey="Revenue" fill={TEAL} radius={[0, 4, 4, 0]} maxBarSize={28}>
-                <LabelList
-                  dataKey="Revenue"
-                  position="right"
-                  formatter={labelFmtK}
-                  style={{ fontSize: 11, fill: "#374151" }}
-                />
+              <Bar dataKey="revenue_net_inc" stackId="rev" fill={TEAL} radius={[0, 0, 0, 0]} maxBarSize={28} name="Revenue ex-VAT" />
+              <Bar dataKey="salary_cost" stackId="rev" fill={SALARY_BLUE} radius={[0, 4, 4, 0]} maxBarSize={28} name="Salary cost">
+                <LabelList dataKey="k_label" position="insideRight" formatter={(v: unknown) => v ? String(v) : ""} style={{ fontSize: 9, fill: "#fff", fontWeight: 700 }} />
+                <LabelList dataKey="bar_label" position="right" formatter={(v: unknown) => String(v ?? "")} style={{ fontSize: 11, fill: "#374151" }} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
