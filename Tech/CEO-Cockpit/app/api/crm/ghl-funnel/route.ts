@@ -120,7 +120,7 @@ async function diagnoseFilters(
   stageId: string,
   pipelineId: string,
   dateFromIso: string,
-  dateToIso: string,
+  _dateToIso: string,
   _startAfterMs: number,
   _startBeforeMs: number,
 ): Promise<Record<string, number | string>> {
@@ -130,15 +130,8 @@ async function diagnoseFilters(
     pipeline_stage_id: stageId,
     limit: "1",
   };
-  const dateFromTs = `${dateFromIso}T00:00:00.000Z`;
-  const dateToTs   = `${dateToIso}T23:59:59.999Z`;
   const variants: Record<string, Record<string, string>> = {
-    "date_iso":           { ...base, date: dateFromTs },
-    "date_endDate":       { ...base, date: dateFromTs, endDate: dateToTs },
-    "date_dateEnd":       { ...base, date: dateFromTs, dateEnd: dateToTs },
-    "date_dateTo":        { ...base, date: dateFromTs, dateTo: dateToTs },
-    "date_dateUntil":     { ...base, date: dateFromTs, dateUntil: dateToTs },
-    "date_endDate_iso":   { ...base, date: dateFromIso, endDate: dateToIso },
+    "noDate": base,
   };
   const out: Record<string, number | string> = {};
   for (const [name, params] of Object.entries(variants)) {
@@ -150,35 +143,50 @@ async function diagnoseFilters(
     }
   }
 
-  // Try POST advanced search
-  try {
-    const resp = await fetch(`${GHL_BASE}/opportunities/search`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        Version: GHL_V,
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        locationId,
-        pipelineId,
-        pipelineStageId: stageId,
-        filters: [
-          { field: "dateAdded", operator: "between", value: [dateFromIso, dateToIso] },
-        ],
-        limit: 1,
-      }),
-    });
-    const txt = await resp.text();
-    if (!resp.ok) {
-      out["POST_filters"] = `${resp.status}: ${txt.slice(0, 200)}`;
-    } else {
-      const j = JSON.parse(txt);
-      out["POST_filters"] = j.meta?.total ?? 0;
+  // Try POST advanced search with various body shapes
+  const postBodies: Record<string, Record<string, unknown>> = {
+    "POST_snake_eq": {
+      location_id: locationId,
+      pipeline_id: pipelineId,
+      pipeline_stage_id: stageId,
+      filters: [{ field: "dateAdded", operator: "eq", value: dateFromIso }],
+      limit: 1,
+    },
+    "POST_snake_minimal": {
+      location_id: locationId,
+      pipeline_id: pipelineId,
+      pipeline_stage_id: stageId,
+      limit: 1,
+    },
+    "POST_camel_minimal": {
+      locationId,
+      pipelineId,
+      pipelineStageId: stageId,
+      limit: 1,
+    },
+  };
+  for (const [name, body] of Object.entries(postBodies)) {
+    try {
+      const resp = await fetch(`${GHL_BASE}/opportunities/search`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Version: GHL_V,
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      const txt = await resp.text();
+      if (!resp.ok) {
+        out[name] = `${resp.status}: ${txt.slice(0, 800)}`;
+      } else {
+        const j = JSON.parse(txt);
+        out[name] = j.meta?.total ?? 0;
+      }
+    } catch (e) {
+      out[name] = e instanceof Error ? e.message.slice(0, 150) : "err";
     }
-  } catch (e) {
-    out["POST_filters"] = e instanceof Error ? e.message.slice(0, 150) : "err";
   }
 
   return out;
