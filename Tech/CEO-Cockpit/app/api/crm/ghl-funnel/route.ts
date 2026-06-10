@@ -143,15 +143,41 @@ async function diagnoseFilters(
     }
   }
 
-  // Probe candidate field names — discover what GHL accepts
+  const dateToFullIso = `${_dateToIso}T23:59:59.999Z`;
+  const dateFromFullIso = `${dateFromIso}T00:00:00.000Z`;
   const postBodies: Record<string, Record<string, unknown>> = {
-    "field_pipelineId":   { locationId, filters: [{ field: "pipelineId", operator: "eq", value: pipelineId }, { field: "pipelineStageId", operator: "eq", value: stageId }], limit: 1 },
-    "field_added_at":     { locationId, filters: [{ field: "pipeline_stage_id", operator: "eq", value: stageId }, { field: "added_at", operator: "gte", value: dateFromIso }], limit: 1 },
-    "field_addedAt":      { locationId, filters: [{ field: "pipeline_stage_id", operator: "eq", value: stageId }, { field: "addedAt", operator: "gte", value: dateFromIso }], limit: 1 },
-    "field_date_added":   { locationId, filters: [{ field: "pipeline_stage_id", operator: "eq", value: stageId }, { field: "date_added", operator: "gte", value: dateFromIso }], limit: 1 },
-    "field_created_at":   { locationId, filters: [{ field: "pipeline_stage_id", operator: "eq", value: stageId }, { field: "created_at", operator: "gte", value: dateFromIso }], limit: 1 },
-    "field_createdAt":    { locationId, filters: [{ field: "pipeline_stage_id", operator: "eq", value: stageId }, { field: "createdAt", operator: "gte", value: dateFromIso }], limit: 1 },
-    "field_date":         { locationId, filters: [{ field: "pipeline_stage_id", operator: "eq", value: stageId }, { field: "date", operator: "gte", value: dateFromIso }], limit: 1 },
+    "date_added_range_iso": {
+      locationId,
+      filters: [
+        { field: "pipeline_stage_id", operator: "eq", value: stageId },
+        { field: "date_added", operator: "range", value: { gte: dateFromIso, lte: _dateToIso } },
+      ],
+      limit: 1,
+    },
+    "date_added_range_arr": {
+      locationId,
+      filters: [
+        { field: "pipeline_stage_id", operator: "eq", value: stageId },
+        { field: "date_added", operator: "range", value: [dateFromIso, _dateToIso] },
+      ],
+      limit: 1,
+    },
+    "date_added_range_ts": {
+      locationId,
+      filters: [
+        { field: "pipeline_stage_id", operator: "eq", value: stageId },
+        { field: "date_added", operator: "range", value: { gte: dateFromFullIso, lte: dateToFullIso } },
+      ],
+      limit: 1,
+    },
+    "last_stage_change_range": {
+      locationId,
+      filters: [
+        { field: "pipeline_stage_id", operator: "eq", value: stageId },
+        { field: "last_stage_change_date", operator: "range", value: { gte: dateFromIso, lte: _dateToIso } },
+      ],
+      limit: 1,
+    },
   };
   for (const [name, body] of Object.entries(postBodies)) {
     try {
