@@ -226,40 +226,20 @@ async function fetchCampaigns(apiKey: string): Promise<Record<string, unknown>[]
   return allCampaigns;
 }
 
-/** Fetch subscriber count via lists endpoint */
+/** Fetch subscriber count by summing profile_count across all lists */
 async function fetchSubscriberCount(apiKey: string): Promise<number> {
   const hdrs = headers(apiKey);
   try {
-    const res = await fetch(`${KLAVIYO_BASE}/lists/`, {
-      headers: hdrs,
-      next: { revalidate: 300 },
-    });
+    const res = await fetch(
+      `${KLAVIYO_BASE}/lists/?fields[list]=name,profile_count`,
+      { headers: hdrs, next: { revalidate: 300 } },
+    );
     if (!res.ok) return 0;
-    const json = await res.json();
-    // Sum up profile_count from all lists (if available), or just count lists
+    const json = await res.json() as { data?: { attributes?: { profile_count?: number } }[] };
     const lists = json?.data ?? [];
     let total = 0;
     for (const list of lists) {
-      // profile_count isn't always in the default fields, so we'll use a separate call
       total += list?.attributes?.profile_count ?? 0;
-    }
-    // If we got 0, try the profiles endpoint for a total count
-    if (total === 0) {
-      const profileRes = await fetch(
-        `${KLAVIYO_BASE}/profiles/?page[size]=1`,
-        { headers: hdrs, next: { revalidate: 300 } },
-      );
-      if (profileRes.ok) {
-        const profileJson = await profileRes.json();
-        // The total count may be in page info or we estimate from data
-        total = profileJson?.data?.length ?? 0;
-        // Klaviyo v2024-10-15 doesn't expose total in page cursor — estimate from page[cursor]
-        // If the response has a next page, we know there are more than 1
-        if (profileJson?.links?.next) {
-          // We can't easily get total from cursor pagination; leave as 0 for now
-          total = 0;
-        }
-      }
     }
     return total;
   } catch {
