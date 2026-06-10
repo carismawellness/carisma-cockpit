@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
-import { Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { TableSkeleton } from "@/components/ui/skeleton";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import {
   severityClasses,
   severityColor,
@@ -240,11 +241,7 @@ export function ConstraintHeatmap({ dateFrom, dateTo }: Props) {
         <p className="text-xs text-muted-foreground mt-0.5">2-second scan: which metrics are off?</p>
       </div>
 
-      {loading && (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-        </div>
-      )}
+      {loading && <TableSkeleton rows={7} columns={4} />}
 
       {!loading && brands && (
         <div className="overflow-x-auto -mx-4 md:mx-0">

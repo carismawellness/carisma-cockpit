@@ -6,6 +6,7 @@ import { SyncButton } from "@/components/dashboard/SyncButton";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { Card } from "@/components/ui/card";
+import { ChartSkeleton, KPIGridSkeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/charts/config";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useMetaCampaignsFromDb as useMetaCampaigns, useGoogleCampaignsFromDb as useGoogleCampaigns } from "@/lib/hooks/useAdsCampaigns";
@@ -103,18 +104,6 @@ function EmailRateBar({ label, value, max }: { label: string; value: number; max
           style={{ width: `${pct}%`, backgroundColor: BRAND_COLOR }}
         />
       </div>
-    </div>
-  );
-}
-
-/* ---------- Skeleton loader ---------- */
-
-function SkeletonCard() {
-  return (
-    <div className="rounded-lg border bg-white p-4 animate-pulse">
-      <div className="h-3 w-24 bg-gray-200 rounded mb-3" />
-      <div className="h-7 w-20 bg-gray-200 rounded mb-2" />
-      <div className="h-3 w-16 bg-gray-200 rounded" />
     </div>
   );
 }
@@ -293,13 +282,13 @@ function AestheticsMarketingContent({
           </h1>
           <p className="text-sm text-text-secondary mt-1">Loading data…</p>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-          {Array.from({ length: 7 }).map((_, i) => (
-            <SkeletonCard key={i} />
-          ))}
+        <KPIGridSkeleton count={6} className="grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6" />
+        <div className="rounded-xl border border-border p-6">
+          <ChartSkeleton height={200} />
         </div>
-        <div className="rounded-lg border bg-white p-6 animate-pulse h-48" />
-        <div className="rounded-lg border bg-white p-6 animate-pulse h-48" />
+        <div className="rounded-xl border border-border p-6">
+          <ChartSkeleton height={200} />
+        </div>
       </>
     );
   }

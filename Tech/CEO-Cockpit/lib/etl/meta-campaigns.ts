@@ -14,6 +14,7 @@
 
 import { upsert, selectRaw } from "@/lib/etl/supabase-etl";
 import { createClient } from "@supabase/supabase-js";
+import { ETLLogger } from "@/lib/etl/etl-logger";
 
 const META_BASE = "https://graph.facebook.com/v22.0";
 
@@ -186,6 +187,31 @@ export interface MetaCampaignsEtlResult {
 }
 
 export async function runMetaCampaignsEtl(opts: {
+  dateFrom: string;
+  dateTo:   string;
+  brandSlug?: BrandSlug;
+}): Promise<MetaCampaignsEtlResult> {
+  // Observability wrapper — records start/success/fail to etl_sync_log
+  // (log key "meta_campaigns"). Data logic lives in the inner function.
+  const logger = new ETLLogger("meta_campaigns");
+  await logger.start();
+  try {
+    const result = await runMetaCampaignsEtlInner(opts);
+    // Per-brand errors are caught inside the loop; treat a run where every
+    // brand errored (nothing upserted) as a failure.
+    if (result.rows_upserted === 0 && result.log.includes("ERROR")) {
+      await logger.fail(result.log.slice(0, 500));
+    } else {
+      await logger.complete(result.rows_upserted);
+    }
+    return result;
+  } catch (err) {
+    await logger.fail(String(err));
+    throw err;
+  }
+}
+
+async function runMetaCampaignsEtlInner(opts: {
   dateFrom: string;
   dateTo:   string;
   brandSlug?: BrandSlug;

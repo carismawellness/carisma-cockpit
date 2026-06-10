@@ -1,6 +1,7 @@
 import { deleteWhere, insertRows } from "./supabase-etl";
 import { parseCSV } from "./csv";
 import { cockpitCsvUrl, COCKPIT_TABS } from "../constants/cockpit-sheets";
+import { ETLLogger } from "./etl-logger";
 
 const VAT_RATE = 0.18;
 
@@ -73,6 +74,24 @@ function monthsInRange(fromDate: string, toDate: string): Set<string> {
 // ── Main run ──────────────────────────────────────────────────────────────────
 
 export async function runSlimmingSales(
+  dateFrom: string,
+  dateTo: string,
+): Promise<{ rowsInserted: number; log: string[] }> {
+  // Observability wrapper — records start/success/fail to etl_sync_log
+  // (log key "slimming_sales"). Data logic lives in the inner function.
+  const logger = new ETLLogger("slimming_sales");
+  await logger.start();
+  try {
+    const result = await runSlimmingSalesInner(dateFrom, dateTo);
+    await logger.complete(result.rowsInserted);
+    return result;
+  } catch (err) {
+    await logger.fail(String(err));
+    throw err;
+  }
+}
+
+async function runSlimmingSalesInner(
   dateFrom: string,
   dateTo: string,
 ): Promise<{ rowsInserted: number; log: string[] }> {

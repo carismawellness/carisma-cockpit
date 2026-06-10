@@ -47,13 +47,21 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 
-  /* Carisma design tokens */
+  /* Carisma design tokens — keep in sync with lib/constants/design-tokens.ts */
   --color-navy: #1B3A4B;
   --color-navy-light: #2A5066;
   --color-navy-dark: #0F2433;
   --color-gold: #B79E61;
   --color-gold-light: #D4BE8A;
   --color-gold-dark: #8A7744;
+  --color-gold-bg: #FBF7EF;
+  --color-warm-white: #FAFAF8;
+  --color-warm-gray: #F5F3EE;
+  --color-warm-border: #F0EDE8;
+  --color-charcoal: #1A1A1A;
+  /* "text-secondary"/"text-primary" are color names: used as text-text-secondary, bg-text-secondary, etc. */
+  --color-text-secondary: #6B7280;
+  --color-text-primary: #1A1A1A;
   --font-sans: "Inter", system-ui, sans-serif;
 }
 

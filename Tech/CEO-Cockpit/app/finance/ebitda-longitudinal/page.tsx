@@ -16,6 +16,7 @@ import {
   ReferenceLine,
 } from "recharts";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
+import { ChartSkeleton } from "@/components/ui/skeleton";
 import { SyncButton } from "@/components/dashboard/SyncButton";
 import {
   EbitdaSummaryHeader,
@@ -706,7 +707,10 @@ function LongitudinalContent({
       </div>
 
       {loading && (
-        <p className="text-sm text-muted-foreground py-6 text-center">Loading…</p>
+        <div className="space-y-4">
+          <ChartSkeleton height={280} />
+          <ChartSkeleton height={280} />
+        </div>
       )}
       {error && (
         <p className="text-sm text-destructive py-4">{error}</p>

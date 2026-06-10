@@ -1,8 +1,9 @@
 "use client";
 
-import { ReactNode, useState } from "react";
+import { ReactNode, Suspense, useState } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useDateRange } from "@/lib/hooks/useDateRange";
 import { cn } from "@/lib/utils";
 
@@ -15,7 +16,7 @@ interface DashboardShellProps {
   hideDatePicker?: boolean;
 }
 
-export function DashboardShell({ children, hideDatePicker }: DashboardShellProps) {
+function DashboardShellInner({ children, hideDatePicker }: DashboardShellProps) {
   const { from, to, setRange } = useDateRange();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -44,8 +45,21 @@ export function DashboardShell({ children, hideDatePicker }: DashboardShellProps
           collapsed ? "lg:ml-[4.5rem]" : "lg:ml-60"
         )}
       >
-        {children({ dateFrom: from, dateTo: to, brandFilter: null })}
+        {/* A render error in any chart/section degrades to a card instead of white-screening the page */}
+        <ErrorBoundary>
+          {children({ dateFrom: from, dateTo: to, brandFilter: null })}
+        </ErrorBoundary>
       </main>
     </div>
+  );
+}
+
+export function DashboardShell(props: DashboardShellProps) {
+  // useDateRange (via useSearchParams) and Sidebar nav links require a
+  // Suspense boundary in Next.js App Router — without it the build fails.
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <DashboardShellInner {...props} />
+    </Suspense>
   );
 }

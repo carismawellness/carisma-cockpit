@@ -1,36 +1,33 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect } from "react";
 
 type Theme = "light" | "dark";
 
+/**
+ * Theme is pinned to light. Dark mode rendered near-invisible text because
+ * dashboard content hardcodes light-gray palettes (UX audit, Jun 2026).
+ * Plumbing is kept so a proper dark theme can be reintroduced later:
+ * defaultTheme="light", enableSystem=false, no toggle exposed.
+ */
 const ThemeContext = createContext<{ theme: Theme; toggle: () => void }>({
   theme: "light",
   toggle: () => {},
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("light");
-
   useEffect(() => {
-    const stored = localStorage.getItem("theme") as Theme | null;
-    const preferred = window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark"
-      : "light";
-    const initial = stored ?? preferred;
-    setTheme(initial);
-    document.documentElement.classList.toggle("dark", initial === "dark");
+    // Clear any stale dark preference from before the light-only pin.
+    document.documentElement.classList.remove("dark");
+    try {
+      localStorage.setItem("theme", "light");
+    } catch {
+      /* storage unavailable — ignore */
+    }
   }, []);
 
-  function toggle() {
-    const next = theme === "light" ? "dark" : "light";
-    setTheme(next);
-    localStorage.setItem("theme", next);
-    document.documentElement.classList.toggle("dark", next === "dark");
-  }
-
   return (
-    <ThemeContext.Provider value={{ theme, toggle }}>
+    <ThemeContext.Provider value={{ theme: "light", toggle: () => {} }}>
       {children}
     </ThemeContext.Provider>
   );

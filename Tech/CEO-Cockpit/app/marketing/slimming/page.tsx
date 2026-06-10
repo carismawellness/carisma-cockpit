@@ -6,6 +6,7 @@ import { SyncButton } from "@/components/dashboard/SyncButton";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { Card } from "@/components/ui/card";
+import { ChartSkeleton, KPIGridSkeleton, TableSkeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/charts/config";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useMetaCampaignsFromDb as useMetaCampaigns, useGoogleCampaignsFromDb as useGoogleCampaigns } from "@/lib/hooks/useAdsCampaigns";
@@ -88,18 +89,6 @@ function ProgressMetric({ label, value, max, color }: { label: string; value: nu
         />
       </div>
     </div>
-  );
-}
-
-/* ---------- Skeleton loader ---------- */
-
-function SkeletonCard() {
-  return (
-    <Card className="p-4 animate-pulse">
-      <div className="h-3 bg-gray-200 rounded w-1/2 mb-2" />
-      <div className="h-7 bg-gray-200 rounded w-3/4 mb-2" />
-      <div className="h-3 bg-gray-200 rounded w-1/3" />
-    </Card>
   );
 }
 
@@ -329,13 +318,7 @@ function SlimmingMarketingContent({
         />
       </div>
 
-      {/* Loading / Error / Token-expired banners */}
-      {isLoading && (
-        <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 text-center">
-          <p className="text-sm font-medium text-blue-700">Loading ad data from Meta &amp; Google APIs...</p>
-        </div>
-      )}
-
+      {/* Error / Token-expired banners */}
       {tokenExpired && (
         <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-center">
           <p className="text-sm font-semibold text-amber-700">API token expired — update credentials in .env.local</p>
@@ -380,16 +363,13 @@ function SlimmingMarketingContent({
 
       {/* Section 1: Hero KPIs with "New Brand" badges */}
       {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-          {Array.from({ length: 7 }).map((_, i) => <SkeletonCard key={i} />)}
-        </div>
+        <KPIGridSkeleton count={7} className="grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7" />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
           {heroCards.map((kpi) => (
             <Card key={kpi.label} className="p-4">
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{kpi.label}</p>
               <p className="text-xl md:text-2xl font-bold text-gray-900 mt-1">{kpi.value}</p>
-              <p className="text-xs text-gray-400 mt-1">LY: N/A</p>
               <span className="inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
                 New Brand
               </span>
@@ -430,10 +410,10 @@ function SlimmingMarketingContent({
         </div>
 
         {isLoading ? (
-          <div className="animate-pulse space-y-3">
-            <div className="h-4 bg-gray-200 rounded w-1/4" />
-            <div className="h-32 bg-gray-200 rounded" />
-          </div>
+          <>
+            <ChartSkeleton height={160} className="mb-6" />
+            <TableSkeleton rows={4} columns={7} />
+          </>
         ) : (
           <>
             {/* Fatigue Summary Counts */}
@@ -497,10 +477,10 @@ function SlimmingMarketingContent({
         </div>
 
         {isLoading ? (
-          <div className="animate-pulse space-y-3">
-            <div className="h-4 bg-gray-200 rounded w-1/4" />
-            <div className="h-32 bg-gray-200 rounded" />
-          </div>
+          <>
+            <ChartSkeleton height={160} className="mb-6" />
+            <TableSkeleton rows={4} columns={7} />
+          </>
         ) : (
           <>
             {/* Fatigue Summary Counts */}
@@ -618,10 +598,7 @@ function SlimmingMarketingContent({
         </div>
 
         {isLoading ? (
-          <div className="animate-pulse space-y-3">
-            <div className="h-4 bg-gray-200 rounded w-1/3" />
-            <div className="h-40 bg-gray-200 rounded" />
-          </div>
+          <TableSkeleton rows={6} columns={8} />
         ) : profitabilityData.length === 0 ? (
           <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-6 py-8 text-center">
             <p className="text-sm font-medium text-gray-600">No profitability data available for this period.</p>

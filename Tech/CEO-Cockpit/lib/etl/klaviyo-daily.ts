@@ -15,6 +15,7 @@
  */
 
 import { upsert, selectRaw } from "@/lib/etl/supabase-etl";
+import { ETLLogger } from "@/lib/etl/etl-logger";
 
 const KLAVIYO_BASE     = "https://a.klaviyo.com/api";
 const KLAVIYO_REVISION = "2024-10-15";
@@ -274,6 +275,30 @@ export async function runKlaviyoDailyEtl(opts: {
   /** YYYY-MM-DD — the snapshot date (stored as date column). */
   date:      string;
   /** Optional date range. If omitted, both default to `date` (single-day). */
+  dateFrom?: string;
+  dateTo?:   string;
+  brandSlug?: BrandSlug;
+}): Promise<KlaviyoDailyEtlResult> {
+  // Observability wrapper — records start/success/fail to etl_sync_log
+  // (log key "klaviyo"). Data logic lives in the inner function.
+  const logger = new ETLLogger("klaviyo");
+  await logger.start();
+  try {
+    const result = await runKlaviyoDailyEtlInner(opts);
+    if (result.rows_upserted === 0 && result.log.includes("ERROR")) {
+      await logger.fail(result.log.slice(0, 500));
+    } else {
+      await logger.complete(result.rows_upserted);
+    }
+    return result;
+  } catch (err) {
+    await logger.fail(String(err));
+    throw err;
+  }
+}
+
+async function runKlaviyoDailyEtlInner(opts: {
+  date:      string;
   dateFrom?: string;
   dateTo?:   string;
   brandSlug?: BrandSlug;

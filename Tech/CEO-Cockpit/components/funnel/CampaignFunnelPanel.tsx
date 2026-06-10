@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
-import { Loader2 } from "lucide-react";
+import { TableSkeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/charts/config";
 import { BRAND, type BrandKey } from "@/lib/constants/design-tokens";
 import {
@@ -195,8 +195,9 @@ export function CampaignFunnelPanel({ dateFrom, dateTo }: Props) {
       </div>
 
       {loading && (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <div className="space-y-6">
+          <TableSkeleton rows={5} columns={6} />
+          <TableSkeleton rows={5} columns={6} />
         </div>
       )}
 

@@ -1,6 +1,7 @@
 import { deleteWhere, insertRows } from "./supabase-etl";
 import { parseCSV } from "./csv";
 import { cockpitCsvUrl, COCKPIT_TABS } from "../constants/cockpit-sheets";
+import { ETLLogger } from "./etl-logger";
 
 const VAT_RATE = 0.18;
 
@@ -93,6 +94,24 @@ function dateKey(d: Date): string {
 // ── Main run ──────────────────────────────────────────────────────────────────
 
 export async function runSpaServicesByEmployee(
+  dateFrom: string,
+  dateTo:   string,
+): Promise<{ rowsInserted: number; log: string[] }> {
+  // Observability wrapper — records start/success/fail to etl_sync_log
+  // (log key "spa_services_by_employee"). Data logic lives in the inner function.
+  const logger = new ETLLogger("spa_services_by_employee");
+  await logger.start();
+  try {
+    const result = await runSpaServicesByEmployeeInner(dateFrom, dateTo);
+    await logger.complete(result.rowsInserted);
+    return result;
+  } catch (err) {
+    await logger.fail(String(err));
+    throw err;
+  }
+}
+
+async function runSpaServicesByEmployeeInner(
   dateFrom: string,
   dateTo:   string,
 ): Promise<{ rowsInserted: number; log: string[] }> {

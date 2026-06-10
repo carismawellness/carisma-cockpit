@@ -1,19 +1,17 @@
 /**
  * GET /api/hr/financials?month=YYYY-MM
  *
- * Joins payroll (sourced from `transactions_raw` wages — the canonical
- * cockpit salary source after `salary_monthly` was dropped in migration 054)
- * with revenue tables (`spa_revenue_daily`, `aesthetics_sales_daily`,
- * `slimming_sales_daily`) and computes HC% = payroll / revenue * 100 per
- * location and per brand.
+ * Computes HC% = total payroll / total revenue per location and brand.
  *
- * Response shape (see plan doc):
- *   {
- *     month,
- *     byLocation: [{ location, payroll, revenue, hcPct, headcount }],
- *     byBrand:    [{ brand, payroll, revenue, hcPct }],
- *     totals:     { payroll, revenue, groupHcPct }
- *   }
+ * Payroll source (same fallback chain as EBITDA salary-roster):
+ *   1. transactions_raw wages for the month (Zoho-booked cash salaries)
+ *   2. + salary_supplement_monthly current month (non-cash / manual supplements)
+ *   3. If a venue has zero from both, fall back to most recent prior-month
+ *      supplement (up to 3 months back), used as a same-period proxy.
+ *
+ * Revenue source (gross ex-VAT, consistent with EBITDA):
+ *   spa_revenue_daily + aesthetics_sales_daily + slimming_sales_daily
+ *   Includes NULL date_of_service rows anchored to the month bucket.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -28,8 +26,6 @@ import {
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// Venue slug (as stored on `transactions_raw.venue`) → canonical location
-// display name (LOCATION_TO_BRAND keys).
 const VENUE_SLUG_TO_LOCATION: Record<string, string> = {
   inter:            "InterContinental",
   intercontinental: "InterContinental",
@@ -42,11 +38,21 @@ const VENUE_SLUG_TO_LOCATION: Record<string, string> = {
   excelsior:        "Excelsior",
   novotel:          "Novotel",
   aesthetics:       "Aesthetics Centre",
+  carisma_aesthetics: "Aesthetics Centre",
   slimming:         "Slimming Centre",
   hq:               "HQ",
+  management:       "HQ",
 };
 
-function monthBounds(monthYYYYMM: string): { start: string; end: string; monthStart: string } | null {
+interface MonthBounds {
+  start: string;
+  end: string;
+  monthStart: string;
+  year: number;
+  month: number;
+}
+
+function monthBounds(monthYYYYMM: string): MonthBounds | null {
   const m = monthYYYYMM.match(/^(\d{4})-(\d{2})$/);
   if (!m) return null;
   const y = parseInt(m[1], 10);
@@ -58,6 +64,8 @@ function monthBounds(monthYYYYMM: string): { start: string; end: string; monthSt
     start:      `${y}-${pad(mo)}-01`,
     end:        `${y}-${pad(mo)}-${pad(lastDay)}`,
     monthStart: `${y}-${pad(mo)}-01`,
+    year:       y,
+    month:      mo,
   };
 }
 
@@ -68,16 +76,18 @@ function currentMonthYYYYMM(): string {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const month = searchParams.get("month") || currentMonthYYYYMM();
+  const monthParam = searchParams.get("month") || currentMonthYYYYMM();
 
-  const bounds = monthBounds(month);
+  const bounds = monthBounds(monthParam);
   if (!bounds) {
     return NextResponse.json({ error: "month must be YYYY-MM" }, { status: 400 });
   }
 
   const supabase = await createServerSupabaseClient();
+  const pad = (n: number) => String(n).padStart(2, "0");
 
-  // ── Payroll: aggregate wages from transactions_raw by venue slug ──────────
+  // ── Payroll ────────────────────────────────────────────────────────────────
+  // Source 1: transactions_raw wages (Zoho-booked cash salaries)
   const { data: wageTxns, error: wageErr } = await supabase
     .from("transactions_raw")
     .select("venue, amount")
@@ -86,22 +96,75 @@ export async function GET(req: NextRequest) {
     .lte("date", bounds.end);
 
   if (wageErr) {
-    return NextResponse.json(
-      { error: `wage query failed: ${wageErr.message}` },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: `wage query failed: ${wageErr.message}` }, { status: 500 });
   }
 
-  const payrollByLocation = new Map<string, number>();
+  const txnByVenue = new Map<string, number>();
   for (const t of wageTxns ?? []) {
-    const venue = (t.venue as string | null) || "";
+    const venue = String(t.venue ?? "").trim();
+    if (!venue) continue;
+    txnByVenue.set(venue, (txnByVenue.get(venue) ?? 0) + Number(t.amount ?? 0));
+  }
+
+  // Source 2: salary_supplement_monthly — current month + 3 prior months fallback
+  const suppMonths: string[] = [bounds.monthStart];
+  for (let i = 1; i <= 3; i++) {
+    const d = new Date(bounds.year, bounds.month - 1 - i, 1);
+    suppMonths.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`);
+  }
+
+  const { data: suppData } = await supabase
+    .from("salary_supplement_monthly")
+    .select("spa_slug, amount, month")
+    .in("month", suppMonths)
+    .not("spa_slug", "is", null);
+
+  // Aggregate current-month supplements by venue
+  const suppCurrentByVenue = new Map<string, number>();
+  // Track most recent prior-month supplement per venue (fallback)
+  const suppFallbackByVenue = new Map<string, number>();
+
+  for (const s of suppData ?? []) {
+    const venue = String(s.spa_slug ?? "").trim();
+    if (!venue) continue;
+    const amount = Number(s.amount ?? 0);
+    if (s.month === bounds.monthStart) {
+      suppCurrentByVenue.set(venue, (suppCurrentByVenue.get(venue) ?? 0) + amount);
+    } else {
+      // Keep only the most recent prior month per venue
+      const existing = suppFallbackByVenue.get(venue);
+      // suppData is not sorted, so track by comparing month strings
+      const existingMonth = suppData?.find(
+        (r) => String(r.spa_slug) === venue && r.month !== bounds.monthStart
+      )?.month;
+      if (!existing || (existingMonth && String(s.month) >= String(existingMonth))) {
+        suppFallbackByVenue.set(venue, amount);
+      }
+    }
+  }
+
+  // Combine: txn wages + current supplements; fallback to prior supplements when both zero
+  const allVenues = new Set([
+    ...txnByVenue.keys(),
+    ...suppCurrentByVenue.keys(),
+    ...suppFallbackByVenue.keys(),
+  ]);
+
+  const payrollByLocation = new Map<string, number>();
+  for (const venue of allVenues) {
+    const txn = txnByVenue.get(venue) ?? 0;
+    const suppCur = suppCurrentByVenue.get(venue) ?? 0;
+    const combined = txn + suppCur;
+    const amount = combined > 0 ? combined : (suppFallbackByVenue.get(venue) ?? 0);
+    if (amount <= 0) continue;
+
     const location = VENUE_SLUG_TO_LOCATION[venue];
-    if (!location) continue; // split/unallocated rows
-    const amount = Number(t.amount ?? 0);
+    if (!location) continue;
     payrollByLocation.set(location, (payrollByLocation.get(location) ?? 0) + amount);
   }
 
-  // ── Revenue: spa_revenue_daily (per location_id) ──────────────────────────
+  // ── Revenue ────────────────────────────────────────────────────────────────
+  // spa_revenue_daily (all rows have a date, simple range filter)
   const { data: spaRev, error: spaErr } = await supabase
     .from("spa_revenue_daily")
     .select("location_id, services, product_phytomer, product_purest, product_other")
@@ -109,10 +172,7 @@ export async function GET(req: NextRequest) {
     .lte("date", bounds.end);
 
   if (spaErr) {
-    return NextResponse.json(
-      { error: `spa revenue query failed: ${spaErr.message}` },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: `spa revenue query: ${spaErr.message}` }, { status: 500 });
   }
 
   const revenueByLocation = new Map<string, number>();
@@ -127,57 +187,43 @@ export async function GET(req: NextRequest) {
     revenueByLocation.set(location, (revenueByLocation.get(location) ?? 0) + total);
   }
 
-  // ── Revenue: aesthetics_sales_daily (single venue) ────────────────────────
+  // aesthetics_sales_daily — include dated rows AND undated rows anchored to month
   const { data: aesRev, error: aesErr } = await supabase
     .from("aesthetics_sales_daily")
-    .select("price_ex_vat")
-    .gte("date_of_service", bounds.start)
-    .lte("date_of_service", bounds.end);
+    .select("price_ex_vat, date_of_service, month")
+    .or(
+      `and(date_of_service.gte.${bounds.start},date_of_service.lte.${bounds.end}),` +
+      `and(date_of_service.is.null,month.eq.${bounds.monthStart})`,
+    );
 
   if (aesErr) {
-    return NextResponse.json(
-      { error: `aesthetics revenue query failed: ${aesErr.message}` },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: `aesthetics revenue query: ${aesErr.message}` }, { status: 500 });
   }
 
-  const aesTotal = (aesRev ?? []).reduce(
-    (acc, r) => acc + Number(r.price_ex_vat ?? 0),
-    0,
-  );
+  const aesTotal = (aesRev ?? []).reduce((acc, r) => acc + Number(r.price_ex_vat ?? 0), 0);
   if (aesTotal > 0) {
-    revenueByLocation.set(
-      "Aesthetics Centre",
-      (revenueByLocation.get("Aesthetics Centre") ?? 0) + aesTotal,
-    );
+    revenueByLocation.set("Aesthetics Centre", (revenueByLocation.get("Aesthetics Centre") ?? 0) + aesTotal);
   }
 
-  // ── Revenue: slimming_sales_daily (single venue) ──────────────────────────
+  // slimming_sales_daily — same pattern
   const { data: slmRev, error: slmErr } = await supabase
     .from("slimming_sales_daily")
-    .select("price_ex_vat")
-    .gte("date_of_service", bounds.start)
-    .lte("date_of_service", bounds.end);
+    .select("price_ex_vat, date_of_service, month")
+    .or(
+      `and(date_of_service.gte.${bounds.start},date_of_service.lte.${bounds.end}),` +
+      `and(date_of_service.is.null,month.eq.${bounds.monthStart})`,
+    );
 
   if (slmErr) {
-    return NextResponse.json(
-      { error: `slimming revenue query failed: ${slmErr.message}` },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: `slimming revenue query: ${slmErr.message}` }, { status: 500 });
   }
 
-  const slmTotal = (slmRev ?? []).reduce(
-    (acc, r) => acc + Number(r.price_ex_vat ?? 0),
-    0,
-  );
+  const slmTotal = (slmRev ?? []).reduce((acc, r) => acc + Number(r.price_ex_vat ?? 0), 0);
   if (slmTotal > 0) {
-    revenueByLocation.set(
-      "Slimming Centre",
-      (revenueByLocation.get("Slimming Centre") ?? 0) + slmTotal,
-    );
+    revenueByLocation.set("Slimming Centre", (revenueByLocation.get("Slimming Centre") ?? 0) + slmTotal);
   }
 
-  // ── Headcount: latest snapshot ≤ end-of-month per location ────────────────
+  // ── Headcount: latest snapshot in month per location ──────────────────────
   const { data: headcountRows } = await supabase
     .from("hr_talexio_daily_snapshot")
     .select("location_name, active_headcount, snapshot_date")
@@ -193,15 +239,14 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // ── Build byLocation rows ─────────────────────────────────────────────────
+  // ── Build byLocation rows (exclude HQ — no revenue, distorts chart) ────────
   const allLocations = new Set<string>([
     ...payrollByLocation.keys(),
     ...revenueByLocation.keys(),
-    ...headcountByLocation.keys(),
   ]);
 
-  // `name` matches the HRLocationFinancial shape consumed by the frontend.
   const byLocation = Array.from(allLocations)
+    .filter((loc) => loc !== "HQ")
     .map((loc) => {
       const payroll = +(payrollByLocation.get(loc) ?? 0).toFixed(2);
       const revenue = +(revenueByLocation.get(loc) ?? 0).toFixed(2);
@@ -211,23 +256,32 @@ export async function GET(req: NextRequest) {
     })
     .sort((a, b) => b.revenue - a.revenue);
 
-  // ── Aggregate byBusinessUnit ──────────────────────────────────────────────
+  // ── Aggregate byBusinessUnit (include HQ payroll in Spa brand total) ───────
   const brandTotals: Record<BrandName, { payroll: number; revenue: number }> = {
     Spa:        { payroll: 0, revenue: 0 },
     Aesthetics: { payroll: 0, revenue: 0 },
     Slimming:   { payroll: 0, revenue: 0 },
     HQ:         { payroll: 0, revenue: 0 },
   };
-  for (const row of byLocation) {
-    const brand = LOCATION_TO_BRAND[row.name] ?? brandForLocation(row.name);
-    brandTotals[brand].payroll += row.payroll;
-    brandTotals[brand].revenue += row.revenue;
+
+  // Include HQ payroll in grouping (it exists in payrollByLocation)
+  const allLocationsForBU = new Set<string>([
+    ...payrollByLocation.keys(),
+    ...revenueByLocation.keys(),
+  ]);
+  for (const loc of allLocationsForBU) {
+    const brand = LOCATION_TO_BRAND[loc] ?? brandForLocation(loc);
+    brandTotals[brand].payroll += payrollByLocation.get(loc) ?? 0;
+    brandTotals[brand].revenue += revenueByLocation.get(loc) ?? 0;
   }
 
-  // `name` matches the HRBusinessUnitFinancial shape consumed by the frontend.
-  const byBusinessUnit = (Object.keys(brandTotals) as BrandName[])
+  // Roll HQ payroll into Spa (HQ is a Carisma cost centre, allocated to Spa brand)
+  brandTotals["Spa"].payroll += brandTotals["HQ"].payroll;
+  delete (brandTotals as Record<string, unknown>)["HQ"];
+
+  const byBusinessUnit = (["Spa", "Aesthetics", "Slimming"] as BrandName[])
     .map((brand) => {
-      const { payroll, revenue } = brandTotals[brand];
+      const { payroll, revenue } = brandTotals[brand] ?? { payroll: 0, revenue: 0 };
       return {
         name:    brand,
         payroll: +payroll.toFixed(2),
@@ -237,14 +291,18 @@ export async function GET(req: NextRequest) {
     })
     .filter((b) => b.payroll > 0 || b.revenue > 0);
 
-  const totalPayroll = byBusinessUnit.reduce((a, b) => a + b.payroll, 0);
+  const totalPayroll = (["Spa", "Aesthetics", "Slimming"] as BrandName[]).reduce(
+    (a, b) => a + (brandTotals[b]?.payroll ?? 0),
+    0,
+  );
   const totalRevenue = byBusinessUnit.reduce((a, b) => a + b.revenue, 0);
 
   return NextResponse.json({
-    month,
+    month: monthParam,
     byLocation,
     byBusinessUnit,
     totalRevenue:  +totalRevenue.toFixed(2),
+    totalPayroll:  +totalPayroll.toFixed(2),
     groupHcPct:    totalRevenue > 0 ? +((totalPayroll / totalRevenue) * 100).toFixed(1) : 0,
   });
 }

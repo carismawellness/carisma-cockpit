@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { runTokenCanary, type CanaryResult } from "@/lib/etl/token-canary";
+import { sendEtlFailureAlert, type EtlFailure } from "@/lib/alerts/etl-alerts";
+import { fetchLatestSuccesses, computeStaleness } from "@/lib/etl/staleness";
 
 export const maxDuration = 300;
 
@@ -23,6 +26,17 @@ export async function GET(req: NextRequest) {
   }
   if (!authorized && !isLocal) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Phase 0: token-health canary — exercises every credential (Zoho, Google
+  // Sheets, Talexio, Klaviyo, GHL, Meta) BEFORE the ETLs run, so an expired
+  // refresh token (invalid_grant) is caught tonight, not days later.
+  // runTokenCanary never throws and is hard time-boxed per check.
+  let canary: CanaryResult[] = [];
+  try {
+    canary = await runTokenCanary({ record: true });
+  } catch (err) {
+    console.error("[Cron] token canary crashed (continuing):", err);
   }
 
   const now = new Date();
@@ -78,21 +92,75 @@ export async function GET(req: NextRequest) {
   const outcome = (r: PromiseSettledResult<Response>) =>
     r.status === "fulfilled" && r.value.ok ? "ok" : "error";
 
+  // Extract a useful error message from a settled fetch result.
+  const describeError = async (r: PromiseSettledResult<Response>): Promise<string | null> => {
+    if (r.status === "rejected") return String(r.reason).slice(0, 400);
+    if (r.value.ok) return null;
+    let detail = "";
+    try { detail = (await r.value.text()).slice(0, 300); } catch { /* body unreadable */ }
+    return `HTTP ${r.value.status}${detail ? ` — ${detail}` : ""}`;
+  };
+
+  const namedResults: Array<[string, PromiseSettledResult<Response>]> = [
+    ["revenue",             revenueRes],
+    ["zoho_spa",            spaRes],
+    ["zoho_aesthetics",     aestheticsRes],
+    ["crm_agents",          crmAgentsRes],
+    ["ghl_crm",             ghlCrmRes],
+    ["meta_campaigns",      metaCampaignsRes],
+    ["google_campaigns",    googleCampaignsRes],
+    ["klaviyo",             klaviyoRes],
+    ["talexio_hr",          talexioHrRes],
+    ["lead_reconciliation", leadReconRes],
+  ];
+
+  // ── Consolidated failure alerting (never breaks the cron) ──────────────────
+  let alertSent = false;
+  const failures: EtlFailure[] = [];
+  try {
+    // 1. ETL fan-out failures (with error detail where available)
+    for (const [source, res] of namedResults) {
+      const err = await describeError(res);
+      if (err) failures.push({ source, error: err });
+    }
+
+    // 2. Token canary failures
+    for (const c of canary.filter(c => !c.ok)) {
+      failures.push({ source: `token-canary: ${c.service}`, error: c.error ?? "unknown error" });
+    }
+
+    // 3. Staleness — sources whose last success predates the previous expected
+    //    run (catches ETLs that stopped being called entirely). Checked AFTER
+    //    tonight's ETLs so a healthy run never self-reports as stale.
+    const staleness = computeStaleness(await fetchLatestSuccesses());
+    for (const s of staleness.filter(s => s.stale)) {
+      // The canary's own failures are already reported directly above.
+      if (s.source === "token_canary") continue;
+      // Avoid double-reporting a source that already failed tonight.
+      if (failures.some(f => f.source === s.source)) continue;
+      failures.push({
+        source: s.source,
+        error:  s.lastSuccessAt
+          ? `stale — last successful sync ${s.ageHours}h ago (expected every ${s.expectedCadenceHours}h)`
+          : `stale — no successful sync ever recorded (log key "${s.log_key}")`,
+      });
+    }
+
+    if (failures.length > 0) {
+      const alert = await sendEtlFailureAlert(failures);
+      alertSent = alert.sent;
+    }
+  } catch (err) {
+    console.error("[Cron] alerting failed (cron unaffected):", err);
+  }
+
   return NextResponse.json({
     status: "ok",
     date_from,
     date_to,
-    results: {
-      revenue:              outcome(revenueRes),
-      zoho_spa:             outcome(spaRes),
-      zoho_aesthetics:      outcome(aestheticsRes),
-      crm_agents:           outcome(crmAgentsRes),
-      ghl_crm:              outcome(ghlCrmRes),
-      meta_campaigns:       outcome(metaCampaignsRes),
-      google_campaigns:     outcome(googleCampaignsRes),
-      klaviyo:              outcome(klaviyoRes),
-      talexio_hr:           outcome(talexioHrRes),
-      lead_reconciliation:  outcome(leadReconRes),
-    },
+    results: Object.fromEntries(namedResults.map(([name, r]) => [name, outcome(r)])),
+    canary,
+    failures,
+    alert_sent: alertSent,
   });
 }

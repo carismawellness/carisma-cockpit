@@ -21,7 +21,10 @@ export async function POST(req: NextRequest) {
   }
 
   const payload = JSON.stringify({ date_from, date_to, force });
-  const headers = { "Content-Type": "application/json" };
+  // Forward CRON_SECRET so the gated /api/etl/* routes accept these
+  // server-to-server calls (they carry no session cookies).
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (process.env.CRON_SECRET) headers["Authorization"] = `Bearer ${process.env.CRON_SECRET}`;
 
   const [cockpitRes, aestheticsRes, slimmingSalesRes, slimmingTxRes, spaEmpRes] = await Promise.allSettled([
     fetch(`${BASE_URL}/api/etl/cockpit-revenue`,        { method: "POST", headers, body: payload }),

@@ -2,6 +2,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import type { GroupForecast } from "@/lib/analytics/revenue-forecast";
 
 export interface GroupLocationRow {
   location_id: number;
@@ -37,6 +38,8 @@ export interface UseGroupRevenueResult {
   ly:            GroupPeriod;
   spa_locations: GroupLocationRow[];
   monthly:       GroupMonthlyPoint[];
+  /** Forward-looking projection (current month → Dec). null = not computable. */
+  forecast:      GroupForecast | null;
   isFetching:    boolean;
 }
 
@@ -69,6 +72,7 @@ export function useGroupRevenue(dateFrom: Date, dateTo: Date): UseGroupRevenueRe
     ly:            data?.ly            ?? EMPTY_PERIOD,
     spa_locations: data?.spa_locations ?? [],
     monthly:       data?.monthly       ?? [],
+    forecast:      data?.forecast      ?? null,
     isFetching,
   };
 }

@@ -6,6 +6,7 @@ import { SyncButton } from "@/components/dashboard/SyncButton";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { Card } from "@/components/ui/card";
+import { ChartSkeleton, KPIGridSkeleton, TableSkeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/charts/config";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useMetaCampaignsFromDb as useMetaCampaigns, useGoogleCampaignsFromDb as useGoogleCampaigns } from "@/lib/hooks/useAdsCampaigns";
@@ -57,27 +58,11 @@ function getRoasColor(roas: number): string {
 
 /* ---------- Hero KPI Card ---------- */
 
-function HeroKPICard({
-  label,
-  value,
-  lastYear,
-  yoyLabel,
-  positive,
-}: {
-  label: string;
-  value: string;
-  lastYear: string;
-  yoyLabel: string;
-  positive: boolean;
-}) {
+function HeroKPICard({ label, value }: { label: string; value: string }) {
   return (
     <Card className="p-4 relative">
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
       <p className="text-xl md:text-2xl font-bold text-gray-900 mt-1">{value}</p>
-      <p className="text-xs text-gray-400 mt-1">LY: {lastYear}</p>
-      <p className={`text-xs font-semibold mt-0.5 ${positive ? "text-green-600" : "text-red-600"}`}>
-        {yoyLabel} YoY
-      </p>
     </Card>
   );
 }
@@ -376,11 +361,9 @@ function SpaMarketingContent({
         />
       </div>
 
-      {/* Loading / Error / Token States */}
+      {/* Loading skeleton for hero KPIs */}
       {isLoading && (
-        <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 text-center">
-          <p className="text-sm font-medium text-blue-700">Loading ad data from Meta &amp; Google APIs...</p>
-        </div>
+        <KPIGridSkeleton count={6} className="grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6" />
       )}
 
       {tokenExpired && (
@@ -406,7 +389,7 @@ function SpaMarketingContent({
       )}
 
       {/* Section 1: Hero KPIs */}
-      {(() => {
+      {!isLoading && (() => {
         const totalMetaLeads = metaCampaigns.reduce((s, c) => s + c.totalLeads, 0);
         const totalGoogleLeads = googleCampaigns.reduce((s, c) => s + c.totalLeads, 0);
         const totalLeads = totalMetaLeads + totalGoogleLeads;
@@ -420,12 +403,12 @@ function SpaMarketingContent({
         const totalRevenue = [...metaCampaigns, ...googleCampaigns].reduce((s, c) => s + c.attributedRevenue, 0);
         return (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            <HeroKPICard label="Revenue" value={formatCurrency(totalRevenue)} lastYear="—" yoyLabel="—" positive />
-            <HeroKPICard label="Total Marketing Spend" value={formatCurrency(totalSpend)} lastYear="—" yoyLabel="—" positive={false} />
-            <HeroKPICard label="Meta Blended CPL" value={`€${metaBlendedCpl.toFixed(1)}`} lastYear="—" yoyLabel="—" positive />
-            <HeroKPICard label="Google Blended CPL" value={`€${googleBlendedCpc.toFixed(1)}`} lastYear="—" yoyLabel="—" positive />
-            <HeroKPICard label="Total Leads" value={String(totalLeads)} lastYear="—" yoyLabel="—" positive />
-            <HeroKPICard label="Blended ROAS" value={totalSpend > 0 ? `${(totalRevenue / totalSpend).toFixed(1)}x` : "—"} lastYear="—" yoyLabel="—" positive />
+            <HeroKPICard label="Revenue" value={formatCurrency(totalRevenue)} />
+            <HeroKPICard label="Total Marketing Spend" value={formatCurrency(totalSpend)} />
+            <HeroKPICard label="Meta Blended CPL" value={`€${metaBlendedCpl.toFixed(1)}`} />
+            <HeroKPICard label="Google Blended CPL" value={`€${googleBlendedCpc.toFixed(1)}`} />
+            <HeroKPICard label="Total Leads" value={String(totalLeads)} />
+            <HeroKPICard label="Blended ROAS" value={totalSpend > 0 ? `${(totalRevenue / totalSpend).toFixed(1)}x` : "—"} />
           </div>
         );
       })()}
@@ -492,7 +475,12 @@ function SpaMarketingContent({
           <div className="py-8 text-center">
             <p className="text-sm font-medium text-gray-600">No Meta campaign data for this period.</p>
           </div>
-        ) : null}
+        ) : (
+          <>
+            <ChartSkeleton height={180} className="mb-6" />
+            <TableSkeleton rows={5} columns={8} />
+          </>
+        )}
 
         {/* Meta Aggregate Metrics */}
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -564,7 +552,12 @@ function SpaMarketingContent({
           <div className="py-8 text-center">
             <p className="text-sm font-medium text-gray-600">No Google Ads data for this period.</p>
           </div>
-        ) : null}
+        ) : (
+          <>
+            <ChartSkeleton height={160} className="mb-6" />
+            <TableSkeleton rows={5} columns={8} />
+          </>
+        )}
 
         {/* Google Aggregate Metrics */}
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">

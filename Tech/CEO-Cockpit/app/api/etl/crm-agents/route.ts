@@ -26,6 +26,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { ETLLogger } from "@/lib/etl/etl-logger";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -271,6 +272,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const logger = new ETLLogger("crm_agents");
+  await logger.start();
+
   const log: string[] = [];
   let totalRows = 0;
   const errors: string[] = [];
@@ -301,6 +305,9 @@ export async function POST(req: NextRequest) {
       log.push(`ERROR — ${msg}`);
     }
   }
+
+  if (errors.length === AGENTS.length) await logger.fail(errors.join(" | ").slice(0, 500));
+  else                                 await logger.complete(totalRows);
 
   const status = errors.length === 0 ? "ok" : "partial";
   return NextResponse.json({

@@ -1,13 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { LogOut, Menu, Moon, Sun } from "lucide-react";
+import { LogOut, Menu } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { DateRangePicker } from "./DateRangePicker";
 import { SyncStatusWidget } from "./SyncStatusWidget";
 import { cn } from "@/lib/utils";
-import { useTheme } from "@/components/theme-provider";
 
 interface TopBarProps {
   dateFrom: Date;
@@ -28,7 +27,6 @@ export function TopBar({
 }: TopBarProps) {
   const router = useRouter();
   const supabase = createClient();
-  const { theme, toggle } = useTheme();
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -68,16 +66,9 @@ export function TopBar({
           variant="ghost"
           size="icon"
           className="min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 md:h-9 md:w-9"
-          onClick={toggle}
-          aria-label="Toggle dark mode"
+          onClick={handleLogout}
+          aria-label="Log out"
         >
-          {theme === "dark" ? (
-            <Sun className="h-[18px] w-[18px] text-muted-foreground" />
-          ) : (
-            <Moon className="h-[18px] w-[18px] text-muted-foreground" />
-          )}
-        </Button>
-        <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 md:h-9 md:w-9" onClick={handleLogout}>
           <LogOut className="h-[18px] w-[18px] text-muted-foreground" />
         </Button>
       </div>

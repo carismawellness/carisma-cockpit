@@ -22,6 +22,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { ETLLogger } from "@/lib/etl/etl-logger";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -343,6 +344,9 @@ export async function POST(req: NextRequest) {
   const fromMs   = dateFrom.getTime();
   const toMs     = dateTo.getTime();
 
+  const logger = new ETLLogger("ghl_crm");
+  await logger.start();
+
   const syncedAt = new Date().toISOString();
   const supabase = initSupabase();
   const brandMap = await getBrandMap(supabase);
@@ -350,6 +354,7 @@ export async function POST(req: NextRequest) {
   const brands = buildBrands();
   const log: string[] = [];
   const errors: string[] = [];
+  let totalRowsUpserted = 0;
 
   for (const brand of brands) {
     if (!brand.apiKey) {
@@ -412,6 +417,7 @@ export async function POST(req: NextRequest) {
 
       await upsertRows(supabase, "crm_daily", crmRows, "date,brand_id");
       await upsertRows(supabase, "crm_lead_reconciliation", reconRows, "date,brand_id");
+      totalRowsUpserted += crmRows.length + reconRows.length;
 
       // Build booking mix rows — aggregate treatment names from opportunity titles
       const mixRows: object[] = [];
@@ -443,6 +449,8 @@ export async function POST(req: NextRequest) {
   }
 
   const allFailed = errors.length === brands.length;
+  if (allFailed) await logger.fail(errors.join(" | ").slice(0, 500));
+  else           await logger.complete(totalRowsUpserted);
   return NextResponse.json(
     {
       status:   allFailed        ? "error"   :

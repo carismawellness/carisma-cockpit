@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { getStalenessReport } from "@/lib/etl/staleness";
 
 export const maxDuration = 60;
 
@@ -16,5 +17,9 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ syncs: data });
+  // Additive: per-source staleness vs expected cadence (most sources are
+  // nightly → 26h threshold). Never throws — returns [] on failure.
+  const staleness = await getStalenessReport();
+
+  return NextResponse.json({ syncs: data, staleness });
 }

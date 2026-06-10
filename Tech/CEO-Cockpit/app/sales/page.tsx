@@ -7,6 +7,7 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { SalesKPICard } from "@/components/sales/SalesKPICard";
 import { SalesKPIGrid } from "@/components/sales/SalesKPIGrid";
 import { GroupBrandBreakdown } from "@/components/sales/GroupBrandBreakdown";
+import { GroupForecastSummary } from "@/components/sales/GroupForecastSummary";
 import { GroupLongitudinal } from "@/components/sales/GroupLongitudinal";
 import { useGroupRevenue } from "@/lib/hooks/useGroupRevenue";
 import { Building2, Sparkles, Scale } from "lucide-react";
@@ -24,7 +25,7 @@ function calcYoY(curr: number, ly: number): number | undefined {
 
 function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const router = useRouter();
-  const { period, ly, spa_locations, monthly, isFetching } = useGroupRevenue(dateFrom, dateTo);
+  const { period, ly, spa_locations, monthly, forecast, isFetching } = useGroupRevenue(dateFrom, dateTo);
 
   const yoy = useMemo(() => ({
     total:      calcYoY(period.total,      ly.total),
@@ -37,7 +38,7 @@ function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
     <div className="space-y-4 md:space-y-6">
       <div>
         <h1 className="text-xl font-bold text-foreground">Group Sales</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">All brands · ex-VAT · Source: Cockpit Datasheet</p>
+        <p className="text-xs text-muted-foreground mt-0.5">All brands · Gross (inc-VAT) · Source: Cockpit Datasheet</p>
       </div>
 
       <SalesKPIGrid columns={4}>
@@ -98,8 +99,14 @@ function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
         isFetching={isFetching}
       />
 
+      <GroupForecastSummary
+        forecast={forecast}
+        isFetching={isFetching}
+      />
+
       <GroupLongitudinal
         monthly={monthly}
+        forecast={forecast}
         isFetching={isFetching}
       />
     </div>

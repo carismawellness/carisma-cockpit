@@ -7,7 +7,7 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { KPICardRow, KPIData } from "@/components/dashboard/KPICardRow";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { Card } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { KPIGridSkeleton, Skeleton, TableSkeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/charts/config";
 import { BRAND } from "@/lib/constants/design-tokens";
 
@@ -628,15 +628,7 @@ function HRContent() {
 
       {/* ── KPI Row ────────────────────────────────────────────────────── */}
       {talexioLoading && !headcount ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {Array.from({ length: 10 }).map((_, i) => (
-            <div key={i} className="rounded-xl border border-border p-5 space-y-2">
-              <Skeleton className="h-3 w-24" />
-              <Skeleton className="h-8 w-20" />
-              <Skeleton className="h-2 w-16" />
-            </div>
-          ))}
-        </div>
+        <KPIGridSkeleton count={10} className="grid-cols-2 md:grid-cols-3 lg:grid-cols-6" />
       ) : (
         <KPICardRow kpis={kpis} />
       )}
@@ -855,11 +847,7 @@ function HRContent() {
             {isAttendanceReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
           </h2>
           {timeLogsQ.isLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-8 w-full" />
-              ))}
-            </div>
+            <TableSkeleton rows={6} columns={5} />
           ) : (
             <DataTable
               columns={attendanceColumns}
@@ -876,11 +864,7 @@ function HRContent() {
             {isLateReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
           </h2>
           {timeLogsQ.isLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-8 w-full" />
-              ))}
-            </div>
+            <TableSkeleton rows={4} columns={4} />
           ) : (
             <DataTable
               columns={latenessColumns}
@@ -996,11 +980,7 @@ function HRContent() {
             {isLeaveReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
           </h2>
           {leaveQ.isLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-8 w-full" />
-              ))}
-            </div>
+            <TableSkeleton rows={6} columns={5} />
           ) : (
             <DataTable
               columns={leaveBalanceColumns}
@@ -1016,11 +996,7 @@ function HRContent() {
             {isLeaveReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
           </h2>
           {leaveQ.isLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-8 w-full" />
-              ))}
-            </div>
+            <TableSkeleton rows={6} columns={5} />
           ) : (
             <DataTable
               columns={sickLeaveColumns}

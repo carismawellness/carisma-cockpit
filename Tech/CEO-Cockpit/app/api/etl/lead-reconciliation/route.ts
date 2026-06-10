@@ -20,6 +20,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { ETLLogger } from "@/lib/etl/etl-logger";
 
 export const maxDuration = 120;
 export const dynamic     = "force-dynamic";
@@ -67,6 +68,9 @@ export async function POST(req: NextRequest) {
   const dateFrom = typeof body.date_from === "string" ? body.date_from : defaultDateFrom();
   const dateTo   = typeof body.date_to   === "string" ? body.date_to   : defaultDateTo();
 
+  const logger = new ETLLogger("lead_reconciliation");
+  await logger.start();
+
   const sb = adminClient();
 
   // --- 1. Aggregate Meta leads per brand+date from meta_campaigns_daily ---
@@ -77,6 +81,7 @@ export async function POST(req: NextRequest) {
     .lte("date", dateTo);
 
   if (metaErr) {
+    await logger.fail(metaErr.message);
     return NextResponse.json({ status: "error", error: metaErr.message }, { status: 500 });
   }
 
@@ -94,6 +99,7 @@ export async function POST(req: NextRequest) {
     .lte("date", dateTo);
 
   if (crmErr) {
+    await logger.fail(crmErr.message);
     return NextResponse.json({ status: "error", error: crmErr.message }, { status: 500 });
   }
 
@@ -118,6 +124,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (reconRows.length === 0) {
+    await logger.complete(0);
     return NextResponse.json({
       status: "ok",
       rows_upserted: 0,
@@ -128,12 +135,14 @@ export async function POST(req: NextRequest) {
   try {
     await upsertChunked(sb, reconRows);
   } catch (err) {
+    await logger.fail(err instanceof Error ? err.message : String(err));
     return NextResponse.json(
       { status: "error", error: err instanceof Error ? err.message : String(err) },
       { status: 500 },
     );
   }
 
+  await logger.complete(reconRows.length);
   return NextResponse.json({
     status:          "ok",
     date_from:       dateFrom,

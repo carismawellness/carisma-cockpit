@@ -29,10 +29,11 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Prevent flash of wrong theme on load */}
+        {/* Theme is pinned to light (see components/theme-provider.tsx).
+            Pre-paint script only clears a stale dark class — never applies one. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){var t=localStorage.getItem('theme');var p=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';if((t||p)==='dark')document.documentElement.classList.add('dark');})();`,
+            __html: `document.documentElement.classList.remove('dark');`,
           }}
         />
       </head>

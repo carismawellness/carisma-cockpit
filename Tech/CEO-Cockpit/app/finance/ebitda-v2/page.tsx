@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, X, Database } from "lucide-react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
+import { TableSkeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/charts/config";
 import { EbitdaSummaryHeader, SummaryData, SppyData } from "@/components/finance/EbitdaSummaryHeader";
 import { PractitionerProductivityTable } from "@/components/finance/PractitionerProductivityTable";
@@ -217,7 +218,7 @@ function DrillDialog({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 text-sm">
-          {loading && <p className="text-muted-foreground text-sm">Loading…</p>}
+          {loading && <TableSkeleton rows={8} columns={4} />}
           {error   && <p className="text-destructive text-sm">{error}</p>}
 
           {/* Hardwired rule — no employee breakdown possible */}
@@ -600,7 +601,7 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
         </span>
       </div>
 
-      {loading && <p className="text-sm text-muted-foreground py-6 text-center">Loading…</p>}
+      {loading && <TableSkeleton rows={12} columns={8} className="py-2" />}
       {error   && <p className="text-sm text-destructive py-4">{error}</p>}
 
       {data && (

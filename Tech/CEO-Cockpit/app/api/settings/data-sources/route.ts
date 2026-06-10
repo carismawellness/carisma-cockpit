@@ -61,7 +61,7 @@ export const DATA_SOURCE_DEFS = [
     tables:      ["aesthetics_sales_daily"],
     brand:       "AES",
     frequency:   "Nightly cron",
-    log_key:     null,
+    log_key:     "aesthetics_sales",
     endpoint:    "/api/etl/aesthetics-sales",
     coverage_table: "aesthetics_sales_daily",
     coverage_col:   "date_of_service",
@@ -74,7 +74,7 @@ export const DATA_SOURCE_DEFS = [
     tables:      ["slimming_sales_daily"],
     brand:       "SLIM",
     frequency:   "Nightly cron",
-    log_key:     null,
+    log_key:     "slimming_sales",
     endpoint:    "/api/etl/slimming-sales",
     coverage_table: "slimming_sales_daily",
     coverage_col:   "date_of_service",
@@ -87,7 +87,7 @@ export const DATA_SOURCE_DEFS = [
     tables:      ["slimming_treatments_daily"],
     brand:       "SLIM",
     frequency:   "Nightly cron",
-    log_key:     null,
+    log_key:     "slimming_treatments",
     endpoint:    "/api/etl/slimming-treatments",
     coverage_table: "slimming_treatments_daily",
     coverage_col:   "date_of_service",
@@ -100,7 +100,7 @@ export const DATA_SOURCE_DEFS = [
     tables:      ["crm_agent_daily"],
     brand:       "ALL",
     frequency:   "Nightly cron",
-    log_key:     null,
+    log_key:     "crm_agents",
     endpoint:    "/api/etl/crm-agents",
     coverage_table: "crm_agent_daily",
     coverage_col:   "date",
@@ -113,7 +113,7 @@ export const DATA_SOURCE_DEFS = [
     tables:      ["crm_daily"],
     brand:       "ALL",
     frequency:   "Nightly cron (rolling 3-month window)",
-    log_key:     null,
+    log_key:     "ghl_crm",
     endpoint:    "/api/etl/ghl-crm",
     coverage_table: "crm_daily",
     coverage_col:   "date",
@@ -126,7 +126,7 @@ export const DATA_SOURCE_DEFS = [
     tables:      ["meta_campaigns_daily"],
     brand:       "ALL",
     frequency:   "Nightly cron (rolling 30-day window)",
-    log_key:     null,
+    log_key:     "meta_campaigns",
     endpoint:    "/api/etl/meta-campaigns",
     coverage_table: "meta_campaigns_daily",
     coverage_col:   "date",
@@ -139,7 +139,7 @@ export const DATA_SOURCE_DEFS = [
     tables:      ["google_campaigns_daily"],
     brand:       "ALL",
     frequency:   "Nightly cron (rolling 30-day window)",
-    log_key:     null,
+    log_key:     "google_campaigns",
     endpoint:    "/api/etl/google-campaigns",
     coverage_table: "google_campaigns_daily",
     coverage_col:   "date",
@@ -152,7 +152,7 @@ export const DATA_SOURCE_DEFS = [
     tables:      ["klaviyo_daily"],
     brand:       "ALL",
     frequency:   "Nightly cron (yesterday's snapshot)",
-    log_key:     null,
+    log_key:     "klaviyo",
     endpoint:    "/api/etl/klaviyo-sync",
     coverage_table: "klaviyo_daily",
     coverage_col:   "date",
@@ -303,9 +303,13 @@ export async function POST(req: Request) {
   const to    = date_to ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
   const origin = new URL(req.url).origin;
+  // Forward CRON_SECRET so the gated /api/etl/* routes accept this
+  // server-to-server call (it carries no session cookies).
+  const fanoutHeaders: Record<string, string> = { "Content-Type": "application/json" };
+  if (process.env.CRON_SECRET) fanoutHeaders["Authorization"] = `Bearer ${process.env.CRON_SECRET}`;
   const resp = await fetch(`${origin}${def.endpoint}`, {
     method:  "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: fanoutHeaders,
     body:    JSON.stringify({ date_from: from, date_to: to, force: true }),
   });
 
