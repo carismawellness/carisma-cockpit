@@ -96,13 +96,21 @@ function avg(values: number[]): number {
   return values.reduce((s, v) => s + v, 0) / values.length;
 }
 
+// Per-row total revenue derived from channel breakdown.
+// The sheet's "Total Sales" column is often empty for SDR tabs, so always
+// derive from lc + crm + other to guarantee a consistent number.
+function rowRevenue(r: CrmAgentRow): number {
+  const channelSum = (r.lc_sales ?? 0) + (r.crm_sales ?? 0) + (r.other_sales ?? 0);
+  return channelSum > 0 ? channelSum : (r.total_sales ?? 0);
+}
+
 function computeTotals(rows: CrmAgentRow[]): AgentTotals {
   // Active days: days where the agent had any sales or bookings
   const activeDays = rows.filter(
-    (r) => r.total_sales > 0 || r.total_booked > 0
+    (r) => rowRevenue(r) > 0 || r.total_booked > 0
   );
 
-  const total_sales    = rows.reduce((s, r) => s + (r.total_sales         ?? 0), 0);
+  const total_sales    = rows.reduce((s, r) => s + rowRevenue(r),               0);
   const total_bookings = rows.reduce((s, r) => s + (r.total_booked        ?? 0), 0);
   const total_deposits = rows.reduce((s, r) => s + (r.total_deposit_count ?? 0), 0);
   const total_messages = rows.reduce((s, r) => s + (r.total_messages      ?? 0), 0);
@@ -116,15 +124,15 @@ function computeTotals(rows: CrmAgentRow[]): AgentTotals {
     .map((r) => r.deposit_pct ?? 0)
     .filter((v) => v > 0);
 
-  const nonZeroAov = activeDays
-    .map((r) => r.aov ?? 0)
-    .filter((v) => v > 0);
+  // AOV: derived from actual revenue ÷ bookings for the period (the per-row
+  // `aov` column is 0 for SDR tabs, so averaging it would always yield 0).
+  const avg_aov = total_bookings > 0 ? total_sales / total_bookings : 0;
 
   return {
     total_sales:         +total_sales.toFixed(2),
     avg_conversion_rate: +avg(nonZeroConversion).toFixed(2),
     avg_deposit_pct:     +avg(nonZeroDeposit).toFixed(2),
-    avg_aov:             +avg(nonZeroAov).toFixed(2),
+    avg_aov:             +avg_aov.toFixed(2),
     total_bookings,
     total_deposits,
     total_messages,

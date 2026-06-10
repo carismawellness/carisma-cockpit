@@ -88,14 +88,18 @@ interface AgentDetailPanelProps {
 export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
   const { totals, rows } = agent;
 
-  const chartRows = rows.map((r: CrmAgentRow) => ({
-    date:          format(parseISO(r.date), "d MMM"),
-    "Total Sales": r.total_sales,
-    "Conv %":      Number((r.conversion_rate_pct ?? 0).toFixed(1)),
-    "LC":          r.lc_sales,
-    "CRM":         r.crm_sales,
-    "Other":       r.other_sales,
-  }));
+  const chartRows = rows.map((r: CrmAgentRow) => {
+    // Sheet's total_sales column is often empty for SDR — derive from channels
+    const channelSum = (r.lc_sales ?? 0) + (r.crm_sales ?? 0) + (r.other_sales ?? 0);
+    return {
+      date:          format(parseISO(r.date), "d MMM"),
+      "Total Sales": channelSum > 0 ? channelSum : (r.total_sales ?? 0),
+      "Conv %":      Number((r.conversion_rate_pct ?? 0).toFixed(1)),
+      "LC":          r.lc_sales,
+      "CRM":         r.crm_sales,
+      "Other":       r.other_sales,
+    };
+  });
 
   return (
     <div className="space-y-6">
