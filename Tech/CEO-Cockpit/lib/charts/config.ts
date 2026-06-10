@@ -1,9 +1,18 @@
+import { BRAND, LY_OVERLAY } from "@/lib/constants/design-tokens";
+
+/**
+ * Generic chart palette. Brand entries route through the canonical BRAND tokens
+ * (lib/constants/design-tokens.ts) — the SINGLE source of truth — so they never
+ * drift. These are the `soft` tints, used as a light multi-series palette in
+ * non-brand-segmented charts. For any chart that REPRESENTS a brand, import
+ * `BRAND` directly and use `BRAND.<brand>.dark` for the series.
+ */
 export const chartColors = {
-  spa: "#EFE7D7",        // warm sand — carismaspa.com
-  aesthetics: "#DEEBEB", // soft teal — carismaaesthetics.com
-  slimming: "#C9D8C1",   // sage green — carismaslimming.com
-  target: "#E07A5F",     // coral — shared accent
-  budget: "#9CA3AF",     // neutral gray
+  spa: BRAND.spa.soft,        // warm sand — carismaspa.com
+  aesthetics: BRAND.aesthetics.soft, // soft teal — carismaaesthetics.com
+  slimming: BRAND.slimming.soft,   // sage green — carismaslimming.com
+  target: "#E07A5F",          // coral — shared accent (non-brand)
+  budget: LY_OVERLAY,         // neutral gray — prior-period / budget
 } as const;
 
 export const chartDefaults = {

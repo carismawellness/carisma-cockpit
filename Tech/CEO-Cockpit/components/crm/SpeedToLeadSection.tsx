@@ -4,11 +4,16 @@ import { useState, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { useKPIData } from "@/lib/hooks/useKPIData";
 import { useLookups } from "@/lib/hooks/useLookups";
-import {
-  chartColors,
-  formatMinutes,
-} from "@/lib/charts/config";
+import { formatMinutes } from "@/lib/charts/config";
+import { BRAND } from "@/lib/constants/design-tokens";
 import { Clock, ChevronDown, ChevronUp } from "lucide-react";
+
+// Canonical brand palette — `dark` for left-border accents.
+const BRAND_BORDER: Record<string, string> = {
+  spa:        BRAND.spa.dark,
+  aesthetics: BRAND.aesthetics.dark,
+  slimming:   BRAND.slimming.dark,
+};
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -194,7 +199,7 @@ export function SpeedToLeadSection({
               <div
                 key={b.slug}
                 className="p-4 rounded-xl border-l-4"
-                style={{ borderLeftColor: chartColors[b.slug as keyof typeof chartColors] ?? "#888" }}
+                style={{ borderLeftColor: BRAND_BORDER[b.slug] ?? "#888" }}
               >
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-semibold uppercase tracking-wider text-text-secondary">

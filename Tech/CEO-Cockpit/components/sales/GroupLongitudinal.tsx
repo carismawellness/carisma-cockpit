@@ -14,13 +14,7 @@ import {
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { GroupMonthlyPoint } from "@/lib/hooks/useGroupRevenue";
 import type { GroupForecast, BrandForecastPoint } from "@/lib/analytics/revenue-forecast";
-
-// Canonical Carisma brand palette
-const BRAND = {
-  spa:        { dark: "#8C7A5A", soft: "#EFE7D7" },
-  aesthetics: { dark: "#3B7676", soft: "#DEEBEB" },
-  slimming:   { dark: "#3D6B3D", soft: "#C9D8C1" },
-} as const;
+import { BRAND, LY_OVERLAY } from "@/lib/constants/design-tokens";
 
 // 8 warm/earth tones with real contrast — chosen so neighboring hotel segments
 // are visibly distinct even when small (which the cream gradient wasn't).
@@ -42,7 +36,7 @@ const SPA_HOTEL_ORDER = ["Inter", "Excelsior", "Hyatt", "Hugos", "Ramla", "Odycy
 // White text on these darker fills reads cleanly; dark text needed on the lighter ones.
 const LIGHT_HOTEL_FILLS = new Set(["Hugos", "Riviera", "Novotel"]);
 
-const LY_TOTAL_LINE = "#9CA3AF"; // neutral gray for LY trajectory overlay
+const LY_TOTAL_LINE = LY_OVERLAY; // neutral gray for LY trajectory overlay
 
 // Forecast styling — gold accent (design-tokens) for the dotted projection
 // line + "remainder to projection" ghost; brand bars go translucent + dashed.

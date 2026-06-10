@@ -3,11 +3,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { BRAND } from "@/lib/constants/design-tokens";
 
 // ── Department display metadata ───────────────────────────────────────────────
 export const AESTH_DEPT_META: Record<string, { name: string; color: string }> = {
-  aesthetics: { name: "Aesthetics", color: "#B79E61" },
-  slimming:   { name: "Slimming",   color: "#4A90D9" },
+  aesthetics: { name: "Aesthetics", color: BRAND.aesthetics.dark },
+  slimming:   { name: "Slimming",   color: BRAND.slimming.dark },
 };
 
 export interface AestheticsDeptData {

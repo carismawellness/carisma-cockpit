@@ -466,7 +466,7 @@ export function EmployeeTable({
                     formatter={(v: unknown, name) => [formatCurrency(Number(v)), String(name ?? "")]}
                   />
                   <Legend />
-                  <Bar dataKey="Sales" fill={chartColors.spa}>
+                  <Bar dataKey="Sales" fill={BRAND.spa.dark}>
                     <LabelList
                       dataKey="Sales"
                       position="top"
@@ -474,7 +474,7 @@ export function EmployeeTable({
                       style={{ fontSize: 10, fontWeight: 600, fill: "#111827" }}
                     />
                   </Bar>
-                  <Bar dataKey="Bookings" fill={chartColors.aesthetics}>
+                  <Bar dataKey="Bookings" fill={BRAND.aesthetics.dark}>
                     <LabelList
                       dataKey="Bookings"
                       position="top"
@@ -504,7 +504,7 @@ export function EmployeeTable({
                   <Line
                     type="monotone"
                     dataKey="Conv %"
-                    stroke={chartColors.aesthetics}
+                    stroke={BRAND.aesthetics.dark}
                     strokeWidth={chartDefaults.strokeWidth}
                     dot={{ r: 2 }}
                     connectNulls
@@ -512,7 +512,7 @@ export function EmployeeTable({
                   <Line
                     type="monotone"
                     dataKey="Deposit %"
-                    stroke={chartColors.spa}
+                    stroke={BRAND.spa.dark}
                     strokeWidth={chartDefaults.strokeWidth}
                     dot={{ r: 2 }}
                     connectNulls

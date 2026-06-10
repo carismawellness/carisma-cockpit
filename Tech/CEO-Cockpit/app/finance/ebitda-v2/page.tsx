@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, X, Database } from "lucide-react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/charts/config";
+import { BRAND } from "@/lib/constants/design-tokens";
 import { EbitdaSummaryHeader, SummaryData, SppyData } from "@/components/finance/EbitdaSummaryHeader";
 import { PractitionerProductivityTable } from "@/components/finance/PractitionerProductivityTable";
 
@@ -614,16 +615,22 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                   <th className="text-left px-3 py-2 font-medium text-muted-foreground sticky left-0 bg-muted/40 min-w-[130px]">
                     LINE ITEM
                   </th>
-                  {cols.map(vc => (
-                    <th key={vc.slug}
-                      className={`px-2 py-2 text-right font-semibold uppercase tracking-wide whitespace-nowrap
-                        ${vc.brand === "AES"  ? "text-purple-700"
-                        : vc.brand === "SLIM" ? "text-orange-600"
-                        : vc.brand === "HQ"   ? "text-blue-700"
-                        : "text-foreground"}`}>
-                      {vc.label}
-                    </th>
-                  ))}
+                  {cols.map(vc => {
+                    // Brand column headers use the canonical Carisma brand colors.
+                    const brandColor =
+                      vc.brand === "SPA"  ? BRAND.spa.dark
+                      : vc.brand === "AES"  ? BRAND.aesthetics.dark
+                      : vc.brand === "SLIM" ? BRAND.slimming.dark
+                      : undefined; // HQ / group → neutral (not a brand)
+                    return (
+                      <th key={vc.slug}
+                        style={brandColor ? { color: brandColor } : undefined}
+                        className={`px-2 py-2 text-right font-semibold uppercase tracking-wide whitespace-nowrap
+                          ${vc.brand === "HQ" ? "text-blue-700" : !brandColor ? "text-foreground" : ""}`}>
+                        {vc.label}
+                      </th>
+                    );
+                  })}
                   <th className="px-2 py-2 text-right font-semibold uppercase tracking-wide text-muted-foreground">Group</th>
                 </tr>
               </thead>

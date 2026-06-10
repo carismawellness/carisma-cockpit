@@ -4,8 +4,8 @@ import { Card } from "@/components/ui/card";
 import { useKPIData } from "@/lib/hooks/useKPIData";
 import { useLookups } from "@/lib/hooks/useLookups";
 import { useGhlSnapshot } from "@/lib/hooks/useGhlSnapshot";
-import { chartColors } from "@/lib/charts/config";
 import type { CrmDailyRow } from "@/lib/types/crm";
+import { BRAND } from "@/lib/constants/design-tokens";
 
 const BRANDS = ["spa", "aesthetics", "slimming"] as const;
 
@@ -13,6 +13,13 @@ const BRAND_LABELS: Record<string, string> = {
   spa: "Spa",
   aesthetics: "Aesthetics",
   slimming: "Slimming",
+};
+
+// Canonical brand palette — `dark` for left-border accents.
+const BRAND_BORDER: Record<string, string> = {
+  spa:        BRAND.spa.dark,
+  aesthetics: BRAND.aesthetics.dark,
+  slimming:   BRAND.slimming.dark,
 };
 
 function statusLabel(count: number): string {
@@ -95,8 +102,7 @@ export function MessageQueueHealth({
             key={b.slug}
             className="p-5 border-l-4"
             style={{
-              borderLeftColor:
-                chartColors[b.slug as keyof typeof chartColors] ?? "#888",
+              borderLeftColor: BRAND_BORDER[b.slug] ?? "#888",
             }}
           >
             <h3 className="text-sm font-semibold uppercase tracking-wider text-text-secondary mb-4">

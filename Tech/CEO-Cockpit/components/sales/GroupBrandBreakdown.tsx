@@ -9,13 +9,7 @@ import {
 } from "recharts";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { GroupPeriod, GroupLocationRow } from "@/lib/hooks/useGroupRevenue";
-
-// Canonical Carisma brand palette
-const BRAND = {
-  spa:        { dark: "#8C7A5A", soft: "#EFE7D7" },
-  aesthetics: { dark: "#3B7676", soft: "#DEEBEB" },
-  slimming:   { dark: "#3D6B3D", soft: "#C9D8C1" },
-} as const;
+import { BRAND } from "@/lib/constants/design-tokens";
 
 // 8 warm/earth tones with real contrast — shared with GroupLongitudinal so
 // each hotel reads with the same identity across both charts. Stable per hotel.

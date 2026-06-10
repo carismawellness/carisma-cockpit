@@ -439,8 +439,8 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
                   </thead>
                   <tbody>
                     {/* ── Spa section header ── */}
-                    <tr className="bg-[#EFE7D7]/40">
-                      <td colSpan={10} className="py-1 px-3 text-xs font-semibold uppercase tracking-wide text-[#8C7A5A] sticky left-0">
+                    <tr style={{ backgroundColor: `${BRAND.spa.soft}66` }}>
+                      <td colSpan={10} className="py-1 px-3 text-xs font-semibold uppercase tracking-wide sticky left-0" style={{ color: BRAND.spa.dark }}>
                         Spa
                       </td>
                     </tr>
@@ -497,8 +497,8 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
                     </tr>
 
                     {/* ── Aesthetics section header ── */}
-                    <tr className="bg-[#DEEBEB]/40 border-t-2 border-border">
-                      <td colSpan={10} className="py-1 px-3 text-xs font-semibold uppercase tracking-wide text-[#3B7676] sticky left-0">
+                    <tr className="border-t-2 border-border" style={{ backgroundColor: `${BRAND.aesthetics.soft}66` }}>
+                      <td colSpan={10} className="py-1 px-3 text-xs font-semibold uppercase tracking-wide sticky left-0" style={{ color: BRAND.aesthetics.dark }}>
                         Aesthetics
                       </td>
                     </tr>
@@ -507,7 +507,7 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
                     <tr className="border-b border-border">
                       <td className="py-1.5 px-3 sticky left-0 bg-background z-10">
                         <span className="inline-flex items-center gap-1.5 pl-2">
-                          <span className="inline-block h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: "#DEEBEB", border: "1px solid #3B7676" }} />
+                          <span className="inline-block h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: BRAND.aesthetics.soft, border: `1px solid ${BRAND.aesthetics.dark}` }} />
                           Aesthetics
                         </span>
                       </td>
@@ -535,8 +535,8 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
                     </tr>
 
                     {/* ── Slimming section header ── */}
-                    <tr className="bg-[#C9D8C1]/40 border-t-2 border-border">
-                      <td colSpan={10} className="py-1 px-3 text-xs font-semibold uppercase tracking-wide text-[#3D6B3D] sticky left-0">
+                    <tr className="border-t-2 border-border" style={{ backgroundColor: `${BRAND.slimming.soft}66` }}>
+                      <td colSpan={10} className="py-1 px-3 text-xs font-semibold uppercase tracking-wide sticky left-0" style={{ color: BRAND.slimming.dark }}>
                         Slimming
                       </td>
                     </tr>
@@ -545,7 +545,7 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
                     <tr className="border-b border-border">
                       <td className="py-1.5 px-3 sticky left-0 bg-background z-10">
                         <span className="inline-flex items-center gap-1.5 pl-2">
-                          <span className="inline-block h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: "#C9D8C1", border: "1px solid #3D6B3D" }} />
+                          <span className="inline-block h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: BRAND.slimming.soft, border: `1px solid ${BRAND.slimming.dark}` }} />
                           Slimming
                         </span>
                       </td>
@@ -573,8 +573,8 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
                     </tr>
 
                     {/* ── Group Total ── */}
-                    <tr className="border-t-2 border-border bg-[#EFE7D7]/30">
-                      <td className="py-2 px-3 font-bold text-foreground sticky left-0 bg-[#EFE7D7]/30 z-10">Group Total</td>
+                    <tr className="border-t-2 border-border" style={{ backgroundColor: `${BRAND.spa.soft}4D` }}>
+                      <td className="py-2 px-3 font-bold text-foreground sticky left-0 z-10" style={{ backgroundColor: `${BRAND.spa.soft}4D` }}>Group Total</td>
                       <td className="py-2 px-3 text-right font-bold text-foreground">{fmtCurrencyShort(group.revenue)}</td>
                       <td className="py-2 px-3 text-right font-bold text-foreground">({fmtCurrencyShort(group.wages)})</td>
                       <td className="py-2 px-3 text-right font-bold text-foreground">({fmtCurrencyShort(group.cogs)})</td>

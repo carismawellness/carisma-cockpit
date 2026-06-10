@@ -9,6 +9,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
+import { BRAND } from "@/lib/constants/design-tokens";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -88,12 +89,23 @@ function StatusBadge({ log }: { log: SyncLog | null }) {
 }
 
 function BrandChip({ brand }: { brand: string }) {
-  const cls =
-    brand === "SPA"      ? "bg-sky-100 text-sky-700" :
-    brand === "AES"      ? "bg-purple-100 text-purple-700" :
-    brand === "SLIM"     ? "bg-orange-100 text-orange-700" :
-    brand === "AES / SLIM" ? "bg-indigo-100 text-indigo-700" :
-    "bg-muted text-muted-foreground";
+  // Single-brand chips use the canonical Carisma palette (soft bg + dark text).
+  const token =
+    brand === "SPA"  ? BRAND.spa :
+    brand === "AES"  ? BRAND.aesthetics :
+    brand === "SLIM" ? BRAND.slimming :
+    null; // "AES / SLIM" / unknown → no single brand, stay neutral
+  if (token) {
+    return (
+      <span
+        className="text-xs rounded px-1.5 py-0.5 font-medium"
+        style={{ backgroundColor: token.soft, color: token.dark }}
+      >
+        {brand}
+      </span>
+    );
+  }
+  const cls = brand === "AES / SLIM" ? "bg-indigo-100 text-indigo-700" : "bg-muted text-muted-foreground";
   return <span className={`text-xs rounded px-1.5 py-0.5 font-medium ${cls}`}>{brand}</span>;
 }
 
