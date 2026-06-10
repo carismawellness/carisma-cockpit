@@ -3,8 +3,7 @@
  *
  * Nightly Talexio → Supabase HR ETL.
  *
- * Pulls from the internal Talexio proxy at /api/talexio (single source of
- * truth for Talexio GraphQL) and upserts:
+ * Calls talexioQuery() directly (bypasses HTTP proxy) and upserts:
  *   1. hr_talexio_daily_snapshot  ← headcount + payroll aggregates by
  *                                     location + brand, keyed on date.
  *   2. hr_headcount_monthly       ← current-month headcount snapshot,

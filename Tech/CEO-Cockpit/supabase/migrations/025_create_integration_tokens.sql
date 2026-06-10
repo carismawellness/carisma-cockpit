@@ -2,7 +2,7 @@
 create table if not exists public.integration_tokens (
   id uuid primary key default gen_random_uuid(),
   platform text not null,               -- 'meta_ads', 'google_ads', etc.
-  brand_id uuid references public.brands(id),
+  brand_id integer references public.brands(id),
   token text not null,
   refresh_token text,
   expires_at timestamptz,
