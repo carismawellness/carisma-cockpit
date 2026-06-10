@@ -160,6 +160,17 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
           subtitle={totals.tx_count > 0 ? `${fmtK(Math.round(totals.revenue_inc / totals.tx_count))} avg per booking` : undefined}
           yoyChange={yoy.bookings}
         />
+        {(() => {
+          const cash    = byCashType.find(c => c.category === "Cash");
+          const nonCash = byCashType.find(c => c.category === "Non-Cash");
+          return (
+            <SalesKPICard
+              label="Cash vs Non-Cash"
+              value={`${cash?.pct ?? 0}% Cash`}
+              subtitle={`${fmtK(cash?.revenue_ex ?? 0)} cash · ${fmtK(nonCash?.revenue_ex ?? 0)} card/transfer`}
+            />
+          );
+        })()}
       </SalesKPIGrid>
 
       {/* ── Revenue by Employee ───────────────────────────────────────── */}

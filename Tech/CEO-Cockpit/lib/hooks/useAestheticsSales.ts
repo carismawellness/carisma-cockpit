@@ -457,12 +457,21 @@ export function useAestheticsSales(dateFrom: Date, dateTo: Date, { skipSync = fa
     for (const r of rows) {
       const raw   = r.service_product?.trim() || "(Unspecified)";
       const label = canonicalize(raw);
-      const key   = label.toLowerCase();
-      if (!labelMap.has(key)) labelMap.set(key, label);
-      if (!map.has(key)) map.set(key, { tx_count: 0, revenue_ex: 0 });
-      const agg = map.get(key)!;
-      agg.tx_count++;
-      agg.revenue_ex += r.price_ex_vat ?? 0;
+      const revEx = r.price_ex_vat ?? 0;
+      // Split combo services (e.g. "Botox + Filler") into individual components
+      // and distribute revenue equally. Package bundles (suffix "- Package") are kept whole.
+      const isPackage  = /- package/i.test(label);
+      const components = (!isPackage && label.includes(" + ")) ? label.split(" + ") : [label];
+      const n          = components.length;
+      for (const comp of components) {
+        const cLabel = comp.trim();
+        const key    = cLabel.toLowerCase();
+        if (!labelMap.has(key)) labelMap.set(key, cLabel);
+        if (!map.has(key)) map.set(key, { tx_count: 0, revenue_ex: 0 });
+        const agg = map.get(key)!;
+        agg.tx_count++;
+        agg.revenue_ex += revEx / n;
+      }
     }
 
     // Fuzzy post-merge: collapse near-identical canonical names

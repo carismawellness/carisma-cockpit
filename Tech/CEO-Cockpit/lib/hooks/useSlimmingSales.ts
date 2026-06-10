@@ -45,6 +45,7 @@ export interface ServiceBreakdown {
   nav_category: string;
   tx_count:     number;
   revenue_ex:   number;
+  aov:          number;
   pct:          number;
 }
 
@@ -66,8 +67,8 @@ export function categorizeSlimmingNav(service: string, type: string): { group: s
   if (/ultrasound/i.test(s))                                       return { group: "Body Treatments", category: "Ultrasound" };
   if (/sculpt/i.test(s))                                           return { group: "Body Treatments", category: "Body Sculpting" };
   if (type === "weight_loss" || /transform|guide|programme|mixed|weight/i.test(s)) return { group: "Weight Loss", category: "Weight Loss Programme" };
-  if (type === "treatment")                                         return { group: "Body Treatments", category: "Body Treatment" };
-  return { group: "Other", category: "Other" };
+  if (type === "treatment" || type === "unknown")                   return { group: "Body Treatments", category: "Body Treatment" };
+  return { group: "Body Treatments", category: "Body Treatment" };
 }
 
 export interface SlimmingSalesTotals {
@@ -367,13 +368,15 @@ export function useSlimmingSales(dateFrom: Date, dateTo: Date, { skipSync = fals
       .map(([key, v]) => {
         const svc = labelMap.get(key) ?? key;
         const { group, category } = categorizeSlimmingNav(svc, v.type);
+        const rev = Math.round(v.revenue_ex);
         return {
           service:      svc,
           type:         v.type,
           nav_group:    group,
           nav_category: category,
           tx_count:     v.tx_count,
-          revenue_ex:   Math.round(v.revenue_ex),
+          revenue_ex:   rev,
+          aov:          v.tx_count > 0 ? Math.round(v.revenue_ex / v.tx_count) : 0,
           pct:          Math.round((v.revenue_ex / totalEx) * 1000) / 10,
         };
       })

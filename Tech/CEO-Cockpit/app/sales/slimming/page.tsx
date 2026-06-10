@@ -112,7 +112,7 @@ function chartH(n: number) { return Math.max(180, n * 48 + 40); }
 // ── Main content ──────────────────────────────────────────────────────────────
 const SALARY_BLUE = "#4a7fa5";
 
-const SLM_GROUP_ORDER = ["Weight Loss", "GLP-1s", "Body Treatments", "Packages", "Medical", "Products", "Admin", "Other"] as const;
+const SLM_GROUP_ORDER = ["Weight Loss", "GLP-1s", "Body Treatments", "Packages", "Medical", "Products", "Admin"] as const;
 const SLM_GROUP_COLORS: Record<string, string> = {
   "Weight Loss":     "#3D6B3D",
   "GLP-1s":          "#7C3AED",
@@ -438,68 +438,98 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
       <Card className="p-4 md:p-5">
         <div className="flex items-center gap-2 mb-4">
           <h2 className="text-base font-semibold text-foreground">Revenue by Service / Product</h2>
-          <span className="text-xs text-muted-foreground">grouped by website nav category</span>
+          <span className="text-xs text-muted-foreground">grouped by website nav category · AOV = avg per booking</span>
         </div>
         {byService.length === 0 ? (
           <EmptyState isLoading={isLoading} />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
-                  <th className="text-left pb-2 font-medium w-[38%]">Service / Product</th>
-                  <th className="text-left pb-2 font-medium">Category</th>
-                  <th className="text-right pb-2 font-medium">Bookings</th>
-                  <th className="text-right pb-2 font-medium">Revenue ex-VAT</th>
-                  <th className="text-left pb-2 pl-4 font-medium">Share</th>
-                </tr>
-              </thead>
-              <tbody>
-                {byGroup.map(({ group, color, services, total_revenue, total_count }) => (
-                  <Fragment key={group}>
-                    <tr className="border-y border-muted bg-muted/20">
-                      <td colSpan={2} className="py-2 pl-2">
-                        <div className="flex items-center gap-2">
-                          <span className="inline-block w-2 h-4 rounded-sm shrink-0" style={{ backgroundColor: color }} />
-                          <span className="text-xs font-bold uppercase tracking-wider" style={{ color }}>{group}</span>
-                        </div>
-                      </td>
-                      <td className="py-2 text-right text-xs text-muted-foreground font-medium pr-0.5">{total_count}</td>
-                      <td className="py-2 text-right text-xs font-semibold">{fmtK(total_revenue)}</td>
-                      <td className="py-2 pl-4 text-xs text-muted-foreground">
-                        {totals.revenue_ex > 0 ? `${((total_revenue / totals.revenue_ex) * 100).toFixed(1)}%` : ""}
-                      </td>
-                    </tr>
-                    {services.map(s => (
-                      <tr key={s.service} className="border-b last:border-0 hover:bg-muted/10">
-                        <td className="py-2 pl-5 font-medium">{s.service}</td>
-                        <td className="py-2">
-                          <span className="text-xs text-muted-foreground">{s.nav_category}</span>
-                        </td>
-                        <td className="py-2 text-right text-muted-foreground">{s.tx_count}</td>
-                        <td className="py-2 text-right font-medium">{fmtK(s.revenue_ex)}</td>
-                        <td className="py-2 pl-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                              <div className="h-full rounded-full" style={{ width: `${s.pct}%`, backgroundColor: color }} />
+          <div className="space-y-4">
+            {/* Group AOV summary chips */}
+            <div className="flex flex-wrap gap-3">
+              {byGroup.map(({ group, color, total_revenue, total_count }) => {
+                const groupAov = total_count > 0 ? Math.round(total_revenue / total_count) : 0;
+                const sharePct = totals.revenue_ex > 0 ? ((total_revenue / totals.revenue_ex) * 100).toFixed(0) : "0";
+                return (
+                  <div key={group} className="flex items-center gap-2 rounded-lg border px-3 py-2 bg-card/50 min-w-[140px]">
+                    <span className="inline-block w-2 h-8 rounded-sm shrink-0" style={{ backgroundColor: color }} />
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide" style={{ color }}>{group}</p>
+                      <p className="text-sm font-semibold tabular-nums">{fmtK(total_revenue)} <span className="text-muted-foreground font-normal text-xs">({sharePct}%)</span></p>
+                      <p className="text-xs text-muted-foreground">{fmtK(groupAov)} AOV · {total_count} bkgs</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Service detail table — zero-revenue rows hidden */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
+                    <th className="text-left pb-2 font-medium w-[36%]">Service / Product</th>
+                    <th className="text-left pb-2 font-medium">Category</th>
+                    <th className="text-right pb-2 font-medium">Bookings</th>
+                    <th className="text-right pb-2 font-medium">AOV</th>
+                    <th className="text-right pb-2 font-medium">Revenue ex-VAT</th>
+                    <th className="text-left pb-2 pl-4 font-medium">Share</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byGroup.map(({ group, color, services, total_revenue, total_count }) => {
+                    const visibleServices = services.filter(s => s.revenue_ex > 0);
+                    if (visibleServices.length === 0) return null;
+                    const groupAov = total_count > 0 ? Math.round(total_revenue / total_count) : 0;
+                    return (
+                      <Fragment key={group}>
+                        <tr className="border-y border-muted bg-muted/20">
+                          <td colSpan={2} className="py-2 pl-2">
+                            <div className="flex items-center gap-2">
+                              <span className="inline-block w-2 h-4 rounded-sm shrink-0" style={{ backgroundColor: color }} />
+                              <span className="text-xs font-bold uppercase tracking-wider" style={{ color }}>{group}</span>
                             </div>
-                            <span className="text-xs text-muted-foreground">{s.pct}%</span>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </Fragment>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 font-semibold">
-                  <td className="pt-2.5" colSpan={2}>Total</td>
-                  <td className="pt-2.5 text-right text-muted-foreground">{totals.tx_count}</td>
-                  <td className="pt-2.5 text-right">{fmtK(totals.revenue_ex)}</td>
-                  <td />
-                </tr>
-              </tfoot>
-            </table>
+                          </td>
+                          <td className="py-2 text-right text-xs text-muted-foreground font-medium pr-0.5">{total_count}</td>
+                          <td className="py-2 text-right text-xs font-semibold">{fmtK(groupAov)}</td>
+                          <td className="py-2 text-right text-xs font-semibold">{fmtK(total_revenue)}</td>
+                          <td className="py-2 pl-4 text-xs text-muted-foreground">
+                            {totals.revenue_ex > 0 ? `${((total_revenue / totals.revenue_ex) * 100).toFixed(1)}%` : ""}
+                          </td>
+                        </tr>
+                        {visibleServices.map(s => (
+                          <tr key={s.service} className="border-b last:border-0 hover:bg-muted/10">
+                            <td className="py-2 pl-5 font-medium">{s.service}</td>
+                            <td className="py-2">
+                              <span className="text-xs text-muted-foreground">{s.nav_category}</span>
+                            </td>
+                            <td className="py-2 text-right text-muted-foreground">{s.tx_count}</td>
+                            <td className="py-2 text-right text-muted-foreground tabular-nums">{fmtK(s.aov)}</td>
+                            <td className="py-2 text-right font-medium">{fmtK(s.revenue_ex)}</td>
+                            <td className="py-2 pl-4">
+                              <div className="flex items-center gap-2">
+                                <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                  <div className="h-full rounded-full" style={{ width: `${s.pct}%`, backgroundColor: color }} />
+                                </div>
+                                <span className="text-xs text-muted-foreground">{s.pct}%</span>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 font-semibold">
+                    <td className="pt-2.5" colSpan={2}>Total</td>
+                    <td className="pt-2.5 text-right text-muted-foreground">{totals.tx_count}</td>
+                    <td className="pt-2.5 text-right text-muted-foreground">{fmtK(totals.revenue_ex > 0 && totals.tx_count > 0 ? Math.round(totals.revenue_ex / totals.tx_count) : 0)}</td>
+                    <td className="pt-2.5 text-right">{fmtK(totals.revenue_ex)}</td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           </div>
         )}
       </Card>
