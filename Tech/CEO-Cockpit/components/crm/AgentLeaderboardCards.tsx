@@ -5,83 +5,110 @@ import {
   ComposedChart,
   Bar,
   Line,
-  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   LabelList,
   ResponsiveContainer,
   ReferenceLine,
+  ReferenceArea,
 } from "recharts";
 import { CrmAgent } from "@/lib/hooks/useCrmAgents";
-import { AGENT_META_BY_SLUG } from "@/lib/constants/agents";
+import { AGENT_META_BY_SLUG, BRAND_ORDER, type AgentBrand } from "@/lib/constants/agents";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatPercent } from "@/lib/charts/config";
 
-interface AgentLeaderboardCardsProps {
-  agents: CrmAgent[];
-}
+// ── Channel colours — consistent across all agents ───────────────────────────
+// Role determines the display name, not the color.
+const CH = {
+  lc:    { color: "#7BA7BC" }, // Live Chat (Chat agents) / Chat (SDR agents)
+  crm:   { color: "#C9A96E" }, // GHL (Chat agents) / Inbound (SDR agents)
+  other: { color: "#9CAF88" }, // Email (Chat agents) / Outbound (SDR agents)
+};
 
-// Brand fill colours — slightly stronger than the soft pastels used elsewhere
-// so the bars actually read against a white card background.
-const BRAND_FILL: Record<string, string> = {
-  SPA:        "#D4B896", // warm sand
-  AESTHETICS: "#7FB3B3", // soft teal
-  SLIMMING:   "#9CAF88", // sage
+const BRAND_BG: Record<AgentBrand, string> = {
+  SPA:        "#FBF9F7",
+  AESTHETICS: "#F4F9F9",
+  SLIMMING:   "#F6FAF4",
+};
+
+const BRAND_LABEL_COLOR: Record<AgentBrand, string> = {
+  SPA:        "#B5936B",
+  AESTHETICS: "#5A9090",
+  SLIMMING:   "#6A9455",
 };
 
 // ── Data shaping ──────────────────────────────────────────────────────────────
 
 type ChartRow = {
-  slug:          string;
-  name:          string;
-  brand:         string;
-  role:          string;
-  fill:          string;
-  revenue:       number;
-  bookings:      number;
-  depositPct:    number;
-  convRate:      number;
-  aov:           number;
-  activeDays:    number;
+  slug:       string;
+  name:       string;
+  brand:      AgentBrand;
+  role:       string;
+  revenue:    number;
+  lc:         number;
+  crm:        number;
+  other:      number;
+  bookings:   number;
+  depositPct: number;
+  convRate:   number;
+  aov:        number;
+  activeDays: number;
 };
 
-function toRow(agent: CrmAgent): ChartRow {
-  const meta       = AGENT_META_BY_SLUG[agent.slug];
-  const brand      = meta?.brand ?? "SPA";
-  const role       = meta?.role  ?? "—";
-  const totals     = agent.totals;
-  const depositPct =
-    totals.total_bookings > 0
-      ? (totals.total_deposits / totals.total_bookings) * 100
-      : 0;
+function toRow(agent: CrmAgent): ChartRow | null {
+  const meta = AGENT_META_BY_SLUG[agent.slug];
+  if (!meta) return null;
+
+  const lc    = agent.rows.reduce((s, r) => s + (r.lc_sales    ?? 0), 0);
+  const crm   = agent.rows.reduce((s, r) => s + (r.crm_sales   ?? 0), 0);
+  const other = agent.rows.reduce((s, r) => s + (r.other_sales ?? 0), 0);
+  const channelSum = lc + crm + other;
+  const revenue    = channelSum > 0 ? channelSum : agent.totals.total_sales;
+
+  const depositPct = agent.totals.total_bookings > 0
+    ? (agent.totals.total_deposits / agent.totals.total_bookings) * 100
+    : 0;
+
   return {
     slug:       agent.slug,
     name:       agent.name,
-    brand,
-    role,
-    fill:       BRAND_FILL[brand] ?? "#D4B896",
-    revenue:    totals.total_sales,
-    bookings:   totals.total_bookings,
+    brand:      meta.brand,
+    role:       meta.role,
+    revenue,
+    lc,
+    crm,
+    other,
+    bookings:   agent.totals.total_bookings,
     depositPct: Math.round(depositPct * 10) / 10,
-    convRate:   totals.avg_conversion_rate,
-    aov:        totals.avg_aov,
-    activeDays: totals.active_days,
+    convRate:   agent.totals.avg_conversion_rate,
+    aov:        agent.totals.avg_aov,
+    activeDays: agent.totals.active_days,
   };
 }
 
-// ── Custom multi-line X-axis tick ─────────────────────────────────────────────
-//
-// Renders the agent name plus 4 supporting metrics stacked beneath it.
+// Brand-first sort: Spa → Aesthetics → Slimming, revenue desc within each brand
+function sortRows(rows: ChartRow[]): ChartRow[] {
+  const result: ChartRow[] = [];
+  for (const brand of BRAND_ORDER) {
+    const group = rows
+      .filter((r) => r.brand === brand)
+      .sort((a, b) => b.revenue - a.revenue);
+    result.push(...group);
+  }
+  return result;
+}
+
+function chLabel(role: string, ch: "lc" | "crm" | "other"): string {
+  if (role === "Chat") return { lc: "Live Chat", crm: "GHL", other: "Email" }[ch];
+  return { lc: "Chat", crm: "Inbound", other: "Outbound" }[ch];
+}
+
+// ── Custom X-axis tick ────────────────────────────────────────────────────────
 
 function MetricTick({
-  x,
-  y,
-  payload,
-  rows,
-  onClick,
+  x, y, payload, rows, onClick,
 }: {
   x?: number;
   y?: number;
@@ -92,102 +119,79 @@ function MetricTick({
   if (x === undefined || y === undefined || !payload) return null;
   const row = rows.find((r) => r.name === payload.value);
   if (!row) return null;
-  const inactive = row.revenue === 0 && row.activeDays === 0;
-
-  const labelColour = inactive ? "#A1A1AA" : "#71717A";
-  const valueColour = inactive ? "#A1A1AA" : "#27272A";
+  const vc = "#27272A";
+  const lc = "#71717A";
 
   return (
-    <g
-      transform={`translate(${x}, ${y})`}
-      style={{ cursor: "pointer" }}
-      onClick={() => onClick(row.slug)}
-    >
-      {/* Agent name */}
-      <text
-        x={0}
-        y={14}
-        textAnchor="middle"
-        fontSize={12}
-        fontWeight={600}
-        fill={inactive ? "#A1A1AA" : "#18181B"}
-      >
-        {row.name}
-      </text>
-      {/* Brand · Role chip line */}
-      <text x={0} y={28} textAnchor="middle" fontSize={9} fill={labelColour}>
-        <tspan fill={row.fill} fontWeight={700}>●</tspan>
+    <g transform={`translate(${x},${y})`} style={{ cursor: "pointer" }} onClick={() => onClick(row.slug)}>
+      <text x={0} y={14}  textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.name}</text>
+      <text x={0} y={28}  textAnchor="middle" fontSize={9}  fill={lc}>
+        <tspan fill={BRAND_LABEL_COLOR[row.brand]} fontWeight={700}>●</tspan>
         <tspan dx={3}>{row.brand} · {row.role}</tspan>
       </text>
-
-      {/* Bookings */}
-      <text x={0} y={46} textAnchor="middle" fontSize={10} fill={labelColour}>
-        Bookings
-      </text>
-      <text x={0} y={58} textAnchor="middle" fontSize={11} fontWeight={600} fill={valueColour}>
-        {row.bookings}
-      </text>
-
-      {/* Conv Rate */}
-      <text x={0} y={74} textAnchor="middle" fontSize={10} fill={labelColour}>
-        Conv Rate
-      </text>
-      <text x={0} y={86} textAnchor="middle" fontSize={11} fontWeight={600} fill={valueColour}>
-        {row.convRate > 0 ? `${row.convRate.toFixed(1)}%` : "—"}
-      </text>
-
-      {/* AOV */}
-      <text x={0} y={102} textAnchor="middle" fontSize={10} fill={labelColour}>
-        AOV
-      </text>
-      <text x={0} y={114} textAnchor="middle" fontSize={11} fontWeight={600} fill={valueColour}>
-        {row.aov > 0 ? `€${row.aov.toFixed(0)}` : "—"}
-      </text>
-
-      {/* Active Days */}
-      <text x={0} y={130} textAnchor="middle" fontSize={10} fill={labelColour}>
-        Active Days
-      </text>
-      <text x={0} y={142} textAnchor="middle" fontSize={11} fontWeight={600} fill={valueColour}>
-        {row.activeDays}
-      </text>
+      <text x={0} y={46}  textAnchor="middle" fontSize={10} fill={lc}>Bookings</text>
+      <text x={0} y={58}  textAnchor="middle" fontSize={11} fontWeight={600} fill={vc}>{row.bookings}</text>
+      <text x={0} y={74}  textAnchor="middle" fontSize={10} fill={lc}>Conv Rate</text>
+      <text x={0} y={86}  textAnchor="middle" fontSize={11} fontWeight={600} fill={vc}>{row.convRate > 0 ? `${row.convRate.toFixed(1)}%` : "—"}</text>
+      <text x={0} y={102} textAnchor="middle" fontSize={10} fill={lc}>AOV</text>
+      <text x={0} y={114} textAnchor="middle" fontSize={11} fontWeight={600} fill={vc}>{row.aov > 0 ? `€${row.aov.toFixed(0)}` : "—"}</text>
+      <text x={0} y={130} textAnchor="middle" fontSize={10} fill={lc}>Active Days</text>
+      <text x={0} y={142} textAnchor="middle" fontSize={11} fontWeight={600} fill={vc}>{row.activeDays}</text>
     </g>
   );
 }
 
 // ── Custom tooltip ────────────────────────────────────────────────────────────
 
-interface TooltipPayloadItem {
-  dataKey: string;
-  value: number;
-  payload: ChartRow;
-}
-
 function CustomTooltip({
   active,
   payload,
 }: {
   active?: boolean;
-  payload?: TooltipPayloadItem[];
+  payload?: Array<{ payload: ChartRow }>;
 }) {
   if (!active || !payload || payload.length === 0) return null;
   const row = payload[0].payload;
+  const isChat = row.role === "Chat";
+
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-lg space-y-0.5 min-w-[160px]">
+    <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-lg space-y-0.5 min-w-[190px]">
       <p className="font-semibold text-foreground">{row.name}</p>
       <p className="text-muted-foreground">{row.brand} · {row.role}</p>
       <div className="border-t border-gray-100 my-1.5" />
-      <div className="flex justify-between gap-4"><span>Revenue</span><span className="font-semibold tabular-nums">{formatCurrency(row.revenue)}</span></div>
+      {row.lc > 0 && (
+        <div className="flex justify-between gap-4">
+          <span style={{ color: CH.lc.color }} className="font-medium">{isChat ? "Live Chat" : "Chat"}</span>
+          <span className="font-semibold tabular-nums">{formatCurrency(row.lc)}</span>
+        </div>
+      )}
+      {row.crm > 0 && (
+        <div className="flex justify-between gap-4">
+          <span style={{ color: CH.crm.color }} className="font-medium">{isChat ? "GHL" : "Inbound"}</span>
+          <span className="font-semibold tabular-nums">{formatCurrency(row.crm)}</span>
+        </div>
+      )}
+      {row.other > 0 && (
+        <div className="flex justify-between gap-4">
+          <span style={{ color: CH.other.color }} className="font-medium">{isChat ? "Email" : "Outbound"}</span>
+          <span className="font-semibold tabular-nums">{formatCurrency(row.other)}</span>
+        </div>
+      )}
+      <div className="border-t border-gray-100 my-1.5" />
+      <div className="flex justify-between gap-4"><span>Total Revenue</span><span className="font-semibold tabular-nums">{formatCurrency(row.revenue)}</span></div>
       <div className="flex justify-between gap-4"><span>Bookings</span><span className="font-semibold tabular-nums">{row.bookings}</span></div>
       <div className="flex justify-between gap-4"><span>Deposit %</span><span className="font-semibold tabular-nums">{row.depositPct > 0 ? formatPercent(row.depositPct) : "—"}</span></div>
       <div className="flex justify-between gap-4"><span>Conv Rate</span><span className="font-semibold tabular-nums">{row.convRate > 0 ? formatPercent(row.convRate) : "—"}</span></div>
       <div className="flex justify-between gap-4"><span>AOV</span><span className="font-semibold tabular-nums">{row.aov > 0 ? formatCurrency(row.aov) : "—"}</span></div>
-      <div className="flex justify-between gap-4"><span>Active Days</span><span className="font-semibold tabular-nums">{row.activeDays}</span></div>
     </div>
   );
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
+
+interface AgentLeaderboardCardsProps {
+  agents: CrmAgent[];
+}
 
 export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
   const router = useRouter();
@@ -200,10 +204,12 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
     );
   }
 
-  const rows = agents
+  const allRows = agents
     .map(toRow)
-    .filter((r) => r.revenue > 0 || r.activeDays > 0)
-    .sort((a, b) => b.revenue - a.revenue);
+    .filter((r): r is ChartRow => r !== null);
+
+  const rows = sortRows(allRows.filter((r) => r.revenue > 0 || r.activeDays > 0));
+  const inactiveRows = allRows.filter((r) => r.revenue === 0 && r.activeDays === 0);
 
   if (rows.length === 0) {
     return (
@@ -213,143 +219,185 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
     );
   }
 
-  // Team median revenue — robust to outliers (Abid/Rana inflate the mean badly)
+  // Team median revenue
   const teamMedianRevenue = (() => {
-    const sortedRev = [...rows].map((r) => r.revenue).sort((a, b) => a - b);
-    const mid = Math.floor(sortedRev.length / 2);
-    return sortedRev.length % 2 === 0
-      ? (sortedRev[mid - 1] + sortedRev[mid]) / 2
-      : sortedRev[mid];
+    const sorted = [...rows].map((r) => r.revenue).sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
   })();
 
-  const inactiveAgents = agents
-    .map(toRow)
-    .filter((r) => r.revenue === 0 && r.activeDays === 0);
+  // Brand section boundaries for background shading
+  const brandSections: Array<{ brand: AgentBrand; x1: string; x2: string }> = [];
+  for (const brand of BRAND_ORDER) {
+    const group = rows.filter((r) => r.brand === brand);
+    if (group.length > 0) {
+      brandSections.push({ brand, x1: group[0].name, x2: group[group.length - 1].name });
+    }
+  }
 
   return (
     <Card>
       <CardHeader className="pb-1">
-        <div className="flex items-baseline justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <CardTitle className="text-base font-semibold">Agent Leaderboard</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Revenue bars · deposit % line · click any agent
-          </p>
+          {/* Channel colour legend */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: CH.lc.color }} />
+              Live Chat · Chat
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: CH.crm.color }} />
+              GHL · Inbound
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: CH.other.color }} />
+              Email · Outbound
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2 w-5 rounded-full" style={{ backgroundColor: "#E07A5F" }} />
+              Deposit %
+            </span>
+          </div>
+        </div>
+        {/* Brand group labels */}
+        <div className="mt-1 flex gap-3 text-[10px] font-semibold uppercase tracking-widest">
+          {brandSections.map(({ brand }) => (
+            <span key={brand} style={{ color: BRAND_LABEL_COLOR[brand] }}>{brand}</span>
+          ))}
         </div>
       </CardHeader>
+
       <CardContent className="pt-2 px-2 md:px-6">
-        {/* Horizontal scroll on mobile so the per-agent tick labels never squash */}
         <div className="overflow-x-auto -mx-2 md:mx-0">
-          <div
-            className="h-[520px]"
-            style={{ minWidth: Math.max(rows.length * 90, 360) }}
-          >
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart
-              data={rows}
-              margin={{ top: 22, right: 30, left: 0, bottom: 130 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
-              <XAxis
-                dataKey="name"
-                interval={0}
-                tickLine={false}
-                axisLine={{ stroke: "#E5E7EB" }}
-                height={150}
-                tick={
-                  <MetricTick
-                    rows={rows}
-                    onClick={(slug) => router.push(`/crm/individual/${slug}`)}
+          <div className="h-[520px]" style={{ minWidth: Math.max(rows.length * 90, 360) }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={rows} margin={{ top: 22, right: 30, left: 0, bottom: 130 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
+
+                {/* Brand background sections */}
+                {brandSections.map(({ brand, x1, x2 }) => (
+                  <ReferenceArea
+                    key={brand}
+                    x1={x1}
+                    x2={x2}
+                    fill={BRAND_BG[brand]}
+                    fillOpacity={1}
+                    stroke="none"
                   />
-                }
-              />
-              <YAxis
-                yAxisId="rev"
-                orientation="left"
-                tickFormatter={(v) =>
-                  v >= 1000 ? `€${(v / 1000).toFixed(0)}k` : `€${v}`
-                }
-                tick={{ fontSize: 11, fill: "#71717A" }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                yAxisId="dep"
-                orientation="right"
-                tickFormatter={(v) => `${v}%`}
-                domain={[0, 100]}
-                tick={{ fontSize: 11, fill: "#71717A" }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: "#F4F4F5" }} />
-              <Legend
-                verticalAlign="top"
-                height={28}
-                iconType="square"
-                wrapperStyle={{ fontSize: 11 }}
-              />
-
-              {/* Team median revenue line */}
-              <ReferenceLine
-                yAxisId="rev"
-                y={teamMedianRevenue}
-                stroke="#A1A1AA"
-                strokeDasharray="4 4"
-                strokeWidth={1}
-                label={{
-                  value: `Median ${formatCurrency(teamMedianRevenue)}`,
-                  position: "insideTopRight",
-                  fill: "#71717A",
-                  fontSize: 10,
-                }}
-              />
-
-              {/* Revenue bars (brand-coloured per cell) */}
-              <Bar
-                yAxisId="rev"
-                dataKey="revenue"
-                name="Revenue"
-                radius={[6, 6, 0, 0]}
-                barSize={52}
-              >
-                {rows.map((r) => (
-                  <Cell key={r.slug} fill={r.fill} />
                 ))}
-                <LabelList
-                  dataKey="revenue"
-                  position="top"
-                  formatter={(v: unknown) => {
-                    const n = Number(v);
-                    return n >= 1000 ? `€${(n / 1000).toFixed(0)}k` : `€${n}`;
-                  }}
-                  style={{ fontSize: 10, fill: "#27272A", fontWeight: 700 }}
+
+                <XAxis
+                  dataKey="name"
+                  interval={0}
+                  tickLine={false}
+                  axisLine={{ stroke: "#E5E7EB" }}
+                  height={150}
+                  tick={
+                    <MetricTick
+                      rows={rows}
+                      onClick={(slug) => router.push(`/crm/individual/${slug}`)}
+                    />
+                  }
                 />
-              </Bar>
+                <YAxis
+                  yAxisId="rev"
+                  orientation="left"
+                  tickFormatter={(v) => v >= 1000 ? `€${(v / 1000).toFixed(0)}k` : `€${v}`}
+                  tick={{ fontSize: 11, fill: "#71717A" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  yAxisId="dep"
+                  orientation="right"
+                  tickFormatter={(v) => `${v}%`}
+                  domain={[0, 100]}
+                  tick={{ fontSize: 11, fill: "#71717A" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(0,0,0,0.03)" }} />
 
-              {/* Deposit % overlay */}
-              <Line
-                yAxisId="dep"
-                type="monotone"
-                dataKey="depositPct"
-                name="Deposit %"
-                stroke="#E07A5F"
-                strokeWidth={2.5}
-                dot={{ r: 4, fill: "#E07A5F", stroke: "#fff", strokeWidth: 1.5 }}
-                activeDot={{ r: 6 }}
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
-          </div>{/* inner fixed-width div */}
-        </div>{/* overflow-x-auto */}
+                {/* Team median reference line */}
+                <ReferenceLine
+                  yAxisId="rev"
+                  y={teamMedianRevenue}
+                  stroke="#A1A1AA"
+                  strokeDasharray="4 4"
+                  strokeWidth={1}
+                  label={{
+                    value: `Median ${formatCurrency(teamMedianRevenue)}`,
+                    position: "insideTopRight",
+                    fill: "#71717A",
+                    fontSize: 10,
+                  }}
+                />
 
-        {/* Inactive agents row */}
-        {inactiveAgents.length > 0 && (
+                {/* Stacked channel bars — lc bottom, crm middle, other top */}
+                <Bar
+                  yAxisId="rev"
+                  dataKey="lc"
+                  stackId="ch"
+                  name={`${chLabel("Chat", "lc")} / ${chLabel("SDR", "lc")}`}
+                  fill={CH.lc.color}
+                  barSize={52}
+                  radius={[0, 0, 0, 0]}
+                />
+                <Bar
+                  yAxisId="rev"
+                  dataKey="crm"
+                  stackId="ch"
+                  name={`${chLabel("Chat", "crm")} / ${chLabel("SDR", "crm")}`}
+                  fill={CH.crm.color}
+                  barSize={52}
+                  radius={[0, 0, 0, 0]}
+                />
+                <Bar
+                  yAxisId="rev"
+                  dataKey="other"
+                  stackId="ch"
+                  name={`${chLabel("Chat", "other")} / ${chLabel("SDR", "other")}`}
+                  fill={CH.other.color}
+                  barSize={52}
+                  radius={[6, 6, 0, 0]}
+                >
+                  {/* Total revenue label above the full stacked bar */}
+                  <LabelList
+                    dataKey="revenue"
+                    position="top"
+                    formatter={(v: unknown) => {
+                      const n = Number(v);
+                      return n >= 1000 ? `€${(n / 1000).toFixed(0)}k` : `€${n}`;
+                    }}
+                    style={{ fontSize: 10, fill: "#27272A", fontWeight: 700 }}
+                  />
+                </Bar>
+
+                {/* Deposit % overlay line */}
+                <Line
+                  yAxisId="dep"
+                  type="monotone"
+                  dataKey="depositPct"
+                  name="Deposit %"
+                  stroke="#E07A5F"
+                  strokeWidth={2.5}
+                  dot={{ r: 4, fill: "#E07A5F", stroke: "#fff", strokeWidth: 1.5 }}
+                  activeDot={{ r: 6 }}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Inactive agents */}
+        {inactiveRows.length > 0 && (
           <div className="mt-4 border-t border-gray-100 pt-3">
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
-              Inactive ({inactiveAgents.length})
+              Inactive ({inactiveRows.length})
             </p>
             <div className="flex flex-wrap gap-1.5">
-              {inactiveAgents.map((r) => (
+              {inactiveRows.map((r) => (
                 <button
                   key={r.slug}
                   onClick={() => router.push(`/crm/individual/${r.slug}`)}

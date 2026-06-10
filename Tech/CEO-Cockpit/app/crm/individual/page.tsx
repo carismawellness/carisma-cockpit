@@ -5,7 +5,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { AgentTeamBanner } from "@/components/crm/AgentTeamBanner";
 import { AgentLeaderboardCards } from "@/components/crm/AgentLeaderboardCards";
-import { AgentDetailTabs } from "@/components/crm/AgentDetailTabs";
 import { AgentComparisonTable } from "@/components/crm/AgentComparisonTable";
 import { useCrmAgents } from "@/lib/hooks/useCrmAgents";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
@@ -140,18 +139,6 @@ function IndividualKPIsContent({
           <div className="h-64 animate-pulse rounded-xl bg-gray-100" />
         ) : (
           <AgentComparisonTable agents={agents} />
-        )}
-      </section>
-
-      {/* Section 4: Agent Detail Drill-Down */}
-      <section>
-        <h2 className="mb-3 text-lg font-semibold text-foreground">
-          Agent Detail
-        </h2>
-        {isLoading ? (
-          <div className="h-96 animate-pulse rounded-xl bg-gray-100" />
-        ) : (
-          <AgentDetailTabs agents={agents} />
         )}
       </section>
     </>
