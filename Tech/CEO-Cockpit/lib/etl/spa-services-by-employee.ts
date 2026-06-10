@@ -82,7 +82,7 @@ function parseCockpitDate(raw: string): Date | null {
 }
 
 function safeFloat(val: string): number {
-  return parseFloat(String(val).replace(/,/g, "").trim() || "0") || 0;
+  return parseFloat(String(val).replace(/[€$£,\s]/g, "").trim() || "0") || 0;
 }
 
 function stripCol(row: Record<string, string>, key: string): string {
@@ -125,6 +125,7 @@ export async function runSpaServicesByEmployee(
   let skipUnknownLoc = 0;
   let skipBadPrice   = 0;
   let skipOutOfRange = 0;
+  const badDateSamples: string[] = [];
 
   for (const row of allRows) {
     const status = stripCol(row, "Status");
@@ -134,8 +135,13 @@ export async function runSpaServicesByEmployee(
     if (!employee) { skipEmployee++; continue; }
     if (employee.toUpperCase() === "CARISMA (SALES)") { skipCarisma++; continue; }
 
-    const d = parseCockpitDate(stripCol(row, "Service Date"));
-    if (!d) { skipBadDate++; continue; }
+    const dateRaw = stripCol(row, "Service Date");
+    const d = parseCockpitDate(dateRaw);
+    if (!d) {
+      skipBadDate++;
+      if (badDateSamples.length < 3 && dateRaw) badDateSamples.push(dateRaw);
+      continue;
+    }
 
     const locId = SPA_LOC_MAP[stripCol(row, "Sales Point")];
     if (locId === undefined) { skipUnknownLoc++; continue; }
@@ -161,9 +167,12 @@ export async function runSpaServicesByEmployee(
     });
   }
 
+  const badDateSuffix = badDateSamples.length
+    ? ` (samples: ${badDateSamples.map(s => `"${s}"`).join(", ")})`
+    : "";
   log.push(
     `Skips — status:${skipStatus} carisma_sales:${skipCarisma} empty_employee:${skipEmployee} ` +
-    `bad_date:${skipBadDate} unknown_location:${skipUnknownLoc} bad_price:${skipBadPrice} ` +
+    `bad_date:${skipBadDate}${badDateSuffix} unknown_location:${skipUnknownLoc} bad_price:${skipBadPrice} ` +
     `out_of_range:${skipOutOfRange}`,
   );
 
