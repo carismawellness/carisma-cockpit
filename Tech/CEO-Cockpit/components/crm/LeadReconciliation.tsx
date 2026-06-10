@@ -4,8 +4,22 @@ import { Card } from "@/components/ui/card";
 import { useKPIData } from "@/lib/hooks/useKPIData";
 import { useLookups } from "@/lib/hooks/useLookups";
 import { LeadReconRow } from "@/lib/types/crm";
-import { chartColors } from "@/lib/charts/config";
 import { isExcludedCrmDate } from "@/lib/constants/excluded-dates";
+import { BRAND } from "@/lib/constants/design-tokens";
+
+// Canonical brand palette — `dark` for primary marks (borders, CRM bar),
+// `soft` for the Meta companion bar to visually pair it with the brand without
+// stealing prominence from the CRM bar.
+const BRAND_DARK: Record<string, string> = {
+  spa:        BRAND.spa.dark,
+  aesthetics: BRAND.aesthetics.dark,
+  slimming:   BRAND.slimming.dark,
+};
+const BRAND_SOFT: Record<string, string> = {
+  spa:        BRAND.spa.soft,
+  aesthetics: BRAND.aesthetics.soft,
+  slimming:   BRAND.slimming.soft,
+};
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -138,8 +152,7 @@ export function LeadReconciliation({
               key={brand.slug}
               className="p-5 border-l-4"
               style={{
-                borderLeftColor:
-                  chartColors[brand.slug as keyof typeof chartColors] ?? "#888",
+                borderLeftColor: BRAND_DARK[brand.slug] ?? "#888",
               }}
             >
               <div className="flex items-center justify-between mb-4">
@@ -188,14 +201,16 @@ export function LeadReconciliation({
                 <div>
                   <div className="flex justify-between text-xs mb-1">
                     <span className="text-text-secondary">CRM Leads</span>
-                    <span className="font-semibold text-foreground">{t.crmLeads}</span>
+                    <span className="font-semibold text-foreground tabular-nums">
+                      {t.crmLeads.toLocaleString()}
+                    </span>
                   </div>
                   <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
                       style={{
                         width: `${(t.crmLeads / max) * 100}%`,
-                        backgroundColor: chartColors[brand.slug as keyof typeof chartColors] ?? "#888",
+                        backgroundColor: BRAND_DARK[brand.slug] ?? "#888",
                       }}
                     />
                   </div>
@@ -203,15 +218,16 @@ export function LeadReconciliation({
                 <div>
                   <div className="flex justify-between text-xs mb-1">
                     <span className="text-text-secondary">Meta Leads</span>
-                    <span className="font-semibold text-foreground">{t.metaLeads}</span>
+                    <span className="font-semibold text-foreground tabular-nums">
+                      {t.metaLeads.toLocaleString()}
+                    </span>
                   </div>
                   <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
                       style={{
                         width: `${(t.metaLeads / max) * 100}%`,
-                        backgroundColor: chartColors[brand.slug as keyof typeof chartColors] ?? "#888",
-                        opacity: 0.5,
+                        backgroundColor: BRAND_SOFT[brand.slug] ?? "#D4D4D4",
                       }}
                     />
                   </div>
