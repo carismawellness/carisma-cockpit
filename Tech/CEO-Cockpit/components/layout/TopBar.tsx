@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Bell, LogOut, Menu, Moon, Sun } from "lucide-react";
+import { LogOut, Menu, Moon, Sun } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { DateRangePicker } from "./DateRangePicker";
@@ -13,7 +13,6 @@ interface TopBarProps {
   dateFrom: Date;
   dateTo: Date;
   onDateChange: (from: Date, to: Date) => void;
-  alertCount?: number;
   onMobileMenuOpen?: () => void;
   sidebarCollapsed?: boolean;
   hideDatePicker?: boolean;
@@ -23,7 +22,6 @@ export function TopBar({
   dateFrom,
   dateTo,
   onDateChange,
-  alertCount = 0,
   onMobileMenuOpen,
   sidebarCollapsed = false,
   hideDatePicker = false,
@@ -66,14 +64,6 @@ export function TopBar({
         {/* Sync status widget — shows last sync + sync trigger */}
         <SyncStatusWidget />
         {/* min 44px touch target on mobile, reset to 36px on md+ */}
-        <Button variant="ghost" size="icon" className="relative min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 md:h-9 md:w-9">
-          <Bell className="h-[18px] w-[18px] text-muted-foreground" />
-          {alertCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] rounded-full h-4 w-4 flex items-center justify-center">
-              {alertCount}
-            </span>
-          )}
-        </Button>
         <Button
           variant="ghost"
           size="icon"

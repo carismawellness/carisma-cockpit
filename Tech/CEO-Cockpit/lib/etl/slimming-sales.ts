@@ -1,41 +1,26 @@
 import { deleteWhere, insertRows } from "./supabase-etl";
+import { parseCSV } from "./csv";
 import { cockpitCsvUrl, COCKPIT_TABS } from "../constants/cockpit-sheets";
 
 const VAT_RATE = 0.18;
 
 // ── CSV helpers ───────────────────────────────────────────────────────────────
 
-function parseCSVRow(line: string): string[] {
-  const cells: string[] = [];
-  let cur = "", inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
-      else inQ = !inQ;
-    } else if (ch === "," && !inQ) { cells.push(cur); cur = ""; }
-    else cur += ch;
-  }
-  cells.push(cur);
-  return cells;
-}
-
 async function fetchCockpitCsv(): Promise<Record<string, string>[]> {
   const url = cockpitCsvUrl(COCKPIT_TABS.SLM_SALES.gid);
   const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) throw new Error(`Cockpit Datasheet fetch failed: ${resp.status}`);
   const text = await resp.text();
-  const lines = text.split("\n").filter(l => l.trim());
-  if (lines.length < 2) return [];
+  const rows = parseCSV(text);
+  if (rows.length < 2) return [];
   let headerIdx = 0;
-  for (let i = 0; i < Math.min(lines.length, 5); i++) {
-    if (parseCSVRow(lines[i]).filter(c => c.trim()).length >= 3) { headerIdx = i; break; }
+  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+    if (rows[i].filter(c => c.trim()).length >= 3) { headerIdx = i; break; }
   }
-  const headers = parseCSVRow(lines[headerIdx]).map(h => h.trim().toLowerCase());
-  return lines.slice(headerIdx + 1).map(line => {
-    const cells = parseCSVRow(line);
-    return Object.fromEntries(headers.map((h, i) => [h, (cells[i] ?? "").trim()]));
-  });
+  const headers = rows[headerIdx].map(h => h.trim().toLowerCase());
+  return rows.slice(headerIdx + 1).map(cells =>
+    Object.fromEntries(headers.map((h, i) => [h, (cells[i] ?? "").trim()]))
+  );
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -69,7 +54,8 @@ function col(row: Record<string, string>, ...keys: string[]): string {
 function parsePrice(raw: string): number | null {
   if (!raw || /^[-—]$/.test(raw.trim())) return null;
   const val = parseFloat(raw.replace(/[€$£,]/g, "").trim());
-  return isFinite(val) && val >= 0 ? val : null;
+  // Negative values are refunds — carry them through so downstream SUMs net them.
+  return isFinite(val) ? val : null;
 }
 
 function monthsInRange(fromDate: string, toDate: string): Set<string> {
@@ -140,7 +126,7 @@ export async function runSlimmingSales(
     const monthKey = `${lastDate.slice(0, 7)}-01`;
     if (!validMonths.has(monthKey)) continue;
 
-    const priceEx = revenue > 0 ? +(revenue / (1 + VAT_RATE)).toFixed(2) : 0;
+    const priceEx = +(revenue / (1 + VAT_RATE)).toFixed(2);
 
     if (!buckets.has(monthKey)) buckets.set(monthKey, []);
     buckets.get(monthKey)!.push({

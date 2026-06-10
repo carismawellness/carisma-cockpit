@@ -7,11 +7,21 @@ const BASE_URL = process.env.VERCEL_URL
   : "http://localhost:3000";
 
 export async function GET(req: NextRequest) {
-  // Vercel secures cron jobs at infrastructure level — no separate secret needed.
-  // Reject non-Vercel callers in production by checking the standard cron header.
-  const isCron = req.headers.get("x-vercel-cron") === "1";
+  // Auth: when CRON_SECRET is set, Vercel sends it as `Authorization: Bearer`
+  // on cron invocations — require it (also enables manual curl triggers).
+  // When it's NOT set, fall back to the x-vercel-cron header so the nightly
+  // job keeps working, but warn loudly.
+  const cronSecret = process.env.CRON_SECRET;
   const isLocal = !process.env.VERCEL_URL;
-  if (!isCron && !isLocal) {
+  const authorized = cronSecret
+    ? req.headers.get("authorization") === `Bearer ${cronSecret}`
+    : req.headers.get("x-vercel-cron") === "1";
+  if (!cronSecret) {
+    console.warn(
+      "[SECURITY] CRON_SECRET is not set — cron auth falls back to the x-vercel-cron header. Set CRON_SECRET in Vercel env vars."
+    );
+  }
+  if (!authorized && !isLocal) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -28,7 +38,10 @@ export async function GET(req: NextRequest) {
   const date_to   = fmt(to);
 
   const payload = JSON.stringify({ date_from, date_to, force: true });
-  const headers = { "Content-Type": "application/json" };
+  // Forward the cron secret so the gated /api/etl/* routes accept these
+  // server-to-server calls (they carry no session cookies).
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (cronSecret) headers["Authorization"] = `Bearer ${cronSecret}`;
 
   // Marketing ETLs use the same window as the main ETL (first of 2 months ago → today)
   // This ensures Meta/Google data aligns with CRM and revenue data in all dashboards.

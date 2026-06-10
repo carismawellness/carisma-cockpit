@@ -82,8 +82,19 @@ async function fetchSpaRevenue(
   return { total: Math.round(total), byLocation };
 }
 
-// Daily-sales revenue for a date window: returns total (price_ex_vat).
+// True when the [fromDateStr, toDateStr] window covers every day of `month`
+// (a "YYYY-MM-01" key) — i.e. spans its 1st through its last day.
+function windowCoversMonth(month: string, fromDateStr: string, toDateStr: string): boolean {
+  const [y, m] = month.split("-").map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  const monthEnd = `${month.slice(0, 7)}-${String(lastDay).padStart(2, "0")}`;
+  return fromDateStr <= month && toDateStr >= monthEnd;
+}
+
+// Daily-sales revenue for a date window: returns { total, undatedExcluded }.
 // Shared between aesthetics_sales_daily and slimming_sales_daily — identical shape.
+// Undated rows are month-anchored, so they only belong to windows that fully
+// cover their month; in partial windows they're excluded and counted instead.
 async function fetchDailySalesRevenue(
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
   table: "aesthetics_sales_daily" | "slimming_sales_daily",
@@ -101,11 +112,21 @@ async function fetchDailySalesRevenue(
 
   if (error) throw error;
 
-  const rows = (data ?? []).filter(
-    (r) => !r.date_of_service || (r.date_of_service >= fromDateStr && r.date_of_service <= toDateStr)
-  );
+  let total = 0;
+  let undatedExcluded = 0;
+  for (const r of data ?? []) {
+    if (r.date_of_service) {
+      if (r.date_of_service >= fromDateStr && r.date_of_service <= toDateStr) {
+        total += r.price_ex_vat ?? 0;
+      }
+    } else if (windowCoversMonth(r.month, fromDateStr, toDateStr)) {
+      total += r.price_ex_vat ?? 0;
+    } else {
+      undatedExcluded++;
+    }
+  }
 
-  return Math.round(rows.reduce((s: number, r) => s + (r.price_ex_vat ?? 0), 0));
+  return { total: Math.round(total), undatedExcluded };
 }
 
 // Monthly time series: for each of the last TRAILING_MONTHS months, return spa+aesthetics+slimming for THIS year and LAST year
@@ -230,11 +251,19 @@ export async function GET(req: NextRequest) {
 
     const supabase = await createServerSupabaseClient();
 
-    // Derive LY range (same calendar span, one year back)
+    // Derive LY range (same calendar span, one year back).
+    // Clamp the day to the target month's last valid day — otherwise
+    // new Date(y-1, 1, 29) rolls Feb 29 → Mar 1 in non-leap years.
+    const shiftYearClamped = (d: Date, years: number) => {
+      const y = d.getFullYear() + years;
+      const m = d.getMonth();
+      const day = Math.min(d.getDate(), new Date(y, m + 1, 0).getDate());
+      return new Date(y, m, day);
+    };
     const fromDate = new Date(fromStr);
     const toDate   = new Date(toStr);
-    const lyFrom   = toDateStr(new Date(fromDate.getFullYear() - 1, fromDate.getMonth(), fromDate.getDate()));
-    const lyTo     = toDateStr(new Date(toDate.getFullYear() - 1,   toDate.getMonth(),   toDate.getDate()));
+    const lyFrom   = toDateStr(shiftYearClamped(fromDate, -1));
+    const lyTo     = toDateStr(shiftYearClamped(toDate,   -1));
 
     const [spaCurr, spaLY, aesCurr, aesLY, slimCurr, slimLY, monthly] = await Promise.all([
       fetchSpaRevenue(supabase, fromStr, toStr),
@@ -249,15 +278,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       period: {
         spa:        spaCurr.total,
-        aesthetics: aesCurr,
-        slimming:   slimCurr,
-        total:      spaCurr.total + aesCurr + slimCurr,
+        aesthetics: aesCurr.total,
+        slimming:   slimCurr.total,
+        total:      spaCurr.total + aesCurr.total + slimCurr.total,
       },
       ly: {
         spa:        spaLY.total,
-        aesthetics: aesLY,
-        slimming:   slimLY,
-        total:      spaLY.total + aesLY + slimLY,
+        aesthetics: aesLY.total,
+        slimming:   slimLY.total,
+        total:      spaLY.total + aesLY.total + slimLY.total,
+      },
+      // Undated rows excluded from partial-period windows (month not fully covered)
+      undatedExcluded: {
+        aesthetics: aesCurr.undatedExcluded,
+        slimming:   slimCurr.undatedExcluded,
       },
       spa_locations: spaCurr.byLocation,
       monthly,

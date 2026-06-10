@@ -50,10 +50,15 @@ export async function POST(req: NextRequest) {
   // Vercel function instance is kept alive until it completes.
   // Previously this was fire-and-forget (no await, no waitUntil) which meant
   // Vercel could terminate the function before the ETL finished.
+  // Forward the cron secret so the gated /api/etl/* route accepts this
+  // server-to-server call (it carries no session cookies).
+  const etlHeaders: Record<string, string> = { "Content-Type": "application/json" };
+  if (process.env.CRON_SECRET) etlHeaders["Authorization"] = `Bearer ${process.env.CRON_SECRET}`;
+
   after(async () => {
     await fetch(`${base}/api/etl/zoho-spa-transactions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: etlHeaders,
       body,
     });
   });

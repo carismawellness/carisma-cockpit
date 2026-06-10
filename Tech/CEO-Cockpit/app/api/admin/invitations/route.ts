@@ -2,18 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { DASHBOARD_KEYS } from "@/lib/constants/dashboards";
+import { isAdminEmail } from "@/lib/auth/admins";
 
 export const maxDuration = 60;
-
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? "contact@mertgulen.com,admin@cockpit.local,123@cockpit.local,mert@carismaspa.com")
-  .split(",")
-  .map((e) => e.trim().toLowerCase());
 
 async function requireAdmin(): Promise<string | null> {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   const email = (user?.email ?? "").toLowerCase();
-  return ADMIN_EMAILS.includes(email) ? email : null;
+  return isAdminEmail(email) ? email : null;
 }
 
 /** GET /api/admin/invitations — list all invitations */

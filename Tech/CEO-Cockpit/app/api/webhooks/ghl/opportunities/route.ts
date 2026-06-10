@@ -55,7 +55,18 @@ function matchStage(name: string): string {
 }
 
 function verifySignature(body: string, signature: string | null, secret: string): boolean {
-  if (!secret || !signature) return !secret; // skip verification if no secret configured
+  if (!secret) {
+    // DELIBERATE FAIL-OPEN: no signing secret configured for this location, so
+    // the payload is accepted UNVERIFIED. Failing closed here would silently
+    // kill the live GHL lead pipeline if the env var is genuinely unset in
+    // prod. Set GHL_WEBHOOK_SECRET (or the per-brand _SPA/_AESTHETICS/_SLIMMING
+    // variants) in Vercel to enable HMAC verification and close this gap.
+    console.error(
+      "[SECURITY] GHL webhook accepted WITHOUT signature verification — GHL_WEBHOOK_SECRET is not configured. Set it in Vercel env vars."
+    );
+    return true;
+  }
+  if (!signature) return false;
   const expected = crypto.createHmac("sha256", secret).update(body).digest("hex");
   try {
     return crypto.timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(signature.replace(/^sha256=/, ""), "hex"));

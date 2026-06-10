@@ -39,10 +39,15 @@ export async function POST(req: NextRequest) {
   const base = new URL(req.url).origin;
   const body = JSON.stringify({ date_from, date_to, force: true });
 
+  // Forward the cron secret so the gated /api/etl/* route accepts this
+  // server-to-server call (it carries no session cookies).
+  const etlHeaders: Record<string, string> = { "Content-Type": "application/json" };
+  if (process.env.CRON_SECRET) etlHeaders["Authorization"] = `Bearer ${process.env.CRON_SECRET}`;
+
   after(async () => {
     await fetch(`${base}/api/etl/zoho-aesthetics-transactions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: etlHeaders,
       body,
     });
   });

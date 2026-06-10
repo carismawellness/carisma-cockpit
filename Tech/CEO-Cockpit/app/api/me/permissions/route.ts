@@ -1,13 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getAdminClient } from "@/lib/supabase/admin";
-
-const ADMIN_EMAILS = (
-  process.env.ADMIN_EMAILS ??
-  "contact@mertgulen.com,admin@cockpit.local,123@cockpit.local,mert@carismaspa.com"
-)
-  .split(",")
-  .map((e) => e.trim().toLowerCase());
+import { isAdminEmail } from "@/lib/auth/admins";
 
 /** GET /api/me/permissions — returns the current user's allowed dashboard keys */
 export async function GET() {
@@ -20,7 +14,7 @@ export async function GET() {
 
   const email = user.email.toLowerCase();
 
-  if (ADMIN_EMAILS.includes(email)) {
+  if (isAdminEmail(email)) {
     return NextResponse.json({ isAdmin: true, keys: [] });
   }
 

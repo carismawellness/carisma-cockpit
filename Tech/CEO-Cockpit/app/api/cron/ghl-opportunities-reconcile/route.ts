@@ -52,9 +52,21 @@ async function ghlGet(path: string, apiKey: string, params: Record<string, strin
 }
 
 export async function GET(req: NextRequest) {
-  const isCron  = req.headers.get("x-vercel-cron") === "1";
+  // Auth: when CRON_SECRET is set, Vercel sends it as `Authorization: Bearer`
+  // on cron invocations — require it (also enables manual curl triggers).
+  // When it's NOT set, fall back to the x-vercel-cron header so the nightly
+  // job keeps working, but warn loudly.
+  const cronSecret = process.env.CRON_SECRET;
   const isLocal = !process.env.VERCEL_URL;
-  if (!isCron && !isLocal) {
+  const authorized = cronSecret
+    ? req.headers.get("authorization") === `Bearer ${cronSecret}`
+    : req.headers.get("x-vercel-cron") === "1";
+  if (!cronSecret) {
+    console.warn(
+      "[SECURITY] CRON_SECRET is not set — cron auth falls back to the x-vercel-cron header. Set CRON_SECRET in Vercel env vars."
+    );
+  }
+  if (!authorized && !isLocal) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

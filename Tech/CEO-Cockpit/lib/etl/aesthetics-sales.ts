@@ -1,4 +1,5 @@
 import { deleteWhere, insertRows } from "./supabase-etl";
+import { parseCSV } from "./csv";
 import { cockpitCsvUrl, COCKPIT_TABS } from "../constants/cockpit-sheets";
 
 const LOW_VAT_PERSONS = new Set(["francesca", "giovanni", "kendra"]);
@@ -7,37 +8,21 @@ const LOW_VAT     = 0.12;
 
 // ── CSV helpers ───────────────────────────────────────────────────────────────
 
-function parseCSVRow(line: string): string[] {
-  const cells: string[] = [];
-  let cur = "", inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
-      else inQ = !inQ;
-    } else if (ch === "," && !inQ) { cells.push(cur); cur = ""; }
-    else cur += ch;
-  }
-  cells.push(cur);
-  return cells;
-}
-
 async function fetchCockpitCsv(): Promise<Record<string, string>[]> {
   const url = cockpitCsvUrl(COCKPIT_TABS.AESTHETICS.gid);
   const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) throw new Error(`Cockpit Datasheet fetch failed: ${resp.status}`);
   const text = await resp.text();
-  const lines = text.split("\n").filter(l => l.trim());
-  if (lines.length < 2) return [];
+  const rows = parseCSV(text);
+  if (rows.length < 2) return [];
   let headerIdx = 0;
-  for (let i = 0; i < Math.min(lines.length, 5); i++) {
-    if (parseCSVRow(lines[i]).filter(c => c.trim()).length >= 3) { headerIdx = i; break; }
+  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+    if (rows[i].filter(c => c.trim()).length >= 3) { headerIdx = i; break; }
   }
-  const headers = parseCSVRow(lines[headerIdx]).map(h => h.trim().toLowerCase());
-  return lines.slice(headerIdx + 1).map(line => {
-    const cells = parseCSVRow(line);
-    return Object.fromEntries(headers.map((h, i) => [h, (cells[i] ?? "").trim()]));
-  });
+  const headers = rows[headerIdx].map(h => h.trim().toLowerCase());
+  return rows.slice(headerIdx + 1).map(cells =>
+    Object.fromEntries(headers.map((h, i) => [h, (cells[i] ?? "").trim()]))
+  );
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -107,7 +92,8 @@ export async function runAestheticsSales(
     const notePerson = col(row, "employee", "note")                    || null;
 
     if (!priceRaw || priceRaw === "-") continue;
-    const priceInc = Math.abs(parseFloat(priceRaw.replace(/[€$,]/g, "").trim()));
+    // Preserve the sign — negative rows are refunds and must net against revenue.
+    const priceInc = parseFloat(priceRaw.replace(/[€$,]/g, "").trim());
     if (!isFinite(priceInc) || priceInc === 0) continue;
     if (SUMMARY_RE.test(notePerson ?? "") || SUMMARY_RE.test(customer ?? "") || SUMMARY_RE.test(service ?? "")) continue;
     if (!customer && !service && !invoice) continue;

@@ -1,4 +1,5 @@
 import { deleteWhere, insertRows } from "./supabase-etl";
+import { parseCSV } from "./csv";
 import { cockpitCsvUrl, COCKPIT_TABS } from "../constants/cockpit-sheets";
 
 const VAT_RATE = 0.18;
@@ -13,43 +14,27 @@ const SPA_LOC_MAP: Record<string, number> = {
 
 // ── CSV helpers ───────────────────────────────────────────────────────────────
 
-function parseCSVRow(line: string): string[] {
-  const cells: string[] = [];
-  let cur = "", inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
-      else inQ = !inQ;
-    } else if (ch === "," && !inQ) { cells.push(cur); cur = ""; }
-    else cur += ch;
-  }
-  cells.push(cur);
-  return cells;
-}
-
 async function fetchCockpitCsv(): Promise<Record<string, string>[]> {
   const url  = cockpitCsvUrl(COCKPIT_TABS.SPA_SERVICES.gid);
   const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) throw new Error(`Cockpit Datasheet fetch failed: ${resp.status} — check sheet is shared as "Anyone with the link can view"`);
-  const text  = await resp.text();
-  const lines = text.split("\n").filter(l => l.trim());
-  if (lines.length < 2) return [];
+  const text = await resp.text();
+  const rows = parseCSV(text);
+  if (rows.length < 2) return [];
   // Cockpit sheets prefix data with a title row like "Service data is from…".
   // Find the first row with ≥3 non-empty cells — that's the real header row.
   let headerIdx = 0;
-  for (let i = 0; i < Math.min(lines.length, 5); i++) {
-    const nonEmpty = parseCSVRow(lines[i]).filter(c => c.trim()).length;
+  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+    const nonEmpty = rows[i].filter(c => c.trim()).length;
     if (nonEmpty >= 3) { headerIdx = i; break; }
   }
   // Preserve original header case so `stripCol` exact-name lookup works
   // (header keys like "Service Name" or "Unit Price"); tolerate trailing
   // spaces via the `${key} ` fallback inside stripCol.
-  const headers = parseCSVRow(lines[headerIdx]);
-  return lines.slice(headerIdx + 1).map(line => {
-    const cells = parseCSVRow(line);
-    return Object.fromEntries(headers.map((h, i) => [h.trim(), (cells[i] ?? "").trim()]));
-  });
+  const headers = rows[headerIdx];
+  return rows.slice(headerIdx + 1).map(cells =>
+    Object.fromEntries(headers.map((h, i) => [h.trim(), (cells[i] ?? "").trim()]))
+  );
 }
 
 // ── Date / value helpers ──────────────────────────────────────────────────────

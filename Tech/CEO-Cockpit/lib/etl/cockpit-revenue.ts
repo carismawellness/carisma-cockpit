@@ -1,5 +1,6 @@
 import { ZohoBooksClient } from "./zoho-client";
-import { upsert, select } from "./supabase-etl";
+import { upsert, select, deleteRange, insertRows } from "./supabase-etl";
+import { parseCSV } from "./csv";
 import { ETLLogger } from "./etl-logger";
 import { COCKPIT_SHEET_ID, COCKPIT_TABS } from "../constants/cockpit-sheets";
 
@@ -34,35 +35,21 @@ async function fetchCockpitCsv(gid: string): Promise<Record<string, string>[]> {
   const url  = `https://docs.google.com/spreadsheets/d/${COCKPIT_SHEET_ID}/export?format=csv&gid=${gid}`;
   const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) throw new Error(`Cockpit Datasheet fetch failed: ${resp.status} — check sheet is shared as "Anyone with the link can view"`);
-  const text  = await resp.text();
-  const lines = text.split("\n").filter(l => l.trim());
-  if (lines.length < 2) return [];
+  const text = await resp.text();
+  const rows = parseCSV(text);
+  if (rows.length < 2) return [];
   // The Cockpit sheets prefix the data with a single-cell title row like
   // "Service data is from 1 Jan 2025,,,,," — skip rows with fewer than 3
   // non-empty cells until we find the real header row.
   let headerIdx = 0;
-  for (let i = 0; i < Math.min(lines.length, 5); i++) {
-    const nonEmpty = parseCSVRow(lines[i]).filter(c => c.trim()).length;
+  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+    const nonEmpty = rows[i].filter(c => c.trim()).length;
     if (nonEmpty >= 3) { headerIdx = i; break; }
   }
-  const headers = parseCSVRow(lines[headerIdx]);
-  return lines.slice(headerIdx + 1).map(line => {
-    const cells = parseCSVRow(line);
-    return Object.fromEntries(headers.map((h, i) => [h.trim(), (cells[i] ?? "").trim()]));
-  });
-}
-
-function parseCSVRow(line: string): string[] {
-  const cells: string[] = [];
-  let cur = "", inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
-    else if (ch === "," && !inQ) { cells.push(cur); cur = ""; }
-    else cur += ch;
-  }
-  cells.push(cur);
-  return cells;
+  const headers = rows[headerIdx];
+  return rows.slice(headerIdx + 1).map(cells =>
+    Object.fromEntries(headers.map((h, i) => [h.trim(), (cells[i] ?? "").trim()]))
+  );
 }
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
@@ -337,6 +324,10 @@ export async function runCockpitRevenueDaily(
   try {
     const fromD = new Date(dateFrom);
     const toD   = new Date(dateTo);
+    // Normalise to local midnight so the fetch window and the delete window
+    // below cover exactly the same calendar days.
+    fromD.setHours(0, 0, 0, 0);
+    toD.setHours(0, 0, 0, 0);
 
     log.push("Fetching Cockpit daily data…");
     const [svcByDay, prodByDay] = await Promise.all([
@@ -365,8 +356,19 @@ export async function runCockpitRevenueDaily(
       };
     });
 
-    const count = await upsert("spa_revenue_daily", rows as Record<string, unknown>[], "location_id,date");
-    log.push(`Daily upsert: ${count} rows for ${keys.size} location-days`);
+    // Delete-range-then-insert (mirrors aesthetics-sales.ts): upsert-on-conflict
+    // never removes rows for days the source sheet no longer has — deleted or
+    // re-statused appointments would persist forever. The delete is scoped to
+    // exactly the date range being re-synced and runs immediately before the
+    // insert (insertRows chunks at 200 rows/batch).
+    const deleteFrom = dateKey(fromD);
+    const deleteTo   = dateKey(toD);
+    await deleteRange("spa_revenue_daily", [
+      ["date", `gte.${deleteFrom}`],
+      ["date", `lte.${deleteTo}`],
+    ]);
+    const count = await insertRows("spa_revenue_daily", rows as Record<string, unknown>[]);
+    log.push(`Daily delete+insert (${deleteFrom} → ${deleteTo}): ${count} rows for ${keys.size} location-days`);
 
     await logger.complete(count);
     return { rowsUpserted: count, log };

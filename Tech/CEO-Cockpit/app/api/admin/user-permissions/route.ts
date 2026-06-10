@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { isAdminEmail } from "@/lib/auth/admins";
 
 export const maxDuration = 60;
-
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? "contact@mertgulen.com,admin@cockpit.local,123@cockpit.local,mert@carismaspa.com")
-  .split(",")
-  .map((e) => e.trim().toLowerCase());
 
 async function requireAdmin() {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
-  const email = (user?.email ?? "").toLowerCase();
-  return ADMIN_EMAILS.includes(email);
+  return isAdminEmail(user?.email);
 }
 
 /** GET /api/admin/user-permissions?email=xxx — fetch all permissions for an email */

@@ -1,18 +1,15 @@
 import { NextResponse } from "next/server";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { isAdminEmail } from "@/lib/auth/admins";
 
 export const maxDuration = 60;
-
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? "contact@mertgulen.com,admin@cockpit.local,123@cockpit.local,mert@carismaspa.com")
-  .split(",")
-  .map((e) => e.trim().toLowerCase());
 
 /** GET /api/admin/users — list registered Supabase auth users */
 export async function GET() {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!ADMIN_EMAILS.includes((user?.email ?? "").toLowerCase())) {
+  if (!isAdminEmail(user?.email)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 
