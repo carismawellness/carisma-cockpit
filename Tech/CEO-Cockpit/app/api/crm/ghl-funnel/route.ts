@@ -1,10 +1,14 @@
 /**
  * GET /api/crm/ghl-funnel?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD
  *
- * Returns opportunity counts per pipeline stage per brand, scoped to the
- * date range. Counts opportunities CREATED in [dateFrom, dateTo], grouped
- * by their current stage. This is a cohort funnel: "Of leads acquired in
- * this period, here's their current state."
+ * Returns CURRENT SNAPSHOT counts per pipeline stage per brand.
+ *
+ * NOTE: GHL v2 /opportunities/search (GET) does not support date filtering
+ * by lead-creation date. POST advanced search accepts filters but returns
+ * empty results against our locations. Until a Supabase mirror of GHL
+ * opportunity events is wired up, this endpoint returns the current stage
+ * snapshot regardless of dateFrom/dateTo. The query params are accepted
+ * for forward compatibility.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -77,7 +81,6 @@ async function fetchStages(apiKey: string, locationId: string, pipelineId: strin
     }>;
   };
 
-  // Match by hardcoded pipeline ID first; fall back to name search
   const callPipeline =
     (data.pipelines ?? []).find((p) => p.id === pipelineId) ??
     (data.pipelines ?? []).find((p) => p.name.toLowerCase().includes("call pipeline"));
@@ -95,16 +98,12 @@ async function fetchStageCount(
   locationId: string,
   stageId: string,
   pipelineId: string,
-  startAfterMs: number,
-  startBeforeMs: number,
 ): Promise<number> {
   try {
     const data = await ghlGet("/opportunities/search", apiKey, {
       location_id: locationId,
       pipeline_id: pipelineId,
       pipeline_stage_id: stageId,
-      startAfter: String(startAfterMs),
-      startBefore: String(startBeforeMs),
       limit: "1",
     }) as { meta?: { total?: number } };
     return data.meta?.total ?? 0;
@@ -113,96 +112,10 @@ async function fetchStageCount(
   }
 }
 
-// Diagnostic: try multiple date filter formats to find which one GHL accepts
-async function diagnoseFilters(
-  apiKey: string,
-  locationId: string,
-  stageId: string,
-  pipelineId: string,
-  dateFromIso: string,
-  _dateToIso: string,
-  _startAfterMs: number,
-  _startBeforeMs: number,
-): Promise<Record<string, number | string>> {
-  const base = {
-    location_id: locationId,
-    pipeline_id: pipelineId,
-    pipeline_stage_id: stageId,
-    limit: "1",
-  };
-  const variants: Record<string, Record<string, string>> = {
-    "noDate": base,
-  };
-  const out: Record<string, number | string> = {};
-  for (const [name, params] of Object.entries(variants)) {
-    try {
-      const r = await ghlGet("/opportunities/search", apiKey, params) as { meta?: { total?: number } };
-      out[name] = r.meta?.total ?? 0;
-    } catch (e) {
-      out[name] = e instanceof Error ? e.message.slice(0, 400) : "err";
-    }
-  }
-
-  const postBodies: Record<string, Record<string, unknown>> = {
-    "only_pipeline_stage_id":     { locationId, filters: [{ field: "pipeline_stage_id", operator: "eq", value: stageId }], limit: 1 },
-    "only_stage_id":              { locationId, filters: [{ field: "stage_id", operator: "eq", value: stageId }], limit: 1 },
-    "only_pipelineStageId":       { locationId, filters: [{ field: "pipelineStageId", operator: "eq", value: stageId }], limit: 1 },
-    "only_pipeline_id":           { locationId, filters: [{ field: "pipeline_id", operator: "eq", value: pipelineId }], limit: 1 },
-    "no_filters":                 { locationId, filters: [], limit: 1 },
-    "date_added_only":            { locationId, filters: [{ field: "date_added", operator: "range", value: { gte: dateFromIso, lte: _dateToIso } }], limit: 1 },
-  };
-  for (const [name, body] of Object.entries(postBodies)) {
-    try {
-      const resp = await fetch(`${GHL_BASE}/opportunities/search`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          Version: GHL_V,
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-      const txt = await resp.text();
-      if (!resp.ok) {
-        out[name] = `${resp.status}: ${txt.slice(0, 800)}`;
-      } else {
-        const j = JSON.parse(txt);
-        out[name] = j.meta?.total ?? 0;
-      }
-    } catch (e) {
-      out[name] = e instanceof Error ? e.message.slice(0, 150) : "err";
-    }
-  }
-
-  return out;
-}
-
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const dateFrom = searchParams.get("dateFrom") ?? new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0];
   const dateTo   = searchParams.get("dateTo")   ?? new Date().toISOString().split("T")[0];
-  const debug    = searchParams.get("debug") === "1";
-
-  const startAfter  = new Date(`${dateFrom}T00:00:00.000Z`).getTime();
-  const startBefore = new Date(`${dateTo}T23:59:59.999Z`).getTime();
-
-  if (debug) {
-    // Diagnostic: probe filter variants on Aesthetics "Booking Won" stage
-    // (large volume, easy to verify which filter returns matches)
-    const aes = BRAND_CONFIG.aesthetics;
-    if (!aes.apiKey) {
-      return NextResponse.json({ error: "no aesthetics API key" });
-    }
-    const stages = await fetchStages(aes.apiKey, aes.locationId, aes.pipelineId);
-    const won = stages.find((s) => s.normalizedName === "Booking Won");
-    if (!won) return NextResponse.json({ error: "no won stage found", stages });
-    const variants = await diagnoseFilters(
-      aes.apiKey, aes.locationId, won.stageId, aes.pipelineId,
-      dateFrom, dateTo, startAfter, startBefore,
-    );
-    return NextResponse.json({ dateFrom, dateTo, stage: "Booking Won (Aesthetics)", variants });
-  }
 
   const result: Record<string, Record<string, number>> = {
     spa:        {},
@@ -220,9 +133,7 @@ export async function GET(req: NextRequest) {
         const countsByNorm: Record<string, number> = {};
         await Promise.all(
           stages.map(async ({ stageId, normalizedName }) => {
-            const count = await fetchStageCount(
-              apiKey, locationId, stageId, pipelineId, startAfter, startBefore,
-            );
+            const count = await fetchStageCount(apiKey, locationId, stageId, pipelineId);
             countsByNorm[normalizedName] = (countsByNorm[normalizedName] ?? 0) + count;
           }),
         );
