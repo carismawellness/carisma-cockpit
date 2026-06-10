@@ -192,28 +192,6 @@ function AestheticsMarketingContent({
     },
     { key: "totalLeads", label: "Total Leads", align: "right" as const, sortable: true },
     {
-      key: "costPerShow",
-      label: "CP Show",
-      align: "right" as const,
-      sortable: true,
-      render: (_v: unknown, row: Record<string, unknown>) => {
-        const leads = row.totalLeads as number;
-        const spend = row.totalSpend as number;
-        return leads > 0 ? `€${(spend / (leads * 0.6)).toFixed(1)}` : "—";
-      },
-    },
-    {
-      key: "costPerResult",
-      label: "CP Result",
-      align: "right" as const,
-      sortable: true,
-      render: (_v: unknown, row: Record<string, unknown>) => {
-        const leads = row.totalLeads as number;
-        const spend = row.totalSpend as number;
-        return leads > 0 ? `€${(spend / (leads * 0.6 * 0.58)).toFixed(1)}` : "—";
-      },
-    },
-    {
       key: "ctr",
       label: "CTR",
       align: "right" as const,
@@ -271,21 +249,12 @@ function AestheticsMarketingContent({
   const profitabilityData = useMemo(() => {
     const allCampaigns = [...metaCampaigns, ...googleCampaigns];
     if (!allCampaigns.length) return [];
-    const SHOW_RATE = 0.6;
-    const BOOKING_RATE = 0.58;
 
     return allCampaigns
       .map((c) => {
         const attributedRevenue = c.attributedRevenue;
         const roas = c.totalSpend > 0 ? attributedRevenue / c.totalSpend : 0;
         const profit = attributedRevenue - c.totalSpend;
-        const costPerShow =
-          c.totalLeads > 0 ? c.totalSpend / (c.totalLeads * SHOW_RATE) : 0;
-        const costPerResult =
-          c.totalLeads > 0
-            ? c.totalSpend / (c.totalLeads * SHOW_RATE * BOOKING_RATE)
-            : 0;
-        const netExpectedRevenue = Math.round(attributedRevenue * 1.15);
         const recommendation =
           roas >= 5 ? "Scale" : roas >= 3 ? "Maintain" : roas >= 2 ? "Optimize" : "Pause";
 
@@ -297,10 +266,7 @@ function AestheticsMarketingContent({
           totalLeads: c.totalLeads,
           totalSpend: c.totalSpend,
           cpl: c.cpl,
-          costPerShow,
-          costPerResult,
           attributedRevenue,
-          netExpectedRevenue,
           roas,
           profit,
           recommendation,
@@ -398,7 +364,6 @@ function AestheticsMarketingContent({
         const totalRevenue = [...metaCampaigns, ...googleCampaigns].reduce((s, c) => s + c.attributedRevenue, 0);
         const metaBlendedCpl = totalMetaLeads > 0 ? totalMetaSpend / totalMetaLeads : 0;
         const googleBlendedCpl = totalGoogleLeads > 0 ? totalGoogleSpend / totalGoogleLeads : 0;
-        const conversionRate = totalLeads > 0 ? ((totalLeads * 0.60 * 0.58) / totalLeads * 100) : 0;
 
         const heroKpis = [
           { label: "Revenue", value: formatCurrency(totalRevenue) },
@@ -406,7 +371,6 @@ function AestheticsMarketingContent({
           { label: "Meta Blended CPL", value: `€${metaBlendedCpl.toFixed(1)}` },
           { label: "Google Blended CPL", value: `€${googleBlendedCpl.toFixed(1)}` },
           { label: "Total Leads", value: String(totalLeads) },
-          { label: "Conversion / Leads", value: `${conversionRate.toFixed(1)}%` },
           { label: "Blended ROAS", value: totalSpend > 0 ? `${(totalRevenue / totalSpend).toFixed(1)}x` : "—" },
         ];
 
@@ -419,7 +383,7 @@ function AestheticsMarketingContent({
         }
 
         return (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             {heroKpis.map((kpi) => (
               <Card key={kpi.label} className="p-4">
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{kpi.label}</p>
@@ -429,34 +393,6 @@ function AestheticsMarketingContent({
           </div>
         );
       })()}
-
-      {/* Consultation Funnel KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="p-4 text-center">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-            Total Leads
-          </p>
-          <p className="text-xl md:text-2xl font-bold text-gray-900 mt-1">
-            {metaCampaigns.reduce((s, c) => s + c.totalLeads, 0) + googleCampaigns.reduce((s, c) => s + c.totalLeads, 0)}
-          </p>
-        </Card>
-        <Card className="p-4 text-center">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-            Total Consultations
-          </p>
-          <p className="text-xl md:text-2xl font-bold text-gray-900 mt-1">
-            {Math.round((metaCampaigns.reduce((s, c) => s + c.totalLeads, 0) + googleCampaigns.reduce((s, c) => s + c.totalLeads, 0)) * 0.60)}
-          </p>
-        </Card>
-        <Card className="p-4 text-center">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-            Total Bookings
-          </p>
-          <p className="text-xl md:text-2xl font-bold text-gray-900 mt-1">
-            {Math.round((metaCampaigns.reduce((s, c) => s + c.totalLeads, 0) + googleCampaigns.reduce((s, c) => s + c.totalLeads, 0)) * 0.60 * 0.58)}
-          </p>
-        </Card>
-      </div>
 
       {/* Section 2: Meta Ads */}
       <Card className="p-3 md:p-6">
@@ -538,18 +474,18 @@ function AestheticsMarketingContent({
         {metaAggregate && (
           <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
             <AggregateBox
-              label="Expected Revenue in Meta"
-              value={formatCurrency(Math.round(metaAggregate.totalRevenue * 1.15))}
+              label="Attributed Revenue (Meta)"
+              value={formatCurrency(metaAggregate.totalRevenue)}
             />
             <AggregateBox
-              label="Expected Ad Spend"
+              label="Ad Spend"
               value={formatCurrency(metaAggregate.totalSpend)}
             />
             <div
               className="rounded-lg border-2 p-4 text-center"
               style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}
             >
-              <p className="text-sm text-gray-600">Expected ROAS</p>
+              <p className="text-sm text-gray-600">ROAS</p>
               <p
                 className={`text-xl md:text-2xl font-bold mt-1 ${roasColor(metaAggregate.roas)}`}
               >
@@ -639,18 +575,18 @@ function AestheticsMarketingContent({
             {googleAggregate && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <AggregateBox
-                  label="Expected Revenue in Google"
-                  value={formatCurrency(Math.round(googleAggregate.totalRevenue * 1.15))}
+                  label="Attributed Revenue (Google)"
+                  value={formatCurrency(googleAggregate.totalRevenue)}
                 />
                 <AggregateBox
-                  label="Expected Ad Spend"
+                  label="Ad Spend"
                   value={formatCurrency(googleAggregate.totalSpend)}
                 />
                 <div
                   className="rounded-lg border-2 p-4 text-center"
                   style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}
                 >
-                  <p className="text-sm text-gray-600">Expected ROAS</p>
+                  <p className="text-sm text-gray-600">ROAS</p>
                   <p
                     className={`text-xl md:text-2xl font-bold mt-1 ${roasColor(googleAggregate.roas)}`}
                   >
@@ -772,10 +708,6 @@ function AestheticsMarketingContent({
             const totalRevenue = profitabilityData.reduce((s, c) => s + c.attributedRevenue, 0);
             const totalProfit = totalRevenue - totalSpend;
             const blendedRoas = totalSpend > 0 ? totalRevenue / totalSpend : 0;
-            const totalNetExpected = profitabilityData.reduce(
-              (s, c) => s + c.netExpectedRevenue,
-              0
-            );
 
             const recBadge = (rec: string) => {
               const styles: Record<string, string> = {
@@ -823,29 +755,8 @@ function AestheticsMarketingContent({
                 render: (v: unknown) => `€${(v as number).toFixed(1)}`,
               },
               {
-                key: "costPerShow",
-                label: "CP Show",
-                align: "right" as const,
-                sortable: true,
-                render: (v: unknown) => `€${(v as number).toFixed(1)}`,
-              },
-              {
-                key: "costPerResult",
-                label: "CP Result",
-                align: "right" as const,
-                sortable: true,
-                render: (v: unknown) => `€${(v as number).toFixed(1)}`,
-              },
-              {
                 key: "attributedRevenue",
                 label: "Revenue",
-                align: "right" as const,
-                sortable: true,
-                render: (v: unknown) => formatCurrency(v as number),
-              },
-              {
-                key: "netExpectedRevenue",
-                label: "Net Exp Rev",
                 align: "right" as const,
                 sortable: true,
                 render: (v: unknown) => formatCurrency(v as number),
@@ -893,14 +804,10 @@ function AestheticsMarketingContent({
                 />
 
                 {/* Summary totals */}
-                <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
                   <AggregateBox label="Total Leads" value={String(totalLeads)} />
                   <AggregateBox label="Total Spend" value={formatCurrency(totalSpend)} />
                   <AggregateBox label="Total Revenue" value={formatCurrency(totalRevenue)} />
-                  <AggregateBox
-                    label="Net Expected Rev"
-                    value={formatCurrency(totalNetExpected)}
-                  />
                   <div
                     className="rounded-lg border-2 p-4 text-center"
                     style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}

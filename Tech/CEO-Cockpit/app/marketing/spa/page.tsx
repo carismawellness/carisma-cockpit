@@ -180,28 +180,6 @@ function SpaMarketingContent({
     },
     { key: "totalSpend", label: "Total Spend", align: "right" as const, sortable: true, render: (v: unknown) => formatCurrency(v as number) },
     { key: "totalLeads", label: "Total Leads", align: "right" as const, sortable: true },
-    {
-      key: "costPerShow",
-      label: "Cost/Show",
-      align: "right" as const,
-      sortable: true,
-      render: (_v: unknown, row: Record<string, unknown>) => {
-        const spend = row.totalSpend as number;
-        const leads = row.totalLeads as number;
-        return leads > 0 ? `€${(spend / (leads * 0.65)).toFixed(1)}` : "—";
-      },
-    },
-    {
-      key: "costPerResult",
-      label: "Cost/Result",
-      align: "right" as const,
-      sortable: true,
-      render: (_v: unknown, row: Record<string, unknown>) => {
-        const spend = row.totalSpend as number;
-        const leads = row.totalLeads as number;
-        return leads > 0 ? `€${(spend / (leads * 0.65 * 0.55)).toFixed(1)}` : "—";
-      },
-    },
     { key: "ctr", label: "CTR", align: "right" as const, sortable: true, render: (v: unknown) => `${(v as number).toFixed(1)}%` },
     { key: "cpm", label: "CPM", align: "right" as const, render: (v: unknown) => `€${(v as number).toFixed(1)}` },
     { key: "frequency", label: "Freq", align: "right" as const, render: (v: unknown) => (v as number).toFixed(1) },
@@ -252,16 +230,14 @@ function SpaMarketingContent({
   /* --- Meta aggregate values --- */
   const metaTotalAttributed = useMemo(() => metaCampaigns.reduce((s, c) => s + c.attributedRevenue, 0), [metaCampaigns]);
   const metaTotalSpend = useMemo(() => metaCampaigns.reduce((s, c) => s + c.totalSpend, 0), [metaCampaigns]);
-  const metaExpectedRevenue = Math.round(metaTotalAttributed * 1.15);
-  const metaExpectedRoasNum = metaTotalSpend > 0 ? metaExpectedRevenue / metaTotalSpend : 0;
-  const metaExpectedRoas = metaExpectedRoasNum.toFixed(1);
+  const metaRoasNum = metaTotalSpend > 0 ? metaTotalAttributed / metaTotalSpend : 0;
+  const metaRoas = metaRoasNum.toFixed(1);
 
   /* --- Google aggregate values --- */
   const googleTotalAttributed = useMemo(() => googleCampaigns.reduce((s, c) => s + c.attributedRevenue, 0), [googleCampaigns]);
   const googleTotalSpend = useMemo(() => googleCampaigns.reduce((s, c) => s + c.totalSpend, 0), [googleCampaigns]);
-  const googleExpectedRevenue = Math.round(googleTotalAttributed * 1.15);
-  const googleExpectedRoasNum = googleTotalSpend > 0 ? googleExpectedRevenue / googleTotalSpend : 0;
-  const googleExpectedRoas = googleExpectedRoasNum.toFixed(1);
+  const googleRoasNum = googleTotalSpend > 0 ? googleTotalAttributed / googleTotalSpend : 0;
+  const googleRoas = googleRoasNum.toFixed(1);
 
   /* --- Profitability Matrix --- */
   const profitabilityData = useMemo(() => {
@@ -271,9 +247,6 @@ function SpaMarketingContent({
     ];
     return allCampaigns
       .map((c) => {
-        const costPerShow = c.totalLeads > 0 ? c.totalSpend / (c.totalLeads * 0.65) : 0;
-        const costPerResult = c.totalLeads > 0 ? c.totalSpend / (c.totalLeads * 0.65 * 0.55) : 0;
-        const netExpectedRevenue = Math.round(c.attributedRevenue * 1.15);
         const roas = c.totalSpend > 0 ? c.attributedRevenue / c.totalSpend : 0;
         const profit = c.attributedRevenue - c.totalSpend;
         const profitabilityPct = c.totalSpend > 0 ? ((c.attributedRevenue - c.totalSpend) / c.totalSpend) * 100 : 0;
@@ -284,10 +257,7 @@ function SpaMarketingContent({
           totalLeads: c.totalLeads,
           totalSpend: c.totalSpend,
           cpl: c.cpl,
-          costPerShow,
-          costPerResult,
           attributedRevenue: c.attributedRevenue,
-          netExpectedRevenue,
           roas,
           profit,
           profitabilityPct,
@@ -336,10 +306,7 @@ function SpaMarketingContent({
     { key: "totalLeads", label: "Leads", align: "right" as const, sortable: true },
     { key: "totalSpend", label: "Spend", align: "right" as const, sortable: true, render: (v: unknown) => formatCurrency(v as number) },
     { key: "cpl", label: "CPL", align: "right" as const, sortable: true, render: (v: unknown) => `€${(v as number).toFixed(1)}` },
-    { key: "costPerShow", label: "Cost/Show", align: "right" as const, sortable: true, render: (v: unknown) => `€${(v as number).toFixed(1)}` },
-    { key: "costPerResult", label: "Cost/Booking", align: "right" as const, sortable: true, render: (v: unknown) => `€${(v as number).toFixed(1)}` },
     { key: "attributedRevenue", label: "Revenue", align: "right" as const, sortable: true, render: (v: unknown) => formatCurrency(v as number) },
-    { key: "netExpectedRevenue", label: "Net Exp. Rev", align: "right" as const, sortable: true, render: (v: unknown) => formatCurrency(v as number) },
     {
       key: "roas",
       label: "ROAS",
@@ -457,15 +424,13 @@ function SpaMarketingContent({
           ? googleCampaigns.reduce((s, c) => s + (c.totalSpend / Math.max(c.totalLeads, 1)), 0) / googleCampaigns.length
           : 0;
         const totalRevenue = [...metaCampaigns, ...googleCampaigns].reduce((s, c) => s + c.attributedRevenue, 0);
-        const conversionRate = totalLeads > 0 ? ((totalLeads * 0.65 * 0.55) / totalLeads * 100) : 0;
         return (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <HeroKPICard label="Revenue" value={formatCurrency(totalRevenue)} lastYear="—" yoyLabel="—" positive />
             <HeroKPICard label="Total Marketing Spend" value={formatCurrency(totalSpend)} lastYear="—" yoyLabel="—" positive={false} />
             <HeroKPICard label="Meta Blended CPL" value={`€${metaBlendedCpl.toFixed(1)}`} lastYear="—" yoyLabel="—" positive />
             <HeroKPICard label="Google Blended CPL" value={`€${googleBlendedCpc.toFixed(1)}`} lastYear="—" yoyLabel="—" positive />
             <HeroKPICard label="Total Leads" value={String(totalLeads)} lastYear="—" yoyLabel="—" positive />
-            <HeroKPICard label="Conversion / Leads" value={`${conversionRate.toFixed(1)}%`} lastYear="—" yoyLabel="—" positive />
             <HeroKPICard label="Blended ROAS" value={totalSpend > 0 ? `${(totalRevenue / totalSpend).toFixed(1)}x` : "—"} lastYear="—" yoyLabel="—" positive />
           </div>
         );
@@ -537,9 +502,9 @@ function SpaMarketingContent({
 
         {/* Meta Aggregate Metrics */}
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-          <AggregateBox label="Expected Revenue in Meta" value={metaExpectedRevenue > 0 ? formatCurrency(metaExpectedRevenue) : "—"} />
-          <AggregateBox label="Expected Ad Spend" value={metaTotalSpend > 0 ? formatCurrency(metaTotalSpend) : "—"} />
-          <AggregateBox label="Expected ROAS" value={metaExpectedRoasNum > 0 ? `${metaExpectedRoas}x` : "—"} valueColor={metaExpectedRoasNum > 0 ? getRoasColor(metaExpectedRoasNum) : undefined} />
+          <AggregateBox label="Attributed Revenue (Meta)" value={metaTotalAttributed > 0 ? formatCurrency(metaTotalAttributed) : "—"} />
+          <AggregateBox label="Ad Spend" value={metaTotalSpend > 0 ? formatCurrency(metaTotalSpend) : "—"} />
+          <AggregateBox label="ROAS" value={metaRoasNum > 0 ? `${metaRoas}x` : "—"} valueColor={metaRoasNum > 0 ? getRoasColor(metaRoasNum) : undefined} />
         </div>
       </Card>
 
@@ -609,9 +574,9 @@ function SpaMarketingContent({
 
         {/* Google Aggregate Metrics */}
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-          <AggregateBox label="Expected Revenue in Google" value={googleExpectedRevenue > 0 ? formatCurrency(googleExpectedRevenue) : "—"} />
-          <AggregateBox label="Expected Ad Spend" value={googleTotalSpend > 0 ? formatCurrency(googleTotalSpend) : "—"} />
-          <AggregateBox label="Expected ROAS" value={googleExpectedRoasNum > 0 ? `${googleExpectedRoas}x` : "—"} valueColor={googleExpectedRoasNum > 0 ? getRoasColor(googleExpectedRoasNum) : undefined} />
+          <AggregateBox label="Attributed Revenue (Google)" value={googleTotalAttributed > 0 ? formatCurrency(googleTotalAttributed) : "—"} />
+          <AggregateBox label="Ad Spend" value={googleTotalSpend > 0 ? formatCurrency(googleTotalSpend) : "—"} />
+          <AggregateBox label="ROAS" value={googleRoasNum > 0 ? `${googleRoas}x` : "—"} valueColor={googleRoasNum > 0 ? getRoasColor(googleRoasNum) : undefined} />
         </div>
       </Card>
 

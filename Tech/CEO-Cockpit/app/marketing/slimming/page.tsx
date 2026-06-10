@@ -146,7 +146,7 @@ function SlimmingMarketingContent({
     const totalRevenue = [...metaCampaigns, ...googleCampaigns].reduce((s, c) => s + c.attributedRevenue, 0);
     const metaBlendedCpl = totalMetaLeads > 0 ? totalMetaSpend / totalMetaLeads : 0;
     const googleBlendedCpl = totalGoogleLeads > 0 ? totalGoogleSpend / totalGoogleLeads : 0;
-    const conversionRate = totalLeads > 0 ? ((totalLeads * 0.69 * 0.59) / totalLeads * 100) : 0;
+    const conversionRate = totalLeads > 0 ? ((totalLeads * 0.75 * 0.75) / totalLeads * 100) : 0;
     return [
       { label: "Revenue", value: formatCurrency(totalRevenue) },
       { label: "Total Marketing Spend", value: formatCurrency(totalSpend) },
@@ -200,8 +200,8 @@ function SlimmingMarketingContent({
     { key: "dailyBudget", label: "Daily Budget", align: "right" as const, render: (v: unknown) => formatCurrency(v as number) },
     { key: "totalSpend", label: "Total Spend", align: "right" as const, sortable: true, render: (v: unknown) => formatCurrency(v as number) },
     { key: "totalLeads", label: "Total Leads", align: "right" as const, sortable: true },
-    { key: "costPerShow", label: "CP Show", align: "right" as const, sortable: true, render: (_v: unknown, row: Record<string, unknown>) => { const spend = row.totalSpend as number; const leads = row.totalLeads as number; return leads > 0 ? `€${(spend / (leads * 0.69)).toFixed(1)}` : "—"; } },
-    { key: "costPerResult", label: "CP Result", align: "right" as const, sortable: true, render: (_v: unknown, row: Record<string, unknown>) => { const spend = row.totalSpend as number; const leads = row.totalLeads as number; return leads > 0 ? `€${(spend / (leads * 0.69 * 0.59)).toFixed(1)}` : "—"; } },
+    { key: "costPerShow", label: "CP Show", align: "right" as const, sortable: true, render: (_v: unknown, row: Record<string, unknown>) => { const spend = row.totalSpend as number; const leads = row.totalLeads as number; return leads > 0 ? `€${(spend / (leads * 0.75)).toFixed(1)}` : "—"; } },
+    { key: "costPerResult", label: "CP Result", align: "right" as const, sortable: true, render: (_v: unknown, row: Record<string, unknown>) => { const spend = row.totalSpend as number; const leads = row.totalLeads as number; return leads > 0 ? `€${(spend / (leads * 0.75 * 0.75)).toFixed(1)}` : "—"; } },
     { key: "ctr", label: "CTR", align: "right" as const, sortable: true, render: (v: unknown) => `${(v as number).toFixed(1)}%` },
     { key: "cpm", label: "CPM", align: "right" as const, render: (v: unknown) => `€${(v as number).toFixed(1)}` },
     { key: "frequency", label: "Freq", align: "right" as const, render: (v: unknown) => (v as number).toFixed(1) },
@@ -209,7 +209,7 @@ function SlimmingMarketingContent({
   ];
 
   const metaTotalAttributed = metaCampaigns.reduce((s, c) => s + c.attributedRevenue, 0);
-  const metaExpectedRevenue = Math.round(metaTotalAttributed * 1.15);
+  const metaExpectedRevenue = metaTotalAttributed;
   const metaTotalSpend = metaCampaigns.reduce((s, c) => s + c.totalSpend, 0);
   const metaExpectedRoasNum = metaTotalSpend > 0 ? metaExpectedRevenue / metaTotalSpend : 0;
   const metaExpectedRoas = metaExpectedRoasNum.toFixed(1);
@@ -221,8 +221,8 @@ function SlimmingMarketingContent({
     { key: "dailyBudget", label: "Daily Budget", align: "right" as const, render: (v: unknown) => formatCurrency(v as number) },
     { key: "totalSpend", label: "Total Spend", align: "right" as const, sortable: true, render: (v: unknown) => formatCurrency(v as number) },
     { key: "totalLeads", label: "Total Leads", align: "right" as const, sortable: true },
-    { key: "costPerShow", label: "CP Show", align: "right" as const, sortable: true, render: (_v: unknown, row: Record<string, unknown>) => { const spend = row.totalSpend as number; const leads = row.totalLeads as number; return leads > 0 ? `€${(spend / (leads * 0.69)).toFixed(1)}` : "—"; } },
-    { key: "costPerResult", label: "CP Result", align: "right" as const, sortable: true, render: (_v: unknown, row: Record<string, unknown>) => { const spend = row.totalSpend as number; const leads = row.totalLeads as number; return leads > 0 ? `€${(spend / (leads * 0.69 * 0.59)).toFixed(1)}` : "—"; } },
+    { key: "costPerShow", label: "CP Show", align: "right" as const, sortable: true, render: (_v: unknown, row: Record<string, unknown>) => { const spend = row.totalSpend as number; const leads = row.totalLeads as number; return leads > 0 ? `€${(spend / (leads * 0.75)).toFixed(1)}` : "—"; } },
+    { key: "costPerResult", label: "CP Result", align: "right" as const, sortable: true, render: (_v: unknown, row: Record<string, unknown>) => { const spend = row.totalSpend as number; const leads = row.totalLeads as number; return leads > 0 ? `€${(spend / (leads * 0.75 * 0.75)).toFixed(1)}` : "—"; } },
     { key: "ctr", label: "CTR", align: "right" as const, sortable: true, render: (v: unknown) => `${(v as number).toFixed(1)}%` },
     { key: "cpm", label: "CPM", align: "right" as const, render: (v: unknown) => `€${(v as number).toFixed(1)}` },
     { key: "frequency", label: "Freq", align: "right" as const, render: (v: unknown) => (v as number).toFixed(1) },
@@ -230,7 +230,7 @@ function SlimmingMarketingContent({
   ];
 
   const googleTotalAttributed = googleCampaigns.reduce((s, c) => s + c.attributedRevenue, 0);
-  const googleExpectedRevenue = Math.round(googleTotalAttributed * 1.15);
+  const googleExpectedRevenue = googleTotalAttributed;
   const googleTotalSpend = googleCampaigns.reduce((s, c) => s + c.totalSpend, 0);
   const googleExpectedRoasNum = googleTotalSpend > 0 ? googleExpectedRevenue / googleTotalSpend : 0;
   const googleExpectedRoas = googleExpectedRoasNum.toFixed(1);
@@ -240,8 +240,8 @@ function SlimmingMarketingContent({
 
   const funnelStats = useMemo(() => {
     const totalLeads = [...metaCampaigns, ...googleCampaigns].reduce((s, c) => s + c.totalLeads, 0);
-    const totalConsultations = Math.round(totalLeads * 0.69);
-    const totalBookings = Math.round(totalLeads * 0.69 * 0.59);
+    const totalConsultations = Math.round(totalLeads * 0.75);
+    const totalBookings = Math.round(totalLeads * 0.75 * 0.75);
     return { totalLeads, totalConsultations, totalBookings };
   }, [metaCampaigns, googleCampaigns]);
 
@@ -251,18 +251,18 @@ function SlimmingMarketingContent({
     const metaRows = metaCampaigns.map((c) => {
       const roas = c.totalSpend > 0 ? c.attributedRevenue / c.totalSpend : 0;
       const profit = c.attributedRevenue - c.totalSpend;
-      const costPerShow = c.totalLeads > 0 ? c.totalSpend / (c.totalLeads * 0.69) : 0;
-      const costPerResult = c.totalLeads > 0 ? c.totalSpend / (c.totalLeads * 0.69 * 0.59) : 0;
-      const netExpectedRevenue = Math.round(c.attributedRevenue * 1.15);
+      const costPerShow = c.totalLeads > 0 ? c.totalSpend / (c.totalLeads * 0.75) : 0;
+      const costPerResult = c.totalLeads > 0 ? c.totalSpend / (c.totalLeads * 0.75 * 0.75) : 0;
+      const netExpectedRevenue = c.attributedRevenue;
       const recommendation = roas >= 5 ? "Scale" : roas >= 3 ? "Maintain" : roas >= 2 ? "Optimize" : "Pause";
       return { campaign: c.campaign, channel: "Meta", totalLeads: c.totalLeads, totalSpend: c.totalSpend, cpl: c.cpl, costPerShow, costPerResult, attributedRevenue: c.attributedRevenue, netExpectedRevenue, roas, profit, recommendation };
     });
     const googleRows = googleCampaigns.map((c) => {
       const roas = c.totalSpend > 0 ? c.attributedRevenue / c.totalSpend : 0;
       const profit = c.attributedRevenue - c.totalSpend;
-      const costPerShow = c.totalLeads > 0 ? c.totalSpend / (c.totalLeads * 0.69) : 0;
-      const costPerResult = c.totalLeads > 0 ? c.totalSpend / (c.totalLeads * 0.69 * 0.59) : 0;
-      const netExpectedRevenue = Math.round(c.attributedRevenue * 1.15);
+      const costPerShow = c.totalLeads > 0 ? c.totalSpend / (c.totalLeads * 0.75) : 0;
+      const costPerResult = c.totalLeads > 0 ? c.totalSpend / (c.totalLeads * 0.75 * 0.75) : 0;
+      const netExpectedRevenue = c.attributedRevenue;
       const recommendation = roas >= 5 ? "Scale" : roas >= 3 ? "Maintain" : roas >= 2 ? "Optimize" : "Pause";
       return { campaign: c.campaign, channel: "Google", totalLeads: c.totalLeads, totalSpend: c.totalSpend, cpl: c.cpl, costPerShow, costPerResult, attributedRevenue: c.attributedRevenue, netExpectedRevenue, roas, profit, recommendation };
     });
@@ -277,8 +277,8 @@ function SlimmingMarketingContent({
     const totalProfit = profitabilityData.reduce((s, r) => s + r.profit, 0);
     const blendedRoas = totalSpend > 0 ? totalAttrRevenue / totalSpend : 0;
     const blendedCpl = totalLeads > 0 ? totalSpend / totalLeads : 0;
-    const blendedCpShow = totalLeads > 0 ? totalSpend / (totalLeads * 0.69) : 0;
-    const blendedCpResult = totalLeads > 0 ? totalSpend / (totalLeads * 0.69 * 0.59) : 0;
+    const blendedCpShow = totalLeads > 0 ? totalSpend / (totalLeads * 0.75) : 0;
+    const blendedCpResult = totalLeads > 0 ? totalSpend / (totalLeads * 0.75 * 0.75) : 0;
     return { totalLeads, totalSpend, totalAttrRevenue, totalNetExpected, totalProfit, blendedRoas, blendedCpl, blendedCpShow, blendedCpResult };
   }, [profitabilityData]);
 
@@ -291,7 +291,7 @@ function SlimmingMarketingContent({
     { key: "costPerShow", label: "CP Show", align: "right" as const, sortable: true, render: (v: unknown) => `€${(v as number).toFixed(1)}` },
     { key: "costPerResult", label: "CP Result", align: "right" as const, sortable: true, render: (v: unknown) => `€${(v as number).toFixed(1)}` },
     { key: "attributedRevenue", label: "Attr. Rev", align: "right" as const, sortable: true, render: (v: unknown) => formatCurrency(v as number) },
-    { key: "netExpectedRevenue", label: "Net Exp. Rev", align: "right" as const, sortable: true, render: (v: unknown) => formatCurrency(v as number) },
+    { key: "netExpectedRevenue", label: "Attributed Revenue", align: "right" as const, sortable: true, render: (v: unknown) => formatCurrency(v as number) },
     { key: "roas", label: "ROAS", align: "right" as const, sortable: true, render: (v: unknown) => { const r = v as number; return <span style={{ color: getRoasColor(r), fontWeight: 600 }}>{r.toFixed(1)}x</span>; } },
     { key: "profit", label: "Profit", align: "right" as const, sortable: true, render: (v: unknown) => { const p = v as number; return <span style={{ color: p >= 0 ? "#16a34a" : "#dc2626", fontWeight: 600 }}>{formatCurrency(p)}</span>; } },
     { key: "recommendation", label: "Action", align: "center" as const, render: (v: unknown) => { const r = v as string; const styles: Record<string, string> = { Scale: "bg-green-100 text-green-800", Maintain: "bg-blue-100 text-blue-800", Optimize: "bg-amber-100 text-amber-800", Pause: "bg-red-100 text-red-800" }; return <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${styles[r] ?? ""}`}>{r}</span>; } },
@@ -471,10 +471,10 @@ function SlimmingMarketingContent({
 
             {/* Meta Channel Aggregate */}
             <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-              <AggregateBox label="Expected Revenue in Meta" value={formatCurrency(metaExpectedRevenue)} />
-              <AggregateBox label="Expected Ad Spend" value={formatCurrency(metaTotalSpend)} />
+              <AggregateBox label="Attributed Revenue (Meta)" value={formatCurrency(metaExpectedRevenue)} />
+              <AggregateBox label="Ad Spend" value={formatCurrency(metaTotalSpend)} />
               <AggregateBox
-                label="Expected ROAS"
+                label="ROAS"
                 value={`${metaExpectedRoas}x`}
                 valueColor={getRoasColor(metaExpectedRoasNum)}
               />
@@ -538,10 +538,10 @@ function SlimmingMarketingContent({
 
             {/* Google Channel Aggregate */}
             <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-              <AggregateBox label="Expected Revenue in Google" value={formatCurrency(googleExpectedRevenue)} />
-              <AggregateBox label="Expected Ad Spend" value={formatCurrency(googleTotalSpend)} />
+              <AggregateBox label="Attributed Revenue (Google)" value={formatCurrency(googleExpectedRevenue)} />
+              <AggregateBox label="Ad Spend" value={formatCurrency(googleTotalSpend)} />
               <AggregateBox
-                label="Expected ROAS"
+                label="ROAS"
                 value={`${googleExpectedRoas}x`}
                 valueColor={getRoasColor(googleExpectedRoasNum)}
               />
@@ -674,7 +674,7 @@ function SlimmingMarketingContent({
                 <p className="text-lg font-bold text-gray-900">{formatCurrency(profitabilityTotals.totalAttrRevenue)}</p>
               </div>
               <div className="rounded-lg border p-3 text-center" style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}>
-                <p className="text-xs text-gray-500">Net Expected Revenue</p>
+                <p className="text-xs text-gray-500">Attributed Revenue</p>
                 <p className="text-lg font-bold text-gray-900">{formatCurrency(profitabilityTotals.totalNetExpected)}</p>
               </div>
               <div className="rounded-lg border p-3 text-center" style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}>

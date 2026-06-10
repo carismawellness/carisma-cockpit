@@ -205,10 +205,9 @@ function MarketingMasterContent({
     function channelMetrics(campaigns: CampaignData[]) {
       const spend = campaigns.reduce((s, c) => s + c.totalSpend, 0);
       const revenue = campaigns.reduce((s, c) => s + c.attributedRevenue, 0);
-      const expectedRevenue = Math.round(revenue * 1.15);
-      const roas = spend > 0 ? expectedRevenue / spend : 0;
+      const roas = spend > 0 ? revenue / spend : 0;
       return {
-        expectedRevenue: formatCurrency(expectedRevenue),
+        revenue: formatCurrency(revenue),
         spend: formatCurrency(spend),
         roas: `${roas.toFixed(1)}x`,
         roasNum: roas,
@@ -229,10 +228,10 @@ function MarketingMasterContent({
       {
         channel: "Meta Ads",
         rows: [
-          { metric: "Expected Revenue", spa: metaSpaM.expectedRevenue, aesthetics: metaAesM.expectedRevenue, slimming: metaSlimM.expectedRevenue },
+          { metric: "Attributed Revenue", spa: metaSpaM.revenue, aesthetics: metaAesM.revenue, slimming: metaSlimM.revenue },
           { metric: "Ad Spend", spa: metaSpaM.spend, aesthetics: metaAesM.spend, slimming: metaSlimM.spend },
           {
-            metric: "Expected ROAS", spa: metaSpaM.roas, aesthetics: metaAesM.roas, slimming: metaSlimM.roas,
+            metric: "ROAS", spa: metaSpaM.roas, aesthetics: metaAesM.roas, slimming: metaSlimM.roas,
             roasValues: { spa: metaSpaM.roasNum, aesthetics: metaAesM.roasNum, slimming: metaSlimM.roasNum },
           },
         ] as TableRow[],
@@ -240,10 +239,10 @@ function MarketingMasterContent({
       {
         channel: "Google Ads",
         rows: [
-          { metric: "Expected Revenue", spa: googleSpaM.expectedRevenue, aesthetics: googleAesM.expectedRevenue, slimming: googleSlimM.expectedRevenue },
+          { metric: "Attributed Revenue", spa: googleSpaM.revenue, aesthetics: googleAesM.revenue, slimming: googleSlimM.revenue },
           { metric: "Ad Spend", spa: googleSpaM.spend, aesthetics: googleAesM.spend, slimming: googleSlimM.spend },
           {
-            metric: "Expected ROAS", spa: googleSpaM.roas, aesthetics: googleAesM.roas, slimming: googleSlimM.roas,
+            metric: "ROAS", spa: googleSpaM.roas, aesthetics: googleAesM.roas, slimming: googleSlimM.roas,
             roasValues: { spa: googleSpaM.roasNum, aesthetics: googleAesM.roasNum, slimming: googleSlimM.roasNum },
           },
         ] as TableRow[],
