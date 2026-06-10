@@ -97,17 +97,18 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
         salary_cost: 0,
         revenue_net: bp.revenue_ex,
         k_pct: null as number | null,
+        k_label: null as string | null,
         bar_label: revStr,
       };
       const salary_cost = Math.min(cost.salary, bp.revenue_ex);
       const k_pct = cost.k_pct;
-      const kStr = k_pct != null ? ` · K=${k_pct.toFixed(0)}%` : "";
       return {
         ...bp,
         salary_cost,
         revenue_net: Math.max(0, bp.revenue_ex - salary_cost),
         k_pct,
-        bar_label: `${revStr}${kStr}`,
+        k_label: k_pct != null ? `${k_pct.toFixed(0)}%` : null as string | null,
+        bar_label: revStr,
       };
     }),
     [byPerson, aesKMap]
@@ -173,7 +174,7 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
                 Net revenue
               </span>
               <span className="flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-400" />
+                <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: "#4a7fa5" }} />
                 Salary cost (K%)
               </span>
             </div>
@@ -223,7 +224,13 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
               {hasCostData ? (
                 <>
                   <Bar dataKey="revenue_net" stackId="rev" fill={chartColors.aesthetics} radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="salary_cost" stackId="rev" fill="#fbbf24" radius={[0, 4, 4, 0]}>
+                  <Bar dataKey="salary_cost" stackId="rev" fill="#4a7fa5" radius={[0, 4, 4, 0]}>
+                    <LabelList
+                      dataKey="k_label"
+                      position="insideRight"
+                      formatter={(v: unknown) => v ? String(v) : ""}
+                      style={{ fontSize: 11, fill: "#ffffff", fontWeight: 700 }}
+                    />
                     <LabelList
                       dataKey="bar_label"
                       position="right"
