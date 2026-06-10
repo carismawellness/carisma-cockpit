@@ -7,10 +7,19 @@
  * Called by the nightly cron at /api/cron/nightly-refresh.
  * Can also be triggered manually: POST {} (no body required).
  *
- * Required env vars (set in Vercel dashboard):
- *   GOOGLE_SHEETS_REFRESH_TOKEN  — from ~/.go-google-mcp/token.json
- *   GOOGLE_SHEETS_CLIENT_ID      — from ~/.go-google-mcp/client_secrets.json
- *   GOOGLE_SHEETS_CLIENT_SECRET  — from ~/.go-google-mcp/client_secrets.json
+ * HOW THIS STAYS AUTH-FREE FOREVER
+ * --------------------------------
+ * Data is fetched via the public CSV export endpoint, one URL per agent tab:
+ *   https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}
+ *
+ * NO OAuth. NO refresh tokens. NO Vercel env-var ceremony when a token expires.
+ * Requirement: the CRM Master Sheet stays shared as "Anyone with link can view"
+ * (URL has a 44-char random id — unguessable).
+ *
+ * NEVER replace this with the Google Sheets API (v4) — that path needs OAuth
+ * and broke production silently on 2026-06-09 when the refresh token expired.
+ *
+ * Required env vars:
  *   SUPABASE_SERVICE_ROLE_KEY
  *   NEXT_PUBLIC_SUPABASE_URL
  */
@@ -21,29 +30,28 @@ import { createClient } from "@supabase/supabase-js";
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
-// ── Google Sheets config ──────────────────────────────────────────────────────
+// ── CRM Master Sheet config ──────────────────────────────────────────────────
 
 const SPREADSHEET_ID = "1bHF_7bXic08pcyXQhq310zG6McqXD50oT0EuVkjzDdI";
-const GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token";
 
-const AGENTS: [string, string][] = [
-  ["adeel",    "Adeel"],
-  ["rana",     "Rana"],
-  ["abid",     "Abid"],
-  ["km",       "K&M"],
-  ["vj",       "VJ"],
-  ["dorianne", "Dorianne"],
-  ["juliana",  "Juliana"],
-  ["anni",     "Anni"],
-  ["nicci",    "Nicci"],
-  ["nathalia", "Nathalia"],
-  ["april",    "April"],
-  ["queenee",  "Queenee"],
+// [slug, tabName (for logs/errors), gid (for CSV export URL)]
+const AGENTS: [string, string, string][] = [
+  ["adeel",    "Adeel",    "1319375977"],
+  ["rana",     "Rana",     "942691187"],
+  ["abid",     "Abid",     "1013922515"],
+  ["km",       "K&M",      "416594585"],
+  ["vj",       "VJ",       "1072221139"],
+  ["dorianne", "Dorianne", "1663601718"],
+  ["juliana",  "Juliana",  "396160365"],
+  ["anni",     "Anni",     "1807577352"],
+  ["nicci",    "Nicci",    "2054161680"],
+  ["nathalia", "Nathalia", "1658710608"],
+  ["april",    "April",    "1955992165"],
+  ["queenee",  "Queenee",  "703206369"],
 ];
 
 // Agents whose source sheet uses the SDR layout (Outbound / Inbound / Chat,
-// columns A–U). Verified by reading each tab's header row — see commit message
-// for the QC sweep.
+// columns A–U). Verified by reading each tab's header row 2026-06-10.
 //   Chat layout: abid, rana, km, adeel
 //   SDR layout:  everyone else
 const SDR_AGENTS = new Set([
@@ -51,57 +59,32 @@ const SDR_AGENTS = new Set([
 ]);
 const CHUNK_SIZE = 200;
 
-// ── Google OAuth ──────────────────────────────────────────────────────────────
+// ── CSV fetch (public sheet — no auth) ───────────────────────────────────────
 
-async function getAccessToken(): Promise<string> {
-  const refreshToken  = process.env.GOOGLE_SHEETS_REFRESH_TOKEN;
-  const clientId      = process.env.GOOGLE_SHEETS_CLIENT_ID;
-  const clientSecret  = process.env.GOOGLE_SHEETS_CLIENT_SECRET;
-
-  if (!refreshToken || !clientId || !clientSecret) {
-    throw new Error(
-      "Missing Google OAuth env vars: GOOGLE_SHEETS_REFRESH_TOKEN, GOOGLE_SHEETS_CLIENT_ID, GOOGLE_SHEETS_CLIENT_SECRET"
-    );
+function parseCSVRow(line: string): string[] {
+  const cells: string[] = [];
+  let cur = "", inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+    else if (ch === "," && !inQ) { cells.push(cur); cur = ""; }
+    else cur += ch;
   }
-
-  const resp = await fetch(GOOGLE_TOKEN_URI, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type:    "refresh_token",
-      refresh_token: refreshToken,
-      client_id:     clientId,
-      client_secret: clientSecret,
-    }),
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Google token refresh failed: ${resp.status} — ${text}`);
-  }
-
-  const data = await resp.json() as { access_token: string };
-  return data.access_token;
+  cells.push(cur);
+  return cells;
 }
 
-async function fetchSheetTab(
-  accessToken: string,
-  tabName: string
-): Promise<string[][]> {
-  const encoded = encodeURIComponent(tabName);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encoded}`;
-
-  const resp = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+async function fetchSheetTab(gid: string, tabName: string): Promise<string[][]> {
+  const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${gid}`;
+  const resp = await fetch(url, { redirect: "follow" });
 
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`Sheets API error for tab "${tabName}": ${resp.status} — ${text}`);
+    throw new Error(`CSV fetch failed for tab "${tabName}" (gid=${gid}): ${resp.status} — ${text.slice(0, 200)}. Check that the sheet is shared "Anyone with link can view".`);
   }
 
-  const data = await resp.json() as { values?: string[][] };
-  return data.values ?? [];
+  const text  = await resp.text();
+  return text.split("\n").filter(l => l.length > 0).map(parseCSVRow);
 }
 
 // ── Parse helpers ─────────────────────────────────────────────────────────────
@@ -271,17 +254,9 @@ export async function POST(req: NextRequest) {
   let totalRows = 0;
   const errors: string[] = [];
 
-  let accessToken: string;
-  try {
-    accessToken = await getAccessToken();
-    log.push("Google OAuth token refreshed");
-  } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
-  }
-
-  for (const [slug, tabName] of AGENTS) {
+  for (const [slug, tabName, gid] of AGENTS) {
     try {
-      const raw = await fetchSheetTab(accessToken, tabName);
+      const raw = await fetchSheetTab(gid, tabName);
       const isSdr = SDR_AGENTS.has(slug);
 
       const rowsByDate = new Map<string, CrmRow>();
