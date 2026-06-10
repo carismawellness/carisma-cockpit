@@ -2,12 +2,9 @@
 
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { ConstraintHeatmap } from "@/components/funnel/ConstraintHeatmap";
-import { BrandFunnelCard } from "@/components/funnel/BrandFunnelCard";
 import { CampaignFunnelPanel } from "@/components/funnel/CampaignFunnelPanel";
 import { CIChat } from "@/components/ci/CIChat";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
-
-const BRANDS = ["spa", "aesthetics", "slimming"] as const;
 
 function FunnelContent({
   dateFrom,
@@ -28,22 +25,12 @@ function FunnelContent({
 
       {/* 1. Constraint Heatmap — conclusion first */}
       <section>
-        <ConstraintHeatmap />
+        <ConstraintHeatmap dateFrom={dateFrom} dateTo={dateTo} />
       </section>
 
-      {/* 2. Brand Funnel Overview — all 3 brands side by side */}
+      {/* 2. Campaign Drill-Down — per brand */}
       <section>
-        <h2 className="text-lg font-semibold text-foreground mb-3">Brand Funnels</h2>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {BRANDS.map((brand) => (
-            <BrandFunnelCard key={brand} brand={brand} dateFrom={dateFrom} dateTo={dateTo} />
-          ))}
-        </div>
-      </section>
-
-      {/* 3. Campaign Drill-Down — tabbed by brand */}
-      <section>
-        <CampaignFunnelPanel />
+        <CampaignFunnelPanel dateFrom={dateFrom} dateTo={dateTo} />
       </section>
 
       <CIChat />
