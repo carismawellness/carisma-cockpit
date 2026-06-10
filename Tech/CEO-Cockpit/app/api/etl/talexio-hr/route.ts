@@ -238,8 +238,8 @@ export async function POST(req: NextRequest) {
 
         // Use the most recent payslip per employee for this snapshot
         const latest = (e.payslips ?? [])
-          .filter((p) => p.periodFrom && p.periodTo)
-          .sort((a, b) => (b.periodTo! > a.periodTo! ? 1 : -1))[0];
+          .filter((p: { periodFrom: string | null; periodTo: string | null }) => p.periodFrom && p.periodTo)
+          .sort((a: { periodTo: string | null }, b: { periodTo: string | null }) => (b.periodTo! > a.periodTo! ? 1 : -1))[0];
         if (!latest) continue;
 
         const bucket = payrollByLocation.get(location) ?? {
@@ -329,8 +329,8 @@ export async function POST(req: NextRequest) {
 
         for (let i = 0; i < activeEmployeeIds.length; i += CHUNK) {
           const chunk = activeEmployeeIds.slice(i, i + CHUNK);
-          const shiftData = await callTalexio<{ selectedEmployees: ShiftEmployee[] }>("shifts", {
-            employeeIds: chunk.join(","),
+          const shiftData = await fetchTalexio<{ selectedEmployees: ShiftEmployee[] }>(GQL_SHIFTS, {
+            employeeIds: chunk,
             dateFrom:    date,
             dateTo:      date,
           });
