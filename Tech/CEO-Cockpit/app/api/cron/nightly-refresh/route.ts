@@ -38,8 +38,11 @@ export async function GET(req: NextRequest) {
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
   const klaviyoPayload = JSON.stringify({ date: fmt(yesterday) });
 
+  // Talexio HR ETL syncs headcount/payroll/shifts for today's date.
+  const today = fmt(now);
+
   const [revenueRes, spaRes, aestheticsRes, crmAgentsRes, ghlCrmRes,
-         metaCampaignsRes, googleCampaignsRes, klaviyoRes] = await Promise.allSettled([
+         metaCampaignsRes, googleCampaignsRes, klaviyoRes, talexioHrRes] = await Promise.allSettled([
     fetch(`${BASE_URL}/api/etl/revenue-refresh`,              { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/zoho-spa-transactions`,        { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/zoho-aesthetics-transactions`, { method: "POST", headers, body: payload }),
@@ -48,6 +51,7 @@ export async function GET(req: NextRequest) {
     fetch(`${BASE_URL}/api/etl/meta-campaigns`,               { method: "POST", headers, body: mktPayload }),
     fetch(`${BASE_URL}/api/etl/google-campaigns`,             { method: "POST", headers, body: mktPayload }),
     fetch(`${BASE_URL}/api/etl/klaviyo-sync`,                 { method: "POST", headers, body: klaviyoPayload }),
+    fetch(`${BASE_URL}/api/etl/talexio-hr?date=${today}`,     { method: "POST", headers }),
   ]);
 
   const outcome = (r: PromiseSettledResult<Response>) =>
@@ -66,6 +70,7 @@ export async function GET(req: NextRequest) {
       meta_campaigns:   outcome(metaCampaignsRes),
       google_campaigns: outcome(googleCampaignsRes),
       klaviyo:          outcome(klaviyoRes),
+      talexio_hr:       outcome(talexioHrRes),
     },
   });
 }

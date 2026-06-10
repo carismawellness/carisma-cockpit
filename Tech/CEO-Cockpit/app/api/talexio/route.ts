@@ -1,35 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
+import { talexioQuery } from "@/lib/talexio/auth";
 
 export const maxDuration = 60;
 
-const GRAPHQL_URL = "https://api.talexiohr.com/graphql";
-const ORIGIN = "https://carismaspawellness.talexiohr.com";
-
-async function talexioQuery(query: string, variables?: Record<string, unknown>) {
-  const token = process.env.TALEXIO_TOKEN;
-  if (!token) {
-    throw new Error("TALEXIO_TOKEN not configured");
-  }
-
-  const res = await fetch(GRAPHQL_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      Origin: ORIGIN,
-    },
-    body: JSON.stringify({ query, variables }),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Talexio API error: ${res.status}`);
-  }
-
-  return res.json();
-}
-
 // Pre-built queries for each action
-const QUERIES: Record<string, { query: string; variables?: (params: URLSearchParams) => Record<string, unknown> }> = {
+const QUERIES: Record<
+  string,
+  {
+    query: string;
+    variables?: (params: URLSearchParams) => Record<string, unknown>;
+  }
+> = {
   employees: {
     query: `query {
       employees {
@@ -133,7 +114,7 @@ export async function GET(request: NextRequest) {
   if (!action || !QUERIES[action]) {
     return NextResponse.json(
       { error: `Invalid action. Available: ${Object.keys(QUERIES).join(", ")}` },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -145,7 +126,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

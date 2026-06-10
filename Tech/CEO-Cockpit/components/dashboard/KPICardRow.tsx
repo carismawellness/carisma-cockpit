@@ -8,6 +8,7 @@ export interface KPIData {
   targetValue?: number;
   currentValue?: number;
   href?: string;
+  isSample?: boolean;
 }
 
 interface KPICardRowProps {

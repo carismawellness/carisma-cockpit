@@ -1,11 +1,30 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { CIChat } from "@/components/ci/CIChat";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { KPICardRow, KPIData } from "@/components/dashboard/KPICardRow";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { chartColors, formatCurrency } from "@/lib/charts/config";
+import {
+  useTalexioHeadcount,
+  useTalexioTimeLogs,
+  useTalexioLeave,
+  useTalexioPayslips,
+} from "@/lib/hooks/useTalexio";
+import { useHRFinancials, useHRRevPAH } from "@/lib/hooks/useHRData";
+import {
+  getActiveEmployees,
+  getHeadcountBreakdowns,
+  buildAttendanceLogs,
+  buildLateArrivals,
+  buildNotClockedIn,
+  buildLeaveBalances,
+  buildSickLeaveTop,
+  buildPayrollSummary,
+} from "@/lib/hr/talexio-transforms";
 import {
   BarChart,
   Bar,
@@ -22,28 +41,34 @@ import {
   LabelList,
 } from "recharts";
 
-// ============================================================
+// ════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
-// ============================================================
+// ════════════════════════════════════════════════════════════════════════════
 
 const REVPAH_TARGET = 35;
 const HC_PCT_TARGET = 35;
 
 const PIE_COLORS = [
-  chartColors.spa, chartColors.aesthetics, chartColors.slimming,
-  "#D5C0E5", "#E5B5D0", "#B5DCDC", "#E5C088", "#A8D4A8",
+  chartColors.spa,
+  chartColors.aesthetics,
+  chartColors.slimming,
+  "#D5C0E5",
+  "#E5B5D0",
+  "#B5DCDC",
+  "#E5C088",
+  "#A8D4A8",
 ];
 
 const PROD_COLORS = {
-  productive:   "#A8D4A8",  // soft green
-  neutral:      "#C7C4BD",  // neutral warm gray
-  unproductive: "#E8A8A0",  // soft red
-  idle:         "#E5C088",  // soft amber
+  productive: "#A8D4A8",
+  neutral: "#C7C4BD",
+  unproductive: "#E8A8A0",
+  idle: "#E5C088",
 };
 
-// ============================================================
+// ════════════════════════════════════════════════════════════════════════════
 // HELPERS
-// ============================================================
+// ════════════════════════════════════════════════════════════════════════════
 
 function getRevPAHColor(value: number): string {
   if (value >= REVPAH_TARGET) return chartColors.slimming;
@@ -67,15 +92,50 @@ function getStatusBadge(status: string, className: string) {
   );
 }
 
-// ============================================================
-// DUMMY DATA
-// ============================================================
+function currentMonthYYYYMM(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
 
-const HEADCOUNT = {
+function prettyMonth(yyyymm: string): string {
+  // "2026-03" → "March 2026"
+  const [y, m] = yyyymm.split("-").map(Number);
+  if (!y || !m) return yyyymm;
+  return new Date(y, m - 1, 1).toLocaleDateString("en-GB", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// BADGES
+// ════════════════════════════════════════════════════════════════════════════
+
+function SampleDataBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 ml-2">
+      <span className="w-1 h-1 rounded-full bg-amber-400" />
+      Sample data
+    </span>
+  );
+}
+
+function LiveBadge({ source }: { source: "talexio" | "supabase" }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5 ml-2">
+      <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+      Live from {source === "talexio" ? "Talexio" : "Supabase"}
+    </span>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SAMPLE FALLBACK DATA (used when a live data source is unavailable)
+// ════════════════════════════════════════════════════════════════════════════
+
+const HEADCOUNT_FALLBACK = {
   totalActive: 75,
   totalAll: 82,
   terminated: 7,
-  turnoverRate: 8.5,
   byPosition: [
     { name: "Therapist", count: 25 },
     { name: "Aesthetician", count: 10 },
@@ -100,7 +160,7 @@ const HEADCOUNT = {
   ],
 };
 
-const ATTENDANCE_LOGS = [
+const ATTENDANCE_FALLBACK = [
   { name: "Maria Borg", clockIn: "06:45", clockOut: "14:50", hoursWorked: "8.1h", status: "Completed" },
   { name: "Sarah Caballeri", clockIn: "06:52", clockOut: null, hoursWorked: "6.3h", status: "Active" },
   { name: "Elena Petrova", clockIn: "07:00", clockOut: "15:05", hoursWorked: "8.1h", status: "Completed" },
@@ -113,33 +173,30 @@ const ATTENDANCE_LOGS = [
   { name: "Julie Rizzo", clockIn: "07:45", clockOut: null, hoursWorked: "5.4h", status: "Active" },
   { name: "Nicci Debono", clockIn: "08:00", clockOut: "16:05", hoursWorked: "8.1h", status: "Completed" },
   { name: "Tom Bonello", clockIn: "08:05", clockOut: null, hoursWorked: "5.1h", status: "Active" },
-  { name: "Anna Vella", clockIn: "08:10", clockOut: "16:15", hoursWorked: "8.1h", status: "Completed" },
-  { name: "David Camilleri", clockIn: "08:20", clockOut: null, hoursWorked: "4.9h", status: "Active" },
-  { name: "Carmen Galea", clockIn: "08:30", clockOut: "16:35", hoursWorked: "8.1h", status: "Completed" },
-  { name: "Pierre Zammit", clockIn: "08:45", clockOut: null, hoursWorked: "4.4h", status: "Active" },
-  { name: "Jade Cassar", clockIn: "09:00", clockOut: "17:05", hoursWorked: "8.1h", status: "Completed" },
-  { name: "Liam Attard", clockIn: "09:05", clockOut: null, hoursWorked: "4.1h", status: "Active" },
-  { name: "Sophie Grech", clockIn: "09:10", clockOut: null, hoursWorked: "4.0h", status: "Active" },
-  { name: "Adeel Malik", clockIn: "09:15", clockOut: null, hoursWorked: "4.0h", status: "Active" },
-  { name: "Robert Pace", clockIn: "09:20", clockOut: null, hoursWorked: "3.9h", status: "Active" },
-  { name: "Nina Cutajar", clockIn: "09:30", clockOut: null, hoursWorked: "3.7h", status: "Active" },
-  { name: "Jake Tanti", clockIn: "09:45", clockOut: null, hoursWorked: "3.4h", status: "Active" },
 ];
 
-const LATE_EMPLOYEES = [
+const LATE_FALLBACK = [
   { name: "Jake Tanti", clockIn: "09:45", minutesLate: 30 },
   { name: "Nina Cutajar", clockIn: "09:30", minutesLate: 15 },
   { name: "Robert Pace", clockIn: "09:20", minutesLate: 5 },
 ];
 
-const NOT_CLOCKED_IN = [
-  "Christian Bugeja", "Doris Said", "Emmanuel Grima",
-  "Francesca Brincat", "George Axiak", "Helene Busuttil",
-  "Ivan Fenech", "Karen Mallia", "Lorenzo Schembri",
-  "Martha Xuereb", "Noel Azzopardi", "Pauline Scerri",
+const NOT_CLOCKED_IN_FALLBACK = [
+  "Christian Bugeja",
+  "Doris Said",
+  "Emmanuel Grima",
+  "Francesca Brincat",
+  "George Axiak",
+  "Helene Busuttil",
+  "Ivan Fenech",
+  "Karen Mallia",
+  "Lorenzo Schembri",
+  "Martha Xuereb",
+  "Noel Azzopardi",
+  "Pauline Scerri",
 ];
 
-const LEAVE_BALANCES = [
+const LEAVE_BALANCES_FALLBACK = [
   { name: "Rana Hussain", vacationHrs: 120, sickHrs: 96, totalTypes: 4, totalHrs: 248 },
   { name: "Tom Bonello", vacationHrs: 160, sickHrs: 88, totalTypes: 3, totalHrs: 272 },
   { name: "Adeel Malik", vacationHrs: 140, sickHrs: 72, totalTypes: 4, totalHrs: 244 },
@@ -150,14 +207,9 @@ const LEAVE_BALANCES = [
   { name: "Elena Petrova", vacationHrs: 155, sickHrs: 24, totalTypes: 3, totalHrs: 203 },
   { name: "Sarah Caballeri", vacationHrs: 160, sickHrs: 16, totalTypes: 4, totalHrs: 208 },
   { name: "Katya Dimech", vacationHrs: 148, sickHrs: 16, totalTypes: 3, totalHrs: 188 },
-  { name: "Julie Rizzo", vacationHrs: 160, sickHrs: 8, totalTypes: 3, totalHrs: 192 },
-  { name: "Nicci Debono", vacationHrs: 160, sickHrs: 8, totalTypes: 4, totalHrs: 200 },
-  { name: "Abid Khan", vacationHrs: 152, sickHrs: 0, totalTypes: 3, totalHrs: 176 },
-  { name: "Josef Micallef", vacationHrs: 160, sickHrs: 0, totalTypes: 3, totalHrs: 184 },
-  { name: "Sophie Grech", vacationHrs: 140, sickHrs: 0, totalTypes: 2, totalHrs: 164 },
 ];
 
-const SICK_LEAVE_TOP = [
+const SICK_LEAVE_TOP_FALLBACK = [
   { name: "Rana Hussain", entitlement: 96 },
   { name: "Tom Bonello", entitlement: 88 },
   { name: "Adeel Malik", entitlement: 72 },
@@ -170,7 +222,7 @@ const SICK_LEAVE_TOP = [
   { name: "Katya Dimech", entitlement: 16 },
 ];
 
-const PAYROLL = {
+const PAYROLL_FALLBACK = {
   latestMonth: "2026-03",
   latestGross: 134800,
   latestNet: 101100,
@@ -188,7 +240,7 @@ const PAYROLL = {
   ],
 };
 
-const REVPAH_BY_LOCATION = [
+const REVPAH_FALLBACK = [
   { location: "Hugos", revpah: 48.20, revenue: 52400 },
   { location: "Hyatt", revpah: 43.80, revenue: 41200 },
   { location: "InterContinental", revpah: 39.50, revenue: 58700 },
@@ -199,9 +251,9 @@ const REVPAH_BY_LOCATION = [
   { location: "Novotel", revpah: 26.50, revenue: 21900 },
 ];
 
-const TOTAL_REVENUE = 285500;
+const TOTAL_REVENUE_FALLBACK = 285500;
 
-const HC_BY_LOCATION = [
+const HC_BY_LOCATION_FALLBACK = [
   { name: "Novotel", hcPct: 28.5, payroll: 11900, revenue: 41760, headcount: 7 },
   { name: "Excelsior", hcPct: 30.2, payroll: 9350, revenue: 30960, headcount: 6 },
   { name: "Labranda", hcPct: 31.4, payroll: 14400, revenue: 45860, headcount: 8 },
@@ -212,13 +264,13 @@ const HC_BY_LOCATION = [
   { name: "Hyatt", hcPct: 38.2, payroll: 18500, revenue: 48429, headcount: 10 },
 ];
 
-const HC_BY_BU = [
+const HC_BY_BU_FALLBACK = [
   { name: "Spa", hcPct: 33.4, payroll: 97056, revenue: 290588 },
   { name: "Aesthetics", hcPct: 30.8, payroll: 24264, revenue: 78779 },
   { name: "Slimming", hcPct: 36.2, payroll: 13480, revenue: 37238 },
 ];
 
-const GROUP_HC_PCT = 33.1;
+const GROUP_HC_PCT_FALLBACK = 33.1;
 
 const PRODUCTIVITY_DATA = [
   { name: "Sarah M.", productive: 5.8, neutral: 0.6, unproductive: 0.2, idle: 0.8, productivePct: 89, totalHrs: "7.4" },
@@ -243,9 +295,13 @@ const PRODUCTIVITY_DATA = [
   totalHrs: s.totalHrs,
 }));
 
-// ============================================================
+// Static KPI values that we don't have a live source for yet.
+const SICK_LEAVE_PCT_SAMPLE = "4.8%";
+const TURNOVER_RATE_SAMPLE = "8.5%";
+
+// ════════════════════════════════════════════════════════════════════════════
 // TABLE COLUMNS
-// ============================================================
+// ════════════════════════════════════════════════════════════════════════════
 
 const attendanceColumns = [
   { key: "name", label: "Employee" },
@@ -322,36 +378,147 @@ const leaveBalanceColumns = [
   { key: "totalHrs", label: "Total (hrs)", align: "right" as const, sortable: true },
 ];
 
-// ============================================================
+// ════════════════════════════════════════════════════════════════════════════
 // MAIN CONTENT
-// ============================================================
+// ════════════════════════════════════════════════════════════════════════════
 
 function HRContent() {
-  const avgRevPAH = Math.round(
-    REVPAH_BY_LOCATION.reduce((s, r) => s + r.revpah, 0) / REVPAH_BY_LOCATION.length * 100
-  ) / 100;
+  const [month, setMonth] = useState<string>(currentMonthYYYYMM());
 
-  const avgProductivity = Math.round(
-    PRODUCTIVITY_DATA.reduce((s, p) => s + p.productivePct, 0) / PRODUCTIVITY_DATA.length
+  // ── Live data: Talexio ────────────────────────────────────────────────────
+  const headcountQ = useTalexioHeadcount();
+  const timeLogsQ = useTalexioTimeLogs();
+  const leaveQ = useTalexioLeave();
+  const payslipsQ = useTalexioPayslips();
+
+  // ── Live data: Supabase-backed HR financials (may not exist yet) ─────────
+  const financialsQ = useHRFinancials(month);
+  const revpahQ = useHRRevPAH(month);
+
+  // ── Derive Talexio-backed views (memoized) ───────────────────────────────
+  const activeEmployees = useMemo(
+    () =>
+      headcountQ.data?.employees
+        ? getActiveEmployees(headcountQ.data.employees)
+        : null,
+    [headcountQ.data],
   );
 
-  const revenuePerEmployee = Math.round(TOTAL_REVENUE / HEADCOUNT.totalActive);
+  const headcount = useMemo(() => {
+    if (!headcountQ.data?.employees) return null;
+    return getHeadcountBreakdowns(headcountQ.data.employees);
+  }, [headcountQ.data]);
 
-  const onTimePct = Math.round(
-    ((ATTENDANCE_LOGS.length - LATE_EMPLOYEES.length) / ATTENDANCE_LOGS.length) * 100
+  const attendanceRows = useMemo(() => {
+    if (!timeLogsQ.data?.employees) return null;
+    return buildAttendanceLogs(timeLogsQ.data.employees);
+  }, [timeLogsQ.data]);
+
+  const lateRows = useMemo(() => {
+    if (!attendanceRows) return null;
+    return buildLateArrivals(attendanceRows);
+  }, [attendanceRows]);
+
+  const notClockedIn = useMemo(() => {
+    if (!activeEmployees || !timeLogsQ.data?.employees) return null;
+    return buildNotClockedIn(activeEmployees, timeLogsQ.data.employees);
+  }, [activeEmployees, timeLogsQ.data]);
+
+  const leaveBalances = useMemo(() => {
+    if (!leaveQ.data?.employees) return null;
+    return buildLeaveBalances(leaveQ.data.employees);
+  }, [leaveQ.data]);
+
+  const sickLeaveTop = useMemo(() => {
+    if (!leaveBalances) return null;
+    return buildSickLeaveTop(leaveBalances);
+  }, [leaveBalances]);
+
+  const payroll = useMemo(() => {
+    if (!payslipsQ.data?.employees) return null;
+    return buildPayrollSummary(payslipsQ.data.employees);
+  }, [payslipsQ.data]);
+
+  // ── Source flags ─────────────────────────────────────────────────────────
+  const isHeadcountReal = headcount !== null;
+  const isAttendanceReal = attendanceRows !== null;
+  const isLateReal = lateRows !== null;
+  const isNotClockedInReal = notClockedIn !== null;
+  const isLeaveReal = leaveBalances !== null;
+  const isPayrollReal = payroll !== null;
+  const isFinancialsReal = financialsQ.isSuccess && !!financialsQ.data;
+  const isRevPAHReal = revpahQ.isSuccess && !!revpahQ.data;
+
+  const talexioLoading =
+    headcountQ.isLoading ||
+    timeLogsQ.isLoading ||
+    leaveQ.isLoading ||
+    payslipsQ.isLoading;
+
+  const talexioError =
+    headcountQ.isError ||
+    timeLogsQ.isError ||
+    leaveQ.isError ||
+    payslipsQ.isError;
+
+  // ── Resolved data (live → fallback) ──────────────────────────────────────
+  const headcountActive = headcount?.totalActive ?? HEADCOUNT_FALLBACK.totalActive;
+  const positions = headcount?.byPosition ?? HEADCOUNT_FALLBACK.byPosition;
+  const orgUnits = headcount?.byOrgUnit ?? HEADCOUNT_FALLBACK.byOrgUnit;
+
+  const attendance = attendanceRows ?? ATTENDANCE_FALLBACK;
+  const late = lateRows ?? LATE_FALLBACK;
+  const notIn = notClockedIn ?? NOT_CLOCKED_IN_FALLBACK;
+
+  const leaves = leaveBalances ?? LEAVE_BALANCES_FALLBACK;
+  const sickTop = sickLeaveTop ?? SICK_LEAVE_TOP_FALLBACK;
+
+  const payrollData = payroll ?? PAYROLL_FALLBACK;
+
+  const hcByLocation = financialsQ.data?.byLocation ?? HC_BY_LOCATION_FALLBACK;
+  const hcByBU = financialsQ.data?.byBusinessUnit ?? HC_BY_BU_FALLBACK;
+  const groupHcPct = financialsQ.data?.groupHcPct ?? GROUP_HC_PCT_FALLBACK;
+  const totalRevenue = financialsQ.data?.totalRevenue ?? TOTAL_REVENUE_FALLBACK;
+
+  const revpahData = revpahQ.data?.byLocation ?? REVPAH_FALLBACK;
+  const avgRevPAH = useMemo(() => {
+    if (revpahQ.data?.avgRevPAH !== undefined) return revpahQ.data.avgRevPAH;
+    return (
+      Math.round(
+        (revpahData.reduce((s, r) => s + r.revpah, 0) / revpahData.length) * 100,
+      ) / 100
+    );
+  }, [revpahQ.data, revpahData]);
+
+  // ── Derived KPI values ───────────────────────────────────────────────────
+  const avgProductivity = useMemo(
+    () =>
+      Math.round(
+        PRODUCTIVITY_DATA.reduce((s, p) => s + p.productivePct, 0) /
+          PRODUCTIVITY_DATA.length,
+      ),
+    [],
   );
 
+  const revenuePerEmployee = Math.round(totalRevenue / headcountActive);
+
+  const onTimePct =
+    attendance.length > 0
+      ? Math.round(((attendance.length - late.length) / attendance.length) * 100)
+      : 0;
+
+  // ── KPI cards ────────────────────────────────────────────────────────────
   const kpis: KPIData[] = [
     {
       label: "Human Capital %",
-      value: `${GROUP_HC_PCT}%`,
+      value: `${groupHcPct}%`,
       target: `${HC_PCT_TARGET}%`,
       targetValue: HC_PCT_TARGET,
-      currentValue: GROUP_HC_PCT,
+      currentValue: groupHcPct,
     },
-    { label: "Monthly Gross Payroll", value: formatCurrency(PAYROLL.latestGross) },
-    { label: "Avg Cost / Employee", value: formatCurrency(PAYROLL.avgCostPerEmployee) },
-    { label: "Active Employees", value: String(HEADCOUNT.totalActive) },
+    { label: "Monthly Gross Payroll", value: formatCurrency(payrollData.latestGross) },
+    { label: "Avg Cost / Employee", value: formatCurrency(payrollData.avgCostPerEmployee) },
+    { label: "Active Employees", value: String(headcountActive) },
     {
       label: "On-Time %",
       value: `${onTimePct}%`,
@@ -359,13 +526,14 @@ function HRContent() {
       targetValue: 90,
       currentValue: onTimePct,
     },
-    { label: "Sick Leave %", value: "4.8%" },
+    { label: "Sick Leave %", value: SICK_LEAVE_PCT_SAMPLE, isSample: true },
     {
       label: "Avg Productivity",
       value: `${avgProductivity}%`,
       target: "80%",
       targetValue: 80,
       currentValue: avgProductivity,
+      isSample: true,
     },
     {
       label: "Avg RevPAH",
@@ -374,39 +542,104 @@ function HRContent() {
       targetValue: REVPAH_TARGET,
       currentValue: avgRevPAH,
     },
-    { label: "Turnover Rate", value: `${HEADCOUNT.turnoverRate}%` },
+    { label: "Turnover Rate", value: TURNOVER_RATE_SAMPLE, isSample: true },
     { label: "Revenue / Employee", value: formatCurrency(revenuePerEmployee) },
   ];
 
+  // ── Header badge state ───────────────────────────────────────────────────
+  const headerBadge = (() => {
+    if (talexioLoading) {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 rounded-full px-3 py-1 shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse" />
+          Connecting to Talexio…
+        </span>
+      );
+    }
+    if (talexioError) {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 rounded-full px-3 py-1 shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+          Talexio unavailable
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-green-700 bg-green-50 rounded-full px-3 py-1 shrink-0">
+        <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+        Live from Talexio
+      </span>
+    );
+  })();
+
+  // ── Page subtitle (dynamic when live data is available) ──────────────────
+  const subtitle = useMemo(() => {
+    const monthLabel = prettyMonth(payrollData.latestMonth);
+    const locations = orgUnits.length;
+    return `${monthLabel} — ${headcountActive} active employees across ${locations} locations`;
+  }, [payrollData.latestMonth, headcountActive, orgUnits.length]);
+
   return (
     <>
+      {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-xl md:text-2xl font-bold text-foreground">Human Resources</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            March 2026 — 75 active employees across 8 locations
-          </p>
+          <p className="text-sm text-muted-foreground mt-1">{subtitle}</p>
+          <div className="mt-2 flex items-center gap-2">
+            <label className="text-xs text-muted-foreground" htmlFor="hr-month">
+              Month
+            </label>
+            <input
+              id="hr-month"
+              type="month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              className="text-xs border rounded-md px-2 py-1 bg-background"
+            />
+          </div>
         </div>
-        <span className="inline-flex items-center gap-1.5 text-xs text-green-700 bg-green-50 rounded-full px-3 py-1 shrink-0">
-          <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-          Live from Talexio
-        </span>
+        {headerBadge}
       </div>
 
-      <KPICardRow kpis={kpis} />
+      {/* Soft error banner — only when Talexio actually errored. */}
+      {talexioError && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+          <span aria-hidden>⚠️</span>
+          <span>Talexio connection unavailable. Showing cached or sample data.</span>
+        </div>
+      )}
 
-      {/* ══════════════════════════════════════════════════════════════
+      {/* ── KPI Row ────────────────────────────────────────────────────── */}
+      {talexioLoading && !headcount ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <div key={i} className="rounded-xl border border-border p-5 space-y-2">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-8 w-20" />
+              <Skeleton className="h-2 w-16" />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <KPICardRow kpis={kpis} />
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
           SECTION 1: Human Capital %
-          ══════════════════════════════════════════════════════════════ */}
+          ══════════════════════════════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
         <Card className="p-3 md:p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-1">Human Capital % by Location</h2>
+          <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
+            Human Capital % by Location
+            {isFinancialsReal ? <LiveBadge source="supabase" /> : <SampleDataBadge />}
+          </h2>
           <p className="text-xs text-muted-foreground mb-4">
             Payroll as % of revenue — lower is more efficient
           </p>
-          <ResponsiveContainer width="100%" height={HC_BY_LOCATION.length * 48 + 50}>
+          <ResponsiveContainer width="100%" height={hcByLocation.length * 48 + 50}>
             <BarChart
-              data={HC_BY_LOCATION}
+              data={hcByLocation}
               layout="vertical"
               margin={{ top: 5, right: 80, left: 10, bottom: 5 }}
             >
@@ -416,7 +649,7 @@ function HRContent() {
               <Tooltip
                 formatter={(v, name) => [`${v}%`, String(name)]}
                 labelFormatter={(label) => {
-                  const item = HC_BY_LOCATION.find((d) => d.name === label);
+                  const item = hcByLocation.find((d) => d.name === label);
                   return item
                     ? `${label} — Payroll: ${formatCurrency(item.payroll)} | Revenue: ${formatCurrency(item.revenue)}`
                     : String(label);
@@ -426,10 +659,15 @@ function HRContent() {
                 x={HC_PCT_TARGET}
                 stroke={chartColors.target}
                 strokeDasharray="3 3"
-                label={{ value: `Target ${HC_PCT_TARGET}%`, position: "top", fill: chartColors.target, fontSize: 11 }}
+                label={{
+                  value: `Target ${HC_PCT_TARGET}%`,
+                  position: "top",
+                  fill: chartColors.target,
+                  fontSize: 11,
+                }}
               />
               <Bar dataKey="hcPct" name="HC %" barSize={28}>
-                {HC_BY_LOCATION.map((entry) => (
+                {hcByLocation.map((entry) => (
                   <Cell key={entry.name} fill={getHCPctColor(entry.hcPct)} />
                 ))}
                 <LabelList
@@ -457,13 +695,16 @@ function HRContent() {
         </Card>
 
         <Card className="p-3 md:p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-1">Human Capital % by Business Unit</h2>
+          <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
+            Human Capital % by Business Unit
+            {isFinancialsReal ? <LiveBadge source="supabase" /> : <SampleDataBadge />}
+          </h2>
           <p className="text-xs text-muted-foreground mb-4">
-            Group HC%: {GROUP_HC_PCT}% — Payroll / Revenue by brand
+            Group HC%: {groupHcPct}% — Payroll / Revenue by brand
           </p>
-          <ResponsiveContainer width="100%" height={HC_BY_BU.length * 60 + 50}>
+          <ResponsiveContainer width="100%" height={hcByBU.length * 60 + 50}>
             <BarChart
-              data={HC_BY_BU}
+              data={hcByBU}
               layout="vertical"
               margin={{ top: 5, right: 80, left: 10, bottom: 5 }}
             >
@@ -473,7 +714,7 @@ function HRContent() {
               <Tooltip
                 formatter={(v, name) => [`${v}%`, String(name)]}
                 labelFormatter={(label) => {
-                  const item = HC_BY_BU.find((d) => d.name === label);
+                  const item = hcByBU.find((d) => d.name === label);
                   return item
                     ? `${label} — Payroll: ${formatCurrency(item.payroll)} | Revenue: ${formatCurrency(item.revenue)}`
                     : String(label);
@@ -481,17 +722,17 @@ function HRContent() {
               />
               <ReferenceLine x={HC_PCT_TARGET} stroke={chartColors.target} strokeDasharray="3 3" />
               <Bar dataKey="hcPct" name="HC %">
-                {HC_BY_BU.map((entry, i) => (
+                {hcByBU.map((entry, i) => (
                   <Cell
                     key={entry.name}
-                    fill={[chartColors.spa, chartColors.aesthetics, chartColors.slimming][i]}
+                    fill={[chartColors.spa, chartColors.aesthetics, chartColors.slimming][i % 3]}
                   />
                 ))}
                 <LabelList
                   dataKey="hcPct"
                   content={(props) => {
                     const { x, width, y, height, index } = props as Record<string, unknown>;
-                    const entry = HC_BY_BU[Number(index)];
+                    const entry = hcByBU[Number(index)];
                     if (!entry) return <></>;
                     return (
                       <text
@@ -514,17 +755,20 @@ function HRContent() {
         </Card>
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════
+      {/* ══════════════════════════════════════════════════════════════════
           SECTION 2: RevPAH by Location
-          ══════════════════════════════════════════════════════════════ */}
+          ══════════════════════════════════════════════════════════════════ */}
       <Card className="p-3 md:p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-1">Revenue per Available Hour by Location</h2>
+        <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
+          Revenue per Available Hour by Location
+          {isRevPAHReal ? <LiveBadge source="supabase" /> : <SampleDataBadge />}
+        </h2>
         <p className="text-xs text-muted-foreground mb-4">
           Utilization proxy — target {formatCurrency(REVPAH_TARGET)}/hr
         </p>
         <div className="h-[220px] md:h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={REVPAH_BY_LOCATION} margin={{ top: 20, right: 20, left: 0, bottom: 5 }}>
+            <BarChart data={revpahData} margin={{ top: 20, right: 20, left: 0, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" />
               <XAxis dataKey="location" angle={-35} textAnchor="end" height={60} tick={{ fontSize: 12 }} />
               <YAxis tickFormatter={(v: number) => `€${v}`} tick={{ fontSize: 11 }} />
@@ -541,7 +785,7 @@ function HRContent() {
                 }}
               />
               <Bar dataKey="revpah" name="RevPAH">
-                {REVPAH_BY_LOCATION.map((entry) => (
+                {revpahData.map((entry) => (
                   <Cell key={entry.location} fill={getRevPAHColor(entry.revpah)} />
                 ))}
                 <LabelList
@@ -569,142 +813,210 @@ function HRContent() {
         </div>
       </Card>
 
-      {/* ══════════════════════════════════════════════════════════════
+      {/* ══════════════════════════════════════════════════════════════════
           SECTION 3: Attendance Today + Late Arrivals
-          ══════════════════════════════════════════════════════════════ */}
+          ══════════════════════════════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
         <Card className="p-3 md:p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-4">
+          <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center">
             Attendance Today
             <span className="ml-2 text-sm font-normal text-muted-foreground">
-              ({ATTENDANCE_LOGS.length} of {HEADCOUNT.totalActive} clocked in)
+              ({attendance.length} of {headcountActive} clocked in)
             </span>
+            {isAttendanceReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
           </h2>
-          <DataTable
-            columns={attendanceColumns}
-            data={ATTENDANCE_LOGS as unknown as Record<string, unknown>[]}
-            pageSize={8}
-          />
+          {timeLogsQ.isLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-full" />
+              ))}
+            </div>
+          ) : (
+            <DataTable
+              columns={attendanceColumns}
+              data={attendance as unknown as Record<string, unknown>[]}
+              pageSize={8}
+            />
+          )}
         </Card>
 
         <Card className="p-3 md:p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-4">
+          <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center">
             Late Arrivals
-            <span className="ml-2 text-sm font-normal text-red-500">
-              ({LATE_EMPLOYEES.length} late)
-            </span>
+            <span className="ml-2 text-sm font-normal text-red-500">({late.length} late)</span>
+            {isLateReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
           </h2>
-          <DataTable
-            columns={latenessColumns}
-            data={LATE_EMPLOYEES as unknown as Record<string, unknown>[]}
-            pageSize={8}
-          />
+          {timeLogsQ.isLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-full" />
+              ))}
+            </div>
+          ) : (
+            <DataTable
+              columns={latenessColumns}
+              data={late as unknown as Record<string, unknown>[]}
+              pageSize={8}
+            />
+          )}
         </Card>
       </div>
 
       {/* Not Clocked In */}
       <Card className="p-3 md:p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-4">
+        <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center">
           Not Clocked In Today
-          <span className="ml-2 text-sm font-normal text-amber-600">
-            ({NOT_CLOCKED_IN.length})
-          </span>
+          <span className="ml-2 text-sm font-normal text-amber-600">({notIn.length})</span>
+          {isNotClockedInReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
         </h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-          {NOT_CLOCKED_IN.map((name) => (
-            <div key={name} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 text-amber-800 text-sm">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-              {name}
-            </div>
-          ))}
-        </div>
+        {timeLogsQ.isLoading ? (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-9 w-full" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+            {notIn.map((name) => (
+              <div
+                key={name}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 text-amber-800 text-sm"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                {name}
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
 
-      {/* ══════════════════════════════════════════════════════════════
+      {/* ══════════════════════════════════════════════════════════════════
           SECTION 4: Headcount Breakdown
-          ══════════════════════════════════════════════════════════════ */}
+          ══════════════════════════════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
         <Card className="p-3 md:p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-4">Headcount by Position</h2>
-          <ResponsiveContainer width="100%" height={HEADCOUNT.byPosition.length * 36 + 50}>
-            <BarChart
-              data={HEADCOUNT.byPosition}
-              layout="vertical"
-              margin={{ top: 5, right: 50, left: 10, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
-              <XAxis type="number" tick={{ fontSize: 11 }} />
-              <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={145} />
-              <Tooltip />
-              <Bar dataKey="count" name="Employees" fill={chartColors.spa} radius={[0, 4, 4, 0]}>
-                <LabelList
-                  dataKey="count"
-                  position="right"
-                  style={{ fontSize: 11, fontWeight: 600, fill: "currentColor" }}
-                />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </Card>
-
-        <Card className="p-3 md:p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-4">Headcount by Location</h2>
-          <ResponsiveContainer width="100%" height={350}>
-            <PieChart>
-              <Pie
-                data={HEADCOUNT.byOrgUnit}
-                cx="50%"
-                cy="50%"
-                innerRadius={60}
-                outerRadius={110}
-                paddingAngle={3}
-                dataKey="count"
-                nameKey="name"
-                label={({ name, value }) => `${name}: ${value}`}
+          <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center">
+            Headcount by Position
+            {isHeadcountReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
+          </h2>
+          {headcountQ.isLoading ? (
+            <Skeleton className="h-[400px] w-full" />
+          ) : (
+            <ResponsiveContainer width="100%" height={positions.length * 36 + 50}>
+              <BarChart
+                data={positions}
+                layout="vertical"
+                margin={{ top: 5, right: 50, left: 10, bottom: 5 }}
               >
-                {HEADCOUNT.byOrgUnit.map((_, i) => (
-                  <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={145} />
+                <Tooltip />
+                <Bar dataKey="count" name="Employees" fill={chartColors.spa} radius={[0, 4, 4, 0]}>
+                  <LabelList
+                    dataKey="count"
+                    position="right"
+                    style={{ fontSize: 11, fontWeight: 600, fill: "currentColor" }}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </Card>
+
+        <Card className="p-3 md:p-6">
+          <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center">
+            Headcount by Location
+            {isHeadcountReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
+          </h2>
+          {headcountQ.isLoading ? (
+            <Skeleton className="h-[350px] w-full" />
+          ) : (
+            <ResponsiveContainer width="100%" height={350}>
+              <PieChart>
+                <Pie
+                  data={orgUnits}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={110}
+                  paddingAngle={3}
+                  dataKey="count"
+                  nameKey="name"
+                  label={({ name, value }) => `${name}: ${value}`}
+                >
+                  {orgUnits.map((_, i) => (
+                    <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
         </Card>
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════
+      {/* ══════════════════════════════════════════════════════════════════
           SECTION 5: Leave Balances + Sick Leave
-          ══════════════════════════════════════════════════════════════ */}
+          ══════════════════════════════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
         <Card className="p-3 md:p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-4">
-            Leave Balances — 2026
+          <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center">
+            Leave Balances — {new Date().getFullYear()}
+            {isLeaveReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
           </h2>
-          <DataTable
-            columns={leaveBalanceColumns}
-            data={LEAVE_BALANCES as unknown as Record<string, unknown>[]}
-            pageSize={10}
-          />
+          {leaveQ.isLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-full" />
+              ))}
+            </div>
+          ) : (
+            <DataTable
+              columns={leaveBalanceColumns}
+              data={leaves as unknown as Record<string, unknown>[]}
+              pageSize={10}
+            />
+          )}
         </Card>
 
         <Card className="p-3 md:p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-4">
+          <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center">
             Sick Leave — Top Users
+            {isLeaveReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
           </h2>
-          <DataTable
-            columns={sickLeaveColumns}
-            data={SICK_LEAVE_TOP as unknown as Record<string, unknown>[]}
-            pageSize={10}
-          />
+          {leaveQ.isLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-full" />
+              ))}
+            </div>
+          ) : (
+            <DataTable
+              columns={sickLeaveColumns}
+              data={sickTop as unknown as Record<string, unknown>[]}
+              pageSize={10}
+            />
+          )}
         </Card>
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════
-          SECTION 6: Productivity Leaderboard
-          ══════════════════════════════════════════════════════════════ */}
-      <Card className="p-3 md:p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-1">Productivity Leaderboard</h2>
+      {/* ══════════════════════════════════════════════════════════════════
+          SECTION 6: Productivity Leaderboard (WE360 sample)
+          ══════════════════════════════════════════════════════════════════ */}
+      <Card className="p-3 md:p-6 opacity-60" title="Connect WE360 integration to see real productivity metrics.">
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <span aria-hidden>ℹ️</span>
+          <span>
+            <strong>Sample data.</strong> This section shows sample data. Connect WE360 integration to see real
+            productivity metrics.
+          </span>
+        </div>
+        <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
+          Productivity Leaderboard
+          <SampleDataBadge />
+        </h2>
         <p className="text-xs text-muted-foreground mb-4">
           Daily hours breakdown — sorted by productive % descending | Target: 80%
         </p>
@@ -721,7 +1033,9 @@ function HRContent() {
               formatter={(value, name) => [`${Number(value).toFixed(1)}h`, String(name)]}
               labelFormatter={(label) => {
                 const item = PRODUCTIVITY_DATA.find((d) => d.name === label);
-                return item ? `${label} — ${item.productivePct}% productive (${item.totalHrs}h total)` : String(label);
+                return item
+                  ? `${label} — ${item.productivePct}% productive (${item.totalHrs}h total)`
+                  : String(label);
               }}
             />
             <Legend wrapperStyle={{ fontSize: 12 }} />
@@ -777,49 +1091,60 @@ function HRContent() {
         </ResponsiveContainer>
       </Card>
 
-      {/* ══════════════════════════════════════════════════════════════
+      {/* ══════════════════════════════════════════════════════════════════
           SECTION 7: Payroll by Location
-          ══════════════════════════════════════════════════════════════ */}
+          ══════════════════════════════════════════════════════════════════ */}
       <Card className="p-3 md:p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-1">Payroll by Location</h2>
+        <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
+          Payroll by Location
+          {isPayrollReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
+        </h2>
         <p className="text-xs text-muted-foreground mb-4">
-          Gross payroll — March 2026
+          Gross payroll — {prettyMonth(payrollData.latestMonth)}
         </p>
-        <ResponsiveContainer width="100%" height={PAYROLL.locationData.length * 40 + 50}>
-          <BarChart
-            data={PAYROLL.locationData}
-            layout="vertical"
-            margin={{ top: 5, right: 100, left: 10, bottom: 5 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
-            <XAxis type="number" tickFormatter={(v: number) => `€${(v / 1000).toFixed(1)}K`} tick={{ fontSize: 11 }} />
-            <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={120} />
-            <Tooltip formatter={(v) => formatCurrency(Number(v))} />
-            <Bar dataKey="gross" name="Gross Pay" fill={chartColors.spa} barSize={28} radius={[0, 4, 4, 0]}>
-              <LabelList
-                dataKey="gross"
-                content={(props) => {
-                  const { x, width, y, height, index } = props as Record<string, unknown>;
-                  const entry = PAYROLL.locationData[Number(index)];
-                  if (!entry) return <></>;
-                  return (
-                    <text
-                      x={Number(x) + Number(width) + 6}
-                      y={Number(y) + Number(height) / 2}
-                      textAnchor="start"
-                      dominantBaseline="middle"
-                      fontSize={11}
-                      fontWeight={600}
-                      fill="currentColor"
-                    >
-                      {formatCurrency(entry.gross)} ({entry.headcount} staff)
-                    </text>
-                  );
-                }}
+        {payslipsQ.isLoading ? (
+          <Skeleton className="h-[400px] w-full" />
+        ) : (
+          <ResponsiveContainer width="100%" height={payrollData.locationData.length * 40 + 50}>
+            <BarChart
+              data={payrollData.locationData}
+              layout="vertical"
+              margin={{ top: 5, right: 100, left: 10, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
+              <XAxis
+                type="number"
+                tickFormatter={(v: number) => `€${(v / 1000).toFixed(1)}K`}
+                tick={{ fontSize: 11 }}
               />
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+              <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={120} />
+              <Tooltip formatter={(v) => formatCurrency(Number(v))} />
+              <Bar dataKey="gross" name="Gross Pay" fill={chartColors.spa} barSize={28} radius={[0, 4, 4, 0]}>
+                <LabelList
+                  dataKey="gross"
+                  content={(props) => {
+                    const { x, width, y, height, index } = props as Record<string, unknown>;
+                    const entry = payrollData.locationData[Number(index)];
+                    if (!entry) return <></>;
+                    return (
+                      <text
+                        x={Number(x) + Number(width) + 6}
+                        y={Number(y) + Number(height) / 2}
+                        textAnchor="start"
+                        dominantBaseline="middle"
+                        fontSize={11}
+                        fontWeight={600}
+                        fill="currentColor"
+                      >
+                        {formatCurrency(entry.gross)} ({entry.headcount} staff)
+                      </text>
+                    );
+                  }}
+                />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
       </Card>
 
       <CIChat />
@@ -827,14 +1152,10 @@ function HRContent() {
   );
 }
 
-// ============================================================
+// ════════════════════════════════════════════════════════════════════════════
 // PAGE EXPORT
-// ============================================================
+// ════════════════════════════════════════════════════════════════════════════
 
 export default function HRPage() {
-  return (
-    <DashboardShell>
-      {() => <HRContent />}
-    </DashboardShell>
-  );
+  return <DashboardShell>{() => <HRContent />}</DashboardShell>;
 }

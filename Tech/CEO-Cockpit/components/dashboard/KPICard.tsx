@@ -12,6 +12,7 @@ interface KPICardProps {
   currentValue?: number;
   format?: "currency" | "percent" | "number" | "time";
   href?: string;
+  isSample?: boolean;
 }
 
 export function KPICard({
@@ -22,6 +23,7 @@ export function KPICard({
   targetValue,
   currentValue,
   href,
+  isSample,
 }: KPICardProps) {
   const trendColor =
     trend === undefined || trend === 0
@@ -46,7 +48,13 @@ export function KPICard({
     <>
       <div className="flex items-center justify-between mb-2">
         <span className="text-sm text-gray-500 font-medium">{label}</span>
-        {trend !== undefined && (
+        {isSample && (
+          <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-1.5 py-0.5">
+            <span className="w-1 h-1 rounded-full bg-amber-400" />
+            Sample
+          </span>
+        )}
+        {!isSample && trend !== undefined && (
           <span className={cn("flex items-center gap-1 text-sm font-medium", trendColor)}>
             <TrendIcon className="h-4 w-4" />
             {Math.abs(trend)}%

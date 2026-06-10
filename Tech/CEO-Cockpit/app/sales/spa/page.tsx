@@ -14,7 +14,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LabelList, Legend, Cell,
 } from "recharts";
-import { RefreshCw, AlertCircle, FileSpreadsheet } from "lucide-react";
+import { AlertCircle, FileSpreadsheet } from "lucide-react";
+import { SyncButton } from "@/components/dashboard/SyncButton";
 
 const VAT_RATE = 0.18;
 
@@ -194,14 +195,10 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
             </span>
           </div>
         </div>
-        <button
-          onClick={() => triggerSync(true)}
-          disabled={isLoading}
-          className="flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg border hover:bg-muted transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`} />
-          {isSyncing ? "Syncing…" : "Re-Sync"}
-        </button>
+        <SyncButton
+          onSync={async () => { await triggerSync(true); }}
+          isExternalBusy={isLoading}
+        />
       </div>
 
       {syncError && (

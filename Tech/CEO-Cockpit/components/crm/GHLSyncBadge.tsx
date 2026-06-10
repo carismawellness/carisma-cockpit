@@ -36,17 +36,17 @@ export function GHLSyncBadge() {
     : "GHL not yet synced";
 
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-muted-foreground">{syncedLabel}</span>
+    <div className="flex flex-col items-end gap-1">
       <button
         onClick={handleSync}
         disabled={syncing}
-        className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg border hover:bg-muted transition-colors disabled:opacity-50"
+        className="flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg border hover:bg-muted transition-colors disabled:opacity-50"
         title="Re-sync GHL CRM data"
       >
-        <RefreshCw className={`h-3 w-3 ${syncing ? "animate-spin" : ""}`} />
+        <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
         {syncing ? "Syncing…" : "Re-Sync GHL"}
       </button>
+      <span className="text-[10px] text-muted-foreground">{syncedLabel}</span>
     </div>
   );
 }

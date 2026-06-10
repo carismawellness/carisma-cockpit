@@ -86,22 +86,22 @@ function IndividualKPIsContent({
           <p className="mt-0.5 text-sm text-muted-foreground">
             Carisma Wellness Group · Sales Team · {formatDateRangeLabel(dateFrom, dateTo)}
           </p>
-          <div className="mt-1">
-            <LastSyncedBadge />
-          </div>
         </div>
-        <button
-          onClick={handleSync}
-          disabled={isSyncing || isLoading}
-          className={`flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg border transition-colors disabled:opacity-50 ${
-            syncDone
-              ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-              : "hover:bg-muted"
-          }`}
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin" : ""}`} />
-          {isSyncing ? "Pulling from sheet…" : syncDone ? "Updated ✓" : "Re-Sync"}
-        </button>
+        <div className="flex flex-col items-end gap-1">
+          <button
+            onClick={handleSync}
+            disabled={isSyncing || isLoading}
+            className={`flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg border transition-colors disabled:opacity-50 ${
+              syncDone
+                ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                : "hover:bg-muted"
+            }`}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin" : ""}`} />
+            {isSyncing ? "Pulling from sheet…" : syncDone ? "Updated ✓" : "Re-Sync"}
+          </button>
+          <LastSyncedBadge />
+        </div>
       </div>
 
       {/* Error states */}
