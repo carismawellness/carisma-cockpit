@@ -17,18 +17,17 @@ const BRAND = {
   slimming:   { dark: "#3D6B3D", soft: "#C9D8C1" },
 } as const;
 
-// All Spa hotels are still "Spa" — so the expanded view uses 8 cream/taupe
-// shades within the brand family rather than 8 arbitrary unrelated colors.
-// Ordered darkest → lightest. Stable per hotel so identity persists across periods.
+// 8 warm/earth tones with real contrast — shared with GroupLongitudinal so
+// each hotel reads with the same identity across both charts. Stable per hotel.
 const SPA_LOCATION_PALETTE: Record<string, string> = {
-  Inter:     "#5C4D32",
-  Hyatt:     "#6B5C42",
-  Excelsior: "#7A6A4F",
-  Ramla:     "#8C7A5A",
-  Hugos:     "#9F8E6F",
-  Riviera:   "#B2A186",
-  Odycy:     "#C5B69D",
-  Novotel:   "#D9CDB2",
+  Inter:     "#3D2D1A",  // deep espresso
+  Hyatt:     "#7A3F35",  // burgundy
+  Excelsior: "#A0522D",  // sienna
+  Ramla:     "#8C7A5A",  // canonical Spa tan
+  Hugos:     "#C49862",  // caramel
+  Riviera:   "#D9B98C",  // warm sand
+  Odycy:     "#7E8055",  // olive
+  Novotel:   "#E8D9B9",  // palest cream
 };
 
 function fmtK(v: number) {

@@ -8,7 +8,7 @@ import {
   ComposedChart, Bar, Line,
   LineChart,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList,
-  ResponsiveContainer,
+  ResponsiveContainer, Customized,
 } from "recharts";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { GroupMonthlyPoint } from "@/lib/hooks/useGroupRevenue";
@@ -20,20 +20,25 @@ const BRAND = {
   slimming:   { dark: "#3D6B3D", soft: "#C9D8C1" },
 } as const;
 
-// 8 cream/taupe shades — same fixed assignment used by GroupBrandBreakdown so
-// each hotel reads with the same identity across both charts.
+// 8 warm/earth tones with real contrast — chosen so neighboring hotel segments
+// are visibly distinct even when small (which the cream gradient wasn't).
+// Stable per hotel so identity persists across charts and across periods.
 const SPA_LOCATION_PALETTE: Record<string, string> = {
-  Inter:     "#5C4D32",
-  Hyatt:     "#6B5C42",
-  Excelsior: "#7A6A4F",
-  Ramla:     "#8C7A5A",
-  Hugos:     "#9F8E6F",
-  Riviera:   "#B2A186",
-  Odycy:     "#C5B69D",
-  Novotel:   "#D9CDB2",
+  Inter:     "#3D2D1A",  // deep espresso
+  Hyatt:     "#7A3F35",  // burgundy
+  Excelsior: "#A0522D",  // sienna
+  Ramla:     "#8C7A5A",  // canonical Spa tan
+  Hugos:     "#C49862",  // caramel
+  Riviera:   "#D9B98C",  // warm sand
+  Odycy:     "#7E8055",  // olive
+  Novotel:   "#E8D9B9",  // palest cream
 };
-// Render order = stack order (bottom → top). Darkest at the bottom of each column.
-const SPA_HOTEL_ORDER = ["Inter", "Hyatt", "Excelsior", "Ramla", "Hugos", "Riviera", "Odycy", "Novotel"];
+// Render order = stack order (bottom → top). Sorted so adjacent stacked
+// segments have maximum visual contrast.
+const SPA_HOTEL_ORDER = ["Inter", "Excelsior", "Hyatt", "Hugos", "Ramla", "Odycy", "Riviera", "Novotel"];
+
+// White text on these darker fills reads cleanly; dark text needed on the lighter ones.
+const LIGHT_HOTEL_FILLS = new Set(["Hugos", "Riviera", "Novotel"]);
 
 const LY_TOTAL_LINE = "#9CA3AF"; // neutral gray for LY trajectory overlay
 
@@ -171,8 +176,8 @@ export function GroupLongitudinal({ monthly, isFetching }: Props) {
           {view === "bars" ? (
             <ComposedChart
               data={chartData}
-              margin={{ top: 24, right: 12, left: 12, bottom: 4 }}
-              barCategoryGap="14%"
+              margin={{ top: 32, right: 12, left: 12, bottom: expanded ? 12 : 4 }}
+              barCategoryGap={expanded ? "10%" : "14%"}
             >
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
               <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#374151" }} interval={0} />
@@ -181,9 +186,13 @@ export function GroupLongitudinal({ monthly, isFetching }: Props) {
                 formatter={(v: unknown, name) => [fmtK(Number(v)), String(name ?? "")]}
                 cursor={{ fill: "rgba(0,0,0,0.03)" }}
               />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Legend
+                wrapperStyle={{ fontSize: 12, paddingTop: 12 }}
+                iconType="square"
+                iconSize={12}
+              />
               {expanded ? (
-                // 8 stacked Spa hotel segments (bottom of stack), darkest at the bottom
+                // 8 stacked Spa hotel segments with per-segment value labels
                 SPA_HOTEL_ORDER.map((hotel) => (
                   <Bar
                     key={hotel}
@@ -191,38 +200,55 @@ export function GroupLongitudinal({ monthly, isFetching }: Props) {
                     name={`Spa · ${hotel}`}
                     stackId="a"
                     fill={SPA_LOCATION_PALETTE[hotel]}
-                  />
+                  >
+                    <LabelList
+                      dataKey={`spa_${hotel}`}
+                      position="center"
+                      formatter={(v: unknown) => {
+                        const val = Number(v);
+                        // Hide labels for tiny segments that can't fit text
+                        return val >= 8000 ? fmtK(val) : "";
+                      }}
+                      style={{
+                        fontSize: 9,
+                        fontWeight: 700,
+                        fill: LIGHT_HOTEL_FILLS.has(hotel) ? "#1f2937" : "#ffffff",
+                      }}
+                    />
+                  </Bar>
                 ))
               ) : (
                 <Bar dataKey="spa" name="Spa" stackId="a" fill={BRAND.spa.dark} />
               )}
-              <Bar dataKey="aesthetics" name="Aesthetics" stackId="a" fill={BRAND.aesthetics.dark} />
+              <Bar dataKey="aesthetics" name="Aesthetics" stackId="a" fill={BRAND.aesthetics.dark}>
+                {expanded && (
+                  <LabelList
+                    dataKey="aesthetics"
+                    position="center"
+                    formatter={(v: unknown) => {
+                      const val = Number(v);
+                      return val >= 8000 ? fmtK(val) : "";
+                    }}
+                    style={{ fontSize: 9, fontWeight: 700, fill: "#ffffff" }}
+                  />
+                )}
+              </Bar>
               <Bar dataKey="slimming"   name="Slimming"   stackId="a" fill={BRAND.slimming.dark}   radius={[3, 3, 0, 0]}>
-                {/* Custom label renderer — uses chartData[index].total so labels show even
-                    when Slimming = 0 (Recharts skips default LabelList on zero-height segments). */}
-                <LabelList
-                  content={(props: { x?: number | string; y?: number | string; width?: number | string; index?: number }) => {
-                    const i = props.index ?? -1;
-                    if (i < 0) return null;
-                    const row = chartData[i];
-                    if (!row || row.total <= 0) return null;
-                    const x = Number(props.x ?? 0);
-                    const y = Number(props.y ?? 0);
-                    const w = Number(props.width ?? 0);
-                    return (
-                      <text
-                        x={x + w / 2}
-                        y={y - 6}
-                        textAnchor="middle"
-                        fontSize="9"
-                        fontWeight="600"
-                        fill="#111827"
-                      >
-                        {fmtK(row.total)}
-                      </text>
-                    );
-                  }}
-                />
+                {expanded && (
+                  <LabelList
+                    dataKey="slimming"
+                    position="center"
+                    formatter={(v: unknown) => {
+                      const val = Number(v);
+                      return val >= 8000 ? fmtK(val) : "";
+                    }}
+                    style={{ fontSize: 9, fontWeight: 700, fill: "#ffffff" }}
+                  />
+                )}
+                {/* Total label rendered separately via Customized below so it
+                    can use the chart's yScale (avoids Recharts' broken
+                    LabelList positioning when the topmost stacked segment
+                    has zero height). */}
               </Bar>
               {/* LY total trajectory overlay — neutral gray dashed line */}
               <Line
@@ -234,6 +260,43 @@ export function GroupLongitudinal({ monthly, isFetching }: Props) {
                 strokeDasharray="5 3"
                 dot={{ r: 2.5, fill: LY_TOTAL_LINE, strokeWidth: 0 }}
                 activeDot={{ r: 4 }}
+              />
+              {/* Total-on-top labels — rendered via Customized so we can use
+                  the actual yScale and place every column's total at the
+                  correct pixel y, regardless of stacked-segment quirks. */}
+              <Customized
+                component={(props: unknown) => {
+                  const p = props as {
+                    xAxisMap?: Record<string, { scale: (v: string) => number; bandwidth?: () => number }>;
+                    yAxisMap?: Record<string, { scale: (v: number) => number }>;
+                  };
+                  const xAxis = p.xAxisMap ? Object.values(p.xAxisMap)[0] : undefined;
+                  const yAxis = p.yAxisMap ? Object.values(p.yAxisMap)[0] : undefined;
+                  if (!xAxis || !yAxis) return null;
+                  return (
+                    <g>
+                      {chartData.map((d, i) => {
+                        if (!d.total || d.total <= 0) return null;
+                        const xScale = xAxis.scale as unknown as ((v: string) => number) & { bandwidth?: () => number };
+                        const cx = xScale(d.label) + (xScale.bandwidth ? xScale.bandwidth() / 2 : 0);
+                        const cy = yAxis.scale(d.total) - 6;
+                        return (
+                          <text
+                            key={i}
+                            x={cx}
+                            y={cy}
+                            textAnchor="middle"
+                            fontSize="11"
+                            fontWeight="700"
+                            fill="#111827"
+                          >
+                            {fmtK(d.total)}
+                          </text>
+                        );
+                      })}
+                    </g>
+                  );
+                }}
               />
             </ComposedChart>
           ) : (
