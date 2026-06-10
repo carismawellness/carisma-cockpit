@@ -81,11 +81,14 @@ export async function GET(req: NextRequest) {
   for (const r of spaRev ?? []) {
     const loc = LOCATION_ID_TO_DISPLAY[r.location_id as number];
     if (!loc) continue;
-    const total =
+    // services + product_* hold inc-VAT after migration 073. Divide for ex-VAT
+    // so RevPAH stays consistent with aesthetics/slimming (price_ex_vat).
+    const totalInc =
       Number(r.services ?? 0) +
       Number(r.product_phytomer ?? 0) +
       Number(r.product_purest ?? 0) +
       Number(r.product_other ?? 0);
+    const total = totalInc / 1.18;
     revenueByLocation.set(loc, (revenueByLocation.get(loc) ?? 0) + total);
   }
 

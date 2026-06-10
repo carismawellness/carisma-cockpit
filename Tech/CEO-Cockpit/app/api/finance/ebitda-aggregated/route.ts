@@ -668,11 +668,15 @@ async function fetchFromSupabase(
           ?? SLUG_BY_ID[r.location_id]
           ?? String(r.location_id);
     }
-    const net =
+    // services + product_* hold inc-VAT after migration 073 — divide for ex-VAT.
+    // wholesale/discount/refund are Zoho-sourced and stay ex-VAT.
+    const grossInc =
       parseFloat(r.services          || "0") +
       parseFloat(r.product_phytomer  || "0") +
       parseFloat(r.product_purest    || "0") +
-      parseFloat(r.product_other     || "0") +
+      parseFloat(r.product_other     || "0");
+    const net =
+      grossInc / 1.18 +
       parseFloat(r.wholesale         || "0") -
       parseFloat(r.sales_discount    || "0") -
       parseFloat(r.sales_refund      || "0");

@@ -502,12 +502,14 @@ async function aggregateRange(
     const slug = LOC_ID_TO_SLUG[row.location_id];
     if (!slug) continue;
     const period = dateToPeriod(row.date as string, granularity);
-    const cockpitSales = (
+    // services + product_* hold inc-VAT after migration 073. Divide for ex-VAT.
+    const cockpitSalesInc = (
       Number(row.services         ?? 0) +
       Number(row.product_phytomer ?? 0) +
       Number(row.product_purest   ?? 0) +
       Number(row.product_other    ?? 0)
     );
+    const cockpitSales = cockpitSalesInc / 1.18;
     const vm = getVM(acc, period, slug);
     vm.revenue       += cockpitSales;
     vm.cockpit_revenue += cockpitSales;

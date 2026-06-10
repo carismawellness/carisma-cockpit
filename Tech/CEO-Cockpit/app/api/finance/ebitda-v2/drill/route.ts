@@ -105,7 +105,9 @@ export async function GET(req: Request) {
           const lastD=new Date(mY,mMo,0).getDate(), mEnd=`${mY}-${String(mMo).padStart(2,"0")}-${String(lastD).padStart(2,"0")}`;
           const rs=dateFrom!>mStr?dateFrom!:mStr, re=dateTo!<mEnd?dateTo!:mEnd;
           const dr=rs>re?0:Math.round((parseLocalHw(re).getTime()-parseLocalHw(rs).getTime())/86_400_000)+1;
-          cockpitRevenue += (Number(r.services??0)+Number(r.product_phytomer??0)+Number(r.product_purest??0)+Number(r.product_other??0))*(dr/lastD);
+          // services + product_* hold inc-VAT after migration 073. Divide for ex-VAT.
+          const grossInc = Number(r.services??0)+Number(r.product_phytomer??0)+Number(r.product_purest??0)+Number(r.product_other??0);
+          cockpitRevenue += (grossInc/1.18)*(dr/lastD);
         }
       }
 
@@ -176,8 +178,9 @@ export async function GET(req: Request) {
       const dim = lastD;
       const f = daysInRange / dim;
 
-      const svc = Number(r.services ?? 0) * f;
-      const prd = (Number(r.product_phytomer ?? 0) + Number(r.product_purest ?? 0) + Number(r.product_other ?? 0)) * f;
+      // services + product_* hold inc-VAT after migration 073. Divide for ex-VAT.
+      const svc = (Number(r.services ?? 0) / 1.18) * f;
+      const prd = ((Number(r.product_phytomer ?? 0) + Number(r.product_purest ?? 0) + Number(r.product_other ?? 0)) / 1.18) * f;
       const whl = Number(r.wholesale ?? 0) * f;
       const disc = Number(r.sales_discount ?? 0) * f;
       const ref  = Number(r.sales_refund ?? 0) * f;

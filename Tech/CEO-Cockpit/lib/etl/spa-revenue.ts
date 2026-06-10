@@ -128,11 +128,11 @@ async function fetchCockpitServices(
     if (!d || d < dateFrom || d > dateTo) continue;
     const locId = COCKPIT_SPA_LOCATION_MAP[stripCol(row, "Sales Point")];
     if (locId === undefined) continue;
+    // Unit Price is inc-VAT (till receipt). Store gross — EBITDA divides at read time.
     const unitPrice = safeFloat(stripCol(row, "Unit Price"));
-    const amountEx  = +(unitPrice / (1 + VAT_RATE)).toFixed(2);
     const mk        = monthKey(d);
     if (!totals[locId]) totals[locId] = {};
-    totals[locId][mk] = (totals[locId][mk] ?? 0) + amountEx;
+    totals[locId][mk] = (totals[locId][mk] ?? 0) + unitPrice;
   }
   return totals;
 }
@@ -151,8 +151,11 @@ async function fetchCockpitProducts(
     const spa    = stripCol(row, "Point of Sales") || stripCol(row, "Point of Sales ");
     const locId  = COCKPIT_SPA_LOCATION_MAP[spa];
     if (locId === undefined) continue;
-    const amount = safeFloat(stripCol(row, "VAT Exclusive Amount") || stripCol(row, "VAT Exclusive Amount "));
-    if (amount <= 0) continue;
+    // Source column is "VAT Exclusive Amount" (ex-VAT). Multiply by 1.18 to
+    // store inc-VAT for consistency with the services path.
+    const amountEx = safeFloat(stripCol(row, "VAT Exclusive Amount") || stripCol(row, "VAT Exclusive Amount "));
+    if (amountEx <= 0) continue;
+    const amount = +(amountEx * (1 + VAT_RATE)).toFixed(2);
     const brand  = stripCol(row, "Brand").toUpperCase();
     const col2   = BRAND_MAP[brand] ?? "product_other";
     const mk     = monthKey(d);
@@ -165,8 +168,8 @@ async function fetchCockpitProducts(
 
 // ── Cockpit data fetch — daily aggregation (for spa_revenue_daily) ──────────────
 
-type DailyServiceTotals  = Record<number, Record<string, number>>;              // locId → dateStr → exVAT
-type DailyProductTotals  = Record<number, Record<string, Record<string, number>>>; // locId → dateStr → brand → amt
+type DailyServiceTotals  = Record<number, Record<string, number>>;              // locId → dateStr → incVAT
+type DailyProductTotals  = Record<number, Record<string, Record<string, number>>>; // locId → dateStr → brand → incVAT
 
 async function fetchCockpitServicesByDay(dateFrom: Date, dateTo: Date): Promise<DailyServiceTotals> {
   const rows   = await fetchCockpitCsv(SERVICE_GID);
@@ -177,11 +180,11 @@ async function fetchCockpitServicesByDay(dateFrom: Date, dateTo: Date): Promise<
     if (!d || d < dateFrom || d > dateTo) continue;
     const locId = COCKPIT_SPA_LOCATION_MAP[stripCol(row, "Sales Point")];
     if (locId === undefined) continue;
+    // Unit Price is inc-VAT (till receipt). Store gross.
     const unitPrice = safeFloat(stripCol(row, "Unit Price"));
-    const amountEx  = +(unitPrice / (1 + VAT_RATE)).toFixed(2);
     const dk        = dateKey(d);
     if (!totals[locId]) totals[locId] = {};
-    totals[locId][dk] = (totals[locId][dk] ?? 0) + amountEx;
+    totals[locId][dk] = (totals[locId][dk] ?? 0) + unitPrice;
   }
   return totals;
 }
@@ -196,8 +199,10 @@ async function fetchCockpitProductsByDay(dateFrom: Date, dateTo: Date): Promise<
     const spa   = stripCol(row, "Point of Sales") || stripCol(row, "Point of Sales ");
     const locId = COCKPIT_SPA_LOCATION_MAP[spa];
     if (locId === undefined) continue;
-    const amount = safeFloat(stripCol(row, "VAT Exclusive Amount") || stripCol(row, "VAT Exclusive Amount "));
-    if (amount <= 0) continue;
+    // Source column is "VAT Exclusive Amount" (ex-VAT). Multiply by 1.18 → inc-VAT.
+    const amountEx = safeFloat(stripCol(row, "VAT Exclusive Amount") || stripCol(row, "VAT Exclusive Amount "));
+    if (amountEx <= 0) continue;
+    const amount = +(amountEx * (1 + VAT_RATE)).toFixed(2);
     const brand = stripCol(row, "Brand").toUpperCase();
     const col2  = BRAND_MAP[brand] ?? "product_other";
     const dk    = dateKey(d);

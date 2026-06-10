@@ -412,6 +412,9 @@ async function main() {
   console.log(`✓ spa_transactions_raw: ${upserted} rows`);
 
   // ── Derive spa_revenue_daily (historic_sheet only) ─────────────────────────
+  // spa_revenue_daily holds inc-VAT (gross) after migration 073. Keep the
+  // per-transaction revenue_ex_vat field in spa_transactions_raw (it represents
+  // the actual ex-VAT amount per line item), but aggregate × 1.18 here.
   type DailyKey = string; // `${location_id}|${date}`
   type DailyAgg = { location_id: number; date: string; services: number; product_phytomer: number; product_purest: number; product_other: number };
   const dailyMap = new Map<DailyKey, DailyAgg>();
@@ -419,7 +422,7 @@ async function main() {
     if (r.service_date == null || r.location_id == null) continue;
     const k = `${r.location_id}|${r.service_date}`;
     const cur = dailyMap.get(k) ?? { location_id: r.location_id, date: r.service_date, services: 0, product_phytomer: 0, product_purest: 0, product_other: 0 };
-    (cur as any)[r.revenue_bucket] += r.revenue_ex_vat;
+    (cur as any)[r.revenue_bucket] += r.revenue_ex_vat * (1 + VAT_RATE);
     dailyMap.set(k, cur);
   }
   const dailyRows = [...dailyMap.values()].map(a => ({
@@ -440,6 +443,7 @@ async function main() {
   console.log(`✓ spa_revenue_daily: ${dailyUp} rows`);
 
   // ── Derive spa_revenue_monthly (historic_sheet only) ───────────────────────
+  // Same inc-VAT convention as spa_revenue_daily.
   type MonthlyKey = string;
   type MonthlyAgg = { location_id: number; month: string; services: number; product_phytomer: number; product_purest: number; product_other: number };
   const monthlyMap = new Map<MonthlyKey, MonthlyAgg>();
@@ -448,7 +452,7 @@ async function main() {
     const mk = r.service_date.slice(0, 7) + "-01";
     const k  = `${r.location_id}|${mk}`;
     const cur = monthlyMap.get(k) ?? { location_id: r.location_id, month: mk, services: 0, product_phytomer: 0, product_purest: 0, product_other: 0 };
-    (cur as any)[r.revenue_bucket] += r.revenue_ex_vat;
+    (cur as any)[r.revenue_bucket] += r.revenue_ex_vat * (1 + VAT_RATE);
     monthlyMap.set(k, cur);
   }
   const monthlyRows = [...monthlyMap.values()].map(a => ({

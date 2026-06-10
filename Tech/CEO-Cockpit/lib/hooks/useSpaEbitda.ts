@@ -265,8 +265,13 @@ export function useSpaEbitda(dateFrom: Date, dateTo: Date): UseSpaEbitdaResult {
     const md = daysInMonth(y, m);
     const overlap = overlapDaysInMonth(dateFrom, dateTo, y, m);
     if (overlap === 0) continue;
-    const net = (r.services ?? 0) + (r.product_phytomer ?? 0) + (r.product_purest ?? 0)
-              + (r.product_other ?? 0) + (r.wholesale ?? 0)
+    // services + product_* columns hold inc-VAT (migration 073). Divide by 1.18
+    // to reconstruct ex-VAT for the EBITDA net calculation. wholesale, discount
+    // and refund come from Zoho and are already ex-VAT — leave them alone.
+    const grossInc = (r.services ?? 0) + (r.product_phytomer ?? 0)
+                   + (r.product_purest ?? 0) + (r.product_other ?? 0);
+    const net = grossInc / 1.18
+              + (r.wholesale ?? 0)
               - (r.sales_discount ?? 0) - (r.sales_refund ?? 0);
     const prorated = net * overlap / md;
     cockpitByLoc.set(r.location_id, (cockpitByLoc.get(r.location_id) ?? 0) + prorated);

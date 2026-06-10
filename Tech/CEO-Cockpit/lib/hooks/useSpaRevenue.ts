@@ -214,26 +214,18 @@ export function useSpaRevenue(dateFrom: Date, dateTo: Date): UseSpaRevenueResult
     }
   }
 
-  // Cockpit ETL divides Spa unit prices by (1 + VAT) before storing, so the
-  // raw columns are EX-VAT. Sales surfaces report gross (inc-VAT). Multiply by
-  // 1.18 to reconstruct inc-VAT for consistency with Aesthetics / Slimming.
-  const SPA_VAT_MULT = 1.18;
-
-  // Round, compute product_total + gross_revenue, sort by gross desc
+  // As of migration 073 the spa_revenue_daily columns hold inc-VAT (gross).
+  // Sums below are the gross revenue per location directly.
   const locations: SpaRevenueLocation[] = Array.from(locMap.values())
     .map((loc) => {
-      const services = loc.services * SPA_VAT_MULT;
-      const phyt     = loc.product_phytomer * SPA_VAT_MULT;
-      const pure     = loc.product_purest   * SPA_VAT_MULT;
-      const other    = loc.product_other    * SPA_VAT_MULT;
-      const pt       = phyt + pure + other;
-      const gross    = services + pt;
+      const pt    = loc.product_phytomer + loc.product_purest + loc.product_other;
+      const gross = loc.services + pt;
       return {
         ...loc,
-        services:         Math.round(services),
-        product_phytomer: Math.round(phyt),
-        product_purest:   Math.round(pure),
-        product_other:    Math.round(other),
+        services:         Math.round(loc.services),
+        product_phytomer: Math.round(loc.product_phytomer),
+        product_purest:   Math.round(loc.product_purest),
+        product_other:    Math.round(loc.product_other),
         product_total:    Math.round(pt),
         gross_revenue:    Math.round(gross),
       };

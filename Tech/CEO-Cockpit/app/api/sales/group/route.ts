@@ -26,20 +26,15 @@ type SpaRevenueRow = {
 
 const SPA_REVENUE_COLUMNS = "services, product_phytomer, product_purest, product_other";
 
-// Cockpit ETL divides Spa unit prices by (1 + VAT) before storing, so the columns
-// in spa_revenue_daily are EX-VAT. Sales surfaces report gross (inc-VAT) for
-// consistency with Aesthetics (price_inc_vat) and Slimming (paid). Reconstruct
-// at read time by multiplying by 1.18 (Malta standard rate, applies to all 4 fields).
-const SPA_VAT_RATE = 0.18;
-
-// Gross sales — services + products, multiplied to reconstruct inc-VAT.
-// Wholesale/discount/refund are EBITDA-only (live in spa_revenue_monthly).
+// Gross sales — services + products from spa_revenue_daily. As of migration 073
+// those columns hold inc-VAT (gross), matching Aesthetics (price_inc_vat) and
+// Slimming (paid). Wholesale/discount/refund are EBITDA-only (live in
+// spa_revenue_monthly) and don't appear on sales surfaces.
 function computeSpaGrossRevenue(r: SpaRevenueRow): number {
-  const exVat = (r.services ?? 0)
+  return (r.services ?? 0)
     + (r.product_phytomer ?? 0)
     + (r.product_purest   ?? 0)
     + (r.product_other    ?? 0);
-  return exVat * (1 + SPA_VAT_RATE);
 }
 
 // Trailing months window for the monthly time series (current month + 12 prior).

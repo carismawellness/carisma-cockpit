@@ -364,12 +364,14 @@ export async function GET(req: Request) {
   for (const row of revenueDaily) {
     const slug = LOC_ID_TO_SLUG[row.location_id as number];
     if (!slug || !venues[slug]) continue;
-    const cockpitSales = (
+    // services + product_* hold inc-VAT after migration 073. Divide for ex-VAT.
+    const cockpitSalesInc = (
       (row.services         as number) +
       (row.product_phytomer as number) +
       (row.product_purest   as number) +
       (row.product_other    as number)
     );
+    const cockpitSales = cockpitSalesInc / 1.18;
     venues[slug].revenue       += cockpitSales;
     venues[slug].cockpit_revenue += cockpitSales;   // services+products only — for turnover rent
   }
