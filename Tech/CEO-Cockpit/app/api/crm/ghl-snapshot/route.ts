@@ -37,41 +37,52 @@ async function ghlGet(path: string, apiKey: string, params: Record<string, strin
 }
 
 async function fetchNewLeads(apiKey: string, locationId: string): Promise<number> {
-  // Fetch all pipelines, collect the lowest-position stage from each,
-  // then count open opportunities in those stages.
-  const pipelinesData = await ghlGet("/opportunities/pipelines", apiKey, { locationId }) as {
-    pipelines?: Array<{ id: string; stages: Array<{ id: string; name: string; position: number }> }>;
+  // Count open opportunities in the "New Leads" stage of the Call Pipeline only.
+  const pipelinesData = await ghlGet("/opportunities/pipelines", apiKey, { location_id: locationId }) as {
+    pipelines?: Array<{ id: string; name: string; stages: Array<{ id: string; name: string; position: number }> }>;
   };
 
-  const pipelines = pipelinesData.pipelines ?? [];
-  if (pipelines.length === 0) return 0;
+  const callPipeline = (pipelinesData.pipelines ?? []).find(
+    (p) => p.name.toLowerCase().includes("call pipeline"),
+  );
+  if (!callPipeline) return 0;
 
-  let total = 0;
-  for (const pipeline of pipelines) {
-    if (!pipeline.stages?.length) continue;
-    const sorted = [...pipeline.stages].sort((a, b) => a.position - b.position);
-    const firstStageId = sorted[0].id;
+  const newLeadStage = callPipeline.stages.find(
+    (s) => s.name.replace(/[^\x00-\x7F]/g, "").trim().toLowerCase().includes("new lead"),
+  );
+  if (!newLeadStage) return 0;
 
-    try {
-      const oppData = await ghlGet("/opportunities/search", apiKey, {
-        location_id: locationId,
-        status: "open",
-        pipelineStageId: firstStageId,
-        limit: "1",
-      }) as { meta?: { total?: number } };
-      total += oppData.meta?.total ?? 0;
-    } catch {
-      // stage query failed — skip
-    }
+  try {
+    const oppData = await ghlGet("/opportunities/search", apiKey, {
+      location_id: locationId,
+      status: "open",
+      pipeline_stage_id: newLeadStage.id,
+      limit: "1",
+    }) as { meta?: { total?: number } };
+    return oppData.meta?.total ?? 0;
+  } catch {
+    return 0;
   }
-  return total;
 }
 
 async function fetchTodoCount(apiKey: string, locationId: string): Promise<number> {
   try {
+    // Find the "To-dos" smart list by name, then count contacts in it
+    const listsData = await ghlGet("/contacts/smartList", apiKey, {
+      locationId,
+      limit: "100",
+    }) as { smartLists?: Array<{ id: string; name: string }> };
+
+    const todoList = (listsData.smartLists ?? []).find(
+      (l) => l.name.replace(/[-\s]/g, "").toLowerCase() === "todos" ||
+             l.name.toLowerCase().includes("to-do") ||
+             l.name.toLowerCase() === "to do",
+    );
+    if (!todoList) return 0;
+
     const data = await ghlGet("/contacts/", apiKey, {
       locationId,
-      tags: "to-do",
+      smartListId: todoList.id,
       limit: "1",
     }) as { meta?: { total?: number } };
     return data.meta?.total ?? 0;

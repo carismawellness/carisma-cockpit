@@ -42,6 +42,38 @@ function buildRows(brands: Record<string, BrandHeatmapMetrics>): RowGroups {
 
   const main: HeatmapRow[] = [
     {
+      metric: "Total Leads", benchmark: null,
+      cells: BRANDS.map(b => cell(
+        brands[b]?.total_leads,
+        n => n.toLocaleString(),
+        () => "green",
+      )),
+    },
+    {
+      metric: "Total Bookings", benchmark: null,
+      cells: BRANDS.map(b => cell(
+        brands[b]?.total_bookings,
+        n => n.toLocaleString(),
+        () => "green",
+      )),
+    },
+    {
+      metric: "Sales Revenue", benchmark: null,
+      cells: BRANDS.map(b => cell(
+        brands[b]?.total_revenue,
+        n => `€${Math.round(n).toLocaleString()}`,
+        () => "green",
+      )),
+    },
+    {
+      metric: "Meta Investment", benchmark: null,
+      cells: BRANDS.map(b => cell(
+        brands[b]?.total_spend,
+        n => `€${n.toLocaleString()}`,
+        () => "green",
+      )),
+    },
+    {
       metric: "Ad Refresh", benchmark: "≤14d",
       cells: BRANDS.map(b => cell(
         brands[b]?.ad_refresh_days,

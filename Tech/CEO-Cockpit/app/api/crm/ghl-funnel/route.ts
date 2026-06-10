@@ -20,14 +20,14 @@ const BRAND_CONFIG: Record<string, { apiKey: string; locationId: string }> = {
 };
 
 export const STAGE_ORDER = [
-  "New Lead",
+  "New Leads",
+  "Call Back",
   "Contacted",
-  "Attempted Contact",
-  "Follow Up",
-  "Call back",
-  "Consultation Booked",
   "Booking Won",
+  "Active Member",
   "Booking Lost",
+  "No Show",
+  "Nurturing",
 ];
 
 async function ghlGet(path: string, apiKey: string, params: Record<string, string> = {}): Promise<unknown> {
@@ -44,16 +44,20 @@ async function ghlGet(path: string, apiKey: string, params: Record<string, strin
   return resp.json();
 }
 
+function stripEmoji(name: string): string {
+  return name.replace(/[^\x00-\x7F]/g, "").trim();
+}
+
 function matchStage(name: string): string {
-  const lower = name.toLowerCase().trim();
+  const clean = stripEmoji(name);
+  const lower = clean.toLowerCase();
   for (const s of STAGE_ORDER) {
     if (s.toLowerCase() === lower) return s;
   }
-  // Partial match fallback
   for (const s of STAGE_ORDER) {
     if (lower.includes(s.toLowerCase()) || s.toLowerCase().includes(lower)) return s;
   }
-  return name;
+  return clean;
 }
 
 interface StageInfo {
@@ -63,39 +67,36 @@ interface StageInfo {
 }
 
 async function fetchStages(apiKey: string, locationId: string): Promise<StageInfo[]> {
-  const data = await ghlGet("/opportunities/pipelines", apiKey, { locationId }) as {
+  const data = await ghlGet("/opportunities/pipelines", apiKey, { location_id: locationId }) as {
     pipelines?: Array<{
       id: string;
+      name: string;
       stages: Array<{ id: string; name: string; position: number }>;
     }>;
   };
 
-  const stages: StageInfo[] = [];
-  for (const pipeline of data.pipelines ?? []) {
-    for (const stage of pipeline.stages ?? []) {
-      stages.push({
-        stageId: stage.id,
-        stageName: stage.name,
-        normalizedName: matchStage(stage.name),
-      });
-    }
-  }
-  return stages;
+  // Only use the Call Pipeline — excludes Dashboard, Warm Leads AI, etc.
+  const callPipeline = (data.pipelines ?? []).find(
+    (p) => p.name.toLowerCase().includes("call pipeline"),
+  );
+  if (!callPipeline) return [];
+
+  return callPipeline.stages.map((stage) => ({
+    stageId: stage.id,
+    stageName: stage.name,
+    normalizedName: matchStage(stage.name),
+  }));
 }
 
 async function fetchStageCount(
   apiKey: string,
   locationId: string,
   stageId: string,
-  dateFrom: string,
-  dateTo: string,
 ): Promise<number> {
   try {
     const data = await ghlGet("/opportunities/search", apiKey, {
       location_id: locationId,
-      pipelineStageId: stageId,
-      startDate: dateFrom,
-      endDate: dateTo,
+      pipeline_stage_id: stageId,
       limit: "1",
     }) as { meta?: { total?: number } };
     return data.meta?.total ?? 0;
@@ -125,7 +126,7 @@ export async function GET(req: NextRequest) {
         const countsByNorm: Record<string, number> = {};
         await Promise.all(
           stages.map(async ({ stageId, normalizedName }) => {
-            const count = await fetchStageCount(apiKey, locationId, stageId, dateFrom, dateTo);
+            const count = await fetchStageCount(apiKey, locationId, stageId);
             countsByNorm[normalizedName] = (countsByNorm[normalizedName] ?? 0) + count;
           }),
         );

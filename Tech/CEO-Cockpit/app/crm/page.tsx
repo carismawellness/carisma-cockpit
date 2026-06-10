@@ -56,7 +56,6 @@ function CRMContent({
 
       {/* Leads per Hour Distribution */}
       <section>
-        <h2 className="text-lg font-semibold text-foreground mb-3">Lead Volume by Hour</h2>
         <LeadsPerHour dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
       </section>
 

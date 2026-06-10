@@ -31,6 +31,10 @@ const BRAND_SDR_AGENTS: Record<BrandSlug, string[]> = {
 
 export type BrandHeatmapMetrics = {
   daily_leads:        number | null;
+  total_leads:        number | null;
+  total_bookings:     number | null;
+  total_revenue:      number | null;
+  total_spend:        number | null;
   cpl:                number | null;
   leads_per_agent:    number | null;
   booking_conversion: number | null;
@@ -48,9 +52,17 @@ export type ConstraintHeatmapResponse = {
 };
 
 const EMPTY_METRICS: BrandHeatmapMetrics = {
-  daily_leads: null, cpl: null, leads_per_agent: null,
+  daily_leads: null, total_leads: null, total_bookings: null,
+  total_revenue: null, total_spend: null,
+  cpl: null, leads_per_agent: null,
   booking_conversion: null, deposit_rate: null,
   show_rate_pct: null, speed_to_lead_min: null, ad_refresh_days: null,
+};
+
+const REVENUE_TABLE: Record<BrandSlug, string> = {
+  spa:        "spa_revenue_daily",
+  aesthetics: "aesthetics_sales_daily",
+  slimming:   "slimming_sales_daily",
 };
 
 export async function GET(req: NextRequest) {
@@ -124,7 +136,19 @@ export async function GET(req: NextRequest) {
       ? Math.round((daily_leads / activeAgents) * 10) / 10
       : null;
 
-    // ── 3. crm_daily: speed to lead only ─────────────────────────────────────
+    // ── 3. Revenue table ──────────────────────────────────────────────────────
+    const { data: revenueRows } = await supabase
+      .from(REVENUE_TABLE[slug])
+      .select("price_ex_vat")
+      .gte("date_of_service", from)
+      .lte("date_of_service", to);
+
+    type RevenueRow = { price_ex_vat: number | null };
+    const total_revenue = (revenueRows ?? []).reduce(
+      (s: number, r: RevenueRow) => s + (r.price_ex_vat ?? 0), 0,
+    ) || null;
+
+    // ── 4. crm_daily: speed to lead only ─────────────────────────────────────
     const { data: crmRows } = await supabase
       .from("crm_daily")
       .select("speed_to_lead_median_min")
@@ -144,6 +168,10 @@ export async function GET(req: NextRequest) {
 
     return [slug, {
       daily_leads,
+      total_leads:    metaLeads > 0 ? metaLeads : null,
+      total_bookings: totalBooked > 0 ? totalBooked : null,
+      total_revenue,
+      total_spend:    metaSpend > 0 ? Math.round(metaSpend) : null,
       cpl,
       leads_per_agent,
       booking_conversion,
