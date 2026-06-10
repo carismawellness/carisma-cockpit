@@ -15,6 +15,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid, LabelList,
 } from "recharts";
+import { BRAND } from "@/lib/constants/design-tokens";
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /*  Helpers                                                                   */
@@ -471,7 +472,7 @@ function EbitdaReconciliation({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
 /* ────────────────────────────────────────────────────────────────────────── */
 
 const ZERO_DEPT: AestheticsDeptData = {
-  dept: "slimming", name: "Slimming", color: "#C9D8C1",
+  dept: "slimming", name: "Slimming", color: BRAND.slimming.soft,
   revenue: 0, salesRevenue: 0, zohoRevenue: 0, otherIncome: 0,
   cogs: 0, wages: 0, advertising: 0, rent: 0, utilities: 0, sga: 0,
   ebitda: 0, lastSyncedAt: null,
