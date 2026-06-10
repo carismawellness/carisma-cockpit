@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS spa_services_by_employee_daily (
     id              SERIAL PRIMARY KEY,
     month           DATE      NOT NULL,           -- YYYY-MM-01
     date_of_service DATE      NOT NULL,
-    location_id     INT       NOT NULL,
+    location_id     INTEGER   REFERENCES locations(id) ON DELETE CASCADE NOT NULL,
     employee_name   TEXT      NOT NULL,
     service_name    TEXT,
     price_ex_vat    NUMERIC(10,2) NOT NULL,

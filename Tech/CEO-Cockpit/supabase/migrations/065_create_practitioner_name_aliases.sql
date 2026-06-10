@@ -4,7 +4,7 @@
 CREATE TABLE IF NOT EXISTS practitioner_name_aliases (
     revenue_name   TEXT NOT NULL,
     canonical_name TEXT NOT NULL,
-    venue          TEXT NOT NULL,
+    venue          TEXT NOT NULL CHECK (venue IN ('spa', 'aesthetics', 'slimming')),
     created_at     TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (revenue_name, venue)
 );
