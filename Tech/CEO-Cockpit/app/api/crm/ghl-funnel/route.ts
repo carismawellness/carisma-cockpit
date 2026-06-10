@@ -117,12 +117,15 @@ export async function GET(req: NextRequest) {
     aesthetics: {},
     slimming:   {},
   };
+  const debug: Record<string, { hasKey: boolean; stages: number; err?: string }> = {};
 
   await Promise.all(
     Object.entries(BRAND_CONFIG).map(async ([slug, { apiKey, locationId, pipelineId }]) => {
+      debug[slug] = { hasKey: !!apiKey, stages: 0 };
       if (!apiKey) return;
       try {
         const stages = await fetchStages(apiKey, locationId, pipelineId);
+        debug[slug].stages = stages.length;
 
         // Dedup: if multiple stages map to the same normalizedName, sum them
         const countsByNorm: Record<string, number> = {};
@@ -133,11 +136,11 @@ export async function GET(req: NextRequest) {
           }),
         );
         result[slug] = countsByNorm;
-      } catch {
-        // leave empty on error
+      } catch (e) {
+        debug[slug].err = e instanceof Error ? e.message : String(e);
       }
     }),
   );
 
-  return NextResponse.json({ dateFrom, dateTo, brands: result });
+  return NextResponse.json({ dateFrom, dateTo, brands: result, debug });
 }
