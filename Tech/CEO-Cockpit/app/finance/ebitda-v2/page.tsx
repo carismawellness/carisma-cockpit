@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, X, Database } from "lucide-react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { formatCurrency } from "@/lib/charts/config";
 import { EbitdaSummaryHeader, SummaryData, SppyData } from "@/components/finance/EbitdaSummaryHeader";
+import { PractitionerProductivityTable } from "@/components/finance/PractitionerProductivityTable";
 
 // ── Venue config (matches the API) ───────────────────────────────────────────
 
@@ -826,6 +827,8 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
               </tbody>
             </table>
           </div>
+
+          <PractitionerProductivityTable dateFrom={dfStr} dateTo={dtStr} />
 
           {/* Fallback / hardwired summary */}
           {data.fallback_applied.length > 0 && (
