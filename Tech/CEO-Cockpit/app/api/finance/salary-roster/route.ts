@@ -74,8 +74,7 @@ export async function GET(req: Request) {
     .from("salary_supplement_monthly")
     .select("spa_slug, employee_name, amount, month")
     .in("spa_slug", ALL_VENUES)
-    .in("month", months.length ? months : ["1900-01-01"])
-    .eq("is_frozen", true);
+    .in("month", months.length ? months : ["1900-01-01"]);
 
   for (const s of suppData ?? []) {
     const name = (s.employee_name as string) || "";
