@@ -68,7 +68,8 @@ type ChartRow = {
   other:       number;
   bkgBar:      number;
   bookings:    number;
-  convRate:    number;
+  bookingEff:  number;
+  bookingRate: number;
   aov:         number;
   activeDays:  number;
 };
@@ -100,7 +101,8 @@ function toRow(agent: CrmAgent): ChartRow | null {
     lc, crm, other,
     bkgBar:      isSlimming ? agent.totals.total_bookings : 0,
     bookings:    agent.totals.total_bookings,
-    convRate:    agent.totals.avg_conversion_rate,
+    bookingEff:  agent.totals.avg_booking_eff > 0 ? agent.totals.avg_booking_eff : agent.totals.avg_conversion_rate,
+    bookingRate: agent.totals.avg_booking_rate,
     aov:         agent.totals.avg_aov,
     activeDays:  agent.totals.active_days,
   };
@@ -136,12 +138,14 @@ function MetricTick({
       </text>
       <text x={0} y={54}  textAnchor="middle" fontSize={10} fill={lc}>Bookings</text>
       <text x={0} y={68}  textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.bookings}</text>
-      <text x={0} y={86}  textAnchor="middle" fontSize={10} fill={lc}>Conv Rate</text>
-      <text x={0} y={100} textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.convRate > 0 ? `${row.convRate.toFixed(1)}%` : "—"}</text>
-      <text x={0} y={118} textAnchor="middle" fontSize={10} fill={lc}>AOV</text>
-      <text x={0} y={132} textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.aov > 0 ? `€${row.aov.toFixed(0)}` : "—"}</text>
-      <text x={0} y={150} textAnchor="middle" fontSize={10} fill={lc}>Active Days</text>
-      <text x={0} y={164} textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.activeDays}</text>
+      <text x={0} y={86}  textAnchor="middle" fontSize={10} fill={lc}>Bkg Eff</text>
+      <text x={0} y={100} textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.bookingEff > 0 ? `${row.bookingEff.toFixed(1)}%` : "—"}</text>
+      <text x={0} y={118} textAnchor="middle" fontSize={10} fill={lc}>Bkg Rate</text>
+      <text x={0} y={132} textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.bookingRate > 0 ? `${row.bookingRate.toFixed(1)}%` : "—"}</text>
+      <text x={0} y={150} textAnchor="middle" fontSize={10} fill={lc}>AOV</text>
+      <text x={0} y={164} textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.aov > 0 ? `€${row.aov.toFixed(0)}` : "—"}</text>
+      <text x={0} y={182} textAnchor="middle" fontSize={10} fill={lc}>Active Days</text>
+      <text x={0} y={196} textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.activeDays}</text>
     </g>
   );
 }
@@ -193,7 +197,8 @@ function CustomTooltip({
         </>
       )}
       <div className="flex justify-between gap-4"><span>Total Bookings</span><span className="font-semibold tabular-nums">{row.bookings}</span></div>
-      <div className="flex justify-between gap-4"><span>Conv Rate</span><span className="font-semibold tabular-nums">{row.convRate > 0 ? formatPercent(row.convRate) : "—"}</span></div>
+      <div className="flex justify-between gap-4"><span>Bkg Eff</span><span className="font-semibold tabular-nums">{row.bookingEff > 0 ? formatPercent(row.bookingEff) : "—"}</span></div>
+      <div className="flex justify-between gap-4"><span>Bkg Rate</span><span className="font-semibold tabular-nums">{row.bookingRate > 0 ? formatPercent(row.bookingRate) : "—"}</span></div>
       <div className="flex justify-between gap-4"><span>AOV</span><span className="font-semibold tabular-nums">{row.aov > 0 ? formatCurrency(row.aov) : "—"}</span></div>
     </div>
   );
@@ -251,7 +256,7 @@ function BrandPanel({
               interval={0}
               tickLine={false}
               axisLine={{ stroke: "#E5E7EB" }}
-              height={175}
+              height={210}
               tick={<MetricTick rows={rows} onClick={onClick} />}
             />
 

@@ -82,7 +82,7 @@ function CustomTooltip({
         <div key={entry.name} className="flex justify-between gap-4" style={{ color: entry.color }}>
           <span>{entry.name}</span>
           <span className="font-semibold">
-            {entry.name.includes("%") || entry.name.includes("Conv")
+            {entry.name.includes("%") || entry.name.includes("Bkg")
               ? formatPercent(entry.value)
               : formatCurrency(entry.value)}
           </span>
@@ -103,10 +103,11 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
   const chartRows = rows.map((r: CrmAgentRow) => {
     // Sheet's total_sales column is often empty for SDR — derive from channels
     const channelSum = (r.lc_sales ?? 0) + (r.crm_sales ?? 0) + (r.other_sales ?? 0);
+    const bkgEff = (r.booking_eff_pct ?? 0) > 0 ? (r.booking_eff_pct ?? 0) : (r.conversion_rate_pct ?? 0);
     return {
       date:          format(parseISO(r.date), "d MMM"),
       "Total Sales": channelSum > 0 ? channelSum : (r.total_sales ?? 0),
-      "Conv %":      Number((r.conversion_rate_pct ?? 0).toFixed(1)),
+      "Bkg Eff %":   Number(bkgEff.toFixed(1)),
       [ch1]:         r.lc_sales,
       [ch2]:         r.crm_sales,
       [ch3]:         r.other_sales,
@@ -116,13 +117,17 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
   return (
     <div className="space-y-6">
       {/* KPI Summary Cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <KpiCard label="Total Sales"    value={formatCurrency(totals.total_sales)} />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+        <KpiCard label="Total Sales" value={formatCurrency(totals.total_sales)} />
         <KpiCard
-          label="Conversion Rate"
-          value={formatPercent(totals.avg_conversion_rate)}
+          label="Booking Eff"
+          value={formatPercent(totals.avg_booking_eff > 0 ? totals.avg_booking_eff : totals.avg_conversion_rate)}
           target={TARGET_CONV_RATE}
-          rawValue={totals.avg_conversion_rate}
+          rawValue={totals.avg_booking_eff > 0 ? totals.avg_booking_eff : totals.avg_conversion_rate}
+        />
+        <KpiCard
+          label="Booking Rate"
+          value={totals.avg_booking_rate > 0 ? formatPercent(totals.avg_booking_rate) : "—"}
         />
         <KpiCard
           label="Deposit %"
@@ -171,7 +176,7 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
                 <Line
                   yAxisId="pct"
                   type="monotone"
-                  dataKey="Conv %"
+                  dataKey="Bkg Eff %"
                   stroke={chartColors.target}
                   strokeWidth={2}
                   dot={{ r: 3, fill: chartColors.target }}

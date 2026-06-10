@@ -8,6 +8,8 @@ import { format } from "date-fns";
 export interface CrmAgentTotals {
   total_sales: number;
   avg_conversion_rate: number;
+  avg_booking_eff: number;
+  avg_booking_rate: number;
   avg_deposit_pct: number;
   avg_aov: number;
   total_bookings: number;
@@ -18,6 +20,8 @@ export interface CrmAgentTotals {
 
 export interface CrmAgentRow {
   date: string;
+  booking_eff_pct: number;
+  booking_rate_pct: number;
   lc_sales: number;
   lc_messages: number;
   lc_booked: number;

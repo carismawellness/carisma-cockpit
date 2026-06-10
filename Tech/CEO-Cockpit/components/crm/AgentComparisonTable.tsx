@@ -58,13 +58,18 @@ function groupTotals(agents: CrmAgent[]): GroupTotals {
   };
 }
 
-// Booking Rate = bookings / dials  ·  Deposit % = deposits / bookings
-// Aggregated from totals (more accurate than averaging daily %s).
-function bookingRate(bookings: number, dials: number): number {
-  return dials > 0 ? (bookings / dials) * 100 : 0;
-}
 function depositRate(deposits: number, bookings: number): number {
   return bookings > 0 ? (deposits / bookings) * 100 : 0;
+}
+
+function groupAvgBkgEff(agents: CrmAgent[]): number {
+  const vals = agents.map((a) => a.totals.avg_booking_eff).filter((v) => v > 0);
+  return vals.length > 0 ? vals.reduce((s, v) => s + v, 0) / vals.length : 0;
+}
+
+function groupAvgBkgRate(agents: CrmAgent[]): number {
+  const vals = agents.map((a) => a.totals.avg_booking_rate).filter((v) => v > 0);
+  return vals.length > 0 ? vals.reduce((s, v) => s + v, 0) / vals.length : 0;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -102,8 +107,7 @@ export function AgentComparisonTable({ agents }: AgentComparisonTableProps) {
 
   let rowIndex = 0;
 
-  const COLS = 8; // # | Rep | Role | Revenue | Dials | Bookings | Deposits | Booking Rate | Deposit %
-                  //                                                                                  ↑ 8 data cols after Rep+Role merged
+  const COLS = 9; // # | Rep | Role | Revenue | Dials | Bookings | Deposits | Bkg Eff | Bkg Rate | Deposit %
 
   return (
     <Card>
@@ -122,7 +126,8 @@ export function AgentComparisonTable({ agents }: AgentComparisonTableProps) {
                 <th className="pb-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Dials</th>
                 <th className="pb-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bookings</th>
                 <th className="pb-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Deposits</th>
-                <th className="pb-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Booking Rate</th>
+                <th className="pb-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bkg Eff</th>
+                <th className="pb-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bkg Rate</th>
                 <th className="pb-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Deposit %</th>
               </tr>
             </thead>
@@ -131,7 +136,8 @@ export function AgentComparisonTable({ agents }: AgentComparisonTableProps) {
                 const brandAgents = byBrand[brand];
                 if (brandAgents.length === 0) return null;
                 const bt = groupTotals(brandAgents);
-                const bt_bookRate    = bookingRate(bt.total_bookings, bt.total_messages);
+                const bt_bkgEff      = groupAvgBkgEff(brandAgents);
+                const bt_bkgRate     = groupAvgBkgRate(brandAgents);
                 const bt_depositRate = depositRate(bt.total_deposits, bt.total_bookings);
 
                 return (
@@ -155,8 +161,9 @@ export function AgentComparisonTable({ agents }: AgentComparisonTableProps) {
 
                       const rowBase = inactive ? "opacity-50" : "hover:bg-gray-50";
                       const t = agent.totals;
-                      const bookRate    = bookingRate(t.total_bookings, t.total_messages);
-                      const depositPct  = depositRate(t.total_deposits, t.total_bookings);
+                      const bkgEff   = t.avg_booking_eff > 0 ? t.avg_booking_eff : 0;
+                      const bkgRate  = t.avg_booking_rate;
+                      const depositPct = depositRate(t.total_deposits, t.total_bookings);
 
                       return (
                         <tr
@@ -187,8 +194,11 @@ export function AgentComparisonTable({ agents }: AgentComparisonTableProps) {
                           <td className="py-2 text-right tabular-nums text-foreground">
                             {t.total_deposits}
                           </td>
-                          <td className={`py-2 text-right tabular-nums ${bookingRateClass(bookRate, inactive)}`}>
-                            {bookRate > 0 ? formatPercent(bookRate) : "—"}
+                          <td className={`py-2 text-right tabular-nums ${bookingRateClass(bkgEff, inactive)}`}>
+                            {bkgEff > 0 ? formatPercent(bkgEff) : "—"}
+                          </td>
+                          <td className={`py-2 text-right tabular-nums ${bookingRateClass(bkgRate, inactive)}`}>
+                            {bkgRate > 0 ? formatPercent(bkgRate) : "—"}
                           </td>
                           <td className={`py-2 text-right tabular-nums ${depositClass(depositPct, inactive)}`}>
                             {depositPct > 0 ? formatPercent(depositPct) : "—"}
@@ -207,8 +217,11 @@ export function AgentComparisonTable({ agents }: AgentComparisonTableProps) {
                       <td className="py-1.5 text-right tabular-nums">{bt.total_messages.toLocaleString()}</td>
                       <td className="py-1.5 text-right tabular-nums">{bt.total_bookings}</td>
                       <td className="py-1.5 text-right tabular-nums">{bt.total_deposits}</td>
-                      <td className={`py-1.5 text-right tabular-nums ${bookingRateClass(bt_bookRate, false)}`}>
-                        {bt_bookRate > 0 ? formatPercent(bt_bookRate) : "—"}
+                      <td className={`py-1.5 text-right tabular-nums ${bookingRateClass(bt_bkgEff, false)}`}>
+                        {bt_bkgEff > 0 ? formatPercent(bt_bkgEff) : "—"}
+                      </td>
+                      <td className={`py-1.5 text-right tabular-nums ${bookingRateClass(bt_bkgRate, false)}`}>
+                        {bt_bkgRate > 0 ? formatPercent(bt_bkgRate) : "—"}
                       </td>
                       <td className={`py-1.5 text-right tabular-nums ${depositClass(bt_depositRate, false)}`}>
                         {bt_depositRate > 0 ? formatPercent(bt_depositRate) : "—"}
@@ -220,7 +233,8 @@ export function AgentComparisonTable({ agents }: AgentComparisonTableProps) {
 
               {/* Grand total */}
               {(() => {
-                const g_bookRate    = bookingRate(grandTotals.total_bookings, grandTotals.total_messages);
+                const g_bkgEff      = groupAvgBkgEff(agents);
+                const g_bkgRate     = groupAvgBkgRate(agents);
                 const g_depositRate = depositRate(grandTotals.total_deposits, grandTotals.total_bookings);
                 return (
                   <tr className="bg-gray-100 font-bold">
@@ -232,8 +246,11 @@ export function AgentComparisonTable({ agents }: AgentComparisonTableProps) {
                     <td className="py-2 text-right tabular-nums">{grandTotals.total_messages.toLocaleString()}</td>
                     <td className="py-2 text-right tabular-nums">{grandTotals.total_bookings}</td>
                     <td className="py-2 text-right tabular-nums">{grandTotals.total_deposits}</td>
-                    <td className={`py-2 text-right tabular-nums ${bookingRateClass(g_bookRate, false)}`}>
-                      {g_bookRate > 0 ? formatPercent(g_bookRate) : "—"}
+                    <td className={`py-2 text-right tabular-nums ${bookingRateClass(g_bkgEff, false)}`}>
+                      {g_bkgEff > 0 ? formatPercent(g_bkgEff) : "—"}
+                    </td>
+                    <td className={`py-2 text-right tabular-nums ${bookingRateClass(g_bkgRate, false)}`}>
+                      {g_bkgRate > 0 ? formatPercent(g_bkgRate) : "—"}
                     </td>
                     <td className={`py-2 text-right tabular-nums ${depositClass(g_depositRate, false)}`}>
                       {g_depositRate > 0 ? formatPercent(g_depositRate) : "—"}

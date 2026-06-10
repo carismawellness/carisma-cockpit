@@ -49,6 +49,8 @@ type CrmAgentRow = {
   id: number;
   agent_slug: string;
   date: string;
+  booking_eff_pct: number;
+  booking_rate_pct: number;
   lc_sales: number;
   lc_messages: number;
   lc_booked: number;
@@ -74,6 +76,8 @@ type CrmAgentRow = {
 type AgentTotals = {
   total_sales: number;
   avg_conversion_rate: number;
+  avg_booking_eff: number;
+  avg_booking_rate: number;
   avg_deposit_pct: number;
   avg_aov: number;
   total_bookings: number;
@@ -120,6 +124,14 @@ function computeTotals(rows: CrmAgentRow[]): AgentTotals {
     .map((r) => r.conversion_rate_pct ?? 0)
     .filter((v) => v > 0);
 
+  const nonZeroBookingEff = activeDays
+    .map((r) => r.booking_eff_pct ?? 0)
+    .filter((v) => v > 0);
+
+  const nonZeroBookingRate = activeDays
+    .map((r) => r.booking_rate_pct ?? 0)
+    .filter((v) => v > 0);
+
   const nonZeroDeposit = activeDays
     .map((r) => r.deposit_pct ?? 0)
     .filter((v) => v > 0);
@@ -131,6 +143,8 @@ function computeTotals(rows: CrmAgentRow[]): AgentTotals {
   return {
     total_sales:         +total_sales.toFixed(2),
     avg_conversion_rate: +avg(nonZeroConversion).toFixed(2),
+    avg_booking_eff:     +avg(nonZeroBookingEff).toFixed(2),
+    avg_booking_rate:    +avg(nonZeroBookingRate).toFixed(2),
     avg_deposit_pct:     +avg(nonZeroDeposit).toFixed(2),
     avg_aov:             +avg_aov.toFixed(2),
     total_bookings,
