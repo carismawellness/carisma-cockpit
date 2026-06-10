@@ -21,7 +21,7 @@ export default function LoginPage() {
     if (saved !== null) setRememberMe(saved === "true");
   }, []);
 
-  async function handleLogin(e: React.FormEvent<HTMLFormElement>) {
+  async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError("");
@@ -113,10 +113,7 @@ export default function LoginPage() {
             </Button>
           </form>
           <p className="text-center text-xs text-text-secondary mt-6">
-            Need an account?{" "}
-            <Link href="/register" className="text-gold hover:underline font-medium">
-              Create one
-            </Link>
+            Need access? Contact your manager.
           </p>
         </CardContent>
       </Card>

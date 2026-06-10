@@ -44,7 +44,7 @@ export async function GET() {
   return NextResponse.json(enriched);
 }
 
-/** POST /api/admin/invitations — invite an email and seed permissions */
+/** POST /api/admin/invitations — invite an email, seed permissions, and create auth account */
 export async function POST(req: NextRequest) {
   const admin = await requireAdmin();
   if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
   const granted = new Set<string>(Array.isArray(permissions) ? permissions : []);
   const db = getAdminClient();
 
+  // Upsert invitation row
   const { error: invErr } = await db
     .from("user_invitations")
     .upsert({ email: normalised, is_active: true }, { onConflict: "email" });
@@ -77,7 +78,27 @@ export async function POST(req: NextRequest) {
 
   if (permErr) return NextResponse.json({ error: permErr.message }, { status: 500 });
 
-  return NextResponse.json({ ok: true });
+  // Create (or reset) Supabase auth account — no email verification needed
+  const tempPassword = "Carisma" + Math.floor(1000 + Math.random() * 9000);
+
+  const { data: existing } = await db.auth.admin.listUsers();
+  const existingUser = (existing?.users ?? []).find(
+    (u) => u.email?.toLowerCase() === normalised
+  );
+
+  if (existingUser) {
+    // User already exists — just reset their password
+    await db.auth.admin.updateUserById(existingUser.id, { password: tempPassword });
+  } else {
+    const { error: authErr } = await db.auth.admin.createUser({
+      email: normalised,
+      password: tempPassword,
+      email_confirm: true,
+    });
+    if (authErr) return NextResponse.json({ error: authErr.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, tempPassword });
 }
 
 /** PATCH /api/admin/invitations — toggle is_active for an email */

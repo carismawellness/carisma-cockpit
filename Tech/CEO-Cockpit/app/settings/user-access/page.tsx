@@ -38,6 +38,7 @@ export default function UserAccessPage() {
   const [invitePerms, setInvitePerms] = useState<Set<string>>(new Set());
   const [inviting, setInviting] = useState(false);
   const [error, setError] = useState("");
+  const [tempPassword, setTempPassword] = useState<string | null>(null);
 
   const loadInvitations = useCallback(async () => {
     const res = await fetch("/api/admin/invitations");
@@ -76,6 +77,7 @@ export default function UserAccessPage() {
     if (!newEmail.trim()) return;
     setInviting(true);
     setError("");
+    setTempPassword(null);
     try {
       const res = await fetch("/api/admin/invitations", {
         method: "POST",
@@ -85,14 +87,14 @@ export default function UserAccessPage() {
           permissions: Array.from(invitePerms),
         }),
       });
+      const body = await res.json();
       if (res.ok) {
+        setTempPassword(body.tempPassword ?? null);
         setNewEmail("");
         setInvitePerms(new Set());
         await loadInvitations();
       } else {
-        let msg = "Failed to invite";
-        try { msg = (await res.json()).error ?? msg; } catch {}
-        setError(msg);
+        setError(body.error ?? "Failed to invite");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Network error");
@@ -230,6 +232,27 @@ export default function UserAccessPage() {
                 </div>
 
                 {error && <p className="text-red-500 text-xs">{error}</p>}
+                {tempPassword && (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 space-y-1">
+                    <p className="text-xs font-semibold text-emerald-700">Account created — share these credentials:</p>
+                    <p className="text-xs text-emerald-800">
+                      They can log in immediately at the Cockpit login page.
+                    </p>
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <code className="text-sm font-mono font-bold text-emerald-900 bg-emerald-100 px-2 py-1 rounded">
+                        {tempPassword}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard.writeText(tempPassword)}
+                        className="text-xs text-emerald-600 hover:underline font-medium"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-emerald-600 mt-1">Ask them to change their password after first login.</p>
+                  </div>
+                )}
               </form>
             </CardContent>
           </Card>
