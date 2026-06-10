@@ -137,16 +137,32 @@ export async function GET(req: NextRequest) {
       : null;
 
     // ── 3. Revenue table ──────────────────────────────────────────────────────
-    const { data: revenueRows } = await supabase
-      .from(REVENUE_TABLE[slug])
-      .select("price_ex_vat")
-      .gte("date_of_service", from)
-      .lte("date_of_service", to);
-
-    type RevenueRow = { price_ex_vat: number | null };
-    const total_revenue = (revenueRows ?? []).reduce(
-      (s: number, r: RevenueRow) => s + (r.price_ex_vat ?? 0), 0,
-    ) || null;
+    // spa_revenue_daily uses `date` + separate service/product columns (no price_ex_vat)
+    // aesthetics/slimming use `date_of_service` + `price_ex_vat`
+    let total_revenue: number | null = null;
+    if (slug === "spa") {
+      const { data: spaRevRows } = await supabase
+        .from("spa_revenue_daily")
+        .select("services, product_phytomer, product_purest, product_other")
+        .gte("date", from)
+        .lte("date", to);
+      type SpaRevRow = { services: number | null; product_phytomer: number | null; product_purest: number | null; product_other: number | null };
+      const sum = (spaRevRows ?? []).reduce(
+        (s: number, r: SpaRevRow) =>
+          s + (r.services ?? 0) + (r.product_phytomer ?? 0) + (r.product_purest ?? 0) + (r.product_other ?? 0),
+        0,
+      );
+      total_revenue = sum > 0 ? Math.round(sum * 100) / 100 : null;
+    } else {
+      const { data: revenueRows } = await supabase
+        .from(REVENUE_TABLE[slug])
+        .select("price_ex_vat")
+        .gte("date_of_service", from)
+        .lte("date_of_service", to);
+      type RevenueRow = { price_ex_vat: number | null };
+      const sum = (revenueRows ?? []).reduce((s: number, r: RevenueRow) => s + (r.price_ex_vat ?? 0), 0);
+      total_revenue = sum > 0 ? Math.round(sum * 100) / 100 : null;
+    }
 
     // ── 4. crm_daily: speed to lead only ─────────────────────────────────────
     const { data: crmRows } = await supabase
