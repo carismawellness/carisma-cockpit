@@ -18,6 +18,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { fetchAll } from "@/lib/supabase/fetch-all";
+import { isExcludedCrmDate } from "@/lib/constants/excluded-dates";
 
 export const dynamic = "force-dynamic";
 
@@ -190,7 +191,7 @@ export async function GET(request: NextRequest) {
   const supabase = createClient(supabaseUrl, supabaseKey);
 
   // Fetch all rows for the date range across all agents — paginated to bypass PostgREST max_rows
-  const allRows = await fetchAll(
+  const fetched = await fetchAll(
     (off, lim) =>
       supabase
         .from("crm_agent_daily")
@@ -201,6 +202,9 @@ export async function GET(request: NextRequest) {
         .range(off, off + lim - 1),
     "crm_agent_daily",
   ) as CrmAgentRow[];
+
+  // Strip migration / quarantined dates so per-agent totals aren't biased.
+  const allRows = fetched.filter((r) => !isExcludedCrmDate(r.date));
 
   // Group rows by agent slug
   const rowsBySlug = new Map<string, CrmAgentRow[]>();

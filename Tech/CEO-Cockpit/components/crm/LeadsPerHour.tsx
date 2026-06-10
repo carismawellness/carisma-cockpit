@@ -18,6 +18,7 @@ import { useKPIData } from "@/lib/hooks/useKPIData";
 import { useLookups } from "@/lib/hooks/useLookups";
 import { format, parseISO } from "date-fns";
 import type { CrmDailyRow } from "@/lib/types/crm";
+import { isExcludedCrmDate } from "@/lib/constants/excluded-dates";
 
 const BRAND_LABELS: Record<string, string> = {
   spa: "Spa",
@@ -77,6 +78,7 @@ export function LeadsPerHour({
   const chartData = useMemo(() => {
     const byDate = new Map<string, Record<string, number>>();
     for (const row of data) {
+      if (isExcludedCrmDate(row.date)) continue;
       const slug = brandIdToSlug[row.brand_id];
       if (!slug || !visibleBrands.includes(slug)) continue;
       const leads = row.total_leads ?? 0;

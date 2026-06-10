@@ -5,6 +5,7 @@ import { useKPIData } from "@/lib/hooks/useKPIData";
 import { useLookups } from "@/lib/hooks/useLookups";
 import { LeadReconRow } from "@/lib/types/crm";
 import { chartColors } from "@/lib/charts/config";
+import { isExcludedCrmDate } from "@/lib/constants/excluded-dates";
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -96,6 +97,7 @@ export function LeadReconciliation({
     brandTotals[brand.slug] = { crmLeads: 0, metaLeads: 0 };
   }
   for (const row of data) {
+    if (isExcludedCrmDate(row.date)) continue;
     const slug = brandIdToSlug[row.brand_id];
     if (slug && brandTotals[slug]) {
       brandTotals[slug].crmLeads += row.leads_crm;

@@ -11,6 +11,10 @@ import {
   formatPercent,
 } from "@/lib/charts/config";
 import type { CrmDailyRow } from "@/lib/types/crm";
+import {
+  countExcludedCrmDatesInRange,
+  isExcludedCrmDate,
+} from "@/lib/constants/excluded-dates";
 
 const BRANDS = ["spa", "aesthetics", "slimming"] as const;
 const BRAND_LABELS: Record<string, string> = {
@@ -55,9 +59,12 @@ export function SalesPerformance({
     );
   }
 
+  const calendarDays = Math.ceil(
+    (dateTo.getTime() - dateFrom.getTime()) / 86_400_000,
+  ) + 1;
   const numDays = Math.max(
     1,
-    Math.ceil((dateTo.getTime() - dateFrom.getTime()) / 86_400_000) + 1,
+    calendarDays - countExcludedCrmDatesInRange(dateFrom, dateTo),
   );
 
   const visibleBrands = brandFilter
@@ -79,10 +86,12 @@ export function SalesPerformance({
     const depositPct      = totalBookings > 0 ? (totalDeposits / totalBookings) * 100 : 0;
     const convMsgPct      = totalMessages > 0 ? (totalBookings / totalMessages) * 100 : 0;
 
-    // Slimming: conv over leads from crm_daily
+    // Slimming: conv over leads from crm_daily (excluding migration days)
     const brandId = brandMap[slug];
     const totalLeads = slug === "slimming"
-      ? crmDailyData.filter((r) => r.brand_id === brandId).reduce((sum, r) => sum + (r.total_leads ?? 0), 0)
+      ? crmDailyData
+          .filter((r) => r.brand_id === brandId && !isExcludedCrmDate(r.date))
+          .reduce((sum, r) => sum + (r.total_leads ?? 0), 0)
       : 0;
     const convLeadsPct = totalLeads > 0 ? (totalBookings / totalLeads) * 100 : 0;
 
