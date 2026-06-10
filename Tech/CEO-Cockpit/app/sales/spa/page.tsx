@@ -78,12 +78,8 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
     return `${range} · Source: Cockpit Datasheet (gross sales)`;
   }, [dateFrom, dateTo]);
 
-  /* ── Inc-VAT totals ──────────────────────────────────────────── */
-  const incVat = useMemo(() => ({
-    gross_revenue: Math.round(totals.gross_revenue * (1 + VAT_RATE)),
-    services:      Math.round(totals.services      * (1 + VAT_RATE)),
-    product_total: Math.round(totals.product_total * (1 + VAT_RATE)),
-  }), [totals]);
+  /* ── totals comes from useSpaRevenue → spa_revenue_monthly/daily.
+       After migration 073 those columns hold inc-VAT (gross). Use directly. */
 
   /* ── Revenue mix per hotel (absolute €, services + products stacked) ─ */
   const hotelChartData = useMemo(() => {
@@ -91,17 +87,17 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
     return [...locations]
       .sort((a, b) => b.gross_revenue - a.gross_revenue)
       .map((loc) => {
-        const grossEx  = loc.services + loc.product_total;
-        const prodPct  = grossEx > 0 ? Math.round((loc.product_total / grossEx) * 100) : 0;
-        const currNet  = Math.round(loc.gross_revenue * (1 + VAT_RATE));
+        const gross    = loc.services + loc.product_total;
+        const prodPct  = gross > 0 ? Math.round((loc.product_total / gross) * 100) : 0;
+        const currNet  = loc.gross_revenue;
         const prior    = priorLocMap.get(loc.location_id);
-        const priorNet = prior ? Math.round(prior.gross_revenue * (1 + VAT_RATE)) : 0;
+        const priorNet = prior ? prior.gross_revenue : 0;
         const yoyPct   = priorNet > 0 ? Math.round(((currNet - priorNet) / priorNet) * 100) : null;
         return {
           name:       loc.name,
           color:      loc.color,
-          Services:   Math.round(loc.services     * (1 + VAT_RATE)),
-          Products:   Math.round(loc.product_total * (1 + VAT_RATE)),
+          Services:   loc.services,
+          Products:   loc.product_total,
           prodPct,
           currNet,
           priorNet,
@@ -250,19 +246,19 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
       <SalesKPIGrid columns={3}>
         <SalesKPICard
           label="Gross Revenue"
-          value={fmtShort(incVat.gross_revenue)}
-          subtitle={`${fmtShort(totals.gross_revenue)} ex-VAT · ${locations.length} locations`}
+          value={fmtShort(totals.gross_revenue)}
+          subtitle={`${fmtShort(Math.round(totals.gross_revenue / (1 + VAT_RATE)))} ex-VAT · ${locations.length} locations`}
           yoyChange={yoy.gross}
         />
         <SalesKPICard
           label="Service Revenue"
-          value={fmtShort(incVat.services)}
+          value={fmtShort(totals.services)}
           subtitle={`${pct(totals.services, totals.gross_revenue)} of gross`}
           yoyChange={yoy.service}
         />
         <SalesKPICard
           label="Retail Revenue"
-          value={fmtShort(incVat.product_total)}
+          value={fmtShort(totals.product_total)}
           subtitle={`${pct(totals.product_total, totals.gross_revenue)} of gross`}
           yoyChange={yoy.retail}
         />
@@ -340,9 +336,9 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                 <tfoot>
                   <tr className="border-t-2 font-semibold text-sm">
                     <td className="py-2">Total</td>
-                    <td className="py-2 text-right tabular-nums">{fmtShort(Math.round(totals.gross_revenue * (1 + VAT_RATE)))}</td>
+                    <td className="py-2 text-right tabular-nums">{fmtShort(totals.gross_revenue)}</td>
                     <td className="py-2 text-right tabular-nums text-muted-foreground">
-                      {priorTotals.gross_revenue > 0 ? fmtShort(Math.round(priorTotals.gross_revenue * (1 + VAT_RATE))) : "—"}
+                      {priorTotals.gross_revenue > 0 ? fmtShort(priorTotals.gross_revenue) : "—"}
                     </td>
                     <td className="py-2 text-right tabular-nums">
                       {yoy.gross !== undefined ? (
