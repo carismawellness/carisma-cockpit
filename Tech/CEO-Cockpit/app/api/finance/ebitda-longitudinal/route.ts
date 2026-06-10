@@ -720,25 +720,47 @@ async function aggregateRange(
     const numVenues  = targetVenues.length || 1;
 
     if (granularity === "monthly") {
+      // Period-aggregate approach (mirrors ebitda-v2): compare total floor across
+      // the requested period to total actual across the same period. Prevents
+      // phantom supplements when a vendor bills lumpy/quarterly — one big posting
+      // in March covers the floor for Apr+May too, instead of triggering monthly
+      // top-ups that already-paid actuals can't offset.
+      const monthBuckets: { yyyyMM: string; days: number }[] = [];
       for (const monthStr of overlappingMonths(dateFrom, dateTo)) {
-        const yyyyMM      = monthStr.slice(0, 7);
-        const daysInMo    = totalDaysInMonth(monthStr);
         const daysInRange = daysOfMonthInRange(monthStr, dateFrom, dateTo);
         if (daysInRange === 0) continue;
-        const monthlyFloor = monthlyAmt * (daysInRange / daysInMo);
+        monthBuckets.push({ yyyyMM: monthStr.slice(0, 7), days: daysInRange });
+      }
+      const totalDays = monthBuckets.reduce((s, b) => s + b.days, 0);
+      if (totalDays === 0) continue;
 
-        for (const venue of targetVenues) {
-          if (!allSlugs.has(venue)) continue;
-          const venueFloor = splitEqual ? monthlyFloor / numVenues : monthlyFloor;
-          const actual = allRawCosts
-            .filter(r => r.venue === venue && r.account_code === accountCode && (r.date ?? "").slice(0, 7) === yyyyMM)
-            .reduce((sum, r) => sum + Number(r.amount), 0);
-          const supp = Math.max(0, venueFloor - actual);
-          if (supp === 0) continue;
+      for (const venue of targetVenues) {
+        if (!allSlugs.has(venue)) continue;
+
+        let periodFloor = 0;
+        for (const monthStr of overlappingMonths(dateFrom, dateTo)) {
+          const daysInMo    = totalDaysInMonth(monthStr);
+          const daysInRange = daysOfMonthInRange(monthStr, dateFrom, dateTo);
+          if (daysInRange === 0) continue;
+          const monthlyFloor = monthlyAmt * (daysInRange / daysInMo);
+          periodFloor += splitEqual ? monthlyFloor / numVenues : monthlyFloor;
+        }
+
+        const periodActual = allRawCosts
+          .filter(r => r.venue === venue && r.account_code === accountCode)
+          .reduce((sum, r) => sum + Number(r.amount), 0);
+
+        const periodSupp = Math.max(0, periodFloor - periodActual);
+        if (periodSupp === 0) continue;
+
+        // Distribute the period supplement across months in range proportional
+        // to days-in-range, so chart bars still vary smoothly across the period.
+        for (const { yyyyMM, days } of monthBuckets) {
+          const share = periodSupp * (days / totalDays);
           const vm = getVM(acc, yyyyMM, venue);
-          if      (ebitdaLine === "utilities") vm.utilities += supp;
-          else if (ebitdaLine === "cogs")      vm.cogs      += supp;
-          else                                  vm.sga       += supp;
+          if      (ebitdaLine === "utilities") vm.utilities += share;
+          else if (ebitdaLine === "cogs")      vm.cogs      += share;
+          else                                  vm.sga       += share;
         }
       }
     } else {
@@ -787,17 +809,29 @@ async function aggregateRange(
     if (!allSlugs.has(targetVenue)) continue;
 
     if (granularity === "monthly") {
+      // Period-aggregate (mirrors ebitda-v2): compare total floor to total actual
+      // across the period so quarterly billing doesn't trigger phantom monthly top-ups.
+      const monthBuckets: { yyyyMM: string; days: number }[] = [];
+      let periodFloor = 0;
       for (const monthStr of overlappingMonths(dateFrom, dateTo)) {
-        const yyyyMM      = monthStr.slice(0, 7);
         const daysInMo    = totalDaysInMonth(monthStr);
         const daysInRange = daysOfMonthInRange(monthStr, dateFrom, dateTo);
         if (daysInRange === 0) continue;
-        const floor = pf.monthly_floor * (daysInRange / daysInMo);
-        const actual = allRawCosts
-          .filter(r => (r.contact_name ?? "").toLowerCase().trim() === contactKey && (r.date ?? "").slice(0, 7) === yyyyMM)
-          .reduce((sum, r) => sum + Number(r.amount), 0);
-        const supp = Math.max(0, floor - actual);
-        if (supp > 0) getVM(acc, yyyyMM, targetVenue).sga += supp;
+        monthBuckets.push({ yyyyMM: monthStr.slice(0, 7), days: daysInRange });
+        periodFloor += pf.monthly_floor * (daysInRange / daysInMo);
+      }
+      const totalDays = monthBuckets.reduce((s, b) => s + b.days, 0);
+      if (totalDays === 0) continue;
+
+      const periodActual = allRawCosts
+        .filter(r => (r.contact_name ?? "").toLowerCase().trim() === contactKey)
+        .reduce((sum, r) => sum + Number(r.amount), 0);
+
+      const periodSupp = Math.max(0, periodFloor - periodActual);
+      if (periodSupp > 0) {
+        for (const { yyyyMM, days } of monthBuckets) {
+          getVM(acc, yyyyMM, targetVenue).sga += periodSupp * (days / totalDays);
+        }
       }
     } else {
       // Weekly: pro-rate prof-fee floor into weeks
