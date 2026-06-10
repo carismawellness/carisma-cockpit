@@ -155,6 +155,10 @@ interface ReportResult {
 
 /** Run a *-values-report POST and return results.
  *  Each result row has shape: { groupings: {campaign_id|flow_id}, statistics: {recipients, delivered, ...} } */
+/** Set by fetchCampaignAggregates so the ETL log can surface why a report
+ *  returned 0 rows (the most common case is a 429 throttle). */
+let lastReportError: string | null = null;
+
 async function fetchReport(
   apiKey: string,
   endpoint: "campaign-values-reports" | "flow-values-reports",
@@ -187,7 +191,11 @@ async function fetchReport(
     `${KLAVIYO_BASE}/${endpoint}/`,
     { method: "POST", headers: klaviyoHeaders(apiKey), body: JSON.stringify(body) },
   );
-  if (!res.ok) return [];
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    lastReportError = `${endpoint} ${res.status}: ${txt.slice(0, 120)}`;
+    return [];
+  }
   const json = (await res.json()) as {
     data?: { attributes?: { results?: ReportResult[] } };
   };
@@ -291,6 +299,7 @@ export async function runKlaviyoDailyEtl(opts: {
       const brandId = await getBrandId(slug);
 
       log.push(`[${slug}] fetching Klaviyo data for ${dateFrom}…${dateTo} (stored as ${date})`);
+      lastReportError = null;
 
       // Sequential, not parallel — these all hit Klaviyo's burst limit (75/sec).
       // Reports are more important than subscribers for dashboard rates.
@@ -320,7 +329,8 @@ export async function runKlaviyoDailyEtl(opts: {
       totalUpserted += upserted;
       log.push(
         `[${slug}] ✓ subscribers=${subscriberCount} active_flows=${activeFlows} ` +
-        `recipients=${aggregates.total_recipients} delivered=${aggregates.total_delivered}`
+        `recipients=${aggregates.total_recipients} delivered=${aggregates.total_delivered}` +
+        (lastReportError ? ` [report_err: ${lastReportError}]` : ``)
       );
     } catch (err) {
       log.push(`[${slug}] ERROR — ${String(err)}`);
