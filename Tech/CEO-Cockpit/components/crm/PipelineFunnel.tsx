@@ -30,15 +30,14 @@ function BrandFunnel({
 }) {
   const color = BRAND_ACCENT[brand];
 
-  const sortedStages = useMemo(
+  const orderedStages = useMemo(
     () =>
       FUNNEL_STAGES.map((s) => ({ stage: s, value: stages[s] ?? 0 }))
-        .filter((s) => s.value > 0)
-        .sort((a, b) => b.value - a.value),
+        .filter((s) => s.value > 0),
     [stages],
   );
 
-  const maxValue = sortedStages[0]?.value ?? 0;
+  const maxValue = Math.max(...orderedStages.map((s) => s.value), 0);
 
   const won    = stages["Booking Won"]  ?? 0;
   const lost   = outcomes["Booking Lost"] ?? 0;
@@ -74,7 +73,7 @@ function BrandFunnel({
       </div>
 
       <div className="space-y-2.5">
-        {sortedStages.map(({ stage, value }) => {
+        {orderedStages.map(({ stage, value }) => {
           const widthPct = maxValue > 0 ? (value / maxValue) * 100 : 0;
           return (
             <div key={stage} className="flex items-center gap-2">
