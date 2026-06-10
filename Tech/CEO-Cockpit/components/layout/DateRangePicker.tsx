@@ -25,12 +25,13 @@ const DATE_FMT = "dd/MM/yyyy";
 
 function parseDmy(value: string): Date | null {
   const parsed = parse(value, DATE_FMT, new Date());
-  // Reject dates outside a plausible business range (2020–2099).
+  // Reject dates outside a plausible business range (2014–2099).
   // Guards against partially-typed years like "206" being accepted as year 206 AD,
   // which causes the API to receive a 1800-year date range and return empty data.
+  // 2014 floor matches the earliest spa transaction in spa_transactions_raw (2014-10-10).
   if (!isValid(parsed)) return null;
   const y = parsed.getFullYear();
-  if (y < 2020 || y > 2099) return null;
+  if (y < 2014 || y > 2099) return null;
   return parsed;
 }
 

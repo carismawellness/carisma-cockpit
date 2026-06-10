@@ -5,15 +5,20 @@ import { useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 // ── Location display metadata (shared with useSpaEbitda) ──────────────────────
+// IDs 11 and 12 are closed historic branches surfaced by the 2014-2023 backfill
+// (Tools/spa-historical-backfill.ts) — they only appear when the date filter
+// reaches back into the historic period.
 export const SPA_LOCATION_META: Record<string, { name: string; color: string }> = {
-  1: { name: "Inter",     color: "#1B3A4B" },
-  2: { name: "Hugos",     color: "#96B2B2" },
-  3: { name: "Hyatt",     color: "#B79E61" },
-  4: { name: "Ramla",     color: "#8EB093" },
-  5: { name: "Riviera",   color: "#E07A5F" },
-  6: { name: "Odycy",     color: "#4A90D9" },
-  7: { name: "Excelsior", color: "#7C3AED" },
-  8: { name: "Novotel",   color: "#DC2626" },
+  1:  { name: "Inter",                color: "#1B3A4B" },
+  2:  { name: "Hugos",                color: "#96B2B2" },
+  3:  { name: "Hyatt",                color: "#B79E61" },
+  4:  { name: "Ramla",                color: "#8EB093" },
+  5:  { name: "Riviera",              color: "#E07A5F" },
+  6:  { name: "Odycy",                color: "#4A90D9" },
+  7:  { name: "Excelsior",            color: "#7C3AED" },
+  8:  { name: "Novotel",              color: "#DC2626" },
+  11: { name: "Qawra (closed)",       color: "#9CA3AF" },
+  12: { name: "Seashells (closed)",   color: "#6B7280" },
 };
 
 // Gross sales = services + products only. Wholesale/discount/refund live in
@@ -93,10 +98,16 @@ export function useSpaRevenue(dateFrom: Date, dateTo: Date): UseSpaRevenueResult
   });
 
   // ── 2. Detect missing months (sync trigger still operates per-month) ──────
+  // Live Cockpit Datasheet only knows 2025-01-01 onwards — months before that
+  // are owned by the historic_sheet backfill (Tools/spa-historical-backfill.ts)
+  // and are frozen. Never auto-fire the live ETL for them.
+  const LIVE_ETL_FIRST_MONTH = "2025-01-01";
   const presentMonths = new Set(
     (rawRows ?? []).map((r: { date: string }) => r.date.slice(0, 7) + "-01"),
   );
-  const missingMonths = allMonths.filter((m) => !presentMonths.has(m));
+  const missingMonths = allMonths.filter(
+    (m) => !presentMonths.has(m) && m >= LIVE_ETL_FIRST_MONTH,
+  );
 
   // ── 3. Sync mutation ──────────────────────────────────────────────────────
   const syncMutation = useMutation({
@@ -137,7 +148,11 @@ export function useSpaRevenue(dateFrom: Date, dateTo: Date): UseSpaRevenueResult
   const prevMonthStr   = toDateStr(prevMonthStart);
   const fromMonth      = fromDateStr.slice(0, 7) + "-01";
   const toMonth        = toDateStr_.slice(0, 7)  + "-01";
-  const recentInRange  = rawRows !== undefined && (
+  // Suppress the current/prev-month auto-refresh when the user is viewing a
+  // fully-historic range (pre-2025) — re-firing the live ETL would no-op
+  // anyway and flash a spurious "Syncing…" banner.
+  const rangeIsAllHistoric = toMonth < LIVE_ETL_FIRST_MONTH;
+  const recentInRange  = !rangeIsAllHistoric && rawRows !== undefined && (
     (curMonthStr  >= fromMonth && curMonthStr  <= toMonth) ||
     (prevMonthStr >= fromMonth && prevMonthStr <= toMonth)
   );
