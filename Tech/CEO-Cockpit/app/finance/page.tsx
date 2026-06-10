@@ -38,6 +38,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
   Cell,
+  LabelList,
 } from "recharts";
 
 /* ------------------------------------------------------------------ */
@@ -648,7 +649,7 @@ function FinanceContent({
           <p className="text-xs text-muted-foreground mb-4">Cumulative {filteredCountLabel(weekCount, "week")}, sorted by performance. Green = profit, Red = loss.</p>
           <div className="h-[260px] md:h-[360px]">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={ebitdaByLocationData} margin={{ top: 5, right: 10, left: 10, bottom: 60 }}>
+            <ComposedChart data={ebitdaByLocationData} margin={{ top: 20, right: 10, left: 10, bottom: 60 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="location" angle={-40} textAnchor="end" height={80} tick={{ fontSize: 11 }} />
               <YAxis
@@ -676,6 +677,12 @@ function FinanceContent({
                     fill={entry.location === "Corporate" ? "#C7C4BD" : entry.ebitda >= 0 ? "#A8D4A8" : "#E8A8A0"}
                   />
                 ))}
+                <LabelList
+                  dataKey="ebitda"
+                  position="top"
+                  formatter={(v) => formatCurrency(Number(v))}
+                  style={{ fontSize: 10, fontWeight: 600, fill: "#111827" }}
+                />
               </Bar>
               <Line
                 yAxisId="right"
@@ -798,6 +805,12 @@ function FinanceContent({
                   }
                 />
               ))}
+              <LabelList
+                dataKey="value"
+                position="top"
+                formatter={(v) => formatCurrency(Number(v))}
+                style={{ fontSize: 10, fontWeight: 600, fill: "#111827" }}
+              />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
@@ -852,7 +865,7 @@ function FinanceContent({
                     <td className="py-2 px-4 pl-8 text-foreground text-sm">{loc.name}</td>
                     <td className="text-right py-2 px-4 text-muted-foreground">—</td>
                     <td className="text-right py-2 px-4 text-muted-foreground">—</td>
-                    <td className={`text-right py-2 px-4 font-medium ${loc.ebitda >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                    <td className={`text-right py-2 px-4 font-medium tabular-nums ${loc.ebitda >= 0 ? "text-emerald-600" : "text-red-500"}`}>
                       {formatCurrency(loc.ebitda)}
                     </td>
                     <td className="text-right py-2 px-4">
@@ -864,12 +877,12 @@ function FinanceContent({
               {/* Total row */}
               <tr className="border-t-2 border-border font-bold bg-muted/50">
                 <td className="py-3 px-4 text-foreground">Group Total</td>
-                <td className="text-right py-3 px-4 text-foreground">{formatCurrency(pnlTotals.tradingIncome)}</td>
-                <td className="text-right py-3 px-4 text-foreground">{formatCurrency(pnlTotals.opex)}</td>
-                <td className={`text-right py-3 px-4 ${pnlTotals.ebitda >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                <td className="text-right py-3 px-4 text-foreground tabular-nums">{formatCurrency(pnlTotals.tradingIncome)}</td>
+                <td className="text-right py-3 px-4 text-foreground tabular-nums">{formatCurrency(pnlTotals.opex)}</td>
+                <td className={`text-right py-3 px-4 tabular-nums ${pnlTotals.ebitda >= 0 ? "text-emerald-600" : "text-red-500"}`}>
                   {formatCurrency(pnlTotals.ebitda)}
                 </td>
-                <td className={`text-right py-3 px-4 ${totalMargin >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                <td className={`text-right py-3 px-4 tabular-nums ${totalMargin >= 0 ? "text-emerald-600" : "text-red-500"}`}>
                   {formatPercent(totalMargin)}
                 </td>
               </tr>
@@ -1035,14 +1048,14 @@ function PnLUnitRow({
             {unit.name}
           </span>
         </td>
-        <td className="text-right py-3 px-4 text-foreground">
+        <td className="text-right py-3 px-4 text-foreground tabular-nums">
           {unit.tradingIncome > 0 ? formatCurrency(unit.tradingIncome) : "—"}
         </td>
-        <td className="text-right py-3 px-4 text-foreground">{formatCurrency(opex)}</td>
-        <td className={`text-right py-3 px-4 font-medium ${ebitda >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+        <td className="text-right py-3 px-4 text-foreground tabular-nums">{formatCurrency(opex)}</td>
+        <td className={`text-right py-3 px-4 font-medium tabular-nums ${ebitda >= 0 ? "text-emerald-600" : "text-red-500"}`}>
           {formatCurrency(ebitda)}
         </td>
-        <td className={`text-right py-3 px-4 font-medium ${margin >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+        <td className={`text-right py-3 px-4 font-medium tabular-nums ${margin >= 0 ? "text-emerald-600" : "text-red-500"}`}>
           {unit.tradingIncome > 0 ? formatPercent(margin) : "—"}
         </td>
       </tr>
@@ -1099,7 +1112,7 @@ function PnLDetailRow({
         {label}
       </td>
       <td
-        className={`text-right py-2 px-4 ${isBold ? "font-semibold" : ""} ${
+        className={`text-right py-2 px-4 tabular-nums ${isBold ? "font-semibold" : ""} ${
           isHighlight
             ? amount !== null && amount >= 0
               ? "text-emerald-600"
