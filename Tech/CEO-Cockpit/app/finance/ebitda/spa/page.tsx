@@ -7,7 +7,6 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { KPICardRow, KPIData } from "@/components/dashboard/KPICardRow";
 import { Card } from "@/components/ui/card";
-import { CIChat } from "@/components/ci/CIChat";
 import { formatCurrency } from "@/lib/charts/config";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useSpaEbitda, SpaLocationData } from "@/lib/hooks/useSpaEbitda";
@@ -872,7 +871,6 @@ function SpaEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }
         <EbitdaReconciliation dateFrom={dateFrom} dateTo={dateTo} />
       )}
 
-      <CIChat />
     </>
   );
 }

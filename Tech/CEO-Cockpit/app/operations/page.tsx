@@ -3,7 +3,6 @@
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { KPICardRow, KPIData } from "@/components/dashboard/KPICardRow";
 import { Card } from "@/components/ui/card";
-import { CIChat } from "@/components/ci/CIChat";
 import {
   formatCurrency,
 } from "@/lib/charts/config";
@@ -625,7 +624,6 @@ function OperationsContent({
         )}
       </Card>
 
-      <CIChat />
     </>
   );
 }

@@ -6,7 +6,6 @@ import { SyncButton } from "@/components/dashboard/SyncButton";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { Card } from "@/components/ui/card";
-import { CIChat } from "@/components/ci/CIChat";
 import { formatCurrency } from "@/lib/charts/config";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useMetaCampaignsFromDb as useMetaCampaigns, useGoogleCampaignsFromDb as useGoogleCampaigns } from "@/lib/hooks/useAdsCampaigns";
@@ -724,8 +723,6 @@ function SpaMarketingContent({
         </Card>
       )}
 
-      {/* Section 6: CIChat */}
-      <CIChat />
     </>
   );
 }

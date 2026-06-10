@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
 import { SalesKPICard } from "@/components/sales/SalesKPICard";
 import { SalesKPIGrid } from "@/components/sales/SalesKPIGrid";
 import { useAestheticsSales } from "@/lib/hooks/useAestheticsSales";
+import { useSalaryRoster } from "@/lib/hooks/useSalaryRoster";
 import { chartColors, formatCurrency } from "@/lib/charts/config";
 import { FileSpreadsheet } from "lucide-react";
 import { SyncButton } from "@/components/dashboard/SyncButton";
@@ -18,17 +18,6 @@ function fmtK(v: number): string {
   if (Math.abs(v) >= 1_000_000) return `€${(v / 1_000_000).toFixed(1)}M`;
   if (Math.abs(v) >= 1_000)     return `€${(v / 1_000).toFixed(1)}K`;
   return `€${v.toFixed(0)}`;
-}
-
-function toDateParam(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-interface PractitionerRow {
-  employee_name: string;
-  salary: number | null;
-  k_pct: number | null;
-  flag: string;
 }
 
 function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
@@ -62,37 +51,14 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
     };
   }, [totals, lyTotals]);
 
-  const { data: productivityData } = useQuery({
-    queryKey: ["practitioner-productivity", toDateParam(dateFrom), toDateParam(dateTo)],
-    queryFn: async () => {
-      const res = await fetch(
-        `/api/finance/practitioner-productivity?date_from=${toDateParam(dateFrom)}&date_to=${toDateParam(dateTo)}`
-      );
-      if (!res.ok) return null;
-      return res.json() as Promise<{ aesthetics: PractitionerRow[] }>;
-    },
-    staleTime: 5 * 60_000,
-  });
-
-  // Build lookup: lowercase token → cost data
-  const aesKMap = useMemo(() => {
-    const map = new Map<string, { salary: number; k_pct: number | null }>();
-    if (!productivityData?.aesthetics) return map;
-    for (const p of productivityData.aesthetics) {
-      if (!p.salary) continue;
-      for (const token of p.employee_name.toLowerCase().split(/\s+/)) {
-        if (token.length >= 3) map.set(token, { salary: p.salary, k_pct: p.k_pct });
-      }
-    }
-    return map;
-  }, [productivityData]);
+  const { getAesSalary } = useSalaryRoster(dateFrom, dateTo);
 
   // Enrich byPerson with salary overlay
   const byPersonEnriched = useMemo(() =>
     byPerson.map(bp => {
-      const cost = aesKMap.get(bp.person.toLowerCase());
+      const salary = getAesSalary(bp.person);
       const revStr = bp.revenue_ex >= 1000 ? `€${(bp.revenue_ex / 1000).toFixed(1)}K` : `€${bp.revenue_ex}`;
-      if (!cost) return {
+      if (!salary) return {
         ...bp,
         salary_cost: 0,
         revenue_net: bp.revenue_ex,
@@ -100,8 +66,8 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
         k_label: null as string | null,
         bar_label: revStr,
       };
-      const salary_cost = Math.min(cost.salary, bp.revenue_ex);
-      const k_pct = cost.k_pct;
+      const salary_cost = Math.min(salary, bp.revenue_ex);
+      const k_pct = bp.revenue_ex > 0 ? +(salary / bp.revenue_ex * 100).toFixed(1) : null;
       return {
         ...bp,
         salary_cost,
@@ -111,7 +77,8 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
         bar_label: revStr,
       };
     }),
-    [byPerson, aesKMap]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [byPerson, getAesSalary]
   );
 
   const hasCostData = byPersonEnriched.some(b => b.salary_cost > 0);

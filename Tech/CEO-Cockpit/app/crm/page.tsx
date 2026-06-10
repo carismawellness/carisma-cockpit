@@ -6,7 +6,6 @@ import { SpeedToLeadSection } from "@/components/crm/SpeedToLeadSection";
 import { MessageQueueHealth } from "@/components/crm/MessageQueueHealth";
 import { LeadReconciliation } from "@/components/crm/LeadReconciliation";
 import { LeadsPerHour } from "@/components/crm/LeadsPerHour";
-import { CIChat } from "@/components/ci/CIChat";
 import { GHLSyncBadge } from "@/components/crm/GHLSyncBadge";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 
@@ -60,7 +59,6 @@ function CRMContent({
         <SpeedToLeadSection dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
       </section>
 
-      <CIChat />
     </>
   );
 }

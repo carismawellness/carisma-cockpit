@@ -5,7 +5,6 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { SalesKPICard } from "@/components/sales/SalesKPICard";
 import { SalesKPIGrid } from "@/components/sales/SalesKPIGrid";
 import { StaffPerformanceChart } from "@/components/sales/StaffPerformanceChart";
-import { CIChat } from "@/components/ci/CIChat";
 import { Card } from "@/components/ui/card";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useSpaRevenue } from "@/lib/hooks/useSpaRevenue";
@@ -510,7 +509,6 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
         </Card>
       )}
 
-      <CIChat />
     </>
   );
 }

@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { SyncButton } from "@/components/dashboard/SyncButton";
-import { CIChat } from "@/components/ci/CIChat";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { KPICardRow, KPIData } from "@/components/dashboard/KPICardRow";
 import { DataTable } from "@/components/dashboard/DataTable";
@@ -1159,7 +1158,6 @@ function HRContent() {
         )}
       </Card>
 
-      <CIChat />
     </>
   );
 }

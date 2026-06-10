@@ -5,7 +5,6 @@ import { SyncButton } from "@/components/dashboard/SyncButton";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { KPICardRow, KPIData } from "@/components/dashboard/KPICardRow";
 import { Card } from "@/components/ui/card";
-import { CIChat } from "@/components/ci/CIChat";
 import { formatCurrency } from "@/lib/charts/config";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import {
@@ -796,7 +795,6 @@ function SlimmingEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: D
 
       {!isLoading && <EbitdaReconciliation dateFrom={dateFrom} dateTo={dateTo} />}
 
-      <CIChat />
     </>
   );
 }

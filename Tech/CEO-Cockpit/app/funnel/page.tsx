@@ -3,7 +3,6 @@
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { ConstraintHeatmap } from "@/components/funnel/ConstraintHeatmap";
 import { CampaignFunnelPanel } from "@/components/funnel/CampaignFunnelPanel";
-import { CIChat } from "@/components/ci/CIChat";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 
 function FunnelContent({
@@ -33,7 +32,6 @@ function FunnelContent({
         <CampaignFunnelPanel dateFrom={dateFrom} dateTo={dateTo} />
       </section>
 
-      <CIChat />
     </>
   );
 }

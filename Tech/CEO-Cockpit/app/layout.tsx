@@ -17,7 +17,6 @@ export const metadata: Metadata = {
 
 // viewport-fit=cover is required for env(safe-area-inset-bottom) to work on iOS Safari.
 // Without it, safe-area-inset-bottom always resolves to 0 and the home indicator
-// overlaps bottom-anchored elements (CIChatFloat, main content padding).
 export const viewport: Viewport = {
   viewportFit: "cover",
 };

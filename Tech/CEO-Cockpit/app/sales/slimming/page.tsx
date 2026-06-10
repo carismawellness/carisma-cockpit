@@ -7,6 +7,7 @@ import { SalesKPICard } from "@/components/sales/SalesKPICard";
 import { SalesKPIGrid } from "@/components/sales/SalesKPIGrid";
 import { useSlimmingSales } from "@/lib/hooks/useSlimmingSales";
 import { useSlimmingTreatments } from "@/lib/hooks/useSlimmingTreatments";
+import { useSalaryRoster } from "@/lib/hooks/useSalaryRoster";
 import { FileSpreadsheet } from "lucide-react";
 import { SyncButton } from "@/components/dashboard/SyncButton";
 import {
@@ -111,6 +112,26 @@ function EmptyState({ isLoading }: { isLoading: boolean }) {
 function chartH(n: number) { return Math.max(180, n * 48 + 40); }
 
 // ── Main content ──────────────────────────────────────────────────────────────
+const SALARY_BLUE = "#4a7fa5";
+
+function enrichWithSalary(
+  staff: string,
+  revenue_inc: number,
+  revenue_ex: number,
+  getSalary: (name: string) => number | null,
+) {
+  const salary = getSalary(staff) ?? 0;
+  const salary_cost = salary > 0 ? Math.min(salary, revenue_inc) : 0;
+  const k_pct = salary > 0 && revenue_ex > 0 ? +(salary / revenue_ex * 100).toFixed(0) : null;
+  const revStr = revenue_inc >= 1000 ? `€${(revenue_inc / 1000).toFixed(1)}K` : `€${revenue_inc}`;
+  return {
+    salary_cost,
+    revenue_net_inc: Math.max(0, revenue_inc - salary_cost),
+    k_label: k_pct != null ? `${k_pct}%` : null as string | null,
+    bar_label: revStr,
+  };
+}
+
 function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const {
     byStaff, byServiceType, byService, totals,
@@ -139,6 +160,8 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
     isSyncing: txSyncing,
   } = useSlimmingTreatments(dateFrom, dateTo);
 
+  const { getSlmSalary } = useSalaryRoster(dateFrom, dateTo);
+
   const isLoading   = isFetching || isSyncing;
   const txLoading   = txFetching || txSyncing;
 
@@ -148,17 +171,35 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
     .filter(s => /retail/i.test(s.staff))
     .map(s => ({ ...s, staff: s.staff.replace(/\s*retail\s*/i, "").trim() }));
 
-  const regularChartData = regularStaff.map(s => ({
-    name:              s.staff,
-    "Revenue inc-VAT": s.revenue_inc,
-    "Bookings":        s.tx_count,
-  }));
+  const regularChartData = useMemo(() =>
+    regularStaff.map(s => ({
+      name: s.staff,
+      "Bookings": s.tx_count,
+      ...enrichWithSalary(s.staff, s.revenue_inc, s.revenue_ex, getSlmSalary),
+    })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [regularStaff, getSlmSalary]
+  );
 
-  const retailChartData = retailStaff.map(s => ({
-    name:              s.staff,
-    "Revenue inc-VAT": s.revenue_inc,
-    "Bookings":        s.tx_count,
-  }));
+  const retailChartData = useMemo(() =>
+    retailStaff.map(s => ({
+      name: s.staff,
+      "Bookings": s.tx_count,
+      ...enrichWithSalary(s.staff, s.revenue_inc, s.revenue_ex, getSlmSalary),
+    })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [retailStaff, getSlmSalary]
+  );
+
+  const txStaffData = useMemo(() =>
+    txByStaff.map(s => ({
+      name: s.staff,
+      "Bookings": s.tx_count,
+      ...enrichWithSalary(s.staff, s.revenue_ex, s.revenue_ex, getSlmSalary),
+    })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [txByStaff, getSlmSalary]
+  );
 
   const serviceTypeData = byServiceType.map(t => ({
     name:      t.label,
@@ -172,12 +213,6 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
     "Revenue": s.revenue_ex,
     type:      s.type,
     pct:       s.pct,
-  }));
-
-  const txStaffData = txByStaff.map(s => ({
-    name:      s.staff,
-    "Revenue": s.revenue_ex,
-    "Bookings": s.tx_count,
   }));
 
   const txTypeData = byTreatment.map(t => ({

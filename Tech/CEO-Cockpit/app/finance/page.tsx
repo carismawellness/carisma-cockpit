@@ -3,7 +3,6 @@
 import { useState, useMemo } from "react";
 import { subYears, format } from "date-fns";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { CIChat } from "@/components/ci/CIChat";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { KPICardRow, KPIData } from "@/components/dashboard/KPICardRow";
 import { Sparkline } from "@/components/dashboard/Sparkline";
@@ -997,7 +996,6 @@ function FinanceContent({
         </div>
       </Card>
 
-      <CIChat />
     </>
   );
 }

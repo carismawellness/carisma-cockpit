@@ -5,7 +5,6 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { SyncButton } from "@/components/dashboard/SyncButton";
 import { KPICardRow, KPIData } from "@/components/dashboard/KPICardRow";
 import { Card } from "@/components/ui/card";
-import { CIChat } from "@/components/ci/CIChat";
 import { formatCurrency } from "@/lib/charts/config";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useSpaEbitda } from "@/lib/hooks/useSpaEbitda";
@@ -595,7 +594,6 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
         </Card>
       )}
 
-      <CIChat />
     </>
   );
 }

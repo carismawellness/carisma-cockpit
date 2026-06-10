@@ -19,6 +19,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminClient } from "@/lib/supabase/admin";
+import { talexioQuery } from "@/lib/talexio/auth";
 import {
   LOCATION_TO_BRAND,
   brandForLocation,
@@ -26,10 +27,6 @@ import {
 } from "@/lib/constants/hr-mapping";
 
 export const maxDuration = 60;
-
-const BASE_URL = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : "http://localhost:3000";
 
 function todayISO(): string {
   const d = new Date();
@@ -41,7 +38,7 @@ function monthStart(dateISO: string): string {
   return `${dateISO.slice(0, 7)}-01`;
 }
 
-// ── Talexio response shapes (mirrors /api/talexio) ──────────────────────────
+// ── Talexio response shapes ──────────────────────────────────────────────────
 type GqlResponse<T> = { data?: T; errors?: Array<{ message: string }> };
 
 interface HeadcountEmployee {
@@ -88,17 +85,48 @@ interface ShiftEmployee {
   workShifts: ShiftRow[];
 }
 
-async function callTalexio<T>(action: string, params?: Record<string, string>): Promise<T> {
-  const qs = new URLSearchParams({ action, ...(params ?? {}) }).toString();
-  const res = await fetch(`${BASE_URL}/api/talexio?${qs}`, { method: "GET" });
-  if (!res.ok) {
-    throw new Error(`Talexio proxy ${action} failed: ${res.status}`);
+const GQL_HEADCOUNT = `query {
+  employees {
+    id fullName isTerminated
+    currentPositionSimple {
+      id isEnded
+      position { id name }
+      organisationUnit { id name }
+    }
   }
-  const json = (await res.json()) as GqlResponse<T>;
+}`;
+
+const GQL_PAYSLIPS = `query {
+  employees {
+    id fullName isTerminated
+    currentPositionSimple {
+      position { name }
+      organisationUnit { name }
+    }
+    payslips {
+      ... on PayrollPayslip {
+        id gross net tax periodFrom periodTo
+      }
+    }
+  }
+}`;
+
+const GQL_SHIFTS = `query ($employeeIds: [ID!]!, $dateFrom: Date!, $dateTo: Date!) {
+  selectedEmployees: employees(params: { employeeIds: $employeeIds }) {
+    id fullName
+    workShifts(dateFrom: $dateFrom, dateTo: $dateTo, onlyPublished: true) {
+      id label type date from to
+      employee { id fullName }
+    }
+  }
+}`;
+
+async function fetchTalexio<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+  const json = (await talexioQuery(query, variables)) as GqlResponse<T>;
   if (json.errors && json.errors.length) {
     throw new Error(`Talexio GraphQL errors: ${json.errors.map((e) => e.message).join("; ")}`);
   }
-  if (!json.data) throw new Error(`Talexio ${action} returned no data`);
+  if (!json.data) throw new Error("Talexio query returned no data");
   return json.data;
 }
 
@@ -153,7 +181,7 @@ export async function POST(req: NextRequest) {
 
   try {
     // ── 1. Headcount → hr_talexio_daily_snapshot + hr_headcount_monthly ─────
-    const headcountData = await callTalexio<{ employees: HeadcountEmployee[] }>("headcount");
+    const headcountData = await fetchTalexio<{ employees: HeadcountEmployee[] }>(GQL_HEADCOUNT);
     const employees = headcountData.employees ?? [];
 
     // location_name → { active, brand }
@@ -195,7 +223,7 @@ export async function POST(req: NextRequest) {
 
     // ── 2. Payslips → enrich snapshot rows with gross/net/tax ──────────────
     try {
-      const payslipData = await callTalexio<{ employees: PayslipEmployee[] }>("payslips");
+      const payslipData = await fetchTalexio<{ employees: PayslipEmployee[] }>(GQL_PAYSLIPS);
       const payslipEmployees = payslipData.employees ?? [];
 
       // location_name → aggregated payroll
