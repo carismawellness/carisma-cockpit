@@ -16,6 +16,31 @@ const SPA_LOC_META: Record<number, { name: string; color: string }> = {
   8: { name: "Novotel",   color: "#DC2626" },
 };
 
+type SpaRevenueRow = {
+  services:          number | null;
+  product_phytomer:  number | null;
+  product_purest:    number | null;
+  product_other:     number | null;
+  wholesale:         number | null;
+  sales_discount:    number | null;
+  sales_refund:      number | null;
+};
+
+const SPA_REVENUE_COLUMNS = "services, product_phytomer, product_purest, product_other, wholesale, sales_discount, sales_refund";
+
+function computeSpaNetRevenue(r: SpaRevenueRow): number {
+  return (r.services ?? 0)
+    + (r.product_phytomer ?? 0)
+    + (r.product_purest   ?? 0)
+    + (r.product_other    ?? 0)
+    + (r.wholesale        ?? 0)
+    - (r.sales_discount   ?? 0)
+    - (r.sales_refund     ?? 0);
+}
+
+// Trailing months window for the monthly time series (current month + 12 prior).
+const TRAILING_MONTHS = 13;
+
 function toDateStr(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
@@ -30,24 +55,20 @@ async function fetchSpaRevenue(
   from: string,
   to: string
 ) {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("spa_revenue_monthly")
-    .select("location_id, services, product_phytomer, product_purest, product_other, wholesale, sales_discount, sales_refund")
+    .select(`location_id, ${SPA_REVENUE_COLUMNS}`)
     .gte("month", from)
     .lte("month", to);
+
+  if (error) throw error;
 
   const rows = data ?? [];
   const locMap = new Map<number, number>();
   let total = 0;
 
   for (const r of rows) {
-    const net = (r.services ?? 0)
-      + (r.product_phytomer ?? 0)
-      + (r.product_purest ?? 0)
-      + (r.product_other ?? 0)
-      + (r.wholesale ?? 0)
-      - (r.sales_discount ?? 0)
-      - (r.sales_refund ?? 0);
+    const net = computeSpaNetRevenue(r);
     locMap.set(r.location_id, (locMap.get(r.location_id) ?? 0) + net);
     total += net;
   }
@@ -64,20 +85,24 @@ async function fetchSpaRevenue(
   return { total: Math.round(total), byLocation };
 }
 
-// Aesthetics revenue for a date window: returns total (price_ex_vat)
-async function fetchAestheticsRevenue(
+// Daily-sales revenue for a date window: returns total (price_ex_vat).
+// Shared between aesthetics_sales_daily and slimming_sales_daily — identical shape.
+async function fetchDailySalesRevenue(
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  table: "aesthetics_sales_daily" | "slimming_sales_daily",
   fromDateStr: string,
   toDateStr: string
 ) {
   const fromMonth = fromDateStr.substring(0, 7) + "-01";
   const toMonth   = toDateStr.substring(0, 7)   + "-01";
 
-  const { data } = await supabase
-    .from("aesthetics_sales_daily")
+  const { data, error } = await supabase
+    .from(table)
     .select("date_of_service, month, price_ex_vat")
     .gte("month", fromMonth)
     .lte("month", toMonth);
+
+  if (error) throw error;
 
   const rows = (data ?? []).filter(
     (r) => !r.date_of_service || (r.date_of_service >= fromDateStr && r.date_of_service <= toDateStr)
@@ -86,40 +111,18 @@ async function fetchAestheticsRevenue(
   return Math.round(rows.reduce((s: number, r) => s + (r.price_ex_vat ?? 0), 0));
 }
 
-// Slimming revenue for a date window: returns total (price_ex_vat)
-async function fetchSlimmingRevenue(
-  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
-  fromDateStr: string,
-  toDateStr: string
-) {
-  const fromMonth = fromDateStr.substring(0, 7) + "-01";
-  const toMonth   = toDateStr.substring(0, 7)   + "-01";
-
-  const { data } = await supabase
-    .from("slimming_sales_daily")
-    .select("date_of_service, month, price_ex_vat")
-    .gte("month", fromMonth)
-    .lte("month", toMonth);
-
-  const rows = (data ?? []).filter(
-    (r) => !r.date_of_service || (r.date_of_service >= fromDateStr && r.date_of_service <= toDateStr)
-  );
-
-  return Math.round(rows.reduce((s: number, r) => s + (r.price_ex_vat ?? 0), 0));
-}
-
-// Monthly time series: for each of the last 13 months, return spa+aesthetics+slimming for THIS year and LAST year
+// Monthly time series: for each of the last TRAILING_MONTHS months, return spa+aesthetics+slimming for THIS year and LAST year
 async function fetchMonthlySeries(
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>
 ) {
   const today = new Date();
-  // 13 months ending at current month
+  // TRAILING_MONTHS months ending at current month
   const months: string[] = [];
-  for (let i = 12; i >= 0; i--) {
+  for (let i = TRAILING_MONTHS - 1; i >= 0; i--) {
     const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
     months.push(toMonthStr(d));
   }
-  // LY equivalent: same 13 months but one year earlier
+  // LY equivalent: same TRAILING_MONTHS months but one year earlier
   const lyMonths = months.map((m) => {
     const d = new Date(m);
     d.setFullYear(d.getFullYear() - 1);
@@ -130,25 +133,28 @@ async function fetchMonthlySeries(
   const allFrom = lyMonths[0];
   const allTo   = months[months.length - 1];
 
-  const { data: spaRows } = await supabase
+  const { data: spaRows, error: spaError } = await supabase
     .from("spa_revenue_monthly")
-    .select("month, location_id, services, product_phytomer, product_purest, product_other, wholesale, sales_discount, sales_refund")
+    .select(`month, location_id, ${SPA_REVENUE_COLUMNS}`)
     .gte("month", allFrom)
     .lte("month", allTo);
 
+  if (spaError) throw spaError;
+
   const spaByMonth = new Map<string, number>();
   for (const r of spaRows ?? []) {
-    const net = (r.services ?? 0) + (r.product_phytomer ?? 0) + (r.product_purest ?? 0)
-      + (r.product_other ?? 0) + (r.wholesale ?? 0) - (r.sales_discount ?? 0) - (r.sales_refund ?? 0);
+    const net = computeSpaNetRevenue(r);
     spaByMonth.set(r.month, (spaByMonth.get(r.month) ?? 0) + net);
   }
 
   // Fetch aesthetics monthly
-  const { data: aesRows } = await supabase
+  const { data: aesRows, error: aesError } = await supabase
     .from("aesthetics_sales_daily")
     .select("month, price_ex_vat")
     .gte("month", allFrom)
     .lte("month", allTo);
+
+  if (aesError) throw aesError;
 
   const aesByMonth = new Map<string, number>();
   for (const r of aesRows ?? []) {
@@ -156,11 +162,13 @@ async function fetchMonthlySeries(
   }
 
   // Fetch slimming monthly
-  const { data: slimRows } = await supabase
+  const { data: slimRows, error: slimError } = await supabase
     .from("slimming_sales_daily")
     .select("month, price_ex_vat")
     .gte("month", allFrom)
     .lte("month", allTo);
+
+  if (slimError) throw slimError;
 
   const slimByMonth = new Map<string, number>();
   for (const r of slimRows ?? []) {
@@ -191,52 +199,58 @@ async function fetchMonthlySeries(
 }
 
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const fromStr = searchParams.get("from");
-  const toStr   = searchParams.get("to");
+  try {
+    const { searchParams } = new URL(req.url);
+    const fromStr = searchParams.get("from");
+    const toStr   = searchParams.get("to");
 
-  if (!fromStr || !toStr) {
-    return NextResponse.json({ error: "Missing from/to params" }, { status: 400 });
+    if (!fromStr || !toStr) {
+      return NextResponse.json({ error: "Missing from/to params" }, { status: 400 });
+    }
+
+    const supabase = await createServerSupabaseClient();
+
+    // Derive LY range (same calendar span, one year back)
+    const fromDate = new Date(fromStr);
+    const toDate   = new Date(toStr);
+    const lyFrom   = toDateStr(new Date(fromDate.getFullYear() - 1, fromDate.getMonth(), fromDate.getDate()));
+    const lyTo     = toDateStr(new Date(toDate.getFullYear() - 1,   toDate.getMonth(),   toDate.getDate()));
+
+    // Spa months for period filter
+    const spaFrom = toMonthStr(fromDate);
+    const spaTo   = toMonthStr(toDate);
+    const spaLyFrom = toMonthStr(new Date(fromDate.getFullYear() - 1, fromDate.getMonth(), 1));
+    const spaLyTo   = toMonthStr(new Date(toDate.getFullYear() - 1,   toDate.getMonth(),   1));
+
+    const [spaCurr, spaLY, aesCurr, aesLY, slimCurr, slimLY, monthly] = await Promise.all([
+      fetchSpaRevenue(supabase, spaFrom,   spaTo),
+      fetchSpaRevenue(supabase, spaLyFrom, spaLyTo),
+      fetchDailySalesRevenue(supabase, "aesthetics_sales_daily", fromStr, toStr),
+      fetchDailySalesRevenue(supabase, "aesthetics_sales_daily", lyFrom,  lyTo),
+      fetchDailySalesRevenue(supabase, "slimming_sales_daily",   fromStr, toStr),
+      fetchDailySalesRevenue(supabase, "slimming_sales_daily",   lyFrom,  lyTo),
+      fetchMonthlySeries(supabase),
+    ]);
+
+    return NextResponse.json({
+      period: {
+        spa:        spaCurr.total,
+        aesthetics: aesCurr,
+        slimming:   slimCurr,
+        total:      spaCurr.total + aesCurr + slimCurr,
+      },
+      ly: {
+        spa:        spaLY.total,
+        aesthetics: aesLY,
+        slimming:   slimLY,
+        total:      spaLY.total + aesLY + slimLY,
+      },
+      spa_locations: spaCurr.byLocation,
+      monthly,
+    });
+  } catch (error: unknown) {
+    console.error("[api/sales/group] error:", error);
+    const message = error instanceof Error ? error.message : "Internal error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  const supabase = await createServerSupabaseClient();
-
-  // Derive LY range (same calendar span, one year back)
-  const fromDate = new Date(fromStr);
-  const toDate   = new Date(toStr);
-  const lyFrom   = toDateStr(new Date(fromDate.getFullYear() - 1, fromDate.getMonth(), fromDate.getDate()));
-  const lyTo     = toDateStr(new Date(toDate.getFullYear() - 1,   toDate.getMonth(),   toDate.getDate()));
-
-  // Spa months for period filter
-  const spaFrom = toMonthStr(fromDate);
-  const spaTo   = toMonthStr(toDate);
-  const spaLyFrom = toMonthStr(new Date(fromDate.getFullYear() - 1, fromDate.getMonth(), 1));
-  const spaLyTo   = toMonthStr(new Date(toDate.getFullYear() - 1,   toDate.getMonth(),   1));
-
-  const [spaCurr, spaLY, aesCurr, aesLY, slimCurr, slimLY, monthly] = await Promise.all([
-    fetchSpaRevenue(supabase, spaFrom,   spaTo),
-    fetchSpaRevenue(supabase, spaLyFrom, spaLyTo),
-    fetchAestheticsRevenue(supabase, fromStr, toStr),
-    fetchAestheticsRevenue(supabase, lyFrom,  lyTo),
-    fetchSlimmingRevenue(supabase, fromStr, toStr),
-    fetchSlimmingRevenue(supabase, lyFrom,  lyTo),
-    fetchMonthlySeries(supabase),
-  ]);
-
-  return NextResponse.json({
-    period: {
-      spa:        spaCurr.total,
-      aesthetics: aesCurr,
-      slimming:   slimCurr,
-      total:      spaCurr.total + aesCurr + slimCurr,
-    },
-    ly: {
-      spa:        spaLY.total,
-      aesthetics: aesLY,
-      slimming:   slimLY,
-      total:      spaLY.total + aesLY + slimLY,
-    },
-    spa_locations: spaCurr.byLocation,
-    monthly,
-  });
 }
