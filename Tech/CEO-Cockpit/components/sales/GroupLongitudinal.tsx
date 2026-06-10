@@ -8,7 +8,7 @@ import {
   ComposedChart, Bar, Line,
   LineChart,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList,
-  ResponsiveContainer, Customized,
+  ResponsiveContainer,
 } from "recharts";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { GroupMonthlyPoint } from "@/lib/hooks/useGroupRevenue";
@@ -120,6 +120,10 @@ export function GroupLongitudinal({ monthly, isFetching }: Props) {
       total:         p.total,
       total_ly:      (p.spa_ly + p.aesthetics_ly + p.slimming_ly) > 0 ? p.total_ly : null,
       ...hotelFields,
+      // 1-euro phantom value used purely as a label anchor at the top of every
+      // stacked column. Invisible visually, ignored by tooltip, but guarantees
+      // a non-zero topmost bar so position="top" labels always render.
+      _anchor:       p.total > 0 ? 1 : 0,
     };
   });
 
@@ -183,7 +187,11 @@ export function GroupLongitudinal({ monthly, isFetching }: Props) {
               <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#374151" }} interval={0} />
               <YAxis tickFormatter={(v) => fmtK(Number(v))} tick={{ fontSize: 11, fill: "#6b7280" }} width={60} />
               <Tooltip
-                formatter={(v: unknown, name) => [fmtK(Number(v)), String(name ?? "")]}
+                formatter={(v: unknown, name, item) => {
+                  const dk = (item as { dataKey?: string })?.dataKey;
+                  if (dk === "_anchor") return [null as unknown as string, ""];
+                  return [fmtK(Number(v)), String(name ?? "")];
+                }}
                 cursor={{ fill: "rgba(0,0,0,0.03)" }}
               />
               <Legend
@@ -233,7 +241,7 @@ export function GroupLongitudinal({ monthly, isFetching }: Props) {
                   />
                 )}
               </Bar>
-              <Bar dataKey="slimming"   name="Slimming"   stackId="a" fill={BRAND.slimming.dark}   radius={[3, 3, 0, 0]}>
+              <Bar dataKey="slimming"   name="Slimming"   stackId="a" fill={BRAND.slimming.dark}>
                 {expanded && (
                   <LabelList
                     dataKey="slimming"
@@ -245,10 +253,24 @@ export function GroupLongitudinal({ monthly, isFetching }: Props) {
                     style={{ fontSize: 9, fontWeight: 700, fill: "#ffffff" }}
                   />
                 )}
-                {/* Total label rendered separately via Customized below so it
-                    can use the chart's yScale (avoids Recharts' broken
-                    LabelList positioning when the topmost stacked segment
-                    has zero height). */}
+              </Bar>
+              {/* Invisible 1-euro anchor at the top of the stack. Its only job
+                  is to be a non-zero topmost bar so the total LabelList below
+                  always has a reliable anchor — works even when Slimming = 0. */}
+              <Bar
+                dataKey="_anchor"
+                stackId="a"
+                fill="transparent"
+                legendType="none"
+                isAnimationActive={false}
+                radius={[3, 3, 0, 0]}
+              >
+                <LabelList
+                  dataKey="total"
+                  position="top"
+                  formatter={(v: unknown) => fmtK(Number(v))}
+                  style={{ fontSize: 11, fontWeight: 700, fill: "#111827" }}
+                />
               </Bar>
               {/* LY total trajectory overlay — neutral gray dashed line */}
               <Line
@@ -260,43 +282,6 @@ export function GroupLongitudinal({ monthly, isFetching }: Props) {
                 strokeDasharray="5 3"
                 dot={{ r: 2.5, fill: LY_TOTAL_LINE, strokeWidth: 0 }}
                 activeDot={{ r: 4 }}
-              />
-              {/* Total-on-top labels — rendered via Customized so we can use
-                  the actual yScale and place every column's total at the
-                  correct pixel y, regardless of stacked-segment quirks. */}
-              <Customized
-                component={(props: unknown) => {
-                  const p = props as {
-                    xAxisMap?: Record<string, { scale: (v: string) => number; bandwidth?: () => number }>;
-                    yAxisMap?: Record<string, { scale: (v: number) => number }>;
-                  };
-                  const xAxis = p.xAxisMap ? Object.values(p.xAxisMap)[0] : undefined;
-                  const yAxis = p.yAxisMap ? Object.values(p.yAxisMap)[0] : undefined;
-                  if (!xAxis || !yAxis) return null;
-                  return (
-                    <g>
-                      {chartData.map((d, i) => {
-                        if (!d.total || d.total <= 0) return null;
-                        const xScale = xAxis.scale as unknown as ((v: string) => number) & { bandwidth?: () => number };
-                        const cx = xScale(d.label) + (xScale.bandwidth ? xScale.bandwidth() / 2 : 0);
-                        const cy = yAxis.scale(d.total) - 6;
-                        return (
-                          <text
-                            key={i}
-                            x={cx}
-                            y={cy}
-                            textAnchor="middle"
-                            fontSize="11"
-                            fontWeight="700"
-                            fill="#111827"
-                          >
-                            {fmtK(d.total)}
-                          </text>
-                        );
-                      })}
-                    </g>
-                  );
-                }}
               />
             </ComposedChart>
           ) : (
