@@ -69,17 +69,28 @@ export function GroupLongitudinal({ monthly, isFetching }: Props) {
   const curYearTwo = monthly[monthly.length - 1].month.substring(2, 4); // "YY" of latest current month
   const lyYearTwo  = monthly[monthly.length - 1].ly_month.substring(2, 4);
 
+  // Treat 0 LY (all three brands zero) as a data gap so the dashed line shows
+  // a hole instead of a misleading flat-zero stretch. Months before our LY
+  // backfill exists fall into this category.
+  const nullIfEmpty = (v: number, ...others: number[]) => {
+    const allZero = v === 0 && others.every((o) => o === 0);
+    return allZero ? null : v;
+  };
+
   const chartData = monthly.map((p) => ({
     label:         monthLabel(p.month),
     spa:           p.spa,
     aesthetics:    p.aesthetics,
     slimming:      p.slimming,
-    spa_ly:        p.spa_ly,
-    aesthetics_ly: p.aesthetics_ly,
-    slimming_ly:   p.slimming_ly,
+    spa_ly:        nullIfEmpty(p.spa_ly,        p.aesthetics_ly, p.slimming_ly),
+    aesthetics_ly: nullIfEmpty(p.aesthetics_ly, p.spa_ly,        p.slimming_ly),
+    slimming_ly:   nullIfEmpty(p.slimming_ly,   p.spa_ly,        p.aesthetics_ly),
     total:         p.total,
-    total_ly:      p.total_ly,
+    total_ly:      (p.spa_ly + p.aesthetics_ly + p.slimming_ly) > 0 ? p.total_ly : null,
   }));
+
+  // How many of the 13 months are missing LY data — surface as a footer note.
+  const lyGapMonths = chartData.filter((d) => d.total_ly === null).length;
 
   return (
     <Card className="p-4 md:p-6 space-y-4">
@@ -119,12 +130,30 @@ export function GroupLongitudinal({ monthly, isFetching }: Props) {
               <Bar dataKey="spa"        name="Spa"        stackId="a" fill={BRAND.spa.dark}        />
               <Bar dataKey="aesthetics" name="Aesthetics" stackId="a" fill={BRAND.aesthetics.dark} />
               <Bar dataKey="slimming"   name="Slimming"   stackId="a" fill={BRAND.slimming.dark}   radius={[3, 3, 0, 0]}>
-                {/* Total label sits above the topmost stacked segment */}
+                {/* Custom label renderer — uses chartData[index].total so labels show even
+                    when Slimming = 0 (Recharts skips default LabelList on zero-height segments). */}
                 <LabelList
-                  dataKey="total"
-                  position="top"
-                  formatter={(v: unknown) => fmtK(Number(v))}
-                  style={{ fontSize: 9, fontWeight: 600, fill: "#111827" }}
+                  content={(props: { x?: number | string; y?: number | string; width?: number | string; index?: number }) => {
+                    const i = props.index ?? -1;
+                    if (i < 0) return null;
+                    const row = chartData[i];
+                    if (!row || row.total <= 0) return null;
+                    const x = Number(props.x ?? 0);
+                    const y = Number(props.y ?? 0);
+                    const w = Number(props.width ?? 0);
+                    return (
+                      <text
+                        x={x + w / 2}
+                        y={y - 6}
+                        textAnchor="middle"
+                        fontSize="9"
+                        fontWeight="600"
+                        fill="#111827"
+                      >
+                        {fmtK(row.total)}
+                      </text>
+                    );
+                  }}
                 />
               </Bar>
               {/* LY total trajectory overlay — neutral gray dashed line */}
@@ -161,6 +190,11 @@ export function GroupLongitudinal({ monthly, isFetching }: Props) {
 
       <p className="text-xs text-muted-foreground">
         Rolling 13 months · Dashed gray line = total revenue last year, brand bars = current year
+        {lyGapMonths > 0 && (
+          <span className="ml-1 text-amber-700">
+            · LY data unavailable for {lyGapMonths} month{lyGapMonths === 1 ? "" : "s"} (gap in the dashed line)
+          </span>
+        )}
       </p>
     </Card>
   );
