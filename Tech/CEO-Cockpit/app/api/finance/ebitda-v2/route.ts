@@ -478,10 +478,19 @@ export async function GET(req: Request) {
 
     let value = 0;
     if (rule.rule_type === "fixed_monthly") {
-      value = (rule.params.monthly_amount ?? 0) * (daysInPeriod / 30.4375);
+      // Pro-rate by exact calendar days per month (not avg 30.4375) to match longitudinal
+      let exactDays = 0;
+      for (const m of overlappingMonths(dateFrom, dateTo)) {
+        exactDays += daysOfMonthInRange(m, dateFrom, dateTo) / totalDaysInMonth(m);
+      }
+      value = (rule.params.monthly_amount ?? 0) * exactDays;
     } else if (rule.rule_type === "base_plus_revenue_pct") {
       const pct  = (rule.params.revenue_pct  ?? 0) / 100;
-      const base = (rule.params.base_monthly ?? 0) * (daysInPeriod / 30.4375);
+      let exactDays = 0;
+      for (const m of overlappingMonths(dateFrom, dateTo)) {
+        exactDays += daysOfMonthInRange(m, dateFrom, dateTo) / totalDaysInMonth(m);
+      }
+      const base = (rule.params.base_monthly ?? 0) * exactDays;
       // Use Cockpit-only revenue (services + products, no wholesale/adjustments)
       // for turnover rent — that's the contractual basis for Excelsior.
       const revenueBase = venues[venue].cockpit_revenue || venues[venue].revenue;

@@ -968,6 +968,12 @@ async function aggregateRange(
       const daysInRange = daysOfMonthInRange(monthStr, dateFrom, dateTo);
       if (daysInRange === 0) continue;
 
+      // Mirror ebitda-v2: only apply TTM/prev-month fallbacks for partial calendar months.
+      // Complete past months use actual Zoho data exclusively — applying fallbacks there
+      // inflates costs when accounts post quarterly (phantom monthly estimates stack on top
+      // of the real quarterly posting for the months without transactions).
+      if (daysInRange === totalDaysInMonth(monthStr)) continue;
+
       const appliedFallbackKeys = new Set<string>();
 
       for (const rule of activeFallbacks) {
