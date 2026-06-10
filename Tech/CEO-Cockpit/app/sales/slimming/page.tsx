@@ -8,6 +8,7 @@ import { SalesKPIGrid } from "@/components/sales/SalesKPIGrid";
 import { useSlimmingSales } from "@/lib/hooks/useSlimmingSales";
 import { useSlimmingTreatments } from "@/lib/hooks/useSlimmingTreatments";
 import { useSalaryRoster } from "@/lib/hooks/useSalaryRoster";
+import { BRAND } from "@/lib/constants/design-tokens";
 import { FileSpreadsheet } from "lucide-react";
 import { SyncButton } from "@/components/dashboard/SyncButton";
 import {
@@ -18,7 +19,7 @@ import {
 } from "recharts";
 
 // ── Colour palette (unified pastel set, see .agents/skills/carisma-brand-colors) ─
-const SLIMMING_GREEN = "#3D6B3D";   // slimming text-dark — primary brand
+const SLIMMING_GREEN = BRAND.slimming.dark;   // slimming text-dark — primary brand
 const NAVY           = "#B8C9E0";   // soft Meta blue
 const BLUE           = "#B8C9E0";   // (alias)
 const PURPLE         = "#D5C0E5";   // soft SG&A purple
@@ -48,11 +49,8 @@ function pct(part: number, total: number): string {
 }
 
 // Recharts v3 formatters — accept unknown then narrow
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const labelFmtPct = (v: any): string => (typeof v === "number" ? `${v}%`     : "");
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const tooltipFmt  = (value: any, name: any): [string, string] =>
-  [typeof value === "number" ? fmtK(value) : String(value ?? ""), String(name)];
+const tooltipFmt = (v: unknown, name: unknown): [string, string] =>
+  [typeof v === "number" ? fmtK(v) : String(v ?? ""), String(name ?? "")];
 
 // ── Custom tooltips ───────────────────────────────────────────────────────────
 function StaffTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; fill: string }>; label?: string }) {
@@ -114,7 +112,7 @@ const SALARY_BLUE = "#4a7fa5";
 
 const SLM_GROUP_ORDER = ["Weight Loss", "GLP-1s", "Body Treatments", "Packages", "Medical", "Products", "Admin"] as const;
 const SLM_GROUP_COLORS: Record<string, string> = {
-  "Weight Loss":     "#3D6B3D",
+  "Weight Loss":     BRAND.slimming.dark,
   "GLP-1s":          "#7C3AED",
   "Body Treatments": "#3B7676",
   "Packages":        "#B87000",
@@ -324,7 +322,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
               <BarChart
                 layout="vertical"
                 data={regularChartData}
-                margin={{ top: 4, right: 100, left: 72, bottom: 4 }}
+                margin={{ top: 20, right: 100, left: 72, bottom: 4 }}
               >
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                 <XAxis type="number" tickFormatter={fmtK} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
@@ -355,7 +353,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
               <BarChart
                 layout="vertical"
                 data={retailChartData}
-                margin={{ top: 4, right: 100, left: 72, bottom: 4 }}
+                margin={{ top: 20, right: 100, left: 72, bottom: 4 }}
               >
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                 <XAxis type="number" tickFormatter={fmtK} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
@@ -386,7 +384,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
             <BarChart
               layout="vertical"
               data={serviceTypeData}
-              margin={{ top: 4, right: 80, left: 120, bottom: 4 }}
+              margin={{ top: 20, right: 120, left: 120, bottom: 4 }}
             >
               <CartesianGrid strokeDasharray="3 3" horizontal={false} />
               <XAxis
@@ -412,10 +410,16 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                   <Cell key={i} fill={SERVICE_TYPE_COLORS[entry.type] ?? "#9CA3AF"} />
                 ))}
                 <LabelList
-                  dataKey="pct"
+                  dataKey="Revenue"
                   position="right"
-                  formatter={labelFmtPct}
-                  style={{ fontSize: 11, fill: "#374151" }}
+                  formatter={(v: unknown) => fmtK(Number(v))}
+                  style={{ fontSize: 10, fontWeight: 600, fill: "#111827" }}
+                />
+                <LabelList
+                  dataKey="pct"
+                  position="insideRight"
+                  formatter={(v: unknown) => (typeof v === "number" && v >= 8 ? `${v}%` : "")}
+                  style={{ fontSize: 10, fontWeight: 700, fill: "#fff" }}
                 />
               </Bar>
             </BarChart>
@@ -489,10 +493,10 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                               <span className="text-xs font-bold uppercase tracking-wider" style={{ color }}>{group}</span>
                             </div>
                           </td>
-                          <td className="py-2 text-right text-xs text-muted-foreground font-medium pr-0.5">{total_count}</td>
-                          <td className="py-2 text-right text-xs font-semibold">{fmtK(groupAov)}</td>
-                          <td className="py-2 text-right text-xs font-semibold">{fmtK(total_revenue)}</td>
-                          <td className="py-2 pl-4 text-xs text-muted-foreground">
+                          <td className="py-2 text-right text-xs text-muted-foreground font-medium pr-0.5 tabular-nums">{total_count}</td>
+                          <td className="py-2 text-right text-xs font-semibold tabular-nums">{fmtK(groupAov)}</td>
+                          <td className="py-2 text-right text-xs font-semibold tabular-nums">{fmtK(total_revenue)}</td>
+                          <td className="py-2 pl-4 text-xs text-muted-foreground tabular-nums">
                             {totals.revenue_ex > 0 ? `${((total_revenue / totals.revenue_ex) * 100).toFixed(1)}%` : ""}
                           </td>
                         </tr>
@@ -502,15 +506,15 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                             <td className="py-2">
                               <span className="text-xs text-muted-foreground">{s.nav_category}</span>
                             </td>
-                            <td className="py-2 text-right text-muted-foreground">{s.tx_count}</td>
+                            <td className="py-2 text-right text-muted-foreground tabular-nums">{s.tx_count}</td>
                             <td className="py-2 text-right text-muted-foreground tabular-nums">{fmtK(s.aov)}</td>
-                            <td className="py-2 text-right font-medium">{fmtK(s.revenue_ex)}</td>
+                            <td className="py-2 text-right font-medium tabular-nums">{fmtK(s.revenue_ex)}</td>
                             <td className="py-2 pl-4">
                               <div className="flex items-center gap-2">
                                 <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                                   <div className="h-full rounded-full" style={{ width: `${s.pct}%`, backgroundColor: color }} />
                                 </div>
-                                <span className="text-xs text-muted-foreground">{s.pct}%</span>
+                                <span className="text-xs text-muted-foreground tabular-nums">{s.pct}%</span>
                               </div>
                             </td>
                           </tr>
@@ -522,9 +526,9 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                 <tfoot>
                   <tr className="border-t-2 font-semibold">
                     <td className="pt-2.5" colSpan={2}>Total</td>
-                    <td className="pt-2.5 text-right text-muted-foreground">{totals.tx_count}</td>
-                    <td className="pt-2.5 text-right text-muted-foreground">{fmtK(totals.revenue_ex > 0 && totals.tx_count > 0 ? Math.round(totals.revenue_ex / totals.tx_count) : 0)}</td>
-                    <td className="pt-2.5 text-right">{fmtK(totals.revenue_ex)}</td>
+                    <td className="pt-2.5 text-right text-muted-foreground tabular-nums">{totals.tx_count}</td>
+                    <td className="pt-2.5 text-right text-muted-foreground tabular-nums">{fmtK(totals.revenue_ex > 0 && totals.tx_count > 0 ? Math.round(totals.revenue_ex / totals.tx_count) : 0)}</td>
+                    <td className="pt-2.5 text-right tabular-nums">{fmtK(totals.revenue_ex)}</td>
                     <td />
                   </tr>
                 </tfoot>
@@ -558,7 +562,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
             <BarChart
               layout="vertical"
               data={txStaffData}
-              margin={{ top: 4, right: 100, left: 100, bottom: 4 }}
+              margin={{ top: 20, right: 100, left: 100, bottom: 4 }}
             >
               <CartesianGrid strokeDasharray="3 3" horizontal={false} />
               <XAxis
@@ -603,7 +607,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
             <BarChart
               layout="vertical"
               data={txTypeData}
-              margin={{ top: 4, right: 80, left: 140, bottom: 4 }}
+              margin={{ top: 20, right: 120, left: 140, bottom: 4 }}
             >
               <CartesianGrid strokeDasharray="3 3" horizontal={false} />
               <XAxis
@@ -629,10 +633,16 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                   <Cell key={i} fill={TREATMENT_PALETTE[i % TREATMENT_PALETTE.length]} />
                 ))}
                 <LabelList
-                  dataKey="pct"
+                  dataKey="Revenue"
                   position="right"
-                  formatter={labelFmtPct}
-                  style={{ fontSize: 11, fill: "#374151" }}
+                  formatter={(v: unknown) => fmtK(Number(v))}
+                  style={{ fontSize: 10, fontWeight: 600, fill: "#111827" }}
+                />
+                <LabelList
+                  dataKey="pct"
+                  position="insideRight"
+                  formatter={(v: unknown) => (typeof v === "number" && v >= 8 ? `${v}%` : "")}
+                  style={{ fontSize: 10, fontWeight: 700, fill: "#fff" }}
                 />
               </Bar>
             </BarChart>
