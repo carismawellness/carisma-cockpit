@@ -199,13 +199,12 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
     [retailStaff, getSlmSalary]
   );
 
-  // Tx (treatments) tab has no `paid` column — its ex-VAT figure is the
-  // session-level revenue and is the only number on that tab.
+  // Tx (treatments) tab uses price_inc_vat → revenue_inc for gross consistency.
   const txStaffData = useMemo(() =>
     txByStaff.map(s => ({
       name: s.staff,
       "Bookings": s.tx_count,
-      ...enrichWithSalary(s.staff, s.revenue_ex, getSlmSalary),
+      ...enrichWithSalary(s.staff, s.revenue_inc, getSlmSalary),
     })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [txByStaff, getSlmSalary]
@@ -239,7 +238,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
 
   const txTypeData = byTreatment.map(t => ({
     name:      t.treatment,
-    "Revenue": t.revenue_ex,
+    "Revenue": t.revenue_inc,
     count:     t.tx_count,
     pct:       t.pct,
   }));
@@ -556,7 +555,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
       {/* ── Treatments by Therapist ───────────────────────────────────── */}
       <Card className="p-4 md:p-5">
         <h2 className="text-base font-semibold text-foreground mb-1">Treatments by Therapist</h2>
-        <p className="text-xs text-muted-foreground mb-4">Revenue ex-VAT per therapist from the Tx tab</p>
+        <p className="text-xs text-muted-foreground mb-4">Revenue inc-VAT per therapist from the Tx tab</p>
         {txByStaff.length === 0 ? (
           <EmptyState isLoading={txLoading} />
         ) : (
@@ -583,7 +582,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                 tickLine={false}
               />
               <Tooltip content={<GenericTooltip />} />
-              <Bar dataKey="revenue_net_inc" stackId="rev" fill={TEAL} radius={[0, 0, 0, 0]} maxBarSize={28} name="Revenue ex-VAT" />
+              <Bar dataKey="revenue_net_inc" stackId="rev" fill={TEAL} radius={[0, 0, 0, 0]} maxBarSize={28} name="Revenue inc-VAT" />
               <Bar dataKey="salary_cost" stackId="rev" fill={SALARY_BLUE} radius={[0, 4, 4, 0]} maxBarSize={28} name="Salary cost">
                 <LabelList dataKey="k_label" position="insideRight" formatter={(v: unknown) => v ? String(v) : ""} style={{ fontSize: 9, fill: "#fff", fontWeight: 700 }} />
                 <LabelList dataKey="bar_label" position="right" formatter={(v: unknown) => String(v ?? "")} style={{ fontSize: 11, fill: "#374151" }} />
@@ -593,7 +592,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
         )}
         {txByStaff.length > 0 && (
           <div className="mt-3 text-xs text-muted-foreground">
-            Total: {fmtK(txTotals.revenue_ex)} ex-VAT · {txTotals.tx_count} sessions
+            Total: {fmtK(txTotals.revenue_inc)} inc-VAT · {txTotals.tx_count} sessions
           </div>
         )}
       </Card>
@@ -601,7 +600,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
       {/* ── Treatments by Type ────────────────────────────────────────── */}
       <Card className="p-4 md:p-5">
         <h2 className="text-base font-semibold text-foreground mb-1">Treatments by Type</h2>
-        <p className="text-xs text-muted-foreground mb-4">Revenue ex-VAT per treatment type from the Tx tab</p>
+        <p className="text-xs text-muted-foreground mb-4">Revenue inc-VAT per treatment type from the Tx tab</p>
         {byTreatment.length === 0 ? (
           <EmptyState isLoading={txLoading} />
         ) : (
@@ -652,7 +651,7 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
         )}
         {byTreatment.length > 0 && (
           <div className="mt-3 text-xs text-muted-foreground">
-            Total: {fmtK(txTotals.revenue_ex)} ex-VAT · {txTotals.tx_count} sessions
+            Total: {fmtK(txTotals.revenue_inc)} inc-VAT · {txTotals.tx_count} sessions
           </div>
         )}
       </Card>
