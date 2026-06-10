@@ -451,36 +451,65 @@ function LongitudinalContent({
   const summaryData = useMemo((): SummaryData | null => {
     if (!data || data.periods.length === 0) return null;
 
-    const last = data.periods[data.periods.length - 1];
-    const c    = last.current;
-    const s    = last.sppy;
-
     const first = data.periods[0];
+    const last  = data.periods[data.periods.length - 1];
     const periodLabel = data.periods.length === 1
       ? first.label
       : `${first.label} – ${last.label}`;
 
-    const sppy: SppyData | null = s ? {
-      groupRevenue: s.revenue,
-      groupEbitda:  s.ebitda,
-      spaRevenue:   s.spa.revenue,
-      spaEbitda:    s.spa.ebitda,
-      aesRevenue:   s.aes.revenue,
-      aesEbitda:    s.aes.ebitda,
-      slimRevenue:  s.slim.revenue,
-      slimEbitda:   s.slim.ebitda,
+    // Sum all periods so the header reflects the full selected range, not just the last month
+    type Acc = { revenue: number; ebitda: number; wages: number; advertising: number; sga: number; rent: number; cogs: number; utilities: number };
+    const zero = (): Acc => ({ revenue: 0, ebitda: 0, wages: 0, advertising: 0, sga: 0, rent: 0, cogs: 0, utilities: 0 });
+    const addTo = (acc: Acc, src: { revenue: number; ebitda: number; wages: number; advertising: number; sga: number; rent: number; cogs: number; utilities: number }) => {
+      acc.revenue     += src.revenue;
+      acc.ebitda      += src.ebitda;
+      acc.wages       += src.wages;
+      acc.advertising += src.advertising;
+      acc.sga         += src.sga;
+      acc.rent        += src.rent;
+      acc.cogs        += src.cogs;
+      acc.utilities   += src.utilities;
+    };
+
+    const totCur  = zero(); const totSpa  = zero(); const totAes  = zero(); const totSlim = zero();
+    const totSppyG = zero(); const totSppySpa = zero(); const totSppyAes = zero(); const totSppySlim = zero();
+    let hasSppyAny = false;
+
+    for (const p of data.periods) {
+      addTo(totCur,  p.current);
+      addTo(totSpa,  p.current.spa);
+      addTo(totAes,  p.current.aes);
+      addTo(totSlim, p.current.slim);
+      if (p.sppy) {
+        hasSppyAny = true;
+        addTo(totSppyG,    p.sppy);
+        addTo(totSppySpa,  p.sppy.spa);
+        addTo(totSppyAes,  p.sppy.aes);
+        addTo(totSppySlim, p.sppy.slim);
+      }
+    }
+
+    const sppy: SppyData | null = hasSppyAny ? {
+      groupRevenue: totSppyG.revenue,
+      groupEbitda:  totSppyG.ebitda,
+      spaRevenue:   totSppySpa.revenue,
+      spaEbitda:    totSppySpa.ebitda,
+      aesRevenue:   totSppyAes.revenue,
+      aesEbitda:    totSppyAes.ebitda,
+      slimRevenue:  totSppySlim.revenue,
+      slimEbitda:   totSppySlim.ebitda,
     } : null;
 
     return {
-      groupRevenue:    c.revenue,
-      groupEbitda:     c.ebitda,
-      spaRevenue:      c.spa.revenue,
-      spaEbitda:       c.spa.ebitda,
-      spaCockpitRevenue: 0,  // not available in longitudinal data
-      aesRevenue:      c.aes.revenue,
-      aesEbitda:       c.aes.ebitda,
-      slimRevenue:     c.slim.revenue,
-      slimEbitda:      c.slim.ebitda,
+      groupRevenue:      totCur.revenue,
+      groupEbitda:       totCur.ebitda,
+      spaRevenue:        totSpa.revenue,
+      spaEbitda:         totSpa.ebitda,
+      spaCockpitRevenue: 0,
+      aesRevenue:        totAes.revenue,
+      aesEbitda:         totAes.ebitda,
+      slimRevenue:       totSlim.revenue,
+      slimEbitda:        totSlim.ebitda,
       periodLabel,
       sppy,
     };
