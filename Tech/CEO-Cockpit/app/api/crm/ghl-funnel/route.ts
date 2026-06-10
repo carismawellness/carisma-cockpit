@@ -1,8 +1,10 @@
 /**
  * GET /api/crm/ghl-funnel?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD
  *
- * Returns opportunity counts per pipeline stage per brand.
- * Counts leads created in the given date range, grouped by current stage.
+ * Returns opportunity counts per pipeline stage per brand, scoped to the
+ * date range. Counts opportunities CREATED in [dateFrom, dateTo], grouped
+ * by their current stage. This is a cohort funnel: "Of leads acquired in
+ * this period, here's their current state."
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -93,12 +95,16 @@ async function fetchStageCount(
   locationId: string,
   stageId: string,
   pipelineId: string,
+  startAfterMs: number,
+  startBeforeMs: number,
 ): Promise<number> {
   try {
     const data = await ghlGet("/opportunities/search", apiKey, {
       location_id: locationId,
       pipeline_id: pipelineId,
       pipeline_stage_id: stageId,
+      startAfter: String(startAfterMs),
+      startBefore: String(startBeforeMs),
       limit: "1",
     }) as { meta?: { total?: number } };
     return data.meta?.total ?? 0;
@@ -111,6 +117,9 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const dateFrom = searchParams.get("dateFrom") ?? new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0];
   const dateTo   = searchParams.get("dateTo")   ?? new Date().toISOString().split("T")[0];
+
+  const startAfter  = new Date(`${dateFrom}T00:00:00.000Z`).getTime();
+  const startBefore = new Date(`${dateTo}T23:59:59.999Z`).getTime();
 
   const result: Record<string, Record<string, number>> = {
     spa:        {},
@@ -128,7 +137,9 @@ export async function GET(req: NextRequest) {
         const countsByNorm: Record<string, number> = {};
         await Promise.all(
           stages.map(async ({ stageId, normalizedName }) => {
-            const count = await fetchStageCount(apiKey, locationId, stageId, pipelineId);
+            const count = await fetchStageCount(
+              apiKey, locationId, stageId, pipelineId, startAfter, startBefore,
+            );
             countsByNorm[normalizedName] = (countsByNorm[normalizedName] ?? 0) + count;
           }),
         );

@@ -162,7 +162,7 @@ export function PipelineFunnel({
         <div>
           <h3 className="text-lg font-semibold text-foreground">Pipeline Funnel</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Current snapshot · Call Pipeline · from GHL CRM
+            Leads acquired in selected period · by current stage · from GHL CRM
           </p>
         </div>
         <div className="flex gap-6 text-right shrink-0">
