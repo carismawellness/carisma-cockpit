@@ -23,7 +23,7 @@ export function CRMKPICards({
 
   if (loading) {
     return (
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         {Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className="h-28 rounded-xl bg-gray-100 animate-pulse" />
         ))}
@@ -42,20 +42,6 @@ export function CRMKPICards({
   // --- Unworked Leads (latest day only) ---
   const unworkedLeads = latestRows.reduce(
     (sum, r) => sum + (r.unworked_leads ?? 0),
-    0,
-  );
-
-  // --- Unreplied Messages (latest day) ---
-  const unrepliedCrm = latestRows.reduce(
-    (sum, r) => sum + (r.unreplied_crm ?? 0),
-    0,
-  );
-  const unrepliedWa = latestRows.reduce(
-    (sum, r) => sum + (r.unreplied_whatsapp ?? 0),
-    0,
-  );
-  const unrepliedEmail = latestRows.reduce(
-    (sum, r) => sum + (r.unreplied_email ?? 0),
     0,
   );
 
@@ -99,10 +85,6 @@ export function CRMKPICards({
     {
       label: "Unworked Leads",
       value: unworkedLeads.toLocaleString(),
-    },
-    {
-      label: "Unreplied Messages",
-      value: `CRM: ${unrepliedCrm} / WA: ${unrepliedWa} / Email: ${unrepliedEmail}`,
     },
     {
       label: "Total Sales",

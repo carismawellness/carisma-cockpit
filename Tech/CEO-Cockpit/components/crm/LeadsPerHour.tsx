@@ -80,16 +80,14 @@ export function LeadsPerHour({
     return t;
   }, [chartData, visibleBrands]);
 
-  const peakByBrand = useMemo(() => {
-    const peaks: Record<string, { date: string; count: number }> = {};
-    for (const row of chartData) {
-      for (const b of visibleBrands) {
-        const v = (row[b] as number) ?? 0;
-        if (!peaks[b] || v > peaks[b].count) peaks[b] = { date: row.date as string, count: v };
-      }
+  const dailyAvgByBrand = useMemo(() => {
+    const numDays = chartData.length || 1;
+    const avgs: Record<string, number> = {};
+    for (const b of visibleBrands) {
+      avgs[b] = (totals[b] ?? 0) / numDays;
     }
-    return peaks;
-  }, [chartData, visibleBrands]);
+    return avgs;
+  }, [chartData, totals, visibleBrands]);
 
   if (loading) {
     return <div className="h-80 rounded-xl bg-gray-100 animate-pulse" />;
@@ -160,26 +158,25 @@ export function LeadsPerHour({
 
             <div className="rounded-lg bg-gray-50 p-3">
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-                Peak Day
+                Daily Average
               </p>
               <div className="space-y-1.5">
-                {visibleBrands.map((b) => {
-                  const peak = peakByBrand[b];
-                  return (
-                    <div key={b} className="flex items-center justify-between text-sm">
-                      <span className="flex items-center gap-2">
-                        <span
-                          className="h-2.5 w-2.5 rounded-full"
-                          style={{ backgroundColor: chartColors[b as keyof typeof chartColors] ?? "#888" }}
-                        />
-                        <span className="font-medium text-gray-700">{BRAND_LABELS[b]}</span>
-                      </span>
-                      <span className="font-semibold text-gray-900">
-                        {peak ? `${peak.date} (${peak.count})` : "—"}
-                      </span>
-                    </div>
-                  );
-                })}
+                {visibleBrands.map((b) => (
+                  <div key={b} className="flex items-center justify-between text-sm">
+                    <span className="flex items-center gap-2">
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: chartColors[b as keyof typeof chartColors] ?? "#888" }}
+                      />
+                      <span className="font-medium text-gray-700">{BRAND_LABELS[b]}</span>
+                    </span>
+                    <span className="font-semibold text-gray-900">
+                      {dailyAvgByBrand[b] != null
+                        ? `${dailyAvgByBrand[b].toFixed(1)} leads/day`
+                        : "—"}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
