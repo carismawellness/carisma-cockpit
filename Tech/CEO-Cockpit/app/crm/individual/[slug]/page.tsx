@@ -11,21 +11,6 @@ import { CommissionHeroBanner, CommissionHeroBannerSkeleton } from "@/components
 import { AGENT_META_BY_SLUG } from "@/lib/constants/agents";
 import { ChevronLeft, ExternalLink } from "lucide-react";
 
-const AGENT_NAMES: Record<string, string> = {
-  adeel:    "Adeel",
-  rana:     "Rana",
-  abid:     "Abid",
-  km:       "K&M",
-  vj:       "VJ",
-  dorianne: "Dorianne",
-  juliana:  "Juliana",
-  anni:     "Anni",
-  nicci:    "Nicci",
-  nathalia: "Nathalia",
-  april:    "April",
-  queenee:  "Queenee",
-};
-
 const CRM_MASTER_SHEET_ID = "1bHF_7bXic08pcyXQhq310zG6McqXD50oT0EuVkjzDdI";
 
 function AgentPageContent({
@@ -40,7 +25,7 @@ function AgentPageContent({
 }) {
   const { agents, isLoading, isError } = useCrmAgents(dateFrom, dateTo);
 
-  const agentName = AGENT_NAMES[slug];
+  const agentName = AGENT_META_BY_SLUG[slug]?.name;
   if (!agentName) notFound();
 
   const agent = agents.find((a) => a.slug === slug);
