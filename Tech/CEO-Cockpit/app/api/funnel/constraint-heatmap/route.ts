@@ -194,8 +194,11 @@ export async function GET(req: NextRequest) {
       : null;
 
     // ── 3. Revenue ────────────────────────────────────────────────────────────
-    // Gross sales only — services + products. Wholesale/discount/refund only
-    // matter inside EBITDA; every sales/funnel surface shows blunt gross.
+    // GROSS (inc-VAT) for all marketing/funnel surfaces. Only EBITDA reports
+    // net of VAT. Canonical gross definitions:
+    //   - Spa:        services + products from Cockpit datasheet (already gross)
+    //   - Aesthetics: price_inc_vat from aesthetics_sales_daily
+    //   - Slimming:   paid from slimming_sales_daily (actually-collected, inc-VAT)
     let total_revenue: number | null = null;
     if (slug === "spa") {
       const { data: spaRevRows } = await supabase
@@ -210,14 +213,24 @@ export async function GET(req: NextRequest) {
         0,
       );
       total_revenue = sum > 0 ? Math.round(sum * 100) / 100 : null;
-    } else {
+    } else if (slug === "aesthetics") {
       const { data: revenueRows } = await supabase
         .from(REVENUE_TABLE[slug])
-        .select("price_ex_vat")
+        .select("price_inc_vat")
         .gte("date_of_service", from)
         .lte("date_of_service", to);
-      type RevenueRow = { price_ex_vat: number | null };
-      const sum = (revenueRows ?? []).reduce((s: number, r: RevenueRow) => s + (r.price_ex_vat ?? 0), 0);
+      type RevenueRow = { price_inc_vat: number | null };
+      const sum = (revenueRows ?? []).reduce((s: number, r: RevenueRow) => s + (r.price_inc_vat ?? 0), 0);
+      total_revenue = sum > 0 ? Math.round(sum * 100) / 100 : null;
+    } else {
+      // slimming — use `paid` (actually-collected, inc-VAT)
+      const { data: revenueRows } = await supabase
+        .from(REVENUE_TABLE[slug])
+        .select("paid")
+        .gte("date_of_service", from)
+        .lte("date_of_service", to);
+      type RevenueRow = { paid: number | null };
+      const sum = (revenueRows ?? []).reduce((s: number, r: RevenueRow) => s + (r.paid ?? 0), 0);
       total_revenue = sum > 0 ? Math.round(sum * 100) / 100 : null;
     }
 
