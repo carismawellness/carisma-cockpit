@@ -7,6 +7,8 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { AgentDetailPanel } from "@/components/crm/AgentDetailPanel";
 import { useCrmAgents } from "@/lib/hooks/useCrmAgents";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
+import { CommissionHeroBanner, CommissionHeroBannerSkeleton } from "@/components/crm/CommissionHeroBanner";
+import { AGENT_META_BY_SLUG } from "@/lib/constants/agents";
 import { ChevronLeft, ExternalLink } from "lucide-react";
 
 const AGENT_NAMES: Record<string, string> = {
@@ -42,6 +44,10 @@ function AgentPageContent({
   if (!agentName) notFound();
 
   const agent = agents.find((a) => a.slug === slug);
+  const meta             = AGENT_META_BY_SLUG[slug];
+  const commissionRate   = meta?.commissionRate ?? 0.01;
+  const commissionEarned = (agent?.totals.total_sales ?? 0) * commissionRate;
+  const periodLabel      = formatDateRangeLabel(dateFrom, dateTo);
   const sheetUrl = `https://docs.google.com/spreadsheets/d/${CRM_MASTER_SHEET_ID}/edit`;
 
   return (
@@ -74,7 +80,20 @@ function AgentPageContent({
         </a>
       </div>
 
-      {/* Loading */}
+      {/* Commission Hero — skeleton while loading */}
+      {isLoading && <CommissionHeroBannerSkeleton />}
+
+      {/* Commission Hero — live data */}
+      {!isLoading && agent && (
+        <CommissionHeroBanner
+          commissionEarned={commissionEarned}
+          commissionRate={commissionRate}
+          totalSales={agent.totals.total_sales}
+          periodLabel={periodLabel}
+        />
+      )}
+
+      {/* Loading (rest of content) */}
       {isLoading && (
         <div className="space-y-4">
           <div className="h-32 animate-pulse rounded-xl bg-gray-100" />
