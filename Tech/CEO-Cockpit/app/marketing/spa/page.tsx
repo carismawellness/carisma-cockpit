@@ -145,13 +145,6 @@ function SpaMarketingContent({
   const campaignCount = klaviyo.overview.campaignsSent;
   const flowCount = klaviyo.overview.activeFlows;
 
-  /* --- Email revenue (Klaviyo API doesn't expose revenue — placeholder until integrated) --- */
-  const emailCampaignRev = 0;
-  const emailFlowRev = 0;
-  const emailTotalRev = emailCampaignRev + emailFlowRev;
-  const campaignPct = emailTotalRev > 0 ? Math.round((emailCampaignRev / emailTotalRev) * 100) : 50;
-  const flowPct = emailTotalRev > 0 ? Math.round((emailFlowRev / emailTotalRev) * 100) : 50;
-
   /* --- Fatigue checks --- */
   const metaFatigue = useMemo(() => getFatigueSummary(metaCampaigns), [metaCampaigns]);
   const googleFatigue = useMemo(() => getFatigueSummary(googleCampaigns), [googleCampaigns]);
@@ -581,31 +574,22 @@ function SpaMarketingContent({
         </div>
       </Card>
 
-      {/* Section 4: Email Marketing (hardcoded — Klaviyo) */}
+      {/* Section 4: Email Marketing (Klaviyo) */}
       <Card className="p-3 md:p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Email Marketing</h2>
 
-        {/* Top row: Campaign Revenue vs Flow Revenue */}
+        {/* Top row: Campaign Revenue vs Flow Revenue — Klaviyo doesn't expose
+            revenue for service businesses without order-tracking integration. */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          <Card className="p-3 md:p-5 border-2" style={{ borderColor: BRAND_COLOR }}>
+          <Card className="p-3 md:p-5 text-center">
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Campaign Revenue</p>
-            <p className="text-3xl font-bold text-gray-900 mt-1">{formatCurrency(emailCampaignRev)}</p>
-            <div className="mt-3 flex items-center gap-2">
-              <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                <div className="h-full rounded-full" style={{ width: `${campaignPct}%`, backgroundColor: BRAND_COLOR }} />
-              </div>
-              <span className="text-xs font-medium text-gray-500">{campaignPct}% of total</span>
-            </div>
+            <p className="text-3xl font-bold text-gray-400 mt-2">&mdash;</p>
+            <p className="text-xs text-gray-400 mt-1">Not tracked</p>
           </Card>
-          <Card className="p-3 md:p-5 border-2" style={{ borderColor: BRAND_COLOR }}>
+          <Card className="p-3 md:p-5 text-center">
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Flow Revenue</p>
-            <p className="text-3xl font-bold text-gray-900 mt-1">{formatCurrency(emailFlowRev)}</p>
-            <div className="mt-3 flex items-center gap-2">
-              <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                <div className="h-full rounded-full" style={{ width: `${flowPct}%`, backgroundColor: BRAND_COLOR }} />
-              </div>
-              <span className="text-xs font-medium text-gray-500">{flowPct}% of total</span>
-            </div>
+            <p className="text-3xl font-bold text-gray-400 mt-2">&mdash;</p>
+            <p className="text-xs text-gray-400 mt-1">Not tracked</p>
           </Card>
         </div>
 
