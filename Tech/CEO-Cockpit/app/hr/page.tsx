@@ -8,7 +8,10 @@ import { KPICardRow, KPIData } from "@/components/dashboard/KPICardRow";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { chartColors, formatCurrency } from "@/lib/charts/config";
+import { formatCurrency } from "@/lib/charts/config";
+import { BRAND } from "@/lib/constants/design-tokens";
+
+const TARGET_AMBER = "#D97706";
 import {
   useTalexioHeadcount,
   useTalexioTimeLogs,
@@ -49,10 +52,12 @@ import {
 const REVPAH_TARGET = 35;
 const HC_PCT_TARGET = 35;
 
+// Location pie — non-brand categorical palette. First 3 use BRAND.x.dark for
+// repeatable brand grounding, rest are neutral tints.
 const PIE_COLORS = [
-  chartColors.spa,
-  chartColors.aesthetics,
-  chartColors.slimming,
+  BRAND.spa.dark,
+  BRAND.aesthetics.dark,
+  BRAND.slimming.dark,
   "#D5C0E5",
   "#E5B5D0",
   "#B5DCDC",
@@ -72,15 +77,15 @@ const PROD_COLORS = {
 // ════════════════════════════════════════════════════════════════════════════
 
 function getRevPAHColor(value: number): string {
-  if (value >= REVPAH_TARGET) return chartColors.slimming;
-  if (value >= REVPAH_TARGET * 0.9) return chartColors.aesthetics;
-  return chartColors.target;
+  if (value >= REVPAH_TARGET) return BRAND.slimming.dark;
+  if (value >= REVPAH_TARGET * 0.9) return BRAND.aesthetics.dark;
+  return TARGET_AMBER;
 }
 
 function getHCPctColor(value: number): string {
-  if (value <= HC_PCT_TARGET) return chartColors.slimming;
-  if (value <= HC_PCT_TARGET * 1.1) return chartColors.aesthetics;
-  return chartColors.target;
+  if (value <= HC_PCT_TARGET) return BRAND.slimming.dark;
+  if (value <= HC_PCT_TARGET * 1.1) return BRAND.aesthetics.dark;
+  return TARGET_AMBER;
 }
 
 function getStatusBadge(status: string, className: string) {
@@ -668,12 +673,13 @@ function HRContent() {
               />
               <ReferenceLine
                 x={HC_PCT_TARGET}
-                stroke={chartColors.target}
-                strokeDasharray="3 3"
+                stroke={TARGET_AMBER}
+                strokeDasharray="6 3"
+                strokeWidth={1.5}
                 label={{
                   value: `Target ${HC_PCT_TARGET}%`,
                   position: "top",
-                  fill: chartColors.target,
+                  fill: TARGET_AMBER,
                   fontSize: 11,
                 }}
               />
@@ -731,12 +737,23 @@ function HRContent() {
                     : String(label);
                 }}
               />
-              <ReferenceLine x={HC_PCT_TARGET} stroke={chartColors.target} strokeDasharray="3 3" />
+              <ReferenceLine
+                x={HC_PCT_TARGET}
+                stroke={TARGET_AMBER}
+                strokeDasharray="6 3"
+                strokeWidth={1.5}
+                label={{
+                  value: `Target ${HC_PCT_TARGET}%`,
+                  position: "top",
+                  fill: TARGET_AMBER,
+                  fontSize: 11,
+                }}
+              />
               <Bar dataKey="hcPct" name="HC %">
                 {hcByBU.map((entry, i) => (
                   <Cell
                     key={entry.name}
-                    fill={[chartColors.spa, chartColors.aesthetics, chartColors.slimming][i % 3]}
+                    fill={[BRAND.spa.dark, BRAND.aesthetics.dark, BRAND.slimming.dark][i % 3]}
                   />
                 ))}
                 <LabelList
@@ -783,15 +800,16 @@ function HRContent() {
               <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" />
               <XAxis dataKey="location" angle={-35} textAnchor="end" height={60} tick={{ fontSize: 12 }} />
               <YAxis tickFormatter={(v: number) => `€${v}`} tick={{ fontSize: 11 }} />
-              <Tooltip formatter={(v) => formatCurrency(Number(v))} />
+              <Tooltip formatter={(v: unknown, name) => [formatCurrency(Number(v)), String(name ?? "")]} />
               <ReferenceLine
                 y={REVPAH_TARGET}
-                stroke={chartColors.target}
-                strokeDasharray="3 3"
+                stroke={TARGET_AMBER}
+                strokeDasharray="6 3"
+                strokeWidth={1.5}
                 label={{
                   value: `Target ${formatCurrency(REVPAH_TARGET)}/hr`,
                   position: "right",
-                  fill: chartColors.target,
+                  fill: TARGET_AMBER,
                   fontSize: 12,
                 }}
               />
@@ -922,8 +940,8 @@ function HRContent() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 11 }} />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={145} />
-                <Tooltip />
-                <Bar dataKey="count" name="Employees" fill={chartColors.spa} radius={[0, 4, 4, 0]}>
+                <Tooltip formatter={(v: unknown, name) => [String(Number(v)), String(name ?? "")]} />
+                <Bar dataKey="count" name="Employees" fill={BRAND.spa.dark} radius={[0, 4, 4, 0]}>
                   <LabelList
                     dataKey="count"
                     position="right"
@@ -960,7 +978,7 @@ function HRContent() {
                     <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip />
+                <Tooltip formatter={(v: unknown, name) => [String(Number(v)), String(name ?? "")]} />
                 <Legend />
               </PieChart>
             </ResponsiveContainer>
@@ -1129,8 +1147,8 @@ function HRContent() {
                 tick={{ fontSize: 11 }}
               />
               <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={120} />
-              <Tooltip formatter={(v) => formatCurrency(Number(v))} />
-              <Bar dataKey="gross" name="Gross Pay" fill={chartColors.spa} barSize={28} radius={[0, 4, 4, 0]}>
+              <Tooltip formatter={(v: unknown, name) => [formatCurrency(Number(v)), String(name ?? "")]} />
+              <Bar dataKey="gross" name="Gross Pay" fill={BRAND.spa.dark} barSize={28} radius={[0, 4, 4, 0]}>
                 <LabelList
                   dataKey="gross"
                   content={(props) => {
