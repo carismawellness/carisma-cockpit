@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
-import { Loader2 } from "lucide-react";
+import { Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import {
   severityClasses,
   severityColor,
@@ -28,7 +28,9 @@ const BRAND_LABELS: Record<string, string> = { spa: "Spa", aesthetics: "Aestheti
 type HeatmapCell = { formatted: string; severity: "green" | "amber" | "red" | "off" };
 type HeatmapRow  = { metric: string; benchmark: string | null; cells: HeatmapCell[] };
 
-function buildRows(brands: Record<string, BrandHeatmapMetrics>): HeatmapRow[] {
+type RowGroups = { main: HeatmapRow[]; advanced: HeatmapRow[] };
+
+function buildRows(brands: Record<string, BrandHeatmapMetrics>): RowGroups {
   function cell(
     v: number | null,
     format: (n: number) => string,
@@ -38,7 +40,7 @@ function buildRows(brands: Record<string, BrandHeatmapMetrics>): HeatmapRow[] {
     return { formatted: format(v), severity: sev(v) };
   }
 
-  return [
+  const main: HeatmapRow[] = [
     {
       metric: "Ad Refresh", benchmark: "≤14d",
       cells: BRANDS.map(b => cell(
@@ -60,15 +62,7 @@ function buildRows(brands: Record<string, BrandHeatmapMetrics>): HeatmapRow[] {
       cells: BRANDS.map(b => cell(
         brands[b]?.cpl,
         n => `€${n.toFixed(1)}`,
-        n => severityColor(12, n),  // lower is better: severityColor(max, actual)
-      )),
-    },
-    {
-      metric: "Speed to Lead", benchmark: "≤5m",
-      cells: BRANDS.map(b => cell(
-        brands[b]?.speed_to_lead_min,
-        n => `${n.toFixed(1)}m`,
-        n => severityColor(5, n),
+        n => severityColor(12, n),
       )),
     },
     {
@@ -95,6 +89,17 @@ function buildRows(brands: Record<string, BrandHeatmapMetrics>): HeatmapRow[] {
         n => severityColor(n, 70),
       )),
     },
+  ];
+
+  const advanced: HeatmapRow[] = [
+    {
+      metric: "Speed to Lead", benchmark: "≤5m",
+      cells: BRANDS.map(b => cell(
+        brands[b]?.speed_to_lead_min,
+        n => `${n.toFixed(1)}m`,
+        n => severityColor(5, n),
+      )),
+    },
     {
       metric: "Show Rate", benchmark: "80%",
       cells: BRANDS.map(b => cell(
@@ -104,6 +109,8 @@ function buildRows(brands: Record<string, BrandHeatmapMetrics>): HeatmapRow[] {
       )),
     },
   ];
+
+  return { main, advanced };
 }
 
 /* ------------------------------------------------------------------ */
@@ -113,8 +120,9 @@ function buildRows(brands: Record<string, BrandHeatmapMetrics>): HeatmapRow[] {
 interface Props { dateFrom: Date; dateTo: Date }
 
 export function ConstraintHeatmap({ dateFrom, dateTo }: Props) {
-  const [brands, setBrands] = useState<Record<string, BrandHeatmapMetrics> | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [brands, setBrands]       = useState<Record<string, BrandHeatmapMetrics> | null>(null);
+  const [loading, setLoading]     = useState(true);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
     const from = dateFrom.toISOString().slice(0, 10);
@@ -126,7 +134,28 @@ export function ConstraintHeatmap({ dateFrom, dateTo }: Props) {
       .catch(() => setLoading(false));
   }, [dateFrom, dateTo]);
 
-  const rows = brands ? buildRows(brands) : [];
+  const { main: mainRows, advanced: advancedRows } = brands
+    ? buildRows(brands)
+    : { main: [], advanced: [] };
+
+  function renderRows(rows: HeatmapRow[]) {
+    return rows.map(row => (
+      <tr key={row.metric} className="border-b border-warm-border/50 last:border-0">
+        <td className="py-2.5 pr-4 text-sm font-medium text-foreground">{row.metric}</td>
+        <td className="py-2.5 px-2 text-center text-xs text-muted-foreground">{row.benchmark ?? "-"}</td>
+        {row.cells.map((cell: HeatmapCell, i: number) => {
+          const c = severityClasses[cell.severity];
+          return (
+            <td key={BRANDS[i]} className="py-2.5 px-3">
+              <div className={`text-center py-1.5 rounded-lg ${c.bg}`}>
+                <span className={`text-sm font-bold ${c.text}`}>{cell.formatted}</span>
+              </div>
+            </td>
+          );
+        })}
+      </tr>
+    ));
+  }
 
   return (
     <Card className="p-4 md:p-6">
@@ -158,24 +187,18 @@ export function ConstraintHeatmap({ dateFrom, dateTo }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {rows.map(row => (
-                  <tr key={row.metric} className="border-b border-warm-border/50 last:border-0">
-                    <td className="py-2.5 pr-4 text-sm font-medium text-foreground">{row.metric}</td>
-                    <td className="py-2.5 px-2 text-center text-xs text-muted-foreground">{row.benchmark ?? "-"}</td>
-                    {row.cells.map((cell, i) => {
-                      const c = severityClasses[cell.severity];
-                      return (
-                        <td key={BRANDS[i]} className="py-2.5 px-3">
-                          <div className={`text-center py-1.5 rounded-lg ${c.bg}`}>
-                            <span className={`text-sm font-bold ${c.text}`}>{cell.formatted}</span>
-                          </div>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                {renderRows(mainRows)}
+                {showAdvanced && renderRows(advancedRows)}
               </tbody>
             </table>
+
+            <button
+              onClick={() => setShowAdvanced(v => !v)}
+              className="mt-3 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {showAdvanced ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              {showAdvanced ? "Hide advanced metrics" : "Show advanced metrics (Speed to Lead, Show Rate)"}
+            </button>
           </div>
         </div>
       )}

@@ -15,16 +15,42 @@ export const dynamic = "force-dynamic";
 
 const BRAND_SLUGS = ["spa", "aesthetics", "slimming"] as const;
 
+// Default AOV per brand (€). Campaign-name keywords can override.
+const BRAND_AOV_DEFAULT: Record<string, number> = {
+  spa:        180,
+  aesthetics: 350,
+  slimming:  1200,
+};
+
+// Keyword → AOV overrides (checked against lowercased campaign name)
+const AOV_OVERRIDES: Array<{ keywords: string[]; aov: number }> = [
+  { keywords: ["fat freeze", "cryolipolysis"],    aov: 450  },
+  { keywords: ["hifu", "ultrasound"],             aov: 600  },
+  { keywords: ["laser", "ipl"],                   aov: 300  },
+  { keywords: ["facial", "hydrafacial"],          aov: 200  },
+  { keywords: ["botox", "filler", "injectables"], aov: 500  },
+  { keywords: ["weight loss", "slimming plan"],   aov: 1200 },
+  { keywords: ["massage", "spa day"],             aov: 180  },
+];
+
+function resolveAov(brandSlug: string, campaignName: string): number {
+  const lower = campaignName.toLowerCase();
+  for (const { keywords, aov } of AOV_OVERRIDES) {
+    if (keywords.some(k => lower.includes(k))) return aov;
+  }
+  return BRAND_AOV_DEFAULT[brandSlug] ?? 300;
+}
+
 export type DrilldownCampaign = {
   campaignName:    string;
   campaignId:      string;
   spend:           number;
   cpl:             number | null;
   leads:           number;
+  aov:             number;
   expectedRevenue: number;
-  roas:            number | null;
+  expectedRoas:    number | null;
   conversionPct:   number | null;
-  showRatePct:     null;
 };
 
 export type DrilldownBrand = {
@@ -33,7 +59,7 @@ export type DrilldownBrand = {
     spend:           number;
     leads:           number;
     expectedRevenue: number;
-    roas:            number | null;
+    expectedRoas:    number | null;
     conversionPct:   number | null;
     avgCpl:          number | null;
   };
@@ -64,7 +90,7 @@ export async function GET(req: NextRequest) {
   const results = await Promise.all(BRAND_SLUGS.map(async (slug): Promise<[string, DrilldownBrand]> => {
     const brandId = brandIdMap[slug];
     if (!brandId) {
-      return [slug, { campaigns: [], totals: { spend: 0, leads: 0, expectedRevenue: 0, roas: 0, conversionPct: null, avgCpl: 0 } }];
+      return [slug, { campaigns: [], totals: { spend: 0, leads: 0, expectedRevenue: 0, expectedRoas: null, conversionPct: null, avgCpl: null } }];
     }
 
     // Meta campaigns data (all daily rows for the period)
@@ -109,16 +135,20 @@ export async function GET(req: NextRequest) {
     // Build campaign rows
     const campaigns: DrilldownCampaign[] = [];
     for (const [campaignId, agg] of map) {
+      const aov             = resolveAov(slug, agg.name);
+      const convRate        = conversionPct !== null ? conversionPct / 100 : 0;
+      const expectedRevenue = Math.round(agg.leads * convRate * aov * 100) / 100;
+      const spend           = Math.round(agg.spend * 100) / 100;
       campaigns.push({
         campaignName:    agg.name,
         campaignId,
-        spend:           Math.round(agg.spend   * 100) / 100,
+        spend,
         cpl:             agg.leads > 0 ? Math.round((agg.spend / agg.leads) * 100) / 100 : null,
         leads:           agg.leads,
-        expectedRevenue: Math.round(agg.revenue * 100) / 100,
-        roas:            agg.spend > 0 ? Math.round((agg.revenue / agg.spend) * 100) / 100 : null,
+        aov,
+        expectedRevenue,
+        expectedRoas:    spend > 0 ? Math.round((expectedRevenue / spend) * 100) / 100 : null,
         conversionPct,
-        showRatePct:     null,
       });
     }
 
@@ -134,7 +164,7 @@ export async function GET(req: NextRequest) {
         spend:           Math.round(totalSpend   * 100) / 100,
         leads:           totalLeads,
         expectedRevenue: Math.round(totalRevenue * 100) / 100,
-        roas:            totalSpend > 0 ? Math.round((totalRevenue / totalSpend) * 100) / 100 : null,
+        expectedRoas:    totalSpend > 0 ? Math.round((totalRevenue / totalSpend) * 100) / 100 : null,
         conversionPct,
         avgCpl:          totalLeads > 0 ? Math.round((totalSpend / totalLeads) * 100) / 100 : null,
       },

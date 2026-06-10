@@ -119,17 +119,32 @@ export async function GET(req: NextRequest) {
     }
     const brand_deposit_rate = depDen > 0 ? Math.round((depNum / depDen) * 10) / 10 : null;
 
-    // meta_campaigns_daily for CPL
+    // meta_campaigns_daily for CPL + ad_refresh proxy
     const { data: metaRows } = await supabase
       .from("meta_campaigns_daily")
-      .select("spend, leads")
+      .select("campaign_id, spend, leads, date")
       .eq("brand_id", brandId)
       .gte("date", from)
-      .lte("date", to);
+      .lte("date", to)
+      .order("date", { ascending: true });
 
-    const metaSpend = (metaRows ?? []).reduce((s: number, r: { spend: number }) => s + (r.spend ?? 0), 0);
-    const metaLeads = (metaRows ?? []).reduce((s: number, r: { leads: number }) => s + (r.leads ?? 0), 0);
+    type MetaRow = { campaign_id: string; spend: number; leads: number; date: string };
+
+    const metaSpend = (metaRows ?? []).reduce((s: number, r: MetaRow) => s + (r.spend ?? 0), 0);
+    const metaLeads = (metaRows ?? []).reduce((s: number, r: MetaRow) => s + (r.leads ?? 0), 0);
     const cpl = metaLeads > 0 ? Math.round((metaSpend / metaLeads) * 100) / 100 : null;
+
+    // Ad refresh proxy: days since the most recently launched campaign first appeared
+    const firstSeen = new Map<string, string>();
+    for (const r of (metaRows ?? []) as MetaRow[]) {
+      if (r.campaign_id && !firstSeen.has(r.campaign_id)) firstSeen.set(r.campaign_id, r.date);
+    }
+    const newestLaunch = firstSeen.size > 0
+      ? [...firstSeen.values()].sort().reverse()[0]
+      : null;
+    const ad_refresh_days = newestLaunch
+      ? Math.floor((Date.now() - new Date(newestLaunch).getTime()) / 86_400_000)
+      : null;
 
     return [slug, {
       daily_leads,
@@ -139,7 +154,7 @@ export async function GET(req: NextRequest) {
       deposit_rate:      brand_deposit_rate ?? globalDepositRate,
       show_rate_pct:     null,
       speed_to_lead_min,
-      ad_refresh_days:   null,
+      ad_refresh_days,
     }];
   }));
 
