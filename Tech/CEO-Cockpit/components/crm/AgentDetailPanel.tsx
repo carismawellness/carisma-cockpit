@@ -12,6 +12,7 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  LabelList,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CrmAgent, CrmAgentRow } from "@/lib/hooks/useCrmAgents";
@@ -111,6 +112,8 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
       [ch1]:         r.lc_sales,
       [ch2]:         r.crm_sales,
       [ch3]:         r.other_sales,
+      // Topmost-stacked-bar label target for the channel breakdown chart.
+      _chTotal:      (r.lc_sales ?? 0) + (r.crm_sales ?? 0) + (r.other_sales ?? 0),
     };
   });
 
@@ -148,7 +151,7 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
         <CardContent>
           <div className="h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={chartRows} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+              <ComposedChart data={chartRows} margin={{ top: 24, right: 20, left: 0, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                 <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                 <YAxis
@@ -172,7 +175,14 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
                   fill={chartColors.spa}
                   radius={[4, 4, 0, 0]}
                   barSize={20}
-                />
+                >
+                  <LabelList
+                    dataKey="Total Sales"
+                    position="top"
+                    formatter={(v: unknown) => formatCurrency(Number(v))}
+                    style={{ fontSize: 10, fontWeight: 600, fill: "#111827" }}
+                  />
+                </Bar>
                 <Line
                   yAxisId="pct"
                   type="monotone"
@@ -195,7 +205,7 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
         <CardContent>
           <div className="h-[260px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartRows} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+              <BarChart data={chartRows} margin={{ top: 24, right: 20, left: 0, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                 <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                 <YAxis tickFormatter={(v) => `€${v}`} tick={{ fontSize: 11 }} />
@@ -203,7 +213,14 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
                 <Legend wrapperStyle={{ paddingTop: 8 }} />
                 <Bar dataKey={ch1} stackId="ch" fill={chartColors.spa}        radius={[0, 0, 0, 0]} />
                 <Bar dataKey={ch2} stackId="ch" fill={chartColors.aesthetics} radius={[0, 0, 0, 0]} />
-                <Bar dataKey={ch3} stackId="ch" fill={chartColors.slimming}   radius={[4, 4, 0, 0]} />
+                <Bar dataKey={ch3} stackId="ch" fill={chartColors.slimming}   radius={[4, 4, 0, 0]}>
+                  <LabelList
+                    dataKey="_chTotal"
+                    position="top"
+                    formatter={(v: unknown) => formatCurrency(Number(v))}
+                    style={{ fontSize: 10, fontWeight: 600, fill: "#111827" }}
+                  />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
