@@ -12,7 +12,6 @@ import {
   Heart,
   Filter,
   BookOpen,
-  RefreshCw,
   ClipboardList,
   type LucideIcon,
 } from "lucide-react";
@@ -125,7 +124,6 @@ export const departments: Department[] = [
       { slug: "ebitda-mapping", label: "EBITDA Mapping", path: "/settings/ebitda-mapping", icon: BookOpen },
       { slug: "data-sources",   label: "EBITDA Sources",  path: "/settings/data-sources",   icon: Activity },
       { slug: "user-access",    label: "User Access",    path: "/settings/user-access",    icon: Users },
-      { slug: "data-sync",      label: "Data Sync",      path: "/settings/etl-runner",     icon: RefreshCw },
     ],
   },
 ];

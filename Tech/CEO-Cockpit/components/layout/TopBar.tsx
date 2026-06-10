@@ -5,6 +5,7 @@ import { Bell, LogOut, Menu, Moon, Sun } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { DateRangePicker } from "./DateRangePicker";
+import { SyncStatusWidget } from "./SyncStatusWidget";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/theme-provider";
 
@@ -62,6 +63,8 @@ export function TopBar({
         )}
       </div>
       <div className="flex items-center gap-1 md:gap-3 shrink-0">
+        {/* Sync status widget — shows last sync + sync trigger */}
+        <SyncStatusWidget />
         {/* min 44px touch target on mobile, reset to 36px on md+ */}
         <Button variant="ghost" size="icon" className="relative min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 md:h-9 md:w-9">
           <Bell className="h-[18px] w-[18px] text-muted-foreground" />
