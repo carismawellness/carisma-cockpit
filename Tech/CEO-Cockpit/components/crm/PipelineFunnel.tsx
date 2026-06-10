@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { useGhlFunnel } from "@/lib/hooks/useGhlFunnel";
+import { BRAND } from "@/lib/constants/design-tokens";
 
 const BRAND_LABELS: Record<string, string> = {
   spa: "Spa",
@@ -13,10 +14,11 @@ const BRAND_LABELS: Record<string, string> = {
 const FUNNEL_STAGES = ["New Leads", "Call Back", "Contacted", "Booking Won", "Active Member"];
 const OUTCOME_STAGES = ["Booking Lost", "No Show", "Nurturing"];
 
+// Canonical brand palette — dark variant for primary marks on light backgrounds.
 const BRAND_ACCENT: Record<string, string> = {
-  spa:        "#C9A875",
-  aesthetics: "#7BAFAF",
-  slimming:   "#8DB37F",
+  spa:        BRAND.spa.dark,
+  aesthetics: BRAND.aesthetics.dark,
+  slimming:   BRAND.slimming.dark,
 };
 
 function BrandFunnel({
@@ -73,8 +75,11 @@ function BrandFunnel({
       </div>
 
       <div className="space-y-2.5">
-        {orderedStages.map(({ stage, value }) => {
+        {orderedStages.map(({ stage, value }, idx) => {
           const widthPct = maxValue > 0 ? (value / maxValue) * 100 : 0;
+          // Conversion to prior stage — first stage has no prior, so blank.
+          const prior = idx > 0 ? orderedStages[idx - 1].value : 0;
+          const stagePct = idx > 0 && prior > 0 ? (value / prior) * 100 : null;
           return (
             <div key={stage} className="flex items-center gap-2">
               <div className="w-24 shrink-0 text-right">
@@ -87,14 +92,17 @@ function BrandFunnel({
                     backgroundColor: color,
                   }}
                   className="h-10 rounded-md shadow-sm flex items-center justify-center text-white text-xs font-bold transition-all"
-                  title={`${stage}: ${value.toLocaleString()}`}
+                  title={`${stage}: ${value.toLocaleString()}${stagePct !== null ? ` (${stagePct.toFixed(0)}% of prior)` : ""}`}
                 >
                   {widthPct > 22 ? value.toLocaleString() : ""}
                 </div>
               </div>
-              <div className="w-12 shrink-0 text-left">
-                <p className="text-sm font-bold text-gray-900 tabular-nums">
+              <div className="w-20 shrink-0 text-left">
+                <p className="text-sm font-bold text-gray-900 tabular-nums leading-tight">
                   {value.toLocaleString()}
+                </p>
+                <p className="text-[10px] text-gray-500 tabular-nums leading-tight">
+                  {stagePct !== null ? `${stagePct.toFixed(0)}% of prior` : "—"}
                 </p>
               </div>
             </div>
