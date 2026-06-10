@@ -36,7 +36,7 @@ export function SalesKPICard({
     : "";
 
   return (
-    <Card className="relative px-3 py-3 md:px-5 md:py-4">
+    <Card className="relative px-3 py-3 md:px-5 md:py-4 h-full">
       {/* YoY badge — top right */}
       {hasYoY && (
         <div

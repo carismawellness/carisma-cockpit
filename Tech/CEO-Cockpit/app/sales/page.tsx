@@ -42,15 +42,17 @@ function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
       </div>
 
       <SalesKPIGrid columns={4}>
-        <SalesKPICard
-          label="Group Revenue"
-          value={isFetching ? "—" : fmtK(period.total)}
-          subtitle="Spa + Aesthetics + Slimming"
-          yoyChange={isFetching ? undefined : yoy.total}
-        />
+        <div className="h-full">
+          <SalesKPICard
+            label="Group Revenue"
+            value={isFetching ? "—" : fmtK(period.total)}
+            subtitle="Spa + Aesthetics + Slimming"
+            yoyChange={isFetching ? undefined : yoy.total}
+          />
+        </div>
         <button
           type="button"
-          className="text-left cursor-pointer rounded-2xl focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-ring focus-visible:outline-none"
+          className="h-full text-left cursor-pointer rounded-2xl focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-ring focus-visible:outline-none"
           onClick={() => router.push("/sales/spa")}
           aria-label="View Spa dashboard"
         >
@@ -64,7 +66,7 @@ function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
         </button>
         <button
           type="button"
-          className="text-left cursor-pointer rounded-2xl focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-ring focus-visible:outline-none"
+          className="h-full text-left cursor-pointer rounded-2xl focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-ring focus-visible:outline-none"
           onClick={() => router.push("/sales/aesthetics")}
           aria-label="View Aesthetics dashboard"
         >
@@ -78,7 +80,7 @@ function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
         </button>
         <button
           type="button"
-          className="text-left cursor-pointer rounded-2xl focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-ring focus-visible:outline-none"
+          className="h-full text-left cursor-pointer rounded-2xl focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-ring focus-visible:outline-none"
           onClick={() => router.push("/sales/slimming")}
           aria-label="View Slimming dashboard"
         >
