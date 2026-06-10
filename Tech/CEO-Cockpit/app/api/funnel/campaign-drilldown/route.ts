@@ -19,10 +19,10 @@ export type DrilldownCampaign = {
   campaignName:    string;
   campaignId:      string;
   spend:           number;
-  cpl:             number;
+  cpl:             number | null;
   leads:           number;
   expectedRevenue: number;
-  roas:            number;
+  roas:            number | null;
   conversionPct:   number | null;
   showRatePct:     null;
 };
@@ -33,9 +33,9 @@ export type DrilldownBrand = {
     spend:           number;
     leads:           number;
     expectedRevenue: number;
-    roas:            number;
+    roas:            number | null;
     conversionPct:   number | null;
-    avgCpl:          number;
+    avgCpl:          number | null;
   };
 };
 
@@ -113,10 +113,10 @@ export async function GET(req: NextRequest) {
         campaignName:    agg.name,
         campaignId,
         spend:           Math.round(agg.spend   * 100) / 100,
-        cpl:             agg.leads > 0 ? Math.round((agg.spend / agg.leads) * 100) / 100 : 0,
+        cpl:             agg.leads > 0 ? Math.round((agg.spend / agg.leads) * 100) / 100 : null,
         leads:           agg.leads,
         expectedRevenue: Math.round(agg.revenue * 100) / 100,
-        roas:            agg.spend > 0 ? Math.round((agg.revenue / agg.spend) * 100) / 100 : 0,
+        roas:            agg.spend > 0 ? Math.round((agg.revenue / agg.spend) * 100) / 100 : null,
         conversionPct,
         showRatePct:     null,
       });
@@ -134,9 +134,9 @@ export async function GET(req: NextRequest) {
         spend:           Math.round(totalSpend   * 100) / 100,
         leads:           totalLeads,
         expectedRevenue: Math.round(totalRevenue * 100) / 100,
-        roas:            totalSpend > 0 ? Math.round((totalRevenue / totalSpend) * 100) / 100 : 0,
+        roas:            totalSpend > 0 ? Math.round((totalRevenue / totalSpend) * 100) / 100 : null,
         conversionPct,
-        avgCpl:          totalLeads > 0 ? Math.round((totalSpend / totalLeads) * 100) / 100 : 0,
+        avgCpl:          totalLeads > 0 ? Math.round((totalSpend / totalLeads) * 100) / 100 : null,
       },
     }];
   }));

@@ -31,9 +31,9 @@ export type BrandHeatmapMetrics = {
   leads_per_agent:    number | null;
   booking_conversion: number | null;
   deposit_rate:       number | null;
-  show_rate_pct:      null;
-  speed_to_lead_min:  null;
-  ad_refresh_days:    null;
+  show_rate_pct:      number | null;
+  speed_to_lead_min:  number | null;
+  ad_refresh_days:    number | null;
 };
 
 export type ConstraintHeatmapResponse = {
@@ -85,18 +85,39 @@ export async function GET(req: NextRequest) {
     // crm_daily
     const { data: crmRows } = await supabase
       .from("crm_daily")
-      .select("total_leads, appointments_booked")
+      .select("total_leads, appointments_booked, speed_to_lead_median_min, deposit_pct")
       .eq("brand_id", brandId)
       .gte("date", from)
       .lte("date", to);
 
-    const totalLeads  = (crmRows ?? []).reduce((s: number, r: { total_leads: number }) => s + (r.total_leads ?? 0), 0);
-    const totalBooked = (crmRows ?? []).reduce((s: number, r: { appointments_booked: number }) => s + (r.appointments_booked ?? 0), 0);
-    const daysWithLeads = (crmRows ?? []).filter((r: { total_leads: number }) => r.total_leads > 0).length;
+    type CrmRow = { total_leads: number; appointments_booked: number; speed_to_lead_median_min: number | null; deposit_pct: number | null };
+    const totalLeads  = (crmRows ?? []).reduce((s: number, r: CrmRow) => s + (r.total_leads ?? 0), 0);
+    const totalBooked = (crmRows ?? []).reduce((s: number, r: CrmRow) => s + (r.appointments_booked ?? 0), 0);
+    const daysWithLeads = (crmRows ?? []).filter((r: CrmRow) => r.total_leads > 0).length;
 
     const daily_leads        = daysWithLeads > 0 ? Math.round((totalLeads / daysWithLeads) * 10) / 10 : null;
     const booking_conversion = totalLeads > 0 ? Math.round((totalBooked / totalLeads) * 1000) / 10 : null;
     const leads_per_agent    = daily_leads !== null ? Math.round((daily_leads / AGENT_COUNT[slug]) * 10) / 10 : null;
+
+    // Speed to lead — median of daily medians
+    const stlValues = (crmRows ?? [])
+      .filter((r: CrmRow) => r.speed_to_lead_median_min !== null && r.speed_to_lead_median_min > 0)
+      .map((r: CrmRow) => r.speed_to_lead_median_min as number)
+      .sort((a, b) => a - b);
+    const stlMid = Math.floor(stlValues.length / 2);
+    const speed_to_lead_min: number | null = stlValues.length > 0
+      ? Math.round((stlValues.length % 2 === 1 ? stlValues[stlMid] : (stlValues[stlMid - 1] + stlValues[stlMid]) / 2) * 10) / 10
+      : null;
+
+    // Deposit rate from crm_daily if available (weighted by total_booked)
+    let depNum = 0, depDen = 0;
+    for (const r of (crmRows ?? []) as CrmRow[]) {
+      if (r.deposit_pct !== null && r.appointments_booked > 0) {
+        depNum += r.deposit_pct * r.appointments_booked;
+        depDen += r.appointments_booked;
+      }
+    }
+    const brand_deposit_rate = depDen > 0 ? Math.round((depNum / depDen) * 10) / 10 : null;
 
     // meta_campaigns_daily for CPL
     const { data: metaRows } = await supabase
@@ -115,9 +136,9 @@ export async function GET(req: NextRequest) {
       cpl,
       leads_per_agent,
       booking_conversion,
-      deposit_rate:      globalDepositRate,
+      deposit_rate:      brand_deposit_rate ?? globalDepositRate,
       show_rate_pct:     null,
-      speed_to_lead_min: null,
+      speed_to_lead_min,
       ad_refresh_days:   null,
     }];
   }));

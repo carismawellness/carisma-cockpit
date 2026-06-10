@@ -91,7 +91,7 @@ function CampaignTable({ campaigns, totals, brandColor }: {
           <tbody>
             {campaigns.map(c => {
               const convSev  = c.conversionPct !== null ? overallConversionSeverity(c.conversionPct) : "off";
-              const roasSev  = roasSeverity(c.roas);
+              const roasSev  = roasSeverity(c.roas ?? 0);
 
               return (
                 <tr key={c.campaignId} className="border-b border-warm-border/50 last:border-0">
@@ -117,14 +117,16 @@ function CampaignTable({ campaigns, totals, brandColor }: {
                     </div>
                   </td>
 
-                  <td className="py-2.5 px-2 text-center text-sm text-foreground tabular-nums">€{c.cpl.toFixed(1)}</td>
+                  <td className="py-2.5 px-2 text-center text-sm text-foreground tabular-nums">
+                    {c.cpl !== null ? `€${c.cpl.toFixed(1)}` : <span className="text-muted-foreground">—</span>}
+                  </td>
                   <td className="py-2.5 px-2 text-center text-sm text-foreground tabular-nums">{formatCurrency(c.spend)}</td>
                   <td className="py-2.5 px-2 text-center text-sm text-foreground tabular-nums">
                     {c.expectedRevenue > 0 ? formatCurrency(c.expectedRevenue) : <span className="text-muted-foreground">—</span>}
                   </td>
 
                   <td className="py-2 px-2">
-                    {c.roas > 0 ? (
+                    {c.roas !== null && c.roas > 0 ? (
                       <div className={`text-center py-1 rounded-lg ${severityClasses[roasSev].bg}`}>
                         <span className={`text-sm font-bold ${severityClasses[roasSev].text}`}>{c.roas.toFixed(1)}x</span>
                       </div>
@@ -161,16 +163,18 @@ function CampaignTable({ campaigns, totals, brandColor }: {
                   <span className="text-sm font-bold text-gray-400">—</span>
                 </div>
               </td>
-              <td className="py-2.5 px-2 text-center text-sm font-semibold text-foreground tabular-nums">€{totals.avgCpl.toFixed(1)}</td>
+              <td className="py-2.5 px-2 text-center text-sm font-semibold text-foreground tabular-nums">
+                {totals.avgCpl !== null ? `€${totals.avgCpl.toFixed(1)}` : <span className="text-muted-foreground">—</span>}
+              </td>
               <td className="py-2.5 px-2 text-center text-sm font-semibold text-foreground tabular-nums">{formatCurrency(totals.spend)}</td>
               <td className="py-2.5 px-2 text-center text-sm font-semibold text-foreground tabular-nums">
                 {totals.expectedRevenue > 0 ? formatCurrency(totals.expectedRevenue) : <span className="text-muted-foreground">—</span>}
               </td>
               {(() => {
-                const roasSev = roasSeverity(totals.roas);
+                const roasSev = roasSeverity(totals.roas ?? 0);
                 return (
                   <td className="py-2 px-2">
-                    {totals.roas > 0 ? (
+                    {totals.roas !== null && totals.roas > 0 ? (
                       <div className={`text-center py-1 rounded-lg ${severityClasses[roasSev].bg}`}>
                         <span className={`text-sm font-bold ${severityClasses[roasSev].text}`}>{totals.roas.toFixed(1)}x</span>
                       </div>
