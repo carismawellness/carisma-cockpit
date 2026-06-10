@@ -40,6 +40,71 @@ export function categorizeCash(raw: string): "Cash" | "Non-Cash" {
   return "Non-Cash";
 }
 
+/**
+ * Maps a canonical service/product name to the Carisma Aesthetics website nav
+ * category (https://www.carismaaesthetics.com). Rules are ordered from most
+ * specific to most general. Body LHR is checked before Packages so that
+ * "LHR - Package" stays in Body rather than being re-classified.
+ *
+ * Returns { group, category } where group is the top-level nav section
+ * (Face | Body | Packages | Membership | Consultation | Admin | Other)
+ * and category is the sub-nav item (e.g. "Wrinkle-Relaxing", "Hydrafacial").
+ */
+export function categorizeNavService(service: string): { group: string; category: string } {
+  const s = service.toLowerCase();
+
+  // ── Admin items (no-shows, cancellations, deposits) ───────────────────────
+  if (/\bno.?show\b|\bcancel\b|\bdeposit\b|\brefund\b/i.test(s))
+    return { group: "Admin", category: "Admin" };
+
+  // ── Membership / Consultation ─────────────────────────────────────────────
+  if (/\bmembership\b/i.test(s))    return { group: "Membership",   category: "Membership"   };
+  if (/\bconsult\b/i.test(s))       return { group: "Consultation", category: "Consultation" };
+  if (/\bgift\b|\bvoucher\b/i.test(s)) return { group: "Admin",    category: "Gift / Voucher" };
+
+  // ── Body — LHR first so "LHR - Package" stays in Body ────────────────────
+  if (/\blhr\b|\blaser.?hair\b|\bhair.?remov/i.test(s))
+    return { group: "Body", category: "Laser Hair Removal" };
+
+  // ── Body — other body treatments ─────────────────────────────────────────
+  if (/\bnir\b|\bskin.?tight|\bfat.?freez|\banti.?cellu|\blymph|\bpico/i.test(s))
+    return { group: "Body", category: "Body Treatment" };
+
+  // ── Packages (named bundles, "Ultimate", "Glow Lift", etc.) ──────────────
+  if (/\bpackage\b|\bultimate\b|\bglow.?lift\b|\bsnatch\b|\b4.?in.?1\b/i.test(s))
+    return { group: "Packages", category: "Packages" };
+
+  // ── Face — specific categories, most distinctive first ───────────────────
+  if (/\blip\b/i.test(s))
+    return { group: "Face", category: "Lip Treatments" };
+  if (/\bhydra\w*fac|\bhyfra/i.test(s))
+    return { group: "Face", category: "Hydrafacial" };
+  if (/\bprp\b|\bplatelet\b|\bvampire\b/i.test(s))
+    return { group: "Face", category: "PRP" };
+  if (/\bsalmon\b|\bpolynucleotides?\b|\bpnct\b/i.test(s))
+    return { group: "Face", category: "Polynucleotides" };
+  if (/\bhair.?reg/i.test(s))
+    return { group: "Face", category: "Hair Regrowth" };
+  if (/\bprofhilo\b/i.test(s))
+    return { group: "Face", category: "Profhilo" };
+  if (/\bexosome\b|\bmicro/i.test(s))       // catches "Microneedling", "Micronedd" typo, "Microneeld"
+    return { group: "Face", category: "Microneedling & Skin" };
+  if (/\bchem\w*.peel|\bpeel\b/i.test(s))
+    return { group: "Face", category: "Chemical Peel" };
+  if (/\bmeso\w*/i.test(s))
+    return { group: "Face", category: "Mesotherapy" };
+  if (/\bthread\b/i.test(s))
+    return { group: "Face", category: "Thread Lift" };
+  if (/\bfat.?dis/i.test(s))
+    return { group: "Face", category: "Fat Dissolving" };
+  if (/\bfiller\b|\bradiess?e\b|\bsculptra\b|\bameela?\b|\bskinboost|\bjaw\s*li?n|\bcollagen\b/i.test(s))
+    return { group: "Face", category: "Fillers & Contouring" };
+  if (/\bbotox\b|\btoxin\b|\bwrinkle\b/i.test(s))
+    return { group: "Face", category: "Wrinkle-Relaxing" };
+
+  return { group: "Other", category: "Other" };
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export interface AestheticsSaleRow {
@@ -69,10 +134,12 @@ export interface PersonBreakdown {
 }
 
 export interface ServiceBreakdown {
-  service:    string;
-  tx_count:   number;
-  revenue_ex: number;
-  pct:        number;
+  service:      string;
+  nav_group:    string;
+  nav_category: string;
+  tx_count:     number;
+  revenue_ex:   number;
+  pct:          number;
 }
 
 export interface PaymentMethodBreakdown {
@@ -421,12 +488,18 @@ export function useAestheticsSales(dateFrom: Date, dateTo: Date, { skipSync = fa
     }
     const totalEx = Array.from(map.values()).reduce((s, v) => s + v.revenue_ex, 0) || 1;
     return Array.from(map.entries())
-      .map(([key, v]) => ({
-        service:    labelMap.get(key) ?? key,
-        tx_count:   v.tx_count,
-        revenue_ex: Math.round(v.revenue_ex),
-        pct:        Math.round((v.revenue_ex / totalEx) * 1000) / 10,
-      }))
+      .map(([key, v]) => {
+        const service = labelMap.get(key) ?? key;
+        const { group, category } = categorizeNavService(service);
+        return {
+          service,
+          nav_group:    group,
+          nav_category: category,
+          tx_count:     v.tx_count,
+          revenue_ex:   Math.round(v.revenue_ex),
+          pct:          Math.round((v.revenue_ex / totalEx) * 1000) / 10,
+        };
+      })
       .sort((a, b) => b.revenue_ex - a.revenue_ex);
   }, [rows]);
 

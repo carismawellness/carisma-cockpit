@@ -22,15 +22,19 @@ const BRANDS = ["spa", "aesthetics", "slimming"] as const;
 const BRAND_LABELS: Record<string, string> = { spa: "Spa", aesthetics: "Aesthetics", slimming: "Slimming" };
 
 /* ------------------------------------------------------------------ */
-/*  Row builder                                                        */
+/*  Row types                                                          */
 /* ------------------------------------------------------------------ */
 
 type HeatmapCell = { formatted: string; severity: "green" | "amber" | "red" | "off" };
-type HeatmapRow  = { metric: string; benchmark: string | null; cells: HeatmapCell[] };
+type HeatmapRow  = { type?: undefined; metric: string; benchmark: string | null; cells: HeatmapCell[] };
+type SectionRow  = { type: "section"; label: string };
+type AnyRow      = HeatmapRow | SectionRow;
 
-type RowGroups = { main: HeatmapRow[]; advanced: HeatmapRow[] };
+/* ------------------------------------------------------------------ */
+/*  Row builder                                                        */
+/* ------------------------------------------------------------------ */
 
-function buildRows(brands: Record<string, BrandHeatmapMetrics>): RowGroups {
+function buildRows(brands: Record<string, BrandHeatmapMetrics>): { main: AnyRow[]; advanced: HeatmapRow[] } {
   function cell(
     v: number | null,
     format: (n: number) => string,
@@ -40,7 +44,16 @@ function buildRows(brands: Record<string, BrandHeatmapMetrics>): RowGroups {
     return { formatted: format(v), severity: sev(v) };
   }
 
-  const main: HeatmapRow[] = [
+  const main: AnyRow[] = [
+    // ── Revenue & volume ──────────────────────────────────────────────
+    {
+      metric: "Sales Revenue", benchmark: null,
+      cells: BRANDS.map(b => cell(
+        brands[b]?.total_revenue,
+        n => `€${Math.round(n).toLocaleString()}`,
+        () => "green",
+      )),
+    },
     {
       metric: "Total Leads", benchmark: null,
       cells: BRANDS.map(b => cell(
@@ -57,36 +70,34 @@ function buildRows(brands: Record<string, BrandHeatmapMetrics>): RowGroups {
         () => "green",
       )),
     },
-    {
-      metric: "Sales Revenue", benchmark: null,
-      cells: BRANDS.map(b => cell(
-        brands[b]?.total_revenue,
-        n => `€${Math.round(n).toLocaleString()}`,
-        () => "green",
-      )),
-    },
-    {
-      metric: "Meta Investment", benchmark: null,
-      cells: BRANDS.map(b => cell(
-        brands[b]?.total_spend,
-        n => `€${n.toLocaleString()}`,
-        () => "green",
-      )),
-    },
-    {
-      metric: "Ad Refresh", benchmark: "≤14d",
-      cells: BRANDS.map(b => cell(
-        brands[b]?.ad_refresh_days,
-        n => `${n}d`,
-        n => (n <= 14 ? "green" : n <= 30 ? "amber" : "red"),
-      )),
-    },
+
+    // ── Lead flow ─────────────────────────────────────────────────────
+    { type: "section", label: "Lead Flow" },
     {
       metric: "Daily Leads", benchmark: null,
       cells: BRANDS.map(b => cell(
         brands[b]?.daily_leads,
         n => Math.round(n).toString(),
         () => "green",
+      )),
+    },
+    {
+      metric: "Leads / Day / Agent", benchmark: String(LEADS_PER_DAY_PER_AGENT_MIN),
+      cells: BRANDS.map(b => cell(
+        brands[b]?.leads_per_agent,
+        n => n.toFixed(1),
+        n => leadsPerAgentSeverity(n),
+      )),
+    },
+
+    // ── ROAS & cost ───────────────────────────────────────────────────
+    { type: "section", label: "ROAS & Cost" },
+    {
+      metric: "ROAS", benchmark: "3×",
+      cells: BRANDS.map(b => cell(
+        brands[b]?.roas,
+        n => `${n.toFixed(1)}×`,
+        n => (n >= 3 ? "green" : n >= 2 ? "amber" : "red"),
       )),
     },
     {
@@ -98,15 +109,7 @@ function buildRows(brands: Record<string, BrandHeatmapMetrics>): RowGroups {
       )),
     },
     {
-      metric: "Leads/Day/Agent", benchmark: String(LEADS_PER_DAY_PER_AGENT_MIN),
-      cells: BRANDS.map(b => cell(
-        brands[b]?.leads_per_agent,
-        n => n.toFixed(1),
-        n => leadsPerAgentSeverity(n),
-      )),
-    },
-    {
-      metric: "Booking Conversion", benchmark: `${OVERALL_CONVERSION_BENCHMARK}%`,
+      metric: "Booking Efficiency", benchmark: `${OVERALL_CONVERSION_BENCHMARK}%`,
       cells: BRANDS.map(b => cell(
         brands[b]?.booking_efficiency,
         n => `${n.toFixed(1)}%`,
@@ -124,6 +127,22 @@ function buildRows(brands: Record<string, BrandHeatmapMetrics>): RowGroups {
   ];
 
   const advanced: HeatmapRow[] = [
+    {
+      metric: "Meta Investment", benchmark: null,
+      cells: BRANDS.map(b => cell(
+        brands[b]?.total_spend,
+        n => `€${n.toLocaleString()}`,
+        () => "green",
+      )),
+    },
+    {
+      metric: "Ad Refresh", benchmark: "≤14d",
+      cells: BRANDS.map(b => cell(
+        brands[b]?.ad_refresh_days,
+        n => `${n}d`,
+        n => (n <= 14 ? "green" : n <= 30 ? "amber" : "red"),
+      )),
+    },
     {
       metric: "Speed to Lead", benchmark: "≤5m",
       cells: BRANDS.map(b => cell(
@@ -152,8 +171,8 @@ function buildRows(brands: Record<string, BrandHeatmapMetrics>): RowGroups {
 interface Props { dateFrom: Date; dateTo: Date }
 
 export function ConstraintHeatmap({ dateFrom, dateTo }: Props) {
-  const [brands, setBrands]       = useState<Record<string, BrandHeatmapMetrics> | null>(null);
-  const [loading, setLoading]     = useState(true);
+  const [brands, setBrands]             = useState<Record<string, BrandHeatmapMetrics> | null>(null);
+  const [loading, setLoading]           = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
@@ -170,23 +189,40 @@ export function ConstraintHeatmap({ dateFrom, dateTo }: Props) {
     ? buildRows(brands)
     : { main: [], advanced: [] };
 
-  function renderRows(rows: HeatmapRow[]) {
-    return rows.map(row => (
+  function renderMetricRow(row: HeatmapRow) {
+    return (
       <tr key={row.metric} className="border-b border-warm-border/50 last:border-0">
         <td className="py-2.5 pr-4 text-sm font-medium text-foreground">{row.metric}</td>
         <td className="py-2.5 px-2 text-center text-xs text-muted-foreground">{row.benchmark ?? "-"}</td>
-        {row.cells.map((cell: HeatmapCell, i: number) => {
-          const c = severityClasses[cell.severity];
+        {row.cells.map((c, i) => {
+          const cls = severityClasses[c.severity];
           return (
             <td key={BRANDS[i]} className="py-2.5 px-3">
-              <div className={`text-center py-1.5 rounded-lg ${c.bg}`}>
-                <span className={`text-sm font-bold ${c.text}`}>{cell.formatted}</span>
+              <div className={`text-center py-1.5 rounded-lg ${cls.bg}`}>
+                <span className={`text-sm font-bold ${cls.text}`}>{c.formatted}</span>
               </div>
             </td>
           );
         })}
       </tr>
-    ));
+    );
+  }
+
+  function renderSectionRow(label: string) {
+    return (
+      <tr key={`section-${label}`}>
+        <td colSpan={2 + BRANDS.length} className="pt-4 pb-1 border-b border-warm-border/30">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">{label}</span>
+        </td>
+      </tr>
+    );
+  }
+
+  function renderRows(rows: AnyRow[]) {
+    return rows.map(row => {
+      if (row.type === "section") return renderSectionRow(row.label);
+      return renderMetricRow(row as HeatmapRow);
+    });
   }
 
   return (
@@ -229,7 +265,7 @@ export function ConstraintHeatmap({ dateFrom, dateTo }: Props) {
               className="mt-3 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               {showAdvanced ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-              {showAdvanced ? "Hide advanced metrics" : "Show advanced metrics (Speed to Lead, Show Rate)"}
+              {showAdvanced ? "Hide advanced metrics" : "Show advanced metrics (Ad Refresh, Speed to Lead, Show Rate)"}
             </button>
           </div>
         </div>

@@ -137,10 +137,11 @@ export const departments: Department[] = [
     group: "Admin",
     singleKey: true,
     children: [
-      { slug: "ebitda-rules",   label: "EBITDA Rules",   path: "/settings/ebitda-rules",   icon: BookOpen },
-      { slug: "ebitda-mapping", label: "EBITDA Mapping", path: "/settings/ebitda-mapping", icon: BookOpen },
-      { slug: "data-sources",   label: "Data Sources",    path: "/settings/data-sources",   icon: Activity },
-      { slug: "user-access",    label: "User Access",    path: "/settings/user-access",    icon: Users },
+      { slug: "ebitda-rules",        label: "EBITDA Rules",       path: "/settings/ebitda-rules",        icon: BookOpen },
+      { slug: "ebitda-mapping",      label: "EBITDA Mapping",     path: "/settings/ebitda-mapping",      icon: BookOpen },
+      { slug: "crm-agent-mapping",   label: "CRM Agent Mapping",  path: "/settings/crm-agent-mapping",   icon: Users },
+      { slug: "data-sources",        label: "Data Sources",       path: "/settings/data-sources",        icon: Activity },
+      { slug: "user-access",         label: "User Access",        path: "/settings/user-access",         icon: User },
     ],
   },
 ];

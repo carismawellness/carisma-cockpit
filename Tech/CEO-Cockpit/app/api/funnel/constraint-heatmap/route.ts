@@ -1,17 +1,22 @@
 /**
  * GET /api/funnel/constraint-heatmap?from=YYYY-MM-DD&to=YYYY-MM-DD
  *
- * Metric sources (after Jun 2026 accuracy fixes):
- *   daily_leads        — Meta meta_campaigns_daily: total leads / calendar days in range
- *   cpl                — Meta spend / Meta leads
- *   leads_per_agent    — Meta daily leads / active SDR agents for that brand in period
- *   booking_conversion — crm_agent_daily: SUM(total_booked) / SUM(total_messages) for SDR agents
- *   deposit_rate       — crm_agent_daily: SUM(total_deposit_count) / SUM(total_booked) for SDR agents
- *   speed_to_lead_min  — crm_daily: median of daily medians
- *   ad_refresh_days    — meta_campaigns_daily: days since newest campaign_id first appeared
+ * Metric sources:
+ *   total_revenue       — brand revenue table (Cockpit datasheet via ETL)
+ *   total_leads         — Meta meta_campaigns_daily: SUM(leads)
+ *   total_bookings      — crm_agent_daily: SUM(total_booked) for SDR agents
+ *   daily_leads         — Meta leads / calendar days in range
+ *   leads_per_agent     — daily_leads / active SDR count in period
+ *   roas                — total_revenue / total_spend
+ *   cpl                 — Meta spend / Meta leads
+ *   booking_efficiency  — weighted avg of crm_agent_daily.conversion_rate_pct across SDR agents
+ *                         (SUM(rate * messages) / SUM(messages))
+ *   deposit_rate        — crm_agent_daily: SUM(total_deposit_count) / SUM(total_booked) for SDR agents
+ *   speed_to_lead_min   — crm_daily: median of daily medians
+ *   ad_refresh_days     — meta_campaigns_daily: days since newest campaign_id first appeared
  *
- * SDR agents per brand (chat team excluded):
- *   Spa: juliana, vj  |  Aesthetics: april  |  Slimming: dorianne, queenee
+ * SDR agent list is read from crm_agent_mapping table (position='sdr', brand_slug=slug, is_active=true).
+ * Falls back to hardcoded defaults if the table is empty.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -22,31 +27,33 @@ export const dynamic = "force-dynamic";
 const BRAND_SLUGS = ["spa", "aesthetics", "slimming"] as const;
 type BrandSlug = typeof BRAND_SLUGS[number];
 
-// SDR agents per brand — chat team (adeel, rana, abid, km, anni, nicci, nathalia) excluded
-const BRAND_SDR_AGENTS: Record<BrandSlug, string[]> = {
+// Fallback SDR agents per brand if crm_agent_mapping table is empty
+const FALLBACK_SDR_AGENTS: Record<BrandSlug, string[]> = {
   spa:        ["juliana", "vj"],
   aesthetics: ["april"],
   slimming:   ["dorianne", "queenee"],
 };
 
-// Manual booking conversion overrides — takes precedence over crm_agent_daily computation
-const BRAND_CONV_OVERRIDE: Partial<Record<BrandSlug, number>> = {
+// Manual booking efficiency overrides — takes precedence over DB computation
+const BRAND_BOOKING_OVERRIDE: Partial<Record<BrandSlug, number>> = {
   spa: 10.0,  // Business assumption: conservative 10%
 };
 
 export type BrandHeatmapMetrics = {
-  daily_leads:        number | null;
+  total_revenue:      number | null;
   total_leads:        number | null;
   total_bookings:     number | null;
-  total_revenue:      number | null;
-  total_spend:        number | null;
-  cpl:                number | null;
+  daily_leads:        number | null;
   leads_per_agent:    number | null;
-  booking_conversion: number | null;
+  roas:               number | null;
+  cpl:                number | null;
+  booking_efficiency: number | null;
   deposit_rate:       number | null;
   show_rate_pct:      number | null;
   speed_to_lead_min:  number | null;
   ad_refresh_days:    number | null;
+  // kept for campaign drilldown compatibility
+  total_spend:        number | null;
 };
 
 export type ConstraintHeatmapResponse = {
@@ -57,11 +64,12 @@ export type ConstraintHeatmapResponse = {
 };
 
 const EMPTY_METRICS: BrandHeatmapMetrics = {
-  daily_leads: null, total_leads: null, total_bookings: null,
-  total_revenue: null, total_spend: null,
-  cpl: null, leads_per_agent: null,
-  booking_conversion: null, deposit_rate: null,
+  total_revenue: null, total_leads: null, total_bookings: null,
+  daily_leads: null, leads_per_agent: null,
+  roas: null, cpl: null,
+  booking_efficiency: null, deposit_rate: null,
   show_rate_pct: null, speed_to_lead_min: null, ad_refresh_days: null,
+  total_spend: null,
 };
 
 const REVENUE_TABLE: Record<BrandSlug, string> = {
@@ -82,6 +90,29 @@ export async function GET(req: NextRequest) {
 
   const daysInRange = Math.max(1, Math.round((new Date(to).getTime() - new Date(from).getTime()) / 86_400_000) + 1);
 
+  // ── Agent mapping from DB ─────────────────────────────────────────────────────
+  const { data: agentMapRows } = await supabase
+    .from("crm_agent_mapping")
+    .select("agent_slug, brand_slug, position")
+    .eq("is_active", true)
+    .eq("position", "sdr");
+
+  const brandSdrAgents: Record<BrandSlug, string[]> = { spa: [], aesthetics: [], slimming: [] };
+  if (agentMapRows && agentMapRows.length > 0) {
+    for (const r of agentMapRows as { agent_slug: string; brand_slug: string | null }[]) {
+      if (r.brand_slug && r.brand_slug in brandSdrAgents) {
+        brandSdrAgents[r.brand_slug as BrandSlug].push(r.agent_slug);
+      }
+    }
+    // If a brand has no mapped agents fall back to hardcoded defaults
+    for (const slug of BRAND_SLUGS) {
+      if (brandSdrAgents[slug].length === 0) brandSdrAgents[slug] = FALLBACK_SDR_AGENTS[slug];
+    }
+  } else {
+    // Table is empty — use hardcoded fallback
+    Object.assign(brandSdrAgents, FALLBACK_SDR_AGENTS);
+  }
+
   // Brand ID lookup
   const { data: brandRows } = await supabase.from("brands").select("id, slug");
   const brandIdMap: Record<string, number> = {};
@@ -91,7 +122,9 @@ export async function GET(req: NextRequest) {
     const brandId = brandIdMap[slug];
     if (!brandId) return [slug, { ...EMPTY_METRICS }];
 
-    // ── 1. Meta: daily_leads, cpl, ad_refresh ────────────────────────────────
+    const sdrs = brandSdrAgents[slug];
+
+    // ── 1. Meta: leads, spend, ad_refresh ────────────────────────────────────
     const { data: metaRows } = await supabase
       .from("meta_campaigns_daily")
       .select("campaign_id, spend, leads, date")
@@ -102,12 +135,11 @@ export async function GET(req: NextRequest) {
 
     type MetaRow = { campaign_id: string; spend: number; leads: number; date: string };
 
-    const metaSpend = (metaRows ?? []).reduce((s: number, r: MetaRow) => s + (r.spend ?? 0), 0);
-    const metaLeads = (metaRows ?? []).reduce((s: number, r: MetaRow) => s + (r.leads ?? 0), 0);
+    const metaSpend  = (metaRows ?? []).reduce((s: number, r: MetaRow) => s + (r.spend ?? 0), 0);
+    const metaLeads  = (metaRows ?? []).reduce((s: number, r: MetaRow) => s + (r.leads ?? 0), 0);
     const cpl        = metaLeads > 0 ? Math.round((metaSpend / metaLeads) * 100) / 100 : null;
     const daily_leads = metaLeads > 0 ? Math.round((metaLeads / daysInRange) * 10) / 10 : null;
 
-    // Ad refresh proxy: days since newest campaign_id first appeared
     const firstSeen = new Map<string, string>();
     for (const r of (metaRows ?? []) as MetaRow[]) {
       if (r.campaign_id && !firstSeen.has(r.campaign_id)) firstSeen.set(r.campaign_id, r.date);
@@ -117,35 +149,51 @@ export async function GET(req: NextRequest) {
       ? Math.floor((Date.now() - new Date(newestLaunch).getTime()) / 86_400_000)
       : null;
 
-    // ── 2. CRM agent data: booking conversion, deposit rate, active SDR count ─
-    const sdrs = BRAND_SDR_AGENTS[slug];
+    // ── 2. CRM agent data: booking efficiency, deposit rate, active SDR count ─
     const { data: agentRows } = await supabase
       .from("crm_agent_daily")
-      .select("agent_slug, total_booked, total_messages, total_deposit_count")
+      .select("agent_slug, total_booked, total_messages, total_deposit_count, booking_eff_pct")
       .in("agent_slug", sdrs)
       .gte("date", from)
       .lte("date", to);
 
-    type AgentRow = { agent_slug: string; total_booked: number; total_messages: number; total_deposit_count: number };
+    type AgentRow = {
+      agent_slug: string;
+      total_booked: number;
+      total_messages: number;
+      total_deposit_count: number;
+      booking_eff_pct: number;
+    };
 
     const totalBooked   = (agentRows ?? []).reduce((s: number, r: AgentRow) => s + (r.total_booked   ?? 0), 0);
     const totalMessages = (agentRows ?? []).reduce((s: number, r: AgentRow) => s + (r.total_messages ?? 0), 0);
     const totalDeposits = (agentRows ?? []).reduce((s: number, r: AgentRow) => s + (r.total_deposit_count ?? 0), 0);
 
-    const booking_conversion = BRAND_CONV_OVERRIDE[slug] !== undefined
-      ? BRAND_CONV_OVERRIDE[slug]!
-      : (totalMessages > 0 ? Math.round((totalBooked / totalMessages) * 1000) / 10 : null);
-    const deposit_rate       = totalBooked   > 0 ? Math.round((totalDeposits / totalBooked) * 1000) / 10 : null;
+    // Booking efficiency: weighted average of per-row booking_eff_pct (sheet col G),
+    // weighted by total_messages so high-volume agents contribute proportionally.
+    let booking_efficiency: number | null;
+    if (BRAND_BOOKING_OVERRIDE[slug] !== undefined) {
+      booking_efficiency = BRAND_BOOKING_OVERRIDE[slug]!;
+    } else {
+      const weightedSum = (agentRows ?? []).reduce(
+        (s: number, r: AgentRow) => s + ((r.booking_eff_pct ?? 0) * (r.total_messages ?? 0)),
+        0,
+      );
+      booking_efficiency = totalMessages > 0
+        ? Math.round((weightedSum / totalMessages) * 10) / 10
+        : null;
+    }
 
-    // Active SDR count = unique agents with any data in period
-    const activeAgents = new Set((agentRows ?? []).map((r: AgentRow) => r.agent_slug)).size;
+    const deposit_rate = totalBooked > 0
+      ? Math.round((totalDeposits / totalBooked) * 1000) / 10
+      : null;
+
+    const activeAgents  = new Set((agentRows ?? []).map((r: AgentRow) => r.agent_slug)).size;
     const leads_per_agent = daily_leads !== null && activeAgents > 0
       ? Math.round((daily_leads / activeAgents) * 10) / 10
       : null;
 
-    // ── 3. Revenue table ──────────────────────────────────────────────────────
-    // spa_revenue_daily uses `date` + separate service/product columns (no price_ex_vat)
-    // aesthetics/slimming use `date_of_service` + `price_ex_vat`
+    // ── 3. Revenue ────────────────────────────────────────────────────────────
     let total_revenue: number | null = null;
     if (slug === "spa") {
       const { data: spaRevRows } = await supabase
@@ -171,7 +219,12 @@ export async function GET(req: NextRequest) {
       total_revenue = sum > 0 ? Math.round(sum * 100) / 100 : null;
     }
 
-    // ── 4. crm_daily: speed to lead only ─────────────────────────────────────
+    const total_spend = metaSpend > 0 ? Math.round(metaSpend) : null;
+    const roas = total_revenue !== null && total_spend !== null && total_spend > 0
+      ? Math.round((total_revenue / total_spend) * 100) / 100
+      : null;
+
+    // ── 4. Speed to lead ─────────────────────────────────────────────────────
     const { data: crmRows } = await supabase
       .from("crm_daily")
       .select("speed_to_lead_median_min")
@@ -190,18 +243,19 @@ export async function GET(req: NextRequest) {
       : null;
 
     return [slug, {
-      daily_leads,
+      total_revenue,
       total_leads:    metaLeads > 0 ? metaLeads : null,
       total_bookings: totalBooked > 0 ? totalBooked : null,
-      total_revenue,
-      total_spend:    metaSpend > 0 ? Math.round(metaSpend) : null,
-      cpl,
+      daily_leads,
       leads_per_agent,
-      booking_conversion,
+      roas,
+      cpl,
+      booking_efficiency,
       deposit_rate,
       show_rate_pct:    null,
       speed_to_lead_min,
       ad_refresh_days,
+      total_spend,
     }];
   }));
 

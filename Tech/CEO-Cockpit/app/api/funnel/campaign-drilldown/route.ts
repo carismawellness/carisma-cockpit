@@ -15,52 +15,41 @@ export const dynamic = "force-dynamic";
 
 const BRAND_SLUGS = ["spa", "aesthetics", "slimming"] as const;
 
-// Default AOV per brand (€) — Jun 2026 actuals
+// Default AOV per brand (€) — sourced from carismaspa.com, carismaaesthetics.com, carismaslimming.com (Jun 2026)
 const BRAND_AOV_DEFAULT: Record<string, number> = {
-  spa:        145,  // Spa Day package (most common)
-  aesthetics: 179,  // Botox / general aesthetics
-  slimming:   289,  // Clinic-wide AOV
+  spa: 129,  // Spa Deluxe / mid-tier spa day package
+  aesthetics: 179,  // 1–2 area botox; most common aesthetic treatment
+  slimming: 199,  // Standardised entry package (Fat Freeze / EMSculpt Starter)
 };
 
-// Keyword → AOV overrides (checked against lowercased campaign name, first match wins)
+// Keyword → AOV overrides (checked against lowercased campaign name)
 const AOV_OVERRIDES: Array<{ keywords: string[]; aov: number }> = [
-  // Spa — specific campaign types
-  { keywords: ["couple", "couples", "romantic"],                              aov: 190 },
-  { keywords: ["gift", "gifting", "voucher"],                                 aov: 120 },
-  { keywords: ["spa day"],                                                     aov: 145 },
-  { keywords: ["massage"],                                                     aov: 145 },
-  { keywords: ["hammam"],                                                      aov: 129 },
-  { keywords: ["model call", "model"],                                         aov:   0 },
-  // Aesthetics — specific treatment campaigns
-  { keywords: ["hair regrowth"],                                               aov: 500 },
-  { keywords: ["ultimate facelift", "ultimate face lift", "facelift"],        aov: 250 },
-  { keywords: ["lhr", "laser hair"],                                           aov: 250 },
-  { keywords: ["lip and glow", "lip glow"],                                    aov: 220 },
-  { keywords: ["jawline", "snatch"],                                           aov: 179 },
-  { keywords: ["dr. kendra", "dr kendra", "kendra"],                          aov: 200 },
-  { keywords: ["hydra facial", "hydrafacial", "4-in-1", "4 in 1"],           aov: 100 },
-  { keywords: ["filler", "lip filler", "dermal filler"],                     aov: 269 },
-  { keywords: ["botox", "wrinkle", "anti-wrinkle", "injectable"],            aov: 179 },
-  { keywords: ["peel", "skin", "microneedling"],                              aov: 149 },
-  { keywords: ["ipl"],                                                         aov: 199 },
-  // Slimming — specific treatments
-  { keywords: ["weight loss", "slimming plan", "glp", "ozempic", "mounjaro",
-               "menopause", "baby", "pain"],                                   aov: 289 },
-  { keywords: ["fat freeze", "coolsculpt", "cryolipolysis"],                 aov: 289 },
-  { keywords: ["emsculpt", "muscle", "hifu", "body sculpt",
-               "velashape", "cavitation"],                                     aov: 289 },
+  // Spa
+  { keywords: ["couple", "couples", "romantic"], aov: 249 },
+  { keywords: ["hammam"], aov: 129 },
+  { keywords: ["spa day", "body ritual", "body treatment", "ritual"], aov: 129 },
+  { keywords: ["massage"], aov: 99 },
+  // Aesthetics
+  { keywords: ["filler", "lip filler", "dermal filler"], aov: 269 },
+  { keywords: ["botox", "wrinkle", "anti-wrinkle", "injectable"], aov: 179 },
+  { keywords: ["facial", "hydrafacial", "peel", "skin", "microneedling"], aov: 149 },
+  { keywords: ["laser", "ipl", "hair removal"], aov: 199 },
+  // Slimming
+  { keywords: ["fat freeze", "coolsculpt", "cryolipolysis"], aov: 199 },
+  { keywords: ["emsculpt", "hifu", "body sculpt", "velashape", "cavitation"], aov: 199 },
+  { keywords: ["weight loss", "slimming plan", "glp", "ozempic", "mounjaro"], aov: 350 },
 ];
 
-// CRM agents responsible for each brand (slugs in crm_agent_daily)
-const BRAND_AGENTS: Record<string, string[]> = {
+// Fallback SDR agents per brand if crm_agent_mapping table is empty
+const FALLBACK_BRAND_AGENTS: Record<string, string[]> = {
   spa:        ["juliana", "vj"],
   aesthetics: ["april"],
   slimming:   ["dorianne", "queenee"],
 };
 
-// Manual conversion rate overrides — takes precedence over dynamic crm_agent_daily calculation
+// Manual booking efficiency overrides — takes precedence over DB computation
 const BRAND_CONV_OVERRIDE: Partial<Record<string, number>> = {
-  spa: 10.0,  // Business assumption: conservative 10% (agent-derived ~16.6% deemed too high)
+  spa: 10.0,  // Business assumption: conservative 10%
 };
 
 function resolveAov(brandSlug: string, campaignName: string): number {
@@ -72,45 +61,64 @@ function resolveAov(brandSlug: string, campaignName: string): number {
 }
 
 export type DrilldownCampaign = {
-  campaignName:    string;
-  campaignId:      string;
-  spend:           number;
-  cpl:             number | null;
-  leads:           number;
-  aov:             number;
+  campaignName: string;
+  campaignId: string;
+  spend: number;
+  cpl: number | null;
+  leads: number;
+  aov: number;
   expectedRevenue: number;
-  expectedRoas:    number | null;
-  conversionPct:   number | null;
+  expectedRoas: number | null;
+  conversionPct: number | null;
 };
 
 export type DrilldownBrand = {
   campaigns: DrilldownCampaign[];
   totals: {
-    spend:           number;
-    leads:           number;
+    spend: number;
+    leads: number;
     expectedRevenue: number;
-    expectedRoas:    number | null;
-    conversionPct:   number | null;
-    avgCpl:          number | null;
+    expectedRoas: number | null;
+    conversionPct: number | null;
+    avgCpl: number | null;
   };
 };
 
 export type CampaignDrilldownResponse = {
-  brands:     Record<string, DrilldownBrand>;
-  date_from:  string;
-  date_to:    string;
+  brands: Record<string, DrilldownBrand>;
+  date_from: string;
+  date_to: string;
   fetched_at: string;
 };
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const from = searchParams.get("from") ?? new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
-  const to   = searchParams.get("to")   ?? new Date().toISOString().slice(0, 10);
+  const to = searchParams.get("to") ?? new Date().toISOString().slice(0, 10);
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
+
+  // Agent mapping from DB — determines which SDR agents belong to each brand
+  const { data: agentMapRows } = await supabase
+    .from("crm_agent_mapping")
+    .select("agent_slug, brand_slug")
+    .eq("is_active", true)
+    .eq("position", "sdr");
+
+  const brandAgents: Record<string, string[]> = { spa: [], aesthetics: [], slimming: [] };
+  if (agentMapRows && agentMapRows.length > 0) {
+    for (const r of agentMapRows as { agent_slug: string; brand_slug: string | null }[]) {
+      if (r.brand_slug && r.brand_slug in brandAgents) brandAgents[r.brand_slug].push(r.agent_slug);
+    }
+    for (const s of BRAND_SLUGS) {
+      if (brandAgents[s].length === 0) brandAgents[s] = FALLBACK_BRAND_AGENTS[s];
+    }
+  } else {
+    Object.assign(brandAgents, FALLBACK_BRAND_AGENTS);
+  }
 
   // Brand ID lookup
   const { data: brandRows } = await supabase.from("brands").select("id, slug");
@@ -137,79 +145,80 @@ export async function GET(req: NextRequest) {
     for (const r of (metaRows ?? []) as { campaign_id: string; campaign_name: string; spend: number; leads: number; attributed_revenue: number }[]) {
       const existing = map.get(r.campaign_id);
       if (existing) {
-        existing.spend   += r.spend   ?? 0;
-        existing.leads   += r.leads   ?? 0;
+        existing.spend += r.spend ?? 0;
+        existing.leads += r.leads ?? 0;
         existing.revenue += r.attributed_revenue ?? 0;
       } else {
         map.set(r.campaign_id, {
-          name:    r.campaign_name,
-          spend:   r.spend   ?? 0,
-          leads:   r.leads   ?? 0,
+          name: r.campaign_name,
+          spend: r.spend ?? 0,
+          leads: r.leads ?? 0,
           revenue: r.attributed_revenue ?? 0,
         });
       }
     }
 
-    // Conversion rate: use manual override if set, otherwise compute from crm_agent_daily
+    // Conversion rate: manual override takes precedence, otherwise weighted avg from crm_agent_daily
     let conversionPct: number | null = BRAND_CONV_OVERRIDE[slug] ?? null;
-    if (conversionPct === undefined || conversionPct === null) {
-      const agents = BRAND_AGENTS[slug] ?? [];
+    if (conversionPct === null) {
+      const agents = brandAgents[slug] ?? [];
       if (agents.length > 0) {
         const { data: agentRows } = await supabase
           .from("crm_agent_daily")
-          .select("total_booked, total_messages")
+          .select("total_booked, total_messages, booking_eff_pct")
           .in("agent_slug", agents)
           .gte("date", from)
           .lte("date", to);
-        const totalBooked   = (agentRows ?? []).reduce((s: number, r: { total_booked: number }) => s + (r.total_booked ?? 0), 0);
-        const totalMessages = (agentRows ?? []).reduce((s: number, r: { total_messages: number }) => s + (r.total_messages ?? 0), 0);
-        conversionPct = totalMessages > 0 ? Math.round((totalBooked / totalMessages) * 1000) / 10 : null;
+        type AgRow = { total_booked: number; total_messages: number; booking_eff_pct: number };
+        const totalMessages = (agentRows ?? []).reduce((s: number, r: AgRow) => s + (r.total_messages ?? 0), 0);
+        const weightedSum   = (agentRows ?? []).reduce((s: number, r: AgRow) => s + ((r.booking_eff_pct ?? 0) * (r.total_messages ?? 0)), 0);
+        conversionPct = totalMessages > 0 ? Math.round((weightedSum / totalMessages) * 10) / 10 : null;
       }
     }
 
     // Build campaign rows
     const campaigns: DrilldownCampaign[] = [];
     for (const [campaignId, agg] of map) {
-      const aov             = resolveAov(slug, agg.name);
-      const convRate        = conversionPct !== null ? conversionPct / 100 : 0;
+      const aov = resolveAov(slug, agg.name);
+      const convRate = conversionPct !== null ? conversionPct / 100 : 0;
       const expectedRevenue = Math.round(agg.leads * convRate * aov * 100) / 100;
-      const spend           = Math.round(agg.spend * 100) / 100;
+      const spend = Math.round(agg.spend * 100) / 100;
       campaigns.push({
-        campaignName:    agg.name,
+        campaignName: agg.name,
         campaignId,
         spend,
-        cpl:             agg.leads > 0 ? Math.round((agg.spend / agg.leads) * 100) / 100 : null,
-        leads:           agg.leads,
+        cpl: agg.leads > 0 ? Math.round((agg.spend / agg.leads) * 100) / 100 : null,
+        leads: agg.leads,
         aov,
         expectedRevenue,
-        expectedRoas:    spend > 0 ? Math.round((expectedRevenue / spend) * 100) / 100 : null,
+        expectedRoas: spend > 0 ? Math.round((expectedRevenue / spend) * 100) / 100 : null,
         conversionPct,
       });
     }
 
     campaigns.sort((a, b) => b.spend - a.spend);
 
-    const totalSpend   = campaigns.reduce((s, c) => s + c.spend,           0);
-    const totalLeads   = campaigns.reduce((s, c) => s + c.leads,           0);
+    const totalSpend = campaigns.reduce((s, c) => s + c.spend, 0);
+    const totalLeads = campaigns.reduce((s, c) => s + c.leads, 0);
     const totalRevenue = campaigns.reduce((s, c) => s + c.expectedRevenue, 0);
 
     return [slug, {
       campaigns,
       totals: {
-        spend:           Math.round(totalSpend   * 100) / 100,
-        leads:           totalLeads,
+        spend: Math.round(totalSpend * 100) / 100,
+        leads: totalLeads,
         expectedRevenue: Math.round(totalRevenue * 100) / 100,
-        expectedRoas:    totalSpend > 0 ? Math.round((totalRevenue / totalSpend) * 100) / 100 : null,
+        expectedRoas: totalSpend > 0 ? Math.round((totalRevenue / totalSpend) * 100) / 100 : null,
         conversionPct,
-        avgCpl:          totalLeads > 0 ? Math.round((totalSpend / totalLeads) * 100) / 100 : null,
+        avgCpl: totalLeads > 0 ? Math.round((totalSpend / totalLeads) * 100) / 100 : null,
       },
     }];
   }));
 
   return NextResponse.json({
-    brands:     Object.fromEntries(results),
-    date_from:  from,
-    date_to:    to,
+    brands: Object.fromEntries(results),
+    date_from: from,
+    date_to: to,
     fetched_at: new Date().toISOString(),
   } satisfies CampaignDrilldownResponse);
 }

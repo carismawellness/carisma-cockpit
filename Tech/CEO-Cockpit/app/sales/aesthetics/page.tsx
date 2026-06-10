@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { Fragment, useEffect, useMemo, useRef } from "react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
 import { SalesKPICard } from "@/components/sales/SalesKPICard";
@@ -55,6 +55,36 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
   }, [totals, lyTotals]);
 
   const { getAesSalary } = useSalaryRoster(dateFrom, dateTo);
+
+  const GROUP_ORDER = ["Face", "Body", "Packages", "Membership", "Consultation", "Admin", "Other"] as const;
+  const GROUP_COLORS: Record<string, string> = {
+    Face:         "#6366f1",
+    Body:         "#0ea5e9",
+    Packages:     "#a855f7",
+    Membership:   "#22c55e",
+    Consultation: "#94a3b8",
+    Admin:        "#f59e0b",
+    Other:        "#cbd5e1",
+  };
+
+  const byGroup = useMemo(() => {
+    const map = new Map<string, typeof byService>();
+    for (const s of byService) {
+      const g = s.nav_group;
+      if (!map.has(g)) map.set(g, []);
+      map.get(g)!.push(s);
+    }
+    return GROUP_ORDER
+      .filter(g => map.has(g))
+      .map(g => ({
+        group:         g,
+        color:         GROUP_COLORS[g] ?? "#cbd5e1",
+        services:      map.get(g)!,
+        total_revenue: map.get(g)!.reduce((s, v) => s + v.revenue_ex, 0),
+        total_count:   map.get(g)!.reduce((s, v) => s + v.tx_count, 0),
+      }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [byService]);
 
   // Enrich byPerson with salary overlay
   const byPersonEnriched = useMemo(() =>
@@ -327,9 +357,12 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
         )}
       </Card>
 
-      {/* ── Revenue by Service ────────────────────────────────────────── */}
+      {/* ── Revenue by Service — grouped by nav category ─────────────── */}
       <Card className="p-4 md:p-5">
-        <h2 className="text-base font-semibold text-foreground mb-4">Revenue by Service / Product</h2>
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="text-base font-semibold text-foreground">Revenue by Service / Product</h2>
+          <span className="text-xs text-muted-foreground">grouped by website nav category</span>
+        </div>
         {byService.length === 0 ? (
           <p className="text-sm text-muted-foreground py-4 text-center">
             {isFetching || isSyncing ? "Loading…" : "No data for selected period"}
@@ -339,32 +372,63 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
-                  <th className="text-left pb-2 font-medium">Service / Product</th>
+                  <th className="text-left pb-2 font-medium w-[38%]">Service / Product</th>
+                  <th className="text-left pb-2 font-medium">Category</th>
                   <th className="text-right pb-2 font-medium">Bookings</th>
                   <th className="text-right pb-2 font-medium">Revenue ex-VAT</th>
                   <th className="text-left pb-2 pl-4 font-medium">Share</th>
                 </tr>
               </thead>
               <tbody>
-                {byService.map((s, i) => (
-                  <tr key={s.service} className={`border-b last:border-0 ${i % 2 === 0 ? "" : "bg-muted/20"}`}>
-                    <td className="py-2.5 font-medium">{s.service}</td>
-                    <td className="py-2.5 text-right text-muted-foreground">{s.tx_count}</td>
-                    <td className="py-2.5 text-right font-medium">{formatCurrency(s.revenue_ex)}</td>
-                    <td className="py-2.5 pl-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-24 h-2 bg-gray-100 rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full"
-                            style={{ width: `${s.pct}%`, backgroundColor: chartColors.aesthetics }}
-                          />
+                {byGroup.map(({ group, color, services, total_revenue, total_count }) => (
+                  <Fragment key={group}>
+                    {/* Group header row */}
+                    <tr className="border-y border-muted bg-muted/20">
+                      <td colSpan={2} className="py-2 pl-2">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-block w-2 h-4 rounded-sm shrink-0" style={{ backgroundColor: color }} />
+                          <span className="text-xs font-bold uppercase tracking-wider" style={{ color }}>{group}</span>
                         </div>
-                        <span className="text-xs text-muted-foreground">{s.pct}%</span>
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                      <td className="py-2 text-right text-xs text-muted-foreground font-medium pr-0.5">{total_count}</td>
+                      <td className="py-2 text-right text-xs font-semibold">{fmtK(total_revenue)}</td>
+                      <td className="py-2 pl-4 text-xs text-muted-foreground">
+                        {totals.revenue_ex > 0 ? `${((total_revenue / totals.revenue_ex) * 100).toFixed(1)}%` : ""}
+                      </td>
+                    </tr>
+                    {/* Individual services */}
+                    {services.map(s => (
+                      <tr key={s.service} className="border-b last:border-0 hover:bg-muted/10">
+                        <td className="py-2 pl-5 font-medium">{s.service}</td>
+                        <td className="py-2">
+                          <span className="text-xs text-muted-foreground">{s.nav_category}</span>
+                        </td>
+                        <td className="py-2 text-right text-muted-foreground">{s.tx_count}</td>
+                        <td className="py-2 text-right font-medium">{formatCurrency(s.revenue_ex)}</td>
+                        <td className="py-2 pl-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                              <div
+                                className="h-full rounded-full"
+                                style={{ width: `${s.pct}%`, backgroundColor: color }}
+                              />
+                            </div>
+                            <span className="text-xs text-muted-foreground">{s.pct}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </Fragment>
                 ))}
               </tbody>
+              <tfoot>
+                <tr className="border-t-2 font-semibold">
+                  <td className="pt-2.5" colSpan={2}>Total</td>
+                  <td className="pt-2.5 text-right text-muted-foreground">{totals.tx_count}</td>
+                  <td className="pt-2.5 text-right">{formatCurrency(totals.revenue_ex)}</td>
+                  <td />
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
