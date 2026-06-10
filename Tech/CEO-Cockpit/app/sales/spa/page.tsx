@@ -19,12 +19,12 @@ import { RefreshCw, AlertCircle, FileSpreadsheet } from "lucide-react";
 const VAT_RATE = 0.18;
 
 const PAYMENT_COLORS: Record<string, string> = {
-  "Credit Card":        "#1B3A4B",
-  "Cash":               "#B79E61",
-  "Hotel Room Account": "#4A90D9",
-  "Payment Center":     "#8EB093",
-  "Open Account":       "#E07A5F",
-  "Unknown":            "#96B2B2",
+  "Credit Card":        "#8C7A5A",  // spa-dark (primary)
+  "Cash":               "#E5C088",  // soft amber
+  "Hotel Room Account": "#B8C9E0",  // soft Meta blue (hotel-channel)
+  "Payment Center":     "#A8D4A8",  // soft green (settled)
+  "Open Account":       "#E5B8B0",  // soft coral (outstanding)
+  "Unknown":            "#C7C4BD",  // neutral
 };
 
 function fmtShort(v: number): string {
@@ -260,8 +260,8 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                 <YAxis tickFormatter={(v: number) => fmtShort(v)} tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(v: unknown, name: unknown) => [fmtShort(Number(v)), String(name)]} />
                 <Legend />
-                <Bar dataKey="Services" stackId="a" fill="#1B3A4B" barSize={40} />
-                <Bar dataKey="Products" stackId="a" fill="#4A90D9" barSize={40} radius={[4, 4, 0, 0]}>
+                <Bar dataKey="Services" stackId="a" fill="#8C7A5A" barSize={40} />
+                <Bar dataKey="Products" stackId="a" fill="#D4C5A8" barSize={40} radius={[4, 4, 0, 0]}>
                   <LabelList
                     dataKey="prodPct"
                     position="inside"
@@ -363,7 +363,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                     <YAxis tickFormatter={(v: number) => fmtShort(v)} tick={{ fontSize: 11 }} />
                     <Tooltip formatter={(v: unknown, name: unknown) => [fmtShort(Number(v)), String(name)]} />
                     <Legend />
-                    <Bar dataKey="Hotel Guests" stackId="a" fill="#1B3A4B">
+                    <Bar dataKey="Hotel Guests" stackId="a" fill="#8C7A5A">
                       <LabelList
                         dataKey="hotelPct"
                         position="inside"
@@ -371,7 +371,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                         style={{ fontSize: 10, fontWeight: 700, fill: "#fff" }}
                       />
                     </Bar>
-                    <Bar dataKey="Non-Hotel" stackId="a" fill="#96B2B2" radius={[4, 4, 0, 0]}>
+                    <Bar dataKey="Non-Hotel" stackId="a" fill="#D4C5A8" radius={[4, 4, 0, 0]}>
                       <LabelList
                         dataKey="Non-Hotel"
                         position="top"
@@ -491,16 +491,16 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
             title="Service Revenue by Therapist"
             subtitle="EUR inc-VAT · sorted by service"
             data={staffChartData}
-            serviceColor="#1B3A4B"
-            retailColor="#B79E61"
+            serviceColor="#8C7A5A"
+            retailColor="#E5C088"
             mode="service"
           />
           <StaffPerformanceChart
             title="Retail Revenue by Therapist"
             subtitle="EUR inc-VAT · sorted by retail"
             data={staffChartData}
-            serviceColor="#1B3A4B"
-            retailColor="#B79E61"
+            serviceColor="#8C7A5A"
+            retailColor="#E5C088"
             mode="retail"
           />
         </div>

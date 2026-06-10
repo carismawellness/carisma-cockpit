@@ -34,14 +34,14 @@ import {
    ═══════════════════════════════════════════════════════════════════════ */
 
 const REVIEW_LOCATIONS = [
-  { name: "InterContinental", short: "Inter",  totalReviews: 190, avgScore: 4.5, prevScore: 4.4, color: "#1B3A4B" },
-  { name: "Hugos",            short: "Hugos",  totalReviews: 151, avgScore: 4.8, prevScore: 4.7, color: "#96B2B2" },
-  { name: "Ramla Bay",        short: "Ramla",  totalReviews: 99,  avgScore: 4.9, prevScore: 4.8, color: "#E07A5F" },
-  { name: "Hyatt",            short: "Hyatt",  totalReviews: 64,  avgScore: 4.8, prevScore: 4.7, color: "#B79E61" },
-  { name: "Excelsior",        short: "Excel",  totalReviews: 52,  avgScore: 4.8, prevScore: 4.6, color: "#6366F1" },
-  { name: "Novotel",          short: "Novo",   totalReviews: 45,  avgScore: 4.8, prevScore: 4.5, color: "#0EA5E9" },
-  { name: "Labranda",         short: "Labr",   totalReviews: 36,  avgScore: 4.7, prevScore: 4.6, color: "#9CA3AF" },
-  { name: "Sunny",            short: "Sunny",  totalReviews: 32,  avgScore: 4.9, prevScore: 4.9, color: "#7C6F64" },
+  { name: "InterContinental", short: "Inter",  totalReviews: 190, avgScore: 4.5, prevScore: 4.4, color: "#8C7A5A" },
+  { name: "Hugos",            short: "Hugos",  totalReviews: 151, avgScore: 4.8, prevScore: 4.7, color: "#B8C9E0" },
+  { name: "Ramla Bay",        short: "Ramla",  totalReviews: 99,  avgScore: 4.9, prevScore: 4.8, color: "#E5B8B0" },
+  { name: "Hyatt",            short: "Hyatt",  totalReviews: 64,  avgScore: 4.8, prevScore: 4.7, color: "#E5C088" },
+  { name: "Excelsior",        short: "Excel",  totalReviews: 52,  avgScore: 4.8, prevScore: 4.6, color: "#D5C0E5" },
+  { name: "Novotel",          short: "Novo",   totalReviews: 45,  avgScore: 4.8, prevScore: 4.5, color: "#B5DCDC" },
+  { name: "Labranda",         short: "Labr",   totalReviews: 36,  avgScore: 4.7, prevScore: 4.6, color: "#C7C4BD" },
+  { name: "Sunny",            short: "Sunny",  totalReviews: 32,  avgScore: 4.9, prevScore: 4.9, color: "#E5B5D0" },
   { name: "Carisma Aesthetics", short: "Aes",  totalReviews: 36,  avgScore: 4.8, prevScore: 4.7, color: "#DEEBEB" },
   { name: "Carisma Slimming",   short: "Slim", totalReviews: 10,  avgScore: 4.9, prevScore: 4.9, color: "#C9D8C1" },
 ];

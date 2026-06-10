@@ -24,7 +24,7 @@ import {
 
 /* ---------- constants ---------- */
 
-const BRAND_COLOR = "#8EB093";
+const BRAND_COLOR = "#3D6B3D";  // slimming text-dark (readable for text + borders)
 
 /* ---------- helpers ---------- */
 

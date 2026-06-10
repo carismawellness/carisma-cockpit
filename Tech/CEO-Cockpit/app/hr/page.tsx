@@ -31,14 +31,14 @@ const HC_PCT_TARGET = 35;
 
 const PIE_COLORS = [
   chartColors.spa, chartColors.aesthetics, chartColors.slimming,
-  "#8B5CF6", "#EC4899", "#06B6D4", "#F59E0B", "#10B981",
+  "#D5C0E5", "#E5B5D0", "#B5DCDC", "#E5C088", "#A8D4A8",
 ];
 
 const PROD_COLORS = {
-  productive: "#22C55E",
-  neutral: "#9CA3AF",
-  unproductive: "#EF4444",
-  idle: "#F59E0B",
+  productive:   "#A8D4A8",  // soft green
+  neutral:      "#C7C4BD",  // neutral warm gray
+  unproductive: "#E8A8A0",  // soft red
+  idle:         "#E5C088",  // soft amber
 };
 
 // ============================================================

@@ -15,24 +15,24 @@ import {
   Cell,
 } from "recharts";
 
-// ── Colour palette ────────────────────────────────────────────────────────────
-const SLIMMING_GREEN = "#8EB093";
-const NAVY           = "#1B3A4B";
-const BLUE           = "#4A90D9";
-const PURPLE         = "#7C3AED";
-const GOLD           = "#B79E61";
-const TEAL           = "#5BA4A4";
+// ── Colour palette (unified pastel set, see .agents/skills/carisma-brand-colors) ─
+const SLIMMING_GREEN = "#3D6B3D";   // slimming text-dark — primary brand
+const NAVY           = "#B8C9E0";   // soft Meta blue
+const BLUE           = "#B8C9E0";   // (alias)
+const PURPLE         = "#D5C0E5";   // soft SG&A purple
+const GOLD           = "#E5C088";   // soft amber
+const TEAL           = "#B5DCDC";   // soft utilities cyan
 
 const SERVICE_TYPE_COLORS: Record<string, string> = {
-  weight_loss: NAVY,
+  weight_loss: SLIMMING_GREEN,  // primary slimming service
   treatment:   BLUE,
   medical:     PURPLE,
   product:     GOLD,
-  unknown:     "#9CA3AF",
+  unknown:     "#C7C4BD",
 };
 
 // Distinct colours for treatment types (cycles if more than palette length)
-const TREATMENT_PALETTE = [SLIMMING_GREEN, NAVY, BLUE, TEAL, GOLD, PURPLE, "#E07A5F", "#059669", "#F59E0B", "#EC4899"];
+const TREATMENT_PALETTE = [SLIMMING_GREEN, NAVY, GOLD, PURPLE, "#3B7676", "#E5B5D0", "#8C7A5A", "#A8D4A8", "#E5B8B0", TEAL];
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 function fmtK(v: number): string {

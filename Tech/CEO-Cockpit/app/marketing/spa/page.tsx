@@ -24,7 +24,7 @@ import {
 
 /* ---------- constants ---------- */
 
-const BRAND_COLOR = "#B79E61";
+const BRAND_COLOR = "#8C7A5A";  // spa text-dark (readable for text + borders)
 
 /* ---------- helpers ---------- */
 

@@ -158,7 +158,7 @@ function WaterfallBar(props: any) {
 
   const isTotal = payload.isTotal;
   const value = payload.value;
-  const fill = isTotal ? "#3B82F6" : value >= 0 ? "#22C55E" : "#EF4444";
+  const fill = isTotal ? "#B8C9E0" : value >= 0 ? "#A8D4A8" : "#E8A8A0";
 
   const barY = value >= 0 ? y : y;
   const barHeight = Math.abs(height);
@@ -674,7 +674,7 @@ function FinanceContent({
                 {ebitdaByLocationData.map((entry, index) => (
                   <Cell
                     key={`cell-${index}`}
-                    fill={entry.location === "Corporate" ? "#9CA3AF" : entry.ebitda >= 0 ? "#22C55E" : "#EF4444"}
+                    fill={entry.location === "Corporate" ? "#C7C4BD" : entry.ebitda >= 0 ? "#A8D4A8" : "#E8A8A0"}
                   />
                 ))}
               </Bar>
@@ -716,16 +716,16 @@ function FinanceContent({
               <Area
                 type="monotone"
                 dataKey="Inter"
-                stroke="#D4A853"
-                fill="#D4A853"
+                stroke="#D4C5A8"
+                fill="#D4C5A8"
                 fillOpacity={0.1}
                 strokeWidth={2}
               />
               <Area
                 type="monotone"
                 dataKey="Hyatt"
-                stroke="#8B7332"
-                fill="#8B7332"
+                stroke="#8C7A5A"
+                fill="#8C7A5A"
                 fillOpacity={0.08}
                 strokeWidth={2}
               />
@@ -794,8 +794,8 @@ function FinanceContent({
                 <Cell
                   key={`wf-${index}`}
                   fill={
-                    entry.isTotal ? "#3B82F6" :
-                    entry.value >= 0 ? "#22C55E" : "#EF4444"
+                    entry.isTotal ? "#B8C9E0" :
+                    entry.value >= 0 ? "#A8D4A8" : "#E8A8A0"
                   }
                 />
               ))}
