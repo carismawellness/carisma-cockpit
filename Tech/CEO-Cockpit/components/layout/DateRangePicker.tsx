@@ -97,6 +97,14 @@ const presets = [
       return { from: startOfMonth(startMonth), to: endOfMonth(endMonth) };
     },
   },
+  {
+    key: "ytd",
+    label: "YTD",
+    fn: () => {
+      const now = new Date();
+      return { from: new Date(now.getFullYear(), 0, 1), to: endOfMonth(subMonths(now, 1)) };
+    },
+  },
 ] as const;
 
 function isPresetActive(preset: (typeof presets)[number], from: Date, to: Date) {
@@ -193,7 +201,7 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
         <PopoverContent className="w-[calc(100vw-2rem)] max-w-[580px] sm:w-auto p-0 rounded-xl shadow-lg border-border/80" align="end">
           {/* Preset list inside popover (mobile + desktop quick-pick) */}
           <div className="flex flex-col gap-1 p-2 border-b border-border bg-muted/30 rounded-t-xl">
-            <div className="grid grid-cols-3 md:grid-cols-5 gap-1">
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-1">
               {presets.map((preset) => {
                 const active = activeKey === preset.key;
                 return (
