@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
-import { chartColors, formatCurrency } from "@/lib/charts/config";
+import { formatCurrency } from "@/lib/charts/config";
+import { BRAND, type BrandKey } from "@/lib/constants/design-tokens";
 import {
   overallConversionSeverity,
   severityClasses,
@@ -171,7 +172,7 @@ export function CampaignFunnelPanel({ dateFrom, dateTo }: Props) {
         <div className="space-y-6">
           {BRANDS.map(brand => {
             const d          = brandData[brand.slug];
-            const brandColor = chartColors[brand.slug as keyof typeof chartColors] ?? "#888";
+            const brandColor = BRAND[brand.slug as BrandKey]?.dark ?? "#888";
             const campaigns  = d?.campaigns ?? [];
 
             return (

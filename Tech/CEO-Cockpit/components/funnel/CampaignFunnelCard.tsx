@@ -76,10 +76,16 @@ export function CampaignFunnelCard({ campaign, brandColor }: CampaignFunnelCardP
         </div>
       </div>
 
-      {/* Compact horizontal bars */}
+      {/* Compact horizontal bars — count + conv % per stage */}
       <div className="space-y-1.5">
-        {stages.map((stage) => {
+        {stages.map((stage, i) => {
           const widthPct = maxValue > 0 ? (stage.value / maxValue) * 100 : 0;
+          const prevValue = i > 0 ? stages[i - 1].value : stage.value;
+          const stageConvPct = i === 0
+            ? 100
+            : prevValue > 0
+              ? (stage.value / prevValue) * 100
+              : 0;
           return (
             <div key={stage.label} className="flex items-center gap-2">
               <span className="text-[11px] text-muted-foreground w-16 text-right shrink-0">
@@ -94,11 +100,14 @@ export function CampaignFunnelCard({ campaign, brandColor }: CampaignFunnelCardP
                     opacity: 0.7 + (widthPct / 100) * 0.3,
                   }}
                 >
-                  <span className="text-[10px] font-bold text-white">
-                    {stage.value}
+                  <span className="text-[10px] font-bold tabular-nums text-white">
+                    {stage.value.toLocaleString()}
                   </span>
                 </div>
               </div>
+              <span className="text-[10px] font-medium text-muted-foreground tabular-nums w-12 text-right shrink-0">
+                {stageConvPct.toFixed(0)}%
+              </span>
             </div>
           );
         })}

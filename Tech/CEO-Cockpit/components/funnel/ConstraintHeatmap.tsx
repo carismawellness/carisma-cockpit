@@ -11,7 +11,7 @@ import {
   OVERALL_CONVERSION_BENCHMARK,
   LEADS_PER_DAY_PER_AGENT_MIN,
 } from "@/lib/funnel/constraint-detection";
-import { chartColors } from "@/lib/charts/config";
+import { BRAND } from "@/lib/constants/design-tokens";
 import type { BrandHeatmapMetrics } from "@/app/api/funnel/constraint-heatmap/route";
 
 /* ------------------------------------------------------------------ */
@@ -207,7 +207,7 @@ export function ConstraintHeatmap({ dateFrom, dateTo }: Props) {
           return (
             <td key={BRANDS[i]} className="py-2.5 px-3">
               <div className={`text-center py-1.5 rounded-lg ${cls.bg}`}>
-                <span className={`text-sm font-bold ${cls.text}`}>{c.formatted}</span>
+                <span className={`text-sm font-bold tabular-nums ${cls.text}`}>{c.formatted}</span>
               </div>
             </td>
           );
@@ -256,7 +256,7 @@ export function ConstraintHeatmap({ dateFrom, dateTo }: Props) {
                   <th className="text-center py-2 px-2 text-xs font-medium text-muted-foreground uppercase tracking-wider w-20">Target</th>
                   {BRANDS.map(b => (
                     <th key={b} className="text-center py-2 px-3 text-xs font-semibold uppercase tracking-wider w-28"
-                        style={{ color: chartColors[b] }}>
+                        style={{ color: BRAND[b].dark }}>
                       {BRAND_LABELS[b]}
                     </th>
                   ))}

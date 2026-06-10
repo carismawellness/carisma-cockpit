@@ -12,7 +12,7 @@ import {
   LEADS_PER_DAY_PER_AGENT_MIN,
   type FunnelStage,
 } from "@/lib/funnel/constraint-detection";
-import { chartColors } from "@/lib/charts/config";
+import { BRAND, type BrandKey } from "@/lib/constants/design-tokens";
 import { useFunnelMetrics } from "@/lib/hooks/useFunnelMetrics";
 
 /* ------------------------------------------------------------------ */
@@ -71,7 +71,7 @@ export function BrandFunnelCard({ brand, dateFrom, dateTo }: BrandFunnelCardProp
   const { byBrand, isLoading } = useFunnelMetrics(dateFrom, dateTo);
   const metrics = byBrand[brand];
 
-  const color = chartColors[brand as keyof typeof chartColors] ?? "#888";
+  const color = BRAND[brand as BrandKey]?.dark ?? "#888";
   const { h, s } = hexToHsl(color);
   const agentCount = AGENT_COUNTS[brand] ?? 4;
 
