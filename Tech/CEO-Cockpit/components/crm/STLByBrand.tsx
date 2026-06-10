@@ -5,9 +5,16 @@ import { useKPIData } from "@/lib/hooks/useKPIData";
 import { useLookups } from "@/lib/hooks/useLookups";
 import { CrmDailyRow } from "@/lib/types/crm";
 import {
-  chartColors,
   formatMinutes,
 } from "@/lib/charts/config";
+import { BRAND } from "@/lib/constants/design-tokens";
+
+// Canonical brand palette — `dark` for left-border accents.
+const BRAND_BORDER: Record<string, string> = {
+  spa:        BRAND.spa.dark,
+  aesthetics: BRAND.aesthetics.dark,
+  slimming:   BRAND.slimming.dark,
+};
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -146,8 +153,7 @@ export function STLByBrand({
           key={b.slug}
           className="p-5 border-l-4"
           style={{
-            borderLeftColor:
-              chartColors[b.slug as keyof typeof chartColors] ?? "#888",
+            borderLeftColor: BRAND_BORDER[b.slug] ?? "#888",
           }}
         >
           <div className="flex items-center justify-between mb-3">
