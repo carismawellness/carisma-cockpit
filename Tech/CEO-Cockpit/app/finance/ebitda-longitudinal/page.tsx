@@ -24,7 +24,7 @@ import {
   SppyData,
 } from "@/components/finance/EbitdaSummaryHeader";
 import type { LongitudinalResponse } from "@/app/api/finance/ebitda-longitudinal/route";
-import { BRAND } from "@/lib/constants/design-tokens";
+import { BRAND, LY_OVERLAY } from "@/lib/constants/design-tokens";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -371,7 +371,7 @@ function BrandChart({ points, width }: { points: BrandChartPoint[]; width: numbe
         <Line
           type="monotone"
           dataKey="sppyRevenue"
-          stroke="#94a3b8"
+          stroke={LY_OVERLAY}
           strokeDasharray="4 2"
           dot={false}
           connectNulls={false}
@@ -383,8 +383,8 @@ function BrandChart({ points, width }: { points: BrandChartPoint[]; width: numbe
         <Line
           type="monotone"
           dataKey="sppyEbitda"
-          stroke="#34d399"
-          strokeDasharray="4 2"
+          stroke={LY_OVERLAY}
+          strokeDasharray="1 3"
           dot={false}
           connectNulls={false}
           name="LY EBITDA"
@@ -785,7 +785,7 @@ function LongitudinalContent({
                 <Line
                   type="monotone"
                   dataKey="sppyEbitdaPct"
-                  stroke="#94a3b8"
+                  stroke={LY_OVERLAY}
                   strokeDasharray="4 2"
                   dot={false}
                   connectNulls={false}

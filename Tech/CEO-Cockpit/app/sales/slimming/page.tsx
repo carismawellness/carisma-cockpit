@@ -35,8 +35,9 @@ const SERVICE_TYPE_COLORS: Record<string, string> = {
   unknown:     "#C7C4BD",
 };
 
-// Distinct colours for treatment types (cycles if more than palette length)
-const TREATMENT_PALETTE = [SLIMMING_GREEN, NAVY, GOLD, PURPLE, "#3B7676", "#E5B5D0", "#8C7A5A", "#A8D4A8", "#E5B8B0", TEAL];
+// Distinct colours for treatment types (cycles if more than palette length).
+// Non-brand pastels only — never reuse another brand's identity hex here.
+const TREATMENT_PALETTE = [SLIMMING_GREEN, NAVY, GOLD, PURPLE, "#C5D0E0", "#E5B5D0", "#D5D0CA", "#A8D4A8", "#E5B8B0", TEAL];
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 function fmtK(v: number): string {
@@ -115,10 +116,10 @@ const SLM_GROUP_ORDER = ["Weight Loss", "GLP-1s", "Body Treatments", "Packages",
 const SLM_GROUP_COLORS: Record<string, string> = {
   "Weight Loss":     BRAND.slimming.dark,
   "GLP-1s":          "#7C3AED",
-  "Body Treatments": "#3B7676",
+  "Body Treatments": "#DB2777",
   "Packages":        "#B87000",
   "Medical":         "#2563EB",
-  "Products":        "#8C7A5A",
+  "Products":        "#0891B2",
   "Admin":           "#9CA3AF",
   "Other":           "#D1D5DB",
 };

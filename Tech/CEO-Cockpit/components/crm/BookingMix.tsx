@@ -4,21 +4,23 @@ import { Card } from "@/components/ui/card";
 import { useKPIData } from "@/lib/hooks/useKPIData";
 import { useLookups } from "@/lib/hooks/useLookups";
 import { BookingMixRow } from "@/lib/types/crm";
+import { BRAND, type BrandKey } from "@/lib/constants/design-tokens";
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
-
-const PIE_COLORS = [
-  "#B79E61", "#96B2B2", "#8EB093", "#E07A5F", "#4A90D9",
-  "#9CA3AF", "#C084FC", "#F472B6", "#34D399", "#FBBF24",
-];
 
 const BRANDS = [
   { slug: "spa", label: "Spa" },
   { slug: "aesthetics", label: "Aesthetics" },
   { slug: "slimming", label: "Slimming" },
 ] as const;
+
+// Each brand card tints its treatment bars in that brand's dark color,
+// stepping opacity down per rank so treatments stay distinguishable.
+function barOpacity(i: number): number {
+  return Math.max(0.32, 1 - i * 0.1);
+}
 
 
 /* ------------------------------------------------------------------ */
@@ -82,9 +84,11 @@ export function BookingMix({
 
         const total = items.reduce((s, t) => s + t.value, 0);
 
+        const brandColor = BRAND[brand.slug as BrandKey].dark;
+
         return (
           <Card key={brand.slug} className="p-3 md:p-6 relative">
-            <h3 className="text-base font-semibold text-foreground mb-4">
+            <h3 className="text-base font-semibold mb-4" style={{ color: brandColor }}>
               {brand.label}
             </h3>
             {items.length === 0 ? (
@@ -108,7 +112,8 @@ export function BookingMix({
                           className="h-full rounded-full transition-all"
                           style={{
                             width: `${pct}%`,
-                            backgroundColor: PIE_COLORS[i % PIE_COLORS.length],
+                            backgroundColor: brandColor,
+                            opacity: barOpacity(i),
                           }}
                         />
                       </div>
