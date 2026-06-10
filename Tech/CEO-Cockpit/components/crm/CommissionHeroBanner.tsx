@@ -4,7 +4,6 @@ import { Banknote } from "lucide-react";
 import { Card } from "@/components/ui/card";
 
 interface CommissionHeroBannerProps {
-  agentName:        string;
   commissionEarned: number;
   commissionRate:   number;
   totalSales:       number;
@@ -12,6 +11,7 @@ interface CommissionHeroBannerProps {
 }
 
 function formatEur(value: number): string {
+  if (!Number.isFinite(value)) return "€0.00";
   return new Intl.NumberFormat("en-MT", {
     style:                 "currency",
     currency:              "EUR",
@@ -21,7 +21,6 @@ function formatEur(value: number): string {
 }
 
 export function CommissionHeroBanner({
-  agentName,
   commissionEarned,
   commissionRate,
   totalSales,
@@ -31,7 +30,7 @@ export function CommissionHeroBanner({
 
   return (
     <Card className="w-full bg-gradient-to-br from-emerald-50 to-green-100 border-emerald-200 shadow-sm overflow-hidden">
-      <div className="relative px-6 py-6 md:py-8">
+      <div className="px-6 py-6 md:py-8">
         {/* Header row */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2 text-emerald-700">
