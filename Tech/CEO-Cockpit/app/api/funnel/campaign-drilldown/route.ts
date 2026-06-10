@@ -47,6 +47,15 @@ const FALLBACK_BRAND_AGENTS: Record<string, string[]> = {
   slimming:   ["dorianne", "queenee"],
 };
 
+// Planning conversion rate per brand — kept in sync with constraint-heatmap.
+// Triangulated 2026-06-10 by a 9-agent analysis (data scientist + Meta
+// advertiser + BCG consultant per brand). Revisit quarterly.
+const BRAND_PLANNING_CONVERSION: Record<string, number> = {
+  spa:        5.0,
+  aesthetics: 15.0,
+  slimming:   12.0,
+};
+
 
 function resolveAov(brandSlug: string, campaignName: string): number {
   const lower = campaignName.toLowerCase();
@@ -154,22 +163,9 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Conversion rate: Meta bookings (SDR outbound) ÷ Meta leads for the brand.
-    // Matches the funnel heatmap's Booking Efficiency definition.
-    const brandMetaLeads = [...map.values()].reduce((s, v) => s + v.leads, 0);
-    let conversionPct: number | null = null;
-    const agents = brandAgents[slug] ?? [];
-    if (agents.length > 0 && brandMetaLeads > 0) {
-      const { data: agentRows } = await supabase
-        .from("crm_agent_daily")
-        .select("other_booked")
-        .in("agent_slug", agents)
-        .gte("date", from)
-        .lte("date", to);
-      type AgRow = { other_booked: number };
-      const metaBooked = (agentRows ?? []).reduce((s: number, r: AgRow) => s + (r.other_booked ?? 0), 0);
-      conversionPct = Math.round((metaBooked / brandMetaLeads) * 1000) / 10;
-    }
+    // Conversion rate: brand-level planning rate. Matches heatmap Booking
+    // Efficiency. The live ratio is too noisy day-to-day for ROAS modelling.
+    const conversionPct: number | null = BRAND_PLANNING_CONVERSION[slug] ?? null;
 
     // Build campaign rows
     const campaigns: DrilldownCampaign[] = [];

@@ -37,6 +37,16 @@ const FALLBACK_SDR_AGENTS: Record<BrandSlug, string[]> = {
   slimming:   ["dorianne", "queenee"],
 };
 
+// Planning conversion rate per brand — used in place of the noisy day-to-day
+// ratio so the heatmap reads stably across date ranges. Triangulated 2026-06-10
+// by a 9-agent analysis (data scientist + Meta advertiser + BCG consultant per
+// brand) of the CRM Master Sheet (other_booked) ÷ Meta leads. Revisit quarterly.
+const BRAND_PLANNING_CONVERSION: Record<BrandSlug, number> = {
+  spa:        5.0,
+  aesthetics: 15.0,
+  slimming:   12.0,
+};
+
 export type BrandHeatmapMetrics = {
   total_revenue:       number | null;
   total_leads:         number | null;
@@ -169,11 +179,10 @@ export async function GET(req: NextRequest) {
     const metaBooked     = (agentRows ?? []).reduce((s: number, r: AgentRow) => s + (r.other_booked        ?? 0), 0);
     const totalDeposits  = (agentRows ?? []).reduce((s: number, r: AgentRow) => s + (r.total_deposit_count ?? 0), 0);
 
-    // Booking efficiency: Meta bookings (SDR outbound) ÷ Meta leads.
-    // The honest funnel ratio — Meta lead in → outbound booking out.
-    const booking_efficiency = metaLeads > 0
-      ? Math.round((metaBooked / metaLeads) * 1000) / 10
-      : null;
+    // Booking efficiency: brand-level planning rate from BRAND_PLANNING_CONVERSION.
+    // The live ratio (metaBooked ÷ metaLeads) swings wildly day to day, so the
+    // CEO uses a stable triangulated number for ROAS modelling and budgeting.
+    const booking_efficiency = BRAND_PLANNING_CONVERSION[slug];
 
     const deposit_rate = totalBooked > 0
       ? Math.round((totalDeposits / totalBooked) * 1000) / 10
