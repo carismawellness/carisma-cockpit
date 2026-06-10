@@ -8,9 +8,6 @@ import {
   overallConversionSeverity,
   severityClasses,
 } from "@/lib/funnel/constraint-detection";
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-} from "recharts";
 import type { DrilldownCampaign, DrilldownBrand } from "@/app/api/funnel/campaign-drilldown/route";
 
 /* ------------------------------------------------------------------ */
@@ -27,59 +24,6 @@ function roasSeverity(roas: number): "green" | "amber" | "red" {
   if (roas >= 3) return "green";
   if (roas >= 2) return "amber";
   return "red";
-}
-
-/* ------------------------------------------------------------------ */
-/*  Campaign chart                                                     */
-/* ------------------------------------------------------------------ */
-
-function CampaignChart({ campaigns, brandColor }: { campaigns: DrilldownCampaign[]; brandColor: string }) {
-  const data = campaigns.map(c => ({
-    name: c.campaignName.length > 22 ? c.campaignName.slice(0, 20) + "…" : c.campaignName,
-    "Conv %": c.conversionPct ?? 0,
-    "CPL (€)": c.cpl ?? 0,
-  }));
-
-  const maxConv = Math.max(...data.map(d => d["Conv %"]), 1);
-  const convDomain: [number, number] = [0, Math.ceil(maxConv * 1.5)];
-
-  return (
-    <div className="h-72 mt-4">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 8, right: 48, left: 8, bottom: 70 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-          <XAxis
-            dataKey="name"
-            tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-            interval={0} angle={-35} textAnchor="end" height={80}
-          />
-          <YAxis
-            yAxisId="left"
-            domain={convDomain}
-            tickFormatter={v => `${v}%`}
-            tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-            width={38}
-          />
-          <YAxis
-            yAxisId="right"
-            orientation="right"
-            tickFormatter={v => `€${v}`}
-            tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-            width={44}
-          />
-          <Tooltip
-            formatter={(value, name) =>
-              name === "Conv %" ? `${Number(value).toFixed(1)}%` : `€${Number(value).toFixed(2)}`
-            }
-            contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
-          />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
-          <Bar yAxisId="left"  dataKey="Conv %"  fill={brandColor}            radius={[4, 4, 0, 0]} />
-          <Bar yAxisId="right" dataKey="CPL (€)" fill={brandColor} opacity={0.45} radius={[4, 4, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -239,10 +183,7 @@ export function CampaignFunnelPanel({ dateFrom, dateTo }: Props) {
                 {campaigns.length === 0 ? (
                   <p className="text-sm text-muted-foreground py-4 text-center">No campaign data for this period</p>
                 ) : (
-                  <>
-                    <CampaignTable campaigns={campaigns} totals={d.totals} brandColor={brandColor} />
-                    <CampaignChart campaigns={campaigns} brandColor={brandColor} />
-                  </>
+                  <CampaignTable campaigns={campaigns} totals={d.totals} brandColor={brandColor} />
                 )}
               </Card>
             );
