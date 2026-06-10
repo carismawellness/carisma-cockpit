@@ -3,7 +3,7 @@
 import { Card } from "@/components/ui/card";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { chartColors } from "@/lib/charts/config";
+import { BRAND } from "@/lib/constants/design-tokens";
 import { CalendarDays } from "lucide-react";
 import { format, addDays, startOfDay } from "date-fns";
 import {
@@ -14,17 +14,22 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  LabelList,
 } from "recharts";
 
 interface DayData {
   day: string;
+  total: number;
+  conversionPct: number;
   [location: string]: string | number;
 }
 
-const locationColors = [
-  chartColors.spa,
-  chartColors.aesthetics,
-  chartColors.slimming,
+// Non-brand categorical palette for location slices (locations are NOT brands).
+// Kept consistent for repeatable reads. Brand bars (Spa/Aes/Slim) get explicit BRAND.* dark.
+const LOCATION_PALETTE = [
+  BRAND.spa.dark,
+  BRAND.aesthetics.dark,
+  BRAND.slimming.dark,
   "#8B5CF6",
   "#EF4444",
   "#6B7280",
@@ -76,17 +81,29 @@ export function AppointmentPipeline() {
         const locs = Array.from(uniqueLocations);
         setLocations(locs);
 
-        const chartData: DayData[] = Object.entries(dayMap).map(
+        const rawData: DayData[] = Object.entries(dayMap).map(
           ([day, locCounts]) => {
-            const entry: DayData = { day };
+            const entry: DayData = { day, total: 0, conversionPct: 0 };
+            let total = 0;
             for (const loc of locs) {
-              entry[loc] = locCounts[loc] || 0;
+              const count = locCounts[loc] || 0;
+              entry[loc] = count;
+              total += count;
             }
+            entry.total = total;
             return entry;
-          }
+          },
         );
 
-        setData(chartData);
+        // Conversion % vs first day (pipeline baseline)
+        const baseline = rawData[0]?.total ?? 0;
+        const withConversion = rawData.map((d) => ({
+          ...d,
+          conversionPct:
+            baseline > 0 ? Math.round((d.total / baseline) * 100) : 0,
+        }));
+
+        setData(withConversion);
         setHasData(true);
       } catch {
         setHasData(false);
@@ -126,25 +143,78 @@ export function AppointmentPipeline() {
     );
   }
 
+  // Use the LAST stacked series to attach the total + conversion label on top.
+  const lastLocation = locations[locations.length - 1];
+
   return (
     <Card className="p-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-4">
+      <h2 className="text-lg font-semibold text-gray-900 mb-1">
         Appointment Pipeline (Next 7 Days)
       </h2>
-      <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-          <XAxis dataKey="day" />
-          <YAxis allowDecimals={false} />
-          <Tooltip />
-          <Legend />
+      <p className="text-xs text-muted-foreground mb-4">
+        Daily booking volume — labels show total + conversion vs day 1
+      </p>
+      <ResponsiveContainer width="100%" height={320}>
+        <BarChart data={data} margin={{ top: 28, right: 30, left: 20, bottom: 5 }}>
+          <XAxis dataKey="day" tick={{ fontSize: 11 }} />
+          <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+          <Tooltip
+            formatter={(v: unknown, name) => [String(Number(v)), String(name ?? "")]}
+            labelFormatter={(label) => {
+              const row = data.find((d) => d.day === label);
+              return row
+                ? `${label} — ${row.total} appts · ${row.conversionPct}% of baseline`
+                : String(label);
+            }}
+          />
+          <Legend wrapperStyle={{ fontSize: 12 }} />
           {locations.map((loc, i) => (
             <Bar
               key={loc}
               dataKey={loc}
               name={loc}
               stackId="a"
-              fill={locationColors[i % locationColors.length]}
-            />
+              fill={LOCATION_PALETTE[i % LOCATION_PALETTE.length]}
+            >
+              {loc === lastLocation && (
+                <LabelList
+                  dataKey="total"
+                  content={(props) => {
+                    const { x, y, width, index } = props as Record<
+                      string,
+                      unknown
+                    >;
+                    const idx = Number(index);
+                    const row = data[idx];
+                    if (!row) return <></>;
+                    return (
+                      <g>
+                        <text
+                          x={Number(x) + Number(width) / 2}
+                          y={Number(y) - 14}
+                          textAnchor="middle"
+                          fontSize={11}
+                          fontWeight={700}
+                          fill="#374151"
+                        >
+                          {row.total}
+                        </text>
+                        <text
+                          x={Number(x) + Number(width) / 2}
+                          y={Number(y) - 2}
+                          textAnchor="middle"
+                          fontSize={9}
+                          fontWeight={600}
+                          fill="#9CA3AF"
+                        >
+                          {row.conversionPct}%
+                        </text>
+                      </g>
+                    );
+                  }}
+                />
+              )}
+            </Bar>
           ))}
         </BarChart>
       </ResponsiveContainer>
