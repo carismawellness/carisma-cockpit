@@ -67,7 +67,7 @@ interface StageInfo {
 }
 
 async function fetchStages(apiKey: string, locationId: string, pipelineId: string): Promise<StageInfo[]> {
-  const data = await ghlGet("/opportunities/pipelines", apiKey, { location_id: locationId }) as {
+  const data = await ghlGet("/opportunities/pipelines", apiKey, { locationId }) as {
     pipelines?: Array<{
       id: string;
       name: string;
