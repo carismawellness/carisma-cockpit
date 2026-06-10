@@ -81,7 +81,7 @@ export function DataTable({ columns, data, pageSize = 10, onRowClick }: DataTabl
           {paged.map((row, i) => (
             <TableRow key={i} className={`hover:bg-gold-bg/50 transition-colors ${onRowClick ? "cursor-pointer" : ""}`} onClick={onRowClick ? () => onRowClick(row) : undefined}>
               {columns.map((col) => (
-                <TableCell key={col.key} className={`text-charcoal ${col.align === "right" ? "text-right" : ""}`}>
+                <TableCell key={col.key} className={`text-charcoal ${col.align === "right" ? "text-right tabular-nums" : col.align === "center" ? "text-center" : ""}`}>
                   {col.render ? col.render(row[col.key], row) : String(row[col.key] ?? "")}
                 </TableCell>
               ))}
