@@ -69,7 +69,14 @@ const BRAND_TOKEN_ENVS: Record<string, string> = {
 };
 
 async function getMetaToken(brandSlug?: string): Promise<string> {
-  // Try integration_tokens table first (same as live route)
+  // Per-brand env vars take priority (system user tokens scoped to each brand's portfolio)
+  if (brandSlug) {
+    const envKey = BRAND_TOKEN_ENVS[brandSlug];
+    const t = envKey ? process.env[envKey] : undefined;
+    if (t && t !== "REPLACE_WITH_NEW_TOKEN") return t;
+  }
+
+  // Fall back to integration_tokens (OAuth user-authorized generic token)
   try {
     const sb = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -87,16 +94,11 @@ async function getMetaToken(brandSlug?: string): Promise<string> {
     }
   } catch { /* fall through */ }
 
-  // Per-brand env var, then generic fallback
-  const candidates = [
-    brandSlug ? process.env[BRAND_TOKEN_ENVS[brandSlug]] : undefined,
-    process.env.META_ACCESS_TOKEN,
-  ];
-  const envToken = candidates.find(t => t && t !== "REPLACE_WITH_NEW_TOKEN");
-  if (!envToken) {
-    throw new Error(`Meta token not configured for ${brandSlug ?? "any brand"}`);
-  }
-  return envToken;
+  // Generic env var last resort
+  const envToken = process.env.META_ACCESS_TOKEN;
+  if (envToken && envToken !== "REPLACE_WITH_NEW_TOKEN") return envToken;
+
+  throw new Error(`Meta token not configured for ${brandSlug ?? "any brand"}`);
 }
 
 async function getBrandId(slug: string): Promise<string> {
