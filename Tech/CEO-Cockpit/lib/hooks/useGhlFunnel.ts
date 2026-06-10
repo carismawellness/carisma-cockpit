@@ -3,20 +3,24 @@
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 
+export type FunnelMode = "cohort" | "flow" | "snapshot";
+
 export interface GhlFunnelData {
   dateFrom: string;
   dateTo: string;
+  mode: FunnelMode;
+  subtitle?: string;
   brands: Record<string, Record<string, number>>;
 }
 
-export function useGhlFunnel(dateFrom: Date, dateTo: Date) {
+export function useGhlFunnel(dateFrom: Date, dateTo: Date, mode: FunnelMode = "cohort") {
   const from = format(dateFrom, "yyyy-MM-dd");
   const to   = format(dateTo,   "yyyy-MM-dd");
 
   const { data, isLoading } = useQuery<GhlFunnelData>({
-    queryKey: ["ghl-funnel", from, to],
+    queryKey: ["ghl-funnel", from, to, mode],
     queryFn: async () => {
-      const res = await fetch(`/api/crm/ghl-funnel?dateFrom=${from}&dateTo=${to}`);
+      const res = await fetch(`/api/crm/ghl-funnel?dateFrom=${from}&dateTo=${to}&mode=${mode}`);
       if (!res.ok) throw new Error(`GHL funnel ${res.status}`);
       return res.json() as Promise<GhlFunnelData>;
     },

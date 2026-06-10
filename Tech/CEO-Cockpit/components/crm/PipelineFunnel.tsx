@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
-import { useGhlFunnel } from "@/lib/hooks/useGhlFunnel";
+import { useGhlFunnel, type FunnelMode } from "@/lib/hooks/useGhlFunnel";
 import { BRAND } from "@/lib/constants/design-tokens";
 
 const BRAND_LABELS: Record<string, string> = {
@@ -140,7 +140,8 @@ export function PipelineFunnel({
   dateTo: Date;
   brandFilter: string | null;
 }) {
-  const { data, isLoading } = useGhlFunnel(dateFrom, dateTo);
+  const [mode, setMode] = useState<FunnelMode>("cohort");
+  const { data, isLoading } = useGhlFunnel(dateFrom, dateTo, mode);
 
   const brands = brandFilter ? [brandFilter] : ["spa", "aesthetics", "slimming"];
 
@@ -170,8 +171,23 @@ export function PipelineFunnel({
         <div>
           <h3 className="text-lg font-semibold text-foreground">Pipeline Funnel</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Current snapshot · Call Pipeline · from GHL CRM (date filter not yet supported)
+            {data?.subtitle ?? "Call Pipeline · GHL CRM"}
           </p>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {(["cohort", "flow"] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                mode === m
+                  ? "bg-gray-900 text-white"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+            >
+              {m.charAt(0).toUpperCase() + m.slice(1)}
+            </button>
+          ))}
         </div>
         <div className="flex gap-6 text-right shrink-0">
           <div>
