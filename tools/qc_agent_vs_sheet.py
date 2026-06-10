@@ -113,37 +113,25 @@ def parse_percent(val: str) -> float:
     try: return float(v)
     except ValueError: return 0.0
 
-def classify_date_string(s: str) -> str:
-    s = s.strip()
-    if not s or s.lower() == "date":
-        return "unknown"
-    if re.match(r"^\d{4}-\d{1,2}-\d{1,2}$", s):
-        return "iso"
-    m = re.match(r"^(\d{1,2})/(\d{1,2})/\d{2,4}$", s)
-    if not m:
-        return "unknown"
-    a, b = int(m.group(1)), int(m.group(2))
-    if a > 12 and b <= 12:
-        return "dmy"
-    if b > 12 and a <= 12:
-        return "mdy"
-    return "ambig"
-
-
-_FMT_MAP = {"mdy": "%m/%d/%Y", "dmy": "%d/%m/%Y", "iso": "%Y-%m-%d"}
-
-
-def parse_date(val: str, fmt: str | None = None):
+def parse_date(val: str):
+    """Match the Vercel route's date parser exactly: try M/D first, swap if month > 12."""
     v = val.strip()
     if not v or v.lower() == "date":
         return None
-    formats = [fmt] if fmt else ("%m/%d/%Y", "%d/%m/%Y", "%Y-%m-%d")
-    for f in formats:
+    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{2,4})$", v)
+    if not m:
         try:
-            return datetime.strptime(v, f).date()
+            return datetime.strptime(v, "%Y-%m-%d").date()
         except ValueError:
-            continue
-    return None
+            return None
+    mo, d, y = m.group(1), m.group(2), m.group(3)
+    if len(y) == 2:
+        y = f"20{y}"
+    if int(mo) > 12:
+        mo, d = d, mo
+    if int(mo) > 12 or int(d) > 31 or int(mo) < 1 or int(d) < 1:
+        return None
+    return date(int(y), int(mo), int(d))
 
 # ── Layout detection ──────────────────────────────────────────────────────────
 def detect_layout(header_rows: list[list[str]]) -> str:
@@ -164,38 +152,32 @@ def sum_sheet_for_range(slug: str, tab_name: str, start: date, end: date) -> dic
     # Match sync's de-dup policy: last row for a given date wins.
     by_date: dict[str, dict] = {}
 
-    # column maps
-    if layout == "sdr":
-        SALES_COL = 14  # Total Sales
-        BOOKED_COL = 15
-        DEP_COL = 16
-        MSG_COL = 18    # total Dials (best proxy for "messages")
-    else:
-        SALES_COL = 17  # Total Sales
-        BOOKED_COL = 14
-        DEP_COL = 15
-        MSG_COL = 13
+    def messages_for(row):
+        # Must match app/api/etl/crm-agents/route.ts:
+        #   SDR  → total_messages = outbound_dials + inbound_received + chat_convs
+        #   chat → total_messages = col 13 (Total Messages from the sheet)
+        if layout == "sdr":
+            return (parse_integer(_cell(row, 2))
+                    + parse_integer(_cell(row, 7))
+                    + parse_integer(_cell(row, 11)))
+        return parse_integer(_cell(row, 13))
 
-    last_unambig = "mdy"
+    if layout == "sdr":
+        SALES_COL, BOOKED_COL, DEP_COL = 14, 15, 16
+    else:
+        SALES_COL, BOOKED_COL, DEP_COL = 17, 14, 15
+
     for row in raw[2:]:
         raw_date = _cell(row, 0)
         if not raw_date: continue
-        kind = classify_date_string(raw_date)
-        if kind in _FMT_MAP:
-            last_unambig = kind
-            chosen_fmt = _FMT_MAP[kind]
-        elif kind == "ambig":
-            chosen_fmt = _FMT_MAP[last_unambig]
-        else:
-            continue
-        d = parse_date(raw_date, fmt=chosen_fmt)
+        d = parse_date(raw_date)
         if d is None: continue
         if d < start or d > end: continue
         by_date[d.isoformat()] = {
             "sales":    parse_currency(_cell(row, SALES_COL)),
             "bookings": parse_integer(_cell(row, BOOKED_COL)),
             "deposits": parse_integer(_cell(row, DEP_COL)),
-            "messages": parse_integer(_cell(row, MSG_COL)),
+            "messages": messages_for(row),
         }
 
     sales    = round(sum(r["sales"]    for r in by_date.values()), 2)

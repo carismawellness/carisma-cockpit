@@ -194,40 +194,34 @@ def parse_percent(val: str) -> float:
         return 0.0
 
 
-def parse_date(val: str, fmt: str | None = None) -> str | None:
-    """
-    Parse DD/MM/YYYY or D/M/YYYY → ISO 'YYYY-MM-DD'.
-    Returns None if the cell is empty, equals 'Date', or is not parseable.
-    If `fmt` is given, only that format is tried (used after auto-detection).
+def parse_date(val: str) -> str | None:
+    """Parse a date cell → ISO 'YYYY-MM-DD'. Returns None if unparseable.
+
+    The CRM Master sheet has MIXED date formats:
+      • Recent active rows: M/D/YYYY (e.g. "5/15/2026")
+      • Pre-filled future template rows: D/M/YYYY (e.g. "27/8/2027")
+
+    Strategy (matches app/api/etl/crm-agents/route.ts): try M/D first;
+    if the month part is > 12, the value must have been D/M — swap.
     """
     v = val.strip()
     if not v or v.lower() == "date":
         return None
-    formats = [fmt] if fmt else ("%m/%d/%Y", "%d/%m/%Y", "%m/%d/%y", "%d/%m/%y", "%Y-%m-%d")
-    for f in formats:
-        try:
-            return datetime.strptime(v, f).strftime("%Y-%m-%d")
-        except ValueError:
-            continue
-    return None
-
-
-def classify_date_string(s: str) -> str:
-    """Classify a single date string as 'mdy', 'dmy', 'iso', 'ambig', or 'unknown'."""
-    s = s.strip()
-    if not s or s.lower() == "date":
-        return "unknown"
-    if re.match(r"^\d{4}-\d{1,2}-\d{1,2}$", s):
-        return "iso"
-    m = re.match(r"^(\d{1,2})/(\d{1,2})/\d{2,4}$", s)
+    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{2,4})$", v)
     if not m:
-        return "unknown"
-    a, b = int(m.group(1)), int(m.group(2))
-    if a > 12 and b <= 12:
-        return "dmy"
-    if b > 12 and a <= 12:
-        return "mdy"
-    return "ambig"
+        # Also accept ISO
+        try:
+            return datetime.strptime(v, "%Y-%m-%d").strftime("%Y-%m-%d")
+        except ValueError:
+            return None
+    mo, d, y = m.group(1), m.group(2), m.group(3)
+    if len(y) == 2:
+        y = f"20{y}"
+    if int(mo) > 12:
+        mo, d = d, mo
+    if int(mo) > 12 or int(d) > 31 or int(mo) < 1 or int(d) < 1:
+        return None
+    return f"{y}-{int(mo):02d}-{int(d):02d}"
 
 
 def detect_layout(rows: list[list[str]]) -> str:
@@ -278,86 +272,77 @@ def _build_chat_row(slug: str, date_iso: str, row: list) -> dict:
 
 
 def _build_sdr_row(slug: str, date_iso: str, row: list) -> dict:
-    """SDR column mapping: Outbound→other, Inbound→crm, Chat→lc, Total cols."""
-    # Outbound: Sales[1], Dials[2], Answered[3], Booked[4], w/Dep[5]
-    # Inbound:  Sales[6], Received[7], Booked[8], w/Dep[9]
-    # Chat:     Sales[10], Conv[11], Booked[12], w/Dep[13]
-    # Total:    Sales[14], Booked[15], w/Dep[16], Rate[17], Dials[18], Dep%[19]
+    """SDR column mapping. Must stay in lockstep with app/api/etl/crm-agents/route.ts
+    (the production Vercel ETL); mismatches here cause this manual script to
+    overwrite the cron's data with subtly different values.
+
+    Layout (cols A–U):
+      A=Date | B=Out Sales | C=Out Dials | D=Out Answered | E=Out Booked | F=Out Dep
+      G=In Sales | H=In Received | I=In Booked | J=In Dep
+      K=Chat Sales | L=Chat Convs | M=Chat Booked | N=Chat Dep
+      O=Total Sales | P=Total Booked | Q=Total Dep | R=Rate | S=Dials | T=Dep% | U=AOV
+    """
+    out_dials  = parse_integer(_cell(row, 2))   # C
+    in_recv    = parse_integer(_cell(row, 7))   # H
+    chat_convs = parse_integer(_cell(row, 11))  # L
     return {
         "agent_slug":          slug,
         "date":                date_iso,
         # Chat → lc_*
         "lc_sales":            parse_currency(_cell(row, 10)),
-        "lc_messages":         parse_integer(_cell(row, 11)),
+        "lc_messages":         chat_convs,
         "lc_booked":           parse_integer(_cell(row, 12)),
         "lc_deposit":          parse_integer(_cell(row, 13)),
         # Inbound → crm_*
         "crm_sales":           parse_currency(_cell(row, 6)),
-        "crm_messages":        parse_integer(_cell(row, 7)),
+        "crm_messages":        in_recv,
         "crm_booked":          parse_integer(_cell(row, 8)),
         "crm_deposit":         parse_integer(_cell(row, 9)),
         # Outbound → other_*
         "other_sales":         parse_currency(_cell(row, 1)),
-        "other_messages":      parse_integer(_cell(row, 2)),   # Dials
+        "other_messages":      out_dials,
         "other_booked":        parse_integer(_cell(row, 4)),
         "other_deposit":       parse_integer(_cell(row, 5)),
-        # Totals
-        "total_messages":      parse_integer(_cell(row, 18)),  # total Dials
+        # Totals — total_messages is the SUM of the three channels.
+        # Col 18 (KPI Dials) duplicates outbound dials and underreports volume.
+        "total_messages":      out_dials + in_recv + chat_convs,
         "total_booked":        parse_integer(_cell(row, 15)),
         "total_deposit_count": parse_integer(_cell(row, 16)),
         "conversion_rate_pct": parse_percent(_cell(row, 17)),
         "total_sales":         parse_currency(_cell(row, 14)),
         "deposit_pct":         parse_percent(_cell(row, 19)),
-        "aov":                 0.0,
+        "aov":                 parse_currency(_cell(row, 20)),
     }
 
 
 def sync_agent(slug: str, tab_name: str, sh: gspread.Spreadsheet, *, verbose: bool = False) -> tuple[int, str, dict]:
     """Read one agent tab, build rows, upsert to Supabase.
-    Returns (rows_synced, layout, per_format_count).
-
-    Date format handling: classifies each row's date as mdy/dmy/iso/ambig and
-    parses with the matching format. Ambiguous dates (day≤12 AND month≤12)
-    inherit the format used by the most recent UNAMBIGUOUS row above them,
-    falling back to M/D/Y (which matches the Google Sheets default + the bulk
-    of recent rows in the CRM Master sheet)."""
+    Returns (rows_synced, layout, skipped_count). Layout and date parsing both
+    match app/api/etl/crm-agents/route.ts so this script and the Vercel cron
+    never produce divergent rows."""
     ws  = sh.worksheet(tab_name)
     raw = ws.get_all_values()
     layout = detect_layout(raw[:2])
     is_sdr = layout == "sdr"
 
-    fmt_map = {"mdy": "%m/%d/%Y", "dmy": "%d/%m/%Y", "iso": "%Y-%m-%d"}
     rows_by_date: dict[str, dict] = {}
-    counts = {"mdy": 0, "dmy": 0, "iso": 0, "ambig": 0, "skipped": 0}
-    last_unambig_fmt = "mdy"  # default — most recent CRM Master rows are M/D/Y
-
+    skipped = 0
     for row in raw[2:]:
         raw_date = _cell(row, 0)
         if not raw_date:
             continue
-        kind = classify_date_string(raw_date)
-        if kind in fmt_map:
-            chosen_fmt = fmt_map[kind]
-            last_unambig_fmt = kind
-        elif kind == "ambig":
-            chosen_fmt = fmt_map[last_unambig_fmt]
-        else:
-            counts["skipped"] += 1
-            continue
-
-        date_iso = parse_date(raw_date, fmt=chosen_fmt)
+        date_iso = parse_date(raw_date)
         if date_iso is None:
-            counts["skipped"] += 1
+            skipped += 1
             continue
-        counts[kind if kind in counts else "ambig"] += 1
         record = _build_sdr_row(slug, date_iso, row) if is_sdr else _build_chat_row(slug, date_iso, row)
         rows_by_date[date_iso] = record
 
     if verbose:
-        print(f"  [{slug}] layout={layout}, counts={counts}")
+        print(f"  [{slug}] layout={layout}, {len(rows_by_date)} unique dates, {skipped} skipped")
 
     n = _supabase_upsert("crm_agent_daily", list(rows_by_date.values()), "agent_slug,date")
-    return n, layout, counts
+    return n, layout, skipped
 
 
 def main() -> None:
@@ -365,7 +350,7 @@ def main() -> None:
     total = 0
     for slug, tab_name in AGENTS:
         try:
-            count, layout, counts = sync_agent(slug, tab_name, sh, verbose=True)
+            count, layout, _ = sync_agent(slug, tab_name, sh, verbose=True)
             print(f"Synced {slug}: {count} rows (layout={layout})")
             total += count
         except gspread.exceptions.WorksheetNotFound:
