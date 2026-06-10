@@ -35,29 +35,47 @@ function roasSeverity(roas: number): "green" | "amber" | "red" {
 
 function CampaignChart({ campaigns, brandColor }: { campaigns: DrilldownCampaign[]; brandColor: string }) {
   const data = campaigns.map(c => ({
-    name: c.campaignName.length > 18 ? c.campaignName.slice(0, 16) + "…" : c.campaignName,
+    name: c.campaignName.length > 22 ? c.campaignName.slice(0, 20) + "…" : c.campaignName,
     "Conv %": c.conversionPct ?? 0,
-    "CPL": c.cpl,
+    "CPL (€)": c.cpl ?? 0,
   }));
 
+  const maxConv = Math.max(...data.map(d => d["Conv %"]), 1);
+  const convDomain: [number, number] = [0, Math.ceil(maxConv * 1.5)];
+
   return (
-    <div className="h-48 mt-4">
+    <div className="h-72 mt-4">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+        <BarChart data={data} margin={{ top: 8, right: 48, left: 8, bottom: 70 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
           <XAxis
             dataKey="name"
-            tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-            interval={0} angle={-20} textAnchor="end" height={50}
+            tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+            interval={0} angle={-35} textAnchor="end" height={80}
           />
-          <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} domain={[0, 100]} tickFormatter={v => `${v}%`} />
+          <YAxis
+            yAxisId="left"
+            domain={convDomain}
+            tickFormatter={v => `${v}%`}
+            tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+            width={38}
+          />
+          <YAxis
+            yAxisId="right"
+            orientation="right"
+            tickFormatter={v => `€${v}`}
+            tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+            width={44}
+          />
           <Tooltip
-            formatter={(value, name) => name === "Conv %" ? `${Number(value).toFixed(1)}%` : `€${Number(value).toFixed(1)}`}
+            formatter={(value, name) =>
+              name === "Conv %" ? `${Number(value).toFixed(1)}%` : `€${Number(value).toFixed(2)}`
+            }
             contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
           />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
-          <Bar dataKey="Conv %" fill={brandColor} radius={[4, 4, 0, 0]} />
-          <Bar dataKey="CPL" fill={brandColor} opacity={0.45} radius={[4, 4, 0, 0]} />
+          <Legend wrapperStyle={{ fontSize: 12 }} />
+          <Bar yAxisId="left"  dataKey="Conv %"  fill={brandColor}            radius={[4, 4, 0, 0]} />
+          <Bar yAxisId="right" dataKey="CPL (€)" fill={brandColor} opacity={0.45} radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>
