@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
   // Talexio HR ETL syncs headcount/payroll/shifts for today's date.
   const today = fmt(now);
 
+  // Phase 1: run source ETLs in parallel
   const [revenueRes, spaRes, aestheticsRes, crmAgentsRes, ghlCrmRes,
          metaCampaignsRes, googleCampaignsRes, klaviyoRes, talexioHrRes] = await Promise.allSettled([
     fetch(`${BASE_URL}/api/etl/revenue-refresh`,              { method: "POST", headers, body: payload }),
@@ -54,6 +55,12 @@ export async function GET(req: NextRequest) {
     fetch(`${BASE_URL}/api/etl/talexio-hr?date=${today}`,     { method: "POST", headers }),
   ]);
 
+  // Phase 2: lead reconciliation depends on ghl-crm + meta-campaigns completing first
+  const reconPayload = JSON.stringify({ date_from: fmt(mktFrom), date_to: fmt(now) });
+  const [leadReconRes] = await Promise.allSettled([
+    fetch(`${BASE_URL}/api/etl/lead-reconciliation`, { method: "POST", headers, body: reconPayload }),
+  ]);
+
   const outcome = (r: PromiseSettledResult<Response>) =>
     r.status === "fulfilled" && r.value.ok ? "ok" : "error";
 
@@ -62,15 +69,16 @@ export async function GET(req: NextRequest) {
     date_from,
     date_to,
     results: {
-      revenue:          outcome(revenueRes),
-      zoho_spa:         outcome(spaRes),
-      zoho_aesthetics:  outcome(aestheticsRes),
-      crm_agents:       outcome(crmAgentsRes),
-      ghl_crm:          outcome(ghlCrmRes),
-      meta_campaigns:   outcome(metaCampaignsRes),
-      google_campaigns: outcome(googleCampaignsRes),
-      klaviyo:          outcome(klaviyoRes),
-      talexio_hr:       outcome(talexioHrRes),
+      revenue:              outcome(revenueRes),
+      zoho_spa:             outcome(spaRes),
+      zoho_aesthetics:      outcome(aestheticsRes),
+      crm_agents:           outcome(crmAgentsRes),
+      ghl_crm:              outcome(ghlCrmRes),
+      meta_campaigns:       outcome(metaCampaignsRes),
+      google_campaigns:     outcome(googleCampaignsRes),
+      klaviyo:              outcome(klaviyoRes),
+      talexio_hr:           outcome(talexioHrRes),
+      lead_reconciliation:  outcome(leadReconRes),
     },
   });
 }
