@@ -69,6 +69,7 @@ export type DrilldownCampaign = {
   campaignName: string;
   campaignId: string;
   spend: number;
+  dailySpend: number;
   cpl: number | null;
   leads: number;
   aov: number;
@@ -81,6 +82,7 @@ export type DrilldownBrand = {
   campaigns: DrilldownCampaign[];
   totals: {
     spend: number;
+    dailySpend: number;
     leads: number;
     expectedRevenue: number;
     expectedRoas: number | null;
@@ -100,6 +102,11 @@ export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const from = searchParams.get("from") ?? new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
   const to = searchParams.get("to") ?? new Date().toISOString().slice(0, 10);
+
+  // Inclusive day count between `from` and `to` for daily-spend averaging.
+  const dayCount = Math.max(1, Math.round(
+    (new Date(to).getTime() - new Date(from).getTime()) / 86_400_000 + 1,
+  ));
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -133,7 +140,7 @@ export async function GET(req: NextRequest) {
   const results = await Promise.all(BRAND_SLUGS.map(async (slug): Promise<[string, DrilldownBrand]> => {
     const brandId = brandIdMap[slug];
     if (!brandId) {
-      return [slug, { campaigns: [], totals: { spend: 0, leads: 0, expectedRevenue: 0, expectedRoas: null, conversionPct: null, avgCpl: null } }];
+      return [slug, { campaigns: [], totals: { spend: 0, dailySpend: 0, leads: 0, expectedRevenue: 0, expectedRoas: null, conversionPct: null, avgCpl: null } }];
     }
 
     // Meta campaigns data (all daily rows for the period)
@@ -178,6 +185,7 @@ export async function GET(req: NextRequest) {
         campaignName: agg.name,
         campaignId,
         spend,
+        dailySpend: Math.round((spend / dayCount) * 100) / 100,
         cpl: agg.leads > 0 ? Math.round((agg.spend / agg.leads) * 100) / 100 : null,
         leads: agg.leads,
         aov,
@@ -197,6 +205,7 @@ export async function GET(req: NextRequest) {
       campaigns,
       totals: {
         spend: Math.round(totalSpend * 100) / 100,
+        dailySpend: Math.round((totalSpend / dayCount) * 100) / 100,
         leads: totalLeads,
         expectedRevenue: Math.round(totalRevenue * 100) / 100,
         expectedRoas: totalSpend > 0 ? Math.round((totalRevenue / totalSpend) * 100) / 100 : null,

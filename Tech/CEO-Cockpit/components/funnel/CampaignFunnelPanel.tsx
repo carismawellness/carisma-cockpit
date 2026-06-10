@@ -47,6 +47,21 @@ function RoasCell({ roas }: { roas: number | null }) {
   );
 }
 
+// Fixed column widths so the Spa / Aesthetics / Slimming tables line up
+// vertically. Campaign column takes the remaining space; every numeric
+// column gets the same fixed width across all three brand tables.
+const COLS = {
+  campaign:   "auto",
+  conv:       "84px",
+  cpl:        "72px",
+  aov:        "80px",
+  spend:      "88px",
+  dailySpend: "100px",
+  expRev:     "96px",
+  expRoas:    "92px",
+} as const;
+const MIN_TABLE_WIDTH = 720;
+
 function CampaignTable({ campaigns, totals, brandColor }: {
   campaigns: DrilldownCampaign[];
   totals: DrilldownBrand["totals"];
@@ -54,8 +69,18 @@ function CampaignTable({ campaigns, totals, brandColor }: {
 }) {
   return (
     <div className="overflow-x-auto -mx-4 md:mx-0">
-      <div className="min-w-[720px] px-4 md:px-0">
-        <table className="w-full text-sm">
+      <div className="px-4 md:px-0" style={{ minWidth: MIN_TABLE_WIDTH }}>
+        <table className="w-full text-sm table-fixed">
+          <colgroup>
+            <col style={{ width: COLS.campaign }} />
+            <col style={{ width: COLS.conv }} />
+            <col style={{ width: COLS.cpl }} />
+            <col style={{ width: COLS.aov }} />
+            <col style={{ width: COLS.spend }} />
+            <col style={{ width: COLS.dailySpend }} />
+            <col style={{ width: COLS.expRev }} />
+            <col style={{ width: COLS.expRoas }} />
+          </colgroup>
           <thead>
             <tr className="border-b border-warm-border">
               <th className="text-left py-2 pr-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Campaign</th>
@@ -63,6 +88,7 @@ function CampaignTable({ campaigns, totals, brandColor }: {
               <th className="text-center py-2 px-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">CPL</th>
               <th className="text-center py-2 px-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">AOV</th>
               <th className="text-center py-2 px-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">Spend</th>
+              <th className="text-center py-2 px-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">Daily Spend</th>
               <th className="text-center py-2 px-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">Exp. Rev</th>
               <th className="text-center py-2 px-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">Exp. ROAS</th>
             </tr>
@@ -72,7 +98,7 @@ function CampaignTable({ campaigns, totals, brandColor }: {
               const convSev = c.conversionPct !== null ? overallConversionSeverity(c.conversionPct) : "off";
               return (
                 <tr key={c.campaignId} className="border-b border-warm-border/50 last:border-0">
-                  <td className="py-2.5 pr-3 text-sm font-medium text-foreground">{c.campaignName}</td>
+                  <td className="py-2.5 pr-3 text-sm font-medium text-foreground truncate">{c.campaignName}</td>
 
                   <td className="py-2 px-2">
                     {c.conversionPct !== null ? (
@@ -91,6 +117,9 @@ function CampaignTable({ campaigns, totals, brandColor }: {
                   </td>
                   <td className="py-2.5 px-2 text-center text-sm text-foreground tabular-nums">{formatCurrency(c.aov)}</td>
                   <td className="py-2.5 px-2 text-center text-sm text-foreground tabular-nums">{formatCurrency(c.spend)}</td>
+                  <td className="py-2.5 px-2 text-center text-sm text-foreground tabular-nums">
+                    {c.dailySpend > 0 ? `${formatCurrency(c.dailySpend)}/d` : <span className="text-muted-foreground">—</span>}
+                  </td>
                   <td className="py-2.5 px-2 text-center text-sm text-foreground tabular-nums">
                     {c.expectedRevenue > 0 ? formatCurrency(c.expectedRevenue) : <span className="text-muted-foreground">—</span>}
                   </td>
@@ -121,6 +150,9 @@ function CampaignTable({ campaigns, totals, brandColor }: {
               </td>
               <td className="py-2.5 px-2 text-center text-sm font-semibold text-muted-foreground">—</td>
               <td className="py-2.5 px-2 text-center text-sm font-semibold text-foreground tabular-nums">{formatCurrency(totals.spend)}</td>
+              <td className="py-2.5 px-2 text-center text-sm font-semibold text-foreground tabular-nums">
+                {totals.dailySpend > 0 ? `${formatCurrency(totals.dailySpend)}/d` : <span className="text-muted-foreground">—</span>}
+              </td>
               <td className="py-2.5 px-2 text-center text-sm font-semibold text-foreground tabular-nums">
                 {totals.expectedRevenue > 0 ? formatCurrency(totals.expectedRevenue) : <span className="text-muted-foreground">—</span>}
               </td>
