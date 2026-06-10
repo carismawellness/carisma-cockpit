@@ -2,12 +2,15 @@
 
 import { Card } from "@/components/ui/card";
 import { useCrmAgents } from "@/lib/hooks/useCrmAgents";
+import { useKPIData } from "@/lib/hooks/useKPIData";
+import { useLookups } from "@/lib/hooks/useLookups";
 import { AGENT_META_BY_SLUG } from "@/lib/constants/agents";
 import {
   chartColors,
   formatCurrency,
   formatPercent,
 } from "@/lib/charts/config";
+import type { CrmDailyRow } from "@/lib/types/crm";
 
 const BRANDS = ["spa", "aesthetics", "slimming"] as const;
 const BRAND_LABELS: Record<string, string> = {
@@ -16,17 +19,11 @@ const BRAND_LABELS: Record<string, string> = {
   slimming: "Slimming",
 };
 const DAILY_BOOKING_MIN = 8;
-const DAILY_BOOKING_MAX = 10;
+const SLIMMING_DAILY_TARGET = 15;
 
 function depositColor(pct: number): string {
   if (pct >= 70) return "text-emerald-600";
   if (pct >= 50) return "text-amber-500";
-  return "text-red-600";
-}
-
-function stlColor(min: number): string {
-  if (min <= 3) return "text-emerald-600";
-  if (min <= 5) return "text-amber-500";
   return "text-red-600";
 }
 
@@ -40,8 +37,15 @@ export function SalesPerformance({
   brandFilter: string | null;
 }) {
   const { agents, isLoading } = useCrmAgents(dateFrom, dateTo);
+  const { brandMap } = useLookups();
+  const { data: crmDailyData, loading: crmDailyLoading } = useKPIData<CrmDailyRow>({
+    table: "crm_daily",
+    dateFrom,
+    dateTo,
+    brandFilter,
+  });
 
-  if (isLoading) {
+  if (isLoading || crmDailyLoading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {Array.from({ length: 3 }).map((_, i) => (
@@ -71,25 +75,33 @@ export function SalesPerformance({
     const totalDeposits  = brandAgents.reduce((s, a) => s + a.totals.total_deposits, 0);
     const totalMessages  = brandAgents.reduce((s, a) => s + a.totals.total_messages, 0);
 
-    const dailyAvg    = totalSales / numDays;
-    const depositPct  = totalBookings > 0 ? (totalDeposits / totalBookings) * 100 : 0;
-    const convPct     = totalMessages > 0 ? (totalBookings / totalMessages) * 100 : 0;
+    const dailyAvgRevenue = totalSales / numDays;
+    const depositPct      = totalBookings > 0 ? (totalDeposits / totalBookings) * 100 : 0;
+    const convMsgPct      = totalMessages > 0 ? (totalBookings / totalMessages) * 100 : 0;
 
-    const bookingTarget  = Math.max(
-      Math.round(totalMessages * 0.20),
-      numDays * DAILY_BOOKING_MIN,
-    );
+    // Slimming: conv over leads from crm_daily
+    const brandId = brandMap[slug];
+    const totalLeads = slug === "slimming"
+      ? crmDailyData.filter((r) => r.brand_id === brandId).reduce((sum, r) => sum + (r.total_leads ?? 0), 0)
+      : 0;
+    const convLeadsPct = totalLeads > 0 ? (totalBookings / totalLeads) * 100 : 0;
+
+    const bookingTargetBase = slug === "slimming"
+      ? numDays * SLIMMING_DAILY_TARGET
+      : Math.max(Math.round(totalMessages * 0.20), numDays * DAILY_BOOKING_MIN);
+
     const dailyBookingRate = totalBookings / numDays;
 
     return {
       slug,
       label: BRAND_LABELS[slug],
       totalSales,
-      dailyAvg,
+      dailyAvgRevenue,
       depositPct,
-      convPct,
+      convMsgPct,
+      convLeadsPct,
       totalBookings,
-      bookingTarget,
+      bookingTarget: bookingTargetBase,
       dailyBookingRate,
       hasData: brandAgents.length > 0,
     };
@@ -112,42 +124,37 @@ export function SalesPerformance({
 
           {!b.hasData ? (
             <p className="text-sm text-text-secondary">No agent data for this period.</p>
-          ) : (
+          ) : b.slug === "slimming" ? (
+            // ── Slimming card ────────────────────────────────────────────────
             <div className="space-y-3">
               <div className="flex justify-between">
-                <span className="text-sm text-text-secondary">Total Sales</span>
+                <span className="text-sm text-text-secondary">Total Bookings</span>
                 <span className="text-sm font-bold text-foreground">
-                  {formatCurrency(b.totalSales)}
+                  {b.totalBookings}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-text-secondary">Daily Average</span>
+                <span className="text-sm text-text-secondary">Avg Bookings / Day</span>
                 <span className="text-sm font-semibold text-foreground">
-                  {formatCurrency(b.dailyAvg)}
+                  {b.dailyBookingRate.toFixed(1)}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-text-secondary">Deposit %</span>
-                <span className={`text-sm font-bold ${depositColor(b.depositPct)}`}>
-                  {formatPercent(b.depositPct)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-text-secondary">Conv / Messages</span>
+                <span className="text-sm text-text-secondary">Conv / Leads</span>
                 <span
                   className={`text-sm font-bold ${
-                    b.convPct >= 20
+                    b.convLeadsPct >= 20
                       ? "text-emerald-600"
-                      : b.convPct >= 12
+                      : b.convLeadsPct >= 12
                       ? "text-amber-500"
                       : "text-red-600"
                   }`}
                 >
-                  {formatPercent(b.convPct)}
+                  {formatPercent(b.convLeadsPct)}
                 </span>
               </div>
 
-              {/* Booking Benchmark */}
+              {/* Appointments Booked — Slimming, 15/day target */}
               <div className="mt-2 pt-3 border-t border-dashed">
                 <p className="text-[10px] uppercase tracking-wider text-text-secondary font-medium mb-2">
                   Appointments Booked
@@ -186,29 +193,50 @@ export function SalesPerformance({
                   <span>{b.dailyBookingRate.toFixed(1)}/day avg</span>
                   <span
                     className={
-                      b.dailyBookingRate >= DAILY_BOOKING_MIN
+                      b.dailyBookingRate >= SLIMMING_DAILY_TARGET
                         ? "text-emerald-600 font-semibold"
                         : "text-red-500 font-semibold"
                     }
                   >
-                    {DAILY_BOOKING_MIN}–{DAILY_BOOKING_MAX}/day benchmark
+                    {SLIMMING_DAILY_TARGET}/day target
                   </span>
                 </div>
               </div>
-
-              {/* Speed to Lead placeholder */}
-              <div className="mt-2 pt-3 border-t border-dashed">
-                <p className="text-[10px] uppercase tracking-wider text-text-secondary font-medium mb-2">
-                  Speed to Lead
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  {(["Median", "Mean"] as const).map((label) => (
-                    <div key={label} className="text-center p-2 rounded-lg bg-gray-50">
-                      <p className="text-[10px] text-text-secondary mb-0.5">{label}</p>
-                      <p className={`text-lg font-bold ${stlColor(0)}`}>—</p>
-                    </div>
-                  ))}
-                </div>
+            </div>
+          ) : (
+            // ── Spa & Aesthetics card ────────────────────────────────────────
+            <div className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-sm text-text-secondary">Total Sales</span>
+                <span className="text-sm font-bold text-foreground">
+                  {formatCurrency(b.totalSales)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-text-secondary">Daily Average</span>
+                <span className="text-sm font-semibold text-foreground">
+                  {formatCurrency(b.dailyAvgRevenue)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-text-secondary">Deposit %</span>
+                <span className={`text-sm font-bold ${depositColor(b.depositPct)}`}>
+                  {formatPercent(b.depositPct)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-text-secondary">Conv / Messages</span>
+                <span
+                  className={`text-sm font-bold ${
+                    b.convMsgPct >= 20
+                      ? "text-emerald-600"
+                      : b.convMsgPct >= 12
+                      ? "text-amber-500"
+                      : "text-red-600"
+                  }`}
+                >
+                  {formatPercent(b.convMsgPct)}
+                </span>
               </div>
             </div>
           )}

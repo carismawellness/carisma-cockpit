@@ -2,7 +2,6 @@
 
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { SalesPerformance } from "@/components/crm/SalesPerformance";
-import { SpeedToLeadSection } from "@/components/crm/SpeedToLeadSection";
 import { MessageQueueHealth } from "@/components/crm/MessageQueueHealth";
 import { LeadReconciliation } from "@/components/crm/LeadReconciliation";
 import { LeadsPerHour } from "@/components/crm/LeadsPerHour";
@@ -42,21 +41,16 @@ function CRMContent({
         <MessageQueueHealth dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
       </section>
 
-      {/* Leads per Hour Distribution */}
-      <section>
-        <h2 className="text-lg font-semibold text-foreground mb-3">Lead Volume by Hour</h2>
-        <LeadsPerHour dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
-      </section>
-
       {/* Lead Reconciliation */}
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-3">Lead Reconciliation</h2>
         <LeadReconciliation dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
       </section>
 
-      {/* Speed to Lead — data not yet available */}
+      {/* Leads per Hour Distribution */}
       <section>
-        <SpeedToLeadSection dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
+        <h2 className="text-lg font-semibold text-foreground mb-3">Lead Volume by Hour</h2>
+        <LeadsPerHour dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
       </section>
 
     </>
