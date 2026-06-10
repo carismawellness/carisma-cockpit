@@ -143,34 +143,15 @@ async function diagnoseFilters(
     }
   }
 
-  // Try POST advanced search — locationId camelCase + filters array
+  // Probe candidate field names — discover what GHL accepts
   const postBodies: Record<string, Record<string, unknown>> = {
-    "POST_filters_pipeline_only": {
-      locationId,
-      filters: [
-        { field: "pipeline_id", operator: "eq", value: pipelineId },
-        { field: "pipeline_stage_id", operator: "eq", value: stageId },
-      ],
-      limit: 1,
-    },
-    "POST_filters_dateAdded_gte_lte": {
-      locationId,
-      filters: [
-        { field: "pipeline_id", operator: "eq", value: pipelineId },
-        { field: "pipeline_stage_id", operator: "eq", value: stageId },
-        { field: "dateAdded", operator: "gte", value: dateFromIso },
-        { field: "dateAdded", operator: "lte", value: dateFromIso },
-      ],
-      limit: 1,
-    },
-    "POST_filters_just_eq_op_check": {
-      locationId,
-      filters: [
-        { field: "pipeline_stage_id", operator: "eq", value: stageId },
-        { field: "dateAdded", operator: "between", value: [dateFromIso, dateFromIso] },
-      ],
-      limit: 1,
-    },
+    "field_pipelineId":   { locationId, filters: [{ field: "pipelineId", operator: "eq", value: pipelineId }, { field: "pipelineStageId", operator: "eq", value: stageId }], limit: 1 },
+    "field_added_at":     { locationId, filters: [{ field: "pipeline_stage_id", operator: "eq", value: stageId }, { field: "added_at", operator: "gte", value: dateFromIso }], limit: 1 },
+    "field_addedAt":      { locationId, filters: [{ field: "pipeline_stage_id", operator: "eq", value: stageId }, { field: "addedAt", operator: "gte", value: dateFromIso }], limit: 1 },
+    "field_date_added":   { locationId, filters: [{ field: "pipeline_stage_id", operator: "eq", value: stageId }, { field: "date_added", operator: "gte", value: dateFromIso }], limit: 1 },
+    "field_created_at":   { locationId, filters: [{ field: "pipeline_stage_id", operator: "eq", value: stageId }, { field: "created_at", operator: "gte", value: dateFromIso }], limit: 1 },
+    "field_createdAt":    { locationId, filters: [{ field: "pipeline_stage_id", operator: "eq", value: stageId }, { field: "createdAt", operator: "gte", value: dateFromIso }], limit: 1 },
+    "field_date":         { locationId, filters: [{ field: "pipeline_stage_id", operator: "eq", value: stageId }, { field: "date", operator: "gte", value: dateFromIso }], limit: 1 },
   };
   for (const [name, body] of Object.entries(postBodies)) {
     try {
