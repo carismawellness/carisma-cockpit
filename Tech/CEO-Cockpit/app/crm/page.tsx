@@ -4,7 +4,6 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { CRMKPICards } from "@/components/crm/CRMKPICards";
 import { SalesPerformance } from "@/components/crm/SalesPerformance";
 import { SpeedToLeadSection } from "@/components/crm/SpeedToLeadSection";
-import { EmployeeTable } from "@/components/crm/EmployeeTable";
 import { MessageQueueHealth } from "@/components/crm/MessageQueueHealth";
 import { BookingMix } from "@/components/crm/BookingMix";
 import { RepLeaderboard } from "@/components/crm/RepLeaderboard";
@@ -74,12 +73,6 @@ function CRMContent({
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-3">Rep Leaderboard</h2>
         <RepLeaderboard dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
-      </section>
-
-      {/* Employee Performance */}
-      <section>
-        <h2 className="text-lg font-semibold text-foreground mb-3">Employee Performance</h2>
-        <EmployeeTable dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
       </section>
 
       {/* Speed to Lead — data not yet available */}
