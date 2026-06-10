@@ -15,29 +15,40 @@ export const dynamic = "force-dynamic";
 
 const BRAND_SLUGS = ["spa", "aesthetics", "slimming"] as const;
 
-// Default AOV per brand (€) — sourced from carismaspa.com, carismaaesthetics.com, carismaslimming.com (Jun 2026)
+// Default AOV per brand (€) — Jun 2026 actuals
 const BRAND_AOV_DEFAULT: Record<string, number> = {
-  spa:        129,  // Spa Deluxe / mid-tier spa day package
-  aesthetics: 179,  // 1–2 area botox; most common aesthetic treatment
-  slimming:   199,  // Standardised entry package (Fat Freeze / EMSculpt Starter)
+  spa:        145,  // Spa Day package (most common)
+  aesthetics: 179,  // Botox / general aesthetics
+  slimming:   289,  // Clinic-wide AOV
 };
 
-// Keyword → AOV overrides (checked against lowercased campaign name)
+// Keyword → AOV overrides (checked against lowercased campaign name, first match wins)
 const AOV_OVERRIDES: Array<{ keywords: string[]; aov: number }> = [
-  // Spa
-  { keywords: ["couple", "couples", "romantic"],                              aov: 249 },
+  // Spa — specific campaign types
+  { keywords: ["couple", "couples", "romantic"],                              aov: 190 },
+  { keywords: ["gift", "gifting", "voucher"],                                 aov: 120 },
+  { keywords: ["spa day"],                                                     aov: 145 },
+  { keywords: ["massage"],                                                     aov: 145 },
   { keywords: ["hammam"],                                                      aov: 129 },
-  { keywords: ["spa day", "body ritual", "body treatment", "ritual"],         aov: 129 },
-  { keywords: ["massage"],                                                     aov:  99 },
-  // Aesthetics
+  { keywords: ["model call", "model"],                                         aov:   0 },
+  // Aesthetics — specific treatment campaigns
+  { keywords: ["hair regrowth"],                                               aov: 500 },
+  { keywords: ["ultimate facelift", "ultimate face lift", "facelift"],        aov: 250 },
+  { keywords: ["lhr", "laser hair"],                                           aov: 250 },
+  { keywords: ["lip and glow", "lip glow"],                                    aov: 220 },
+  { keywords: ["jawline", "snatch"],                                           aov: 179 },
+  { keywords: ["dr. kendra", "dr kendra", "kendra"],                          aov: 200 },
+  { keywords: ["hydra facial", "hydrafacial", "4-in-1", "4 in 1"],           aov: 100 },
   { keywords: ["filler", "lip filler", "dermal filler"],                     aov: 269 },
   { keywords: ["botox", "wrinkle", "anti-wrinkle", "injectable"],            aov: 179 },
-  { keywords: ["facial", "hydrafacial", "peel", "skin", "microneedling"],    aov: 149 },
-  { keywords: ["laser", "ipl", "hair removal"],                              aov: 199 },
-  // Slimming
-  { keywords: ["fat freeze", "coolsculpt", "cryolipolysis"],                 aov: 199 },
-  { keywords: ["emsculpt", "hifu", "body sculpt", "velashape", "cavitation"],aov: 199 },
-  { keywords: ["weight loss", "slimming plan", "glp", "ozempic", "mounjaro"],aov: 350 },
+  { keywords: ["peel", "skin", "microneedling"],                              aov: 149 },
+  { keywords: ["ipl"],                                                         aov: 199 },
+  // Slimming — specific treatments
+  { keywords: ["weight loss", "slimming plan", "glp", "ozempic", "mounjaro",
+               "menopause", "baby", "pain"],                                   aov: 289 },
+  { keywords: ["fat freeze", "coolsculpt", "cryolipolysis"],                 aov: 289 },
+  { keywords: ["emsculpt", "muscle", "hifu", "body sculpt",
+               "velashape", "cavitation"],                                     aov: 289 },
 ];
 
 // CRM agents responsible for each brand (slugs in crm_agent_daily)
