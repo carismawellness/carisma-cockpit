@@ -1,11 +1,11 @@
-// slug → hotel config. Monthly revenue targets in EUR ex-VAT.
+// slug → hotel config. Monthly revenue targets in EUR inc-VAT (gross).
 // Update `monthlyTarget` values as actual targets are confirmed.
 export interface HotelConfig {
   locId:         number;
   name:          string;
   shortName:     string;
   color:         string;
-  monthlyTarget: number; // EUR ex-VAT
+  monthlyTarget: number; // EUR inc-VAT (gross revenue, to match displayed KPIs)
 }
 
 export const HOTEL_SLUG_MAP: Record<string, HotelConfig> = {
