@@ -9,6 +9,7 @@ import { formatCurrency } from "@/lib/charts/config";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useMetaCampaignsFromDb as useMetaCampaigns, useGoogleCampaignsFromDb as useGoogleCampaigns } from "@/lib/hooks/useAdsCampaigns";
 import { useKlaviyoOverview } from "@/lib/hooks/useKlaviyoOverview";
+import { useGscRankings } from "@/lib/hooks/useGscRankings";
 import { BRAND as BRAND_TOKENS, type BrandKey } from "@/lib/constants/design-tokens";
 import type { CampaignData } from "@/lib/types/ads";
 
@@ -127,6 +128,9 @@ function MarketingMasterContent({
   const { overview: klavSpa, loading: klavSpaLoading } = useKlaviyoOverview({ brand: "spa", dateFrom, dateTo });
   const { overview: klavAes, loading: klavAesLoading } = useKlaviyoOverview({ brand: "aesthetics", dateFrom, dateTo });
   const { overview: klavSlim, loading: klavSlimLoading } = useKlaviyoOverview({ brand: "slimming", dateFrom, dateTo });
+  const { keywords: gscSpa } = useGscRankings({ brand: "spa", days: 28 });
+  const { keywords: gscAes } = useGscRankings({ brand: "aesthetics", days: 28 });
+  const { keywords: gscSlim } = useGscRankings({ brand: "slimming", days: 28 });
 
   const isLoading =
     metaSpa.isLoading || metaAes.isLoading || metaSlim.isLoading ||
@@ -257,8 +261,44 @@ function MarketingMasterContent({
           { metric: "Click Rate", spa: fmtPct(klavSpa.clickRate), aesthetics: fmtPct(klavAes.clickRate), slimming: fmtPct(klavSlim.clickRate) },
         ] as TableRow[],
       },
+      {
+        channel: "Search Console (Organic SEO)",
+        rows: (() => {
+          // Aggregate per brand: total impressions, total clicks, impression-weighted avg position,
+          // counts of keywords in Top 3 / Page 1, overall CTR
+          function summary(rows: typeof gscSpa) {
+            let imp = 0, clicks = 0, posWeighted = 0, posWeight = 0;
+            let top3 = 0, page1 = 0;
+            for (const r of rows) {
+              imp += r.impressions ?? 0;
+              clicks += r.clicks ?? 0;
+              if (r.position !== null && (r.impressions ?? 0) > 0) {
+                posWeighted += Number(r.position) * Number(r.impressions);
+                posWeight += Number(r.impressions);
+              }
+              if (r.position !== null && r.position <= 3) top3++;
+              else if (r.position !== null && r.position <= 10) page1++;
+            }
+            const avgPos = posWeight > 0 ? posWeighted / posWeight : null;
+            const ctr = imp > 0 ? clicks / imp : 0;
+            return { imp, clicks, avgPos, ctr, top3, page1, total: rows.length };
+          }
+          const s = summary(gscSpa);
+          const a = summary(gscAes);
+          const sl = summary(gscSlim);
+          const fmtPos = (p: number | null) => (p === null ? "—" : p.toFixed(1));
+          return [
+            { metric: "Tracked Keywords", spa: String(s.total), aesthetics: String(a.total), slimming: String(sl.total) },
+            { metric: "Avg Position", spa: fmtPos(s.avgPos), aesthetics: fmtPos(a.avgPos), slimming: fmtPos(sl.avgPos) },
+            { metric: "Top 3 / Page 1", spa: `${s.top3} / ${s.top3 + s.page1}`, aesthetics: `${a.top3} / ${a.top3 + a.page1}`, slimming: `${sl.top3} / ${sl.top3 + sl.page1}` },
+            { metric: "Impressions", spa: fmtSubs(s.imp), aesthetics: fmtSubs(a.imp), slimming: fmtSubs(sl.imp) },
+            { metric: "Clicks", spa: fmtSubs(s.clicks), aesthetics: fmtSubs(a.clicks), slimming: fmtSubs(sl.clicks) },
+            { metric: "CTR", spa: fmtPct(s.ctr), aesthetics: fmtPct(a.ctr), slimming: fmtPct(sl.ctr) },
+          ] as TableRow[];
+        })(),
+      },
     ];
-  }, [metaSpa.data, metaAes.data, metaSlim.data, googleSpa.data, googleAes.data, googleSlim.data, klavSpa, klavAes, klavSlim]);
+  }, [metaSpa.data, metaAes.data, metaSlim.data, googleSpa.data, googleAes.data, googleSlim.data, klavSpa, klavAes, klavSlim, gscSpa, gscAes, gscSlim]);
 
   /* ---- Check if any data loaded ---- */
   const totalCampaigns =
