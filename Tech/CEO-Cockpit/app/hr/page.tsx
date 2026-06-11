@@ -407,10 +407,11 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const leaves      = leaveBalances ?? LEAVE_BALANCES_FALLBACK;
   const payrollData = payroll ?? PAYROLL_FALLBACK;
 
-  const hcByLocation = financialsQ.data?.byLocation ?? HC_BY_LOCATION_FALLBACK;
-  const hcByBU       = financialsQ.data?.byBusinessUnit ?? HC_BY_BU_FALLBACK;
-  const groupHcPct   = financialsQ.data?.groupHcPct ?? GROUP_HC_PCT_FALLBACK;
-  const totalRevenue = financialsQ.data?.totalRevenue ?? TOTAL_REVENUE_FALLBACK;
+  const hcByLocation    = financialsQ.data?.byLocation ?? HC_BY_LOCATION_FALLBACK;
+  const hcByBU          = financialsQ.data?.byBusinessUnit ?? HC_BY_BU_FALLBACK;
+  const groupHcPct      = financialsQ.data?.groupHcPct ?? GROUP_HC_PCT_FALLBACK;
+  const totalRevenue    = financialsQ.data?.totalRevenue ?? TOTAL_REVENUE_FALLBACK;
+  const payrollComplete = financialsQ.data?.payrollComplete ?? false;
 
   const revpahData = revpahQ.data?.byLocation ?? REVPAH_FALLBACK;
   const avgRevPAH  = useMemo(() => {
@@ -453,11 +454,12 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const kpis: HRMetricData[] = [
     {
       label: "Human Capital %",
-      value: `${groupHcPct}%`,
+      value: payrollComplete ? `${groupHcPct}%` : "N/A",
       target: `${HC_PCT_TARGET}%`,
       targetValue: HC_PCT_TARGET,
-      currentValue: groupHcPct,
+      currentValue: payrollComplete ? groupHcPct : undefined,
       lowerIsBetter: true,
+      isSample: !payrollComplete,
     },
     { label: "Monthly Gross Payroll", value: formatCurrency(payrollData.latestGross) },
     { label: "Avg Cost / Employee",   value: formatCurrency(payrollData.avgCostPerEmployee) },

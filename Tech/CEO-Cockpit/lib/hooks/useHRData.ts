@@ -28,6 +28,10 @@ export interface HRBusinessUnitFinancial {
 export interface HRFinancialsResponse {
   month: string;
   totalRevenue: number;
+  totalPayroll: number;
+  totalHeadcount: number;
+  /** false when per-employee payroll < €500 — likely Zoho wages not yet synced */
+  payrollComplete: boolean;
   groupHcPct: number;
   byLocation: HRLocationFinancial[];
   byBusinessUnit: HRBusinessUnitFinancial[];

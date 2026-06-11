@@ -226,13 +226,14 @@ export async function GET(req: NextRequest) {
     revenueByLocation.set("Slimming Centre", (revenueByLocation.get("Slimming Centre") ?? 0) + slmTotal);
   }
 
-  // ── Headcount: latest snapshot in month per location ──────────────────────
+  // ── Headcount: most recent snapshot per location (no date upper bound) ──────
+  // ETL may have first run after the requested month; restricting to snapshot_date
+  // <= month_end would return 0 rows for past months.
   const { data: headcountRows } = await supabase
     .from("hr_talexio_daily_snapshot")
     .select("location_name, active_headcount, snapshot_date")
-    .lte("snapshot_date", bounds.end)
-    .gte("snapshot_date", bounds.start)
-    .order("snapshot_date", { ascending: false });
+    .order("snapshot_date", { ascending: false })
+    .limit(200);
 
   const headcountByLocation = new Map<string, number>();
   for (const r of headcountRows ?? []) {
@@ -299,13 +300,21 @@ export async function GET(req: NextRequest) {
     0,
   );
   const totalRevenue = byBusinessUnit.reduce((a, b) => a + b.revenue, 0);
+  const totalHeadcount = Array.from(headcountByLocation.values()).reduce((a, b) => a + b, 0);
+
+  // Flag incomplete payroll: if per-employee monthly payroll is below €500 it
+  // almost certainly means Zoho wages haven't been synced for this month yet.
+  const payrollPerHead = totalHeadcount > 0 ? totalPayroll / totalHeadcount : 0;
+  const payrollComplete = totalHeadcount === 0 || payrollPerHead >= 500;
 
   return NextResponse.json({
     month: monthParam,
     byLocation,
     byBusinessUnit,
-    totalRevenue:  +totalRevenue.toFixed(2),
-    totalPayroll:  +totalPayroll.toFixed(2),
-    groupHcPct:    totalRevenue > 0 ? +((totalPayroll / totalRevenue) * 100).toFixed(1) : 0,
+    totalRevenue:    +totalRevenue.toFixed(2),
+    totalPayroll:    +totalPayroll.toFixed(2),
+    totalHeadcount,
+    payrollComplete,
+    groupHcPct:      totalRevenue > 0 ? +((totalPayroll / totalRevenue) * 100).toFixed(1) : 0,
   });
 }

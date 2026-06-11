@@ -112,21 +112,16 @@ export async function GET(req: NextRequest) {
     revenueByLocation.set("Slimming Centre", slmTotal);
   }
 
-  // ── Headcount: most recent snapshot per location in or before the month ───
-  // Query a wider window (3 months back) so even locations without a
-  // current-month snapshot still get an estimate.
-  const threeMonthsBack = (() => {
-    const [y, m] = bounds.start.split("-").map(Number);
-    const d = new Date(y, m - 1 - 3, 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
-  })();
-
+  // ── Headcount: most recent snapshot per location (no date upper bound) ──────
+  // The Talexio ETL may have first run after the requested month (e.g. deployed
+  // in June for a May report). Restricting to snapshot_date <= month_end would
+  // return 0 rows → revpah = 0 for every location. Headcount changes slowly so
+  // using the most recent available snapshot is accurate enough for any month.
   const { data: snap } = await supabase
     .from("hr_talexio_daily_snapshot")
     .select("location_name, active_headcount, snapshot_date")
-    .lte("snapshot_date", bounds.end)
-    .gte("snapshot_date", threeMonthsBack)
-    .order("snapshot_date", { ascending: false });
+    .order("snapshot_date", { ascending: false })
+    .limit(200);
 
   // Keep only the most recent snapshot per location
   const headcountByLocation = new Map<string, number>();
