@@ -9,6 +9,7 @@
 
 import { use } from "react";
 import Link from "next/link";
+import type { EmployeeType } from "@/lib/sales-employees/types";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
 import { CommissionHero, CommissionHeroSkeleton } from "@/components/sales/employees/CommissionHero";
@@ -184,6 +185,7 @@ function SlimmingEmployeeContent({
   const extras = (stats?.brand_extras ?? {}) as SlimmingExtras;
   const basisLabel =
     stats?.employee.commission_basis === "inc_vat" ? "gross (paid, inc-VAT)" : "ex-VAT";
+  const empType: EmployeeType = (stats?.employee.employee_type as EmployeeType | undefined) ?? "therapist";
 
   return (
     <>
@@ -206,6 +208,13 @@ function SlimmingEmployeeContent({
           >
             Slimming
           </span>
+          {empType !== "therapist" && (
+            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+              empType === "management" ? "bg-violet-50 border-violet-200 text-violet-700" : "bg-sky-50 border-sky-200 text-sky-700"
+            }`}>
+              {empType === "management" ? "Management" : "Advisor / Reception"}
+            </span>
+          )}
         </div>
         <p className="text-sm text-muted-foreground">
           {stats?.employee.role ?? "Sales"} · {periodLabel} · figures in {basisLabel}

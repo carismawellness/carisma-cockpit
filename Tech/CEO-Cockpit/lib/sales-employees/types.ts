@@ -4,6 +4,7 @@
 export type BrandSlug = "spa" | "aesthetics" | "slimming";
 export type CommissionBasis = "ex_vat" | "inc_vat";
 export type RevenueKind = "service" | "retail";
+export type EmployeeType = "therapist" | "advisor" | "management";
 
 // ── DB rows ───────────────────────────────────────────────────────────────────
 
@@ -18,6 +19,7 @@ export interface SalesEmployee {
   is_active: boolean;
   aliases: string[];
   commission_basis: CommissionBasis;
+  employee_type: EmployeeType;
   notes: string | null;
   created_at?: string;
   updated_at?: string;
@@ -99,6 +101,7 @@ export interface EmployeeStatsResponse {
     is_active: boolean;
     commission_basis: CommissionBasis;
     rates_set: boolean;
+    employee_type: EmployeeType;
   };
   rates: { service_rate: number; retail_rate: number; effective_from: string } | null;
   totals: EmployeeStatsTotals;

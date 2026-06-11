@@ -317,6 +317,7 @@ export async function GET(req: NextRequest) {
       is_active: employee.is_active,
       commission_basis: employee.commission_basis,
       rates_set: rateRows.length > 0,
+      employee_type: (employee as SalesEmployee & { employee_type?: string }).employee_type ?? "therapist",
     },
     rates: periodRate
       ? {

@@ -1,29 +1,32 @@
 "use client";
 
-// Slimming — Employee Dashboards (team index).
-// Lists every slimming sales employee from the sales_employees registry and
-// links each to their personal dashboard at /sales/slimming/employees/[slug].
-// Visual language follows app/sales/slimming/page.tsx (slimming green accent).
-
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
-import { Card } from "@/components/ui/card";
 import { useSalesEmployees } from "@/lib/hooks/useSalesEmployees";
-import type { SalesEmployeeWithRates } from "@/lib/sales-employees/types";
+import type { EmployeeType, SalesEmployeeWithRates } from "@/lib/sales-employees/types";
 import { BRAND } from "@/lib/constants/design-tokens";
-import { AlertTriangle, BadgePercent, ChevronRight, Settings, Users } from "lucide-react";
+import { AlertTriangle, BadgePercent, ChevronDown, ChevronRight, Settings, Users } from "lucide-react";
+import { Card } from "@/components/ui/card";
 
-const SLIMMING_GREEN = BRAND.slimming.dark;  // #3D6B3D
-const SLIMMING_SOFT  = BRAND.slimming.soft;  // #C9D8C1
+const SLIMMING_GREEN = BRAND.slimming.dark;
+const SLIMMING_SOFT  = BRAND.slimming.soft;
 
-// ── Employee row card ─────────────────────────────────────────────────────────
+type TypeFilter = "all" | EmployeeType;
+
+const TYPE_LABELS: Record<EmployeeType, string> = {
+  therapist:  "Therapists",
+  advisor:    "Advisors & Reception",
+  management: "Management",
+};
+
 function EmployeeCard({ employee }: { employee: SalesEmployeeWithRates }) {
+  const empType = (employee as SalesEmployeeWithRates & { employee_type?: EmployeeType }).employee_type ?? "therapist";
   const ratesSet = employee.current_rates != null;
 
   return (
     <Link href={`/sales/slimming/employees/${employee.slug}`} className="block group">
       <Card className="p-4 flex items-center gap-3 transition-colors hover:bg-muted/30">
-        {/* Initial avatar */}
         <div
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold"
           style={{ backgroundColor: SLIMMING_SOFT, color: SLIMMING_GREEN }}
@@ -31,18 +34,14 @@ function EmployeeCard({ employee }: { employee: SalesEmployeeWithRates }) {
           {employee.display_name.trim().charAt(0).toUpperCase() || "?"}
         </div>
 
-        {/* Name + role */}
         <div className="min-w-0 flex-1">
-          <p className="font-semibold text-sm text-foreground truncate">
-            {employee.display_name}
-          </p>
+          <p className="font-semibold text-sm text-foreground truncate">{employee.display_name}</p>
           <p className="text-xs text-muted-foreground truncate">
             {employee.role ?? "Sales"}
             {employee.location_name ? ` · ${employee.location_name}` : ""}
           </p>
         </div>
 
-        {/* Badges */}
         <div className="flex items-center gap-1.5 shrink-0">
           {employee.is_active ? (
             <span
@@ -54,6 +53,15 @@ function EmployeeCard({ employee }: { employee: SalesEmployeeWithRates }) {
           ) : (
             <span className="inline-flex items-center rounded-full border bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
               Inactive
+            </span>
+          )}
+          {empType !== "therapist" && (
+            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+              empType === "management"
+                ? "bg-violet-50 border-violet-200 text-violet-700"
+                : "bg-sky-50 border-sky-200 text-sky-700"
+            }`}>
+              {TYPE_LABELS[empType]}
             </span>
           )}
           {ratesSet ? (
@@ -74,28 +82,71 @@ function EmployeeCard({ employee }: { employee: SalesEmployeeWithRates }) {
   );
 }
 
-// ── Loading skeleton ──────────────────────────────────────────────────────────
-function IndexSkeleton() {
+function TypeFilterTabs({
+  counts,
+  value,
+  onChange,
+}: {
+  counts: Record<TypeFilter, number>;
+  value: TypeFilter;
+  onChange: (t: TypeFilter) => void;
+}) {
+  const tabs: { key: TypeFilter; label: string }[] = [
+    { key: "all",        label: `All (${counts.all})` },
+    { key: "therapist",  label: `Therapists (${counts.therapist})` },
+    { key: "advisor",    label: `Advisors & Reception (${counts.advisor})` },
+    { key: "management", label: `Management (${counts.management})` },
+  ];
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="h-[72px] animate-pulse rounded-xl bg-gray-100" />
+    <div className="flex flex-wrap gap-1">
+      {tabs.map((t) => (
+        <button
+          key={t.key}
+          type="button"
+          onClick={() => onChange(t.key)}
+          className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+            value === t.key
+              ? "text-white"
+              : "border-gray-200 bg-white text-muted-foreground hover:text-foreground"
+          }`}
+          style={
+            value === t.key
+              ? { backgroundColor: SLIMMING_GREEN, borderColor: SLIMMING_GREEN }
+              : { borderColor: "#e5e7eb" }
+          }
+        >
+          {t.label}
+        </button>
       ))}
     </div>
   );
 }
 
-// ── Page content ──────────────────────────────────────────────────────────────
 function SlimmingEmployeesContent() {
-  const { employees, isLoading, isError, error, migrationMissing } =
-    useSalesEmployees("slimming");
+  const { employees, isLoading, isError, error, migrationMissing } = useSalesEmployees("slimming");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [showInactive, setShowInactive] = useState(false);
 
-  const active = employees.filter((e) => e.is_active);
-  const inactive = employees.filter((e) => !e.is_active);
+  const getType = (e: SalesEmployeeWithRates): EmployeeType =>
+    (e as SalesEmployeeWithRates & { employee_type?: EmployeeType }).employee_type ?? "therapist";
+
+  const active   = useMemo(() => employees.filter((e) => e.is_active), [employees]);
+  const inactive = useMemo(() => employees.filter((e) => !e.is_active), [employees]);
+
+  const counts = useMemo<Record<TypeFilter, number>>(() => ({
+    all:        active.length,
+    therapist:  active.filter((e) => getType(e) === "therapist").length,
+    advisor:    active.filter((e) => getType(e) === "advisor").length,
+    management: active.filter((e) => getType(e) === "management").length,
+  }), [active]);
+
+  const visibleActive = useMemo(
+    () => typeFilter === "all" ? active : active.filter((e) => getType(e) === typeFilter),
+    [active, typeFilter],
+  );
 
   return (
     <>
-      {/* Header */}
       <div className="space-y-1">
         <div className="flex items-center gap-2">
           <Users className="h-5 w-5" style={{ color: SLIMMING_GREEN }} />
@@ -108,28 +159,30 @@ function SlimmingEmployeesContent() {
         </p>
       </div>
 
-      {/* Migration not applied yet */}
       {migrationMissing && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
           <span>
-            Run migration <code className="font-mono text-xs">073_create_sales_employees.sql</code> in
+            Run migrations <code className="font-mono text-xs">073</code> and <code className="font-mono text-xs">074</code> in
             Supabase, then seed employees in Settings → Sales Employees.
           </span>
         </div>
       )}
 
-      {/* Generic error */}
       {isError && !migrationMissing && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           Failed to load employees{error ? ` — ${error}` : ""}. Try refreshing.
         </div>
       )}
 
-      {/* Loading */}
-      {isLoading && <IndexSkeleton />}
+      {isLoading && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-[72px] animate-pulse rounded-xl bg-gray-100" />
+          ))}
+        </div>
+      )}
 
-      {/* Empty */}
       {!isLoading && !isError && employees.length === 0 && (
         <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 py-16 text-center text-sm text-muted-foreground">
           <p className="font-medium text-foreground mb-1">No slimming employees yet</p>
@@ -140,27 +193,39 @@ function SlimmingEmployeesContent() {
         </div>
       )}
 
-      {/* Active employees */}
       {!isLoading && active.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {active.map((e) => (
-            <EmployeeCard key={e.slug} employee={e} />
-          ))}
-        </div>
+        <>
+          <TypeFilterTabs counts={counts} value={typeFilter} onChange={setTypeFilter} />
+          {visibleActive.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No active employees in this category.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {visibleActive.map((e) => (
+                <EmployeeCard key={e.slug} employee={e} />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
-      {/* Inactive employees — collapsed secondary section */}
       {!isLoading && inactive.length > 0 && (
-        <details className="group/inactive">
-          <summary className="cursor-pointer select-none text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowInactive((s) => !s)}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {showInactive ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
             Inactive employees ({inactive.length})
-          </summary>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 opacity-70">
-            {inactive.map((e) => (
-              <EmployeeCard key={e.slug} employee={e} />
-            ))}
-          </div>
-        </details>
+          </button>
+          {showInactive && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 opacity-70">
+              {inactive.map((e) => (
+                <EmployeeCard key={e.slug} employee={e} />
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </>
   );

@@ -1,21 +1,29 @@
 "use client";
 
-// Spa — Employee Dashboards team index.
-// Lists every spa sales employee from the registry (useSalesEmployees) and
-// links each one through to their personal commission dashboard at
-// /sales/spa/employees/[slug]. Date range persists via DateRangeProvider,
-// so plain links are fine.
-
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
 import { useSalesEmployees } from "@/lib/hooks/useSalesEmployees";
-import type { SalesEmployeeWithRates } from "@/lib/sales-employees/types";
+import type { EmployeeType, SalesEmployeeWithRates } from "@/lib/sales-employees/types";
 import { BRAND } from "@/lib/constants/design-tokens";
 import {
   AlertCircle, ChevronDown, ChevronRight, MapPin, Tags, Users,
 } from "lucide-react";
+
+type TypeFilter = "all" | EmployeeType;
+
+const TYPE_LABELS: Record<EmployeeType, string> = {
+  therapist:  "Therapists",
+  advisor:    "Advisors & Reception",
+  management: "Management",
+};
+
+function typeBadge(t: EmployeeType) {
+  if (t === "advisor")    return "bg-sky-50 border-sky-200 text-sky-700";
+  if (t === "management") return "bg-violet-50 border-violet-200 text-violet-700";
+  return "bg-emerald-50 border-emerald-200 text-emerald-700";
+}
 
 function RatesBadge({ employee }: { employee: SalesEmployeeWithRates }) {
   const set = employee.current_rates != null;
@@ -31,6 +39,7 @@ function RatesBadge({ employee }: { employee: SalesEmployeeWithRates }) {
 }
 
 function EmployeeCard({ employee }: { employee: SalesEmployeeWithRates }) {
+  const empType = (employee as SalesEmployeeWithRates & { employee_type?: EmployeeType }).employee_type ?? "therapist";
   return (
     <Link href={`/sales/spa/employees/${employee.slug}`} className="block group">
       <Card className="p-4 h-full transition-colors hover:border-[#8C7A5A]/50 hover:bg-muted/20">
@@ -57,6 +66,9 @@ function EmployeeCard({ employee }: { employee: SalesEmployeeWithRates }) {
               Inactive
             </span>
           )}
+          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${typeBadge(empType)}`}>
+            {TYPE_LABELS[empType]}
+          </span>
           <RatesBadge employee={employee} />
         </div>
 
@@ -75,38 +87,86 @@ function EmployeeCard({ employee }: { employee: SalesEmployeeWithRates }) {
   );
 }
 
+function TypeFilterTabs({
+  counts,
+  value,
+  onChange,
+}: {
+  counts: Record<TypeFilter, number>;
+  value: TypeFilter;
+  onChange: (t: TypeFilter) => void;
+}) {
+  const tabs: { key: TypeFilter; label: string }[] = [
+    { key: "all",        label: `All (${counts.all})` },
+    { key: "therapist",  label: `Therapists (${counts.therapist})` },
+    { key: "advisor",    label: `Advisors & Reception (${counts.advisor})` },
+    { key: "management", label: `Management (${counts.management})` },
+  ];
+  return (
+    <div className="flex flex-wrap gap-1">
+      {tabs.map((t) => (
+        <button
+          key={t.key}
+          type="button"
+          onClick={() => onChange(t.key)}
+          className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+            value === t.key
+              ? "border-[#8C7A5A] bg-[#8C7A5A] text-white"
+              : "border-gray-200 bg-white text-muted-foreground hover:border-[#8C7A5A]/50 hover:text-foreground"
+          }`}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function SpaEmployeesContent() {
   const { employees, isLoading, isError, error, migrationMissing } = useSalesEmployees("spa");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [showInactive, setShowInactive] = useState(false);
 
-  const active = useMemo(() => employees.filter((e) => e.is_active), [employees]);
+  const getType = (e: SalesEmployeeWithRates): EmployeeType =>
+    (e as SalesEmployeeWithRates & { employee_type?: EmployeeType }).employee_type ?? "therapist";
+
+  const active   = useMemo(() => employees.filter((e) => e.is_active), [employees]);
   const inactive = useMemo(() => employees.filter((e) => !e.is_active), [employees]);
+
+  const counts = useMemo<Record<TypeFilter, number>>(() => ({
+    all:        active.length,
+    therapist:  active.filter((e) => getType(e) === "therapist").length,
+    advisor:    active.filter((e) => getType(e) === "advisor").length,
+    management: active.filter((e) => getType(e) === "management").length,
+  }), [active]);
+
+  const visibleActive = useMemo(
+    () => typeFilter === "all" ? active : active.filter((e) => getType(e) === typeFilter),
+    [active, typeFilter],
+  );
 
   return (
     <>
-      {/* ── Header ──────────────────────────────────────────────────── */}
       <div className="space-y-1">
         <h1 className="text-xl md:text-2xl font-bold text-foreground tracking-tight flex items-center gap-2">
           <Users className="h-6 w-6" style={{ color: BRAND.spa.dark }} />
           Spa — Employee Dashboards
         </h1>
         <p className="text-sm text-muted-foreground">
-          Personal commission &amp; revenue dashboards for every spa therapist and consultant.
+          Personal commission &amp; revenue dashboards for every spa employee.
         </p>
       </div>
 
-      {/* ── Migration missing ───────────────────────────────────────── */}
       {migrationMissing && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
           <span>
-            Run migration <code className="font-mono text-xs">073_create_sales_employees.sql</code> in
+            Run migrations <code className="font-mono text-xs">073</code> and <code className="font-mono text-xs">074</code> in
             Supabase, then seed employees in Settings → Sales Employees.
           </span>
         </div>
       )}
 
-      {/* ── Error (non-migration) ───────────────────────────────────── */}
       {isError && !migrationMissing && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
@@ -114,7 +174,6 @@ function SpaEmployeesContent() {
         </div>
       )}
 
-      {/* ── Loading skeleton ────────────────────────────────────────── */}
       {isLoading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
           {Array.from({ length: 8 }).map((_, i) => (
@@ -123,7 +182,6 @@ function SpaEmployeesContent() {
         </div>
       )}
 
-      {/* ── Empty state ─────────────────────────────────────────────── */}
       {!isLoading && !isError && employees.length === 0 && (
         <Card className="p-10 text-center text-muted-foreground">
           <p className="text-sm">
@@ -135,16 +193,22 @@ function SpaEmployeesContent() {
         </Card>
       )}
 
-      {/* ── Active employees ────────────────────────────────────────── */}
       {!isLoading && active.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
-          {active.map((e) => (
-            <EmployeeCard key={e.id} employee={e} />
-          ))}
-        </div>
+        <>
+          <TypeFilterTabs counts={counts} value={typeFilter} onChange={setTypeFilter} />
+
+          {visibleActive.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No active employees in this category.</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
+              {visibleActive.map((e) => (
+                <EmployeeCard key={e.id} employee={e} />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
-      {/* ── Inactive employees (collapsed) ──────────────────────────── */}
       {!isLoading && inactive.length > 0 && (
         <div>
           <button

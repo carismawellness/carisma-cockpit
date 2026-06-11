@@ -7,6 +7,7 @@
 
 import { use } from "react";
 import Link from "next/link";
+import type { EmployeeType } from "@/lib/sales-employees/types";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -119,6 +120,7 @@ function EmployeeDashboardContent({
     stats?.employee.commission_basis === "inc_vat" ? "inc-VAT" : "ex-VAT";
   const paymentMix =
     ((stats?.brand_extras?.payment_mix as PaymentMixEntry[] | undefined) ?? []);
+  const empType: EmployeeType = (stats?.employee.employee_type as EmployeeType | undefined) ?? "therapist";
 
   // ── Not found ──────────────────────────────────────────────────────────────
   if (notFound) {
@@ -160,6 +162,13 @@ function EmployeeDashboardContent({
           >
             Aesthetics
           </span>
+          {empType !== "therapist" && (
+            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+              empType === "management" ? "bg-violet-50 border-violet-200 text-violet-700" : "bg-sky-50 border-sky-200 text-sky-700"
+            }`}>
+              {empType === "management" ? "Management" : "Advisor / Reception"}
+            </span>
+          )}
         </div>
         <p className="text-sm text-muted-foreground">
           {stats?.employee.role ?? "Sales employee"} · {periodLabel} · figures {basisLabel}

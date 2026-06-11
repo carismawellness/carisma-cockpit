@@ -17,11 +17,23 @@ import { EmployeeTrendChart } from "@/components/sales/employees/EmployeeTrendCh
 import { EmployeeBreakdownTable } from "@/components/sales/employees/EmployeeBreakdownTable";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { BRAND } from "@/lib/constants/design-tokens";
+import type { EmployeeType } from "@/lib/sales-employees/types";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LabelList,
 } from "recharts";
 import { AlertCircle, ChevronLeft, MapPin } from "lucide-react";
+
+const TYPE_LABELS: Record<EmployeeType, string> = {
+  therapist:  "Therapist",
+  advisor:    "Advisor / Reception",
+  management: "Management",
+};
+function typeBadgeClass(t: EmployeeType) {
+  if (t === "advisor")    return "bg-sky-50 border-sky-200 text-sky-700";
+  if (t === "management") return "bg-violet-50 border-violet-200 text-violet-700";
+  return "bg-emerald-50 border-emerald-200 text-emerald-700";
+}
 
 interface LocationRevenue {
   name: string;
@@ -52,6 +64,7 @@ function SpaEmployeeContent({
     () => employees.find((e) => e.slug === slug)?.location_name ?? null,
     [employees, slug],
   );
+  const empType: EmployeeType = (stats?.employee.employee_type as EmployeeType | undefined) ?? "therapist";
 
   const periodLabel = useMemo(
     () => formatDateRangeLabel(dateFrom, dateTo),
@@ -110,6 +123,11 @@ function SpaEmployeeContent({
           >
             Spa
           </span>
+          {stats && (
+            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${typeBadgeClass(empType)}`}>
+              {TYPE_LABELS[empType]}
+            </span>
+          )}
           {stats && !stats.employee.is_active && (
             <span className="inline-flex items-center rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
               Inactive
@@ -163,13 +181,13 @@ function SpaEmployeeContent({
             serviceRate={stats.rates?.service_rate ?? 0}
             retailRate={stats.rates?.retail_rate ?? 0}
             ratesSet={stats.employee.rates_set}
-            accentColor={BRAND.spa.dark}
+            accentColor={BRAND.spa.soft}
             periodLabel={periodLabel}
           />
 
           <EmployeeStatCards totals={stats.totals} basisLabel={basisLabel} />
 
-          <EmployeeTrendChart daily={stats.daily} accentColor={BRAND.spa.dark} />
+          <EmployeeTrendChart daily={stats.daily} accentColor={BRAND.spa.soft} />
 
           {/* Service + retail breakdowns */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -210,7 +228,7 @@ function SpaEmployeeContent({
                     formatter={(v: unknown) => [fmtShort(Number(v)), "Revenue"]}
                     contentStyle={{ fontSize: 12 }}
                   />
-                  <Bar dataKey="revenue" fill={BRAND.spa.dark} radius={[0, 4, 4, 0]} barSize={24}>
+                  <Bar dataKey="revenue" fill={BRAND.spa.soft} radius={[0, 4, 4, 0]} barSize={24}>
                     <LabelList
                       dataKey="revenue"
                       position="right"
