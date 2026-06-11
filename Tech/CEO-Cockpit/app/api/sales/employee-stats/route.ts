@@ -25,6 +25,7 @@ import { fetchAll } from "@/lib/supabase/fetch-all";
 import { normalizeName } from "@/lib/sales-employees/names";
 import { isAestheticsRetail } from "@/lib/sales-employees/classify";
 import { commissionForRow, computeCommission, pickRate } from "@/lib/sales-employees/engine";
+import { isAdminEmail } from "@/lib/auth/admins";
 import type {
   BreakdownRow,
   CommissionRate,
@@ -84,7 +85,7 @@ export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
   const brand = params.get("brand") ?? "";
   const slug = params.get("slug") ?? "";
-  const from = params.get("from") ?? "";
+  let from = params.get("from") ?? "";
   const to = params.get("to") ?? "";
   if (!BRANDS.has(brand)) {
     return NextResponse.json({ error: "brand must be spa|aesthetics|slimming" }, { status: 400 });
@@ -92,6 +93,15 @@ export async function GET(req: NextRequest) {
   if (!slug) return NextResponse.json({ error: "slug is required" }, { status: 400 });
   if (!DATE_RE.test(from) || !DATE_RE.test(to)) {
     return NextResponse.json({ error: "from/to must be YYYY-MM-DD" }, { status: 400 });
+  }
+
+  // Enforce 6-month lookback for non-admin users — server-side security gate.
+  if (!isAdminEmail(user.email)) {
+    const earliest = new Date();
+    earliest.setMonth(earliest.getMonth() - 6);
+    earliest.setHours(0, 0, 0, 0);
+    const earliestStr = earliest.toISOString().slice(0, 10);
+    if (from < earliestStr) from = earliestStr;
   }
 
   const db = getAdminClient();

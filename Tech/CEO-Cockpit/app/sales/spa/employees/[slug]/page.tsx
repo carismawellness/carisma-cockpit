@@ -11,6 +11,7 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
 import { useSalesEmployeeStats } from "@/lib/hooks/useSalesEmployeeStats";
 import { useSalesEmployees } from "@/lib/hooks/useSalesEmployees";
+import { useIsAdmin } from "@/lib/hooks/useIsAdmin";
 import { CommissionHero, CommissionHeroSkeleton } from "@/components/sales/employees/CommissionHero";
 import { EmployeeStatCards } from "@/components/sales/employees/EmployeeStatCards";
 import { EmployeeTrendChart } from "@/components/sales/employees/EmployeeTrendChart";
@@ -23,7 +24,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LabelList,
 } from "recharts";
-import { AlertCircle, ChevronLeft, MapPin } from "lucide-react";
+import { AlertCircle, ChevronLeft, Lock, MapPin } from "lucide-react";
 
 const TYPE_LABELS: Record<EmployeeType, string> = {
   therapist:  "Therapist",
@@ -253,6 +254,46 @@ function SpaEmployeeContent({
   );
 }
 
+// Rolling lookback enforced for non-admin users — mirrors API-side constant.
+const EMPLOYEE_MAX_LOOKBACK_MONTHS = 6;
+
+function SpaEmployeeDateGate({
+  slug,
+  rawDateFrom,
+  dateTo,
+}: {
+  slug: string;
+  rawDateFrom: Date;
+  dateTo: Date;
+}) {
+  const { isAdmin, isLoaded } = useIsAdmin();
+
+  const { dateFrom, isClamped } = useMemo(() => {
+    if (!isLoaded || isAdmin) return { dateFrom: rawDateFrom, isClamped: false };
+    const earliest = new Date();
+    earliest.setMonth(earliest.getMonth() - EMPLOYEE_MAX_LOOKBACK_MONTHS);
+    earliest.setHours(0, 0, 0, 0);
+    if (rawDateFrom < earliest) return { dateFrom: earliest, isClamped: true };
+    return { dateFrom: rawDateFrom, isClamped: false };
+  }, [isAdmin, isLoaded, rawDateFrom]);
+
+  if (!isLoaded) {
+    return <div className="text-center py-12 text-gray-400 text-sm">Verifying access…</div>;
+  }
+
+  return (
+    <>
+      {isClamped && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 flex items-center gap-2">
+          <Lock className="h-4 w-4 flex-shrink-0" />
+          <span className="font-semibold">Data restricted to the last {EMPLOYEE_MAX_LOOKBACK_MONTHS} months.</span>
+        </div>
+      )}
+      <SpaEmployeeContent slug={slug} dateFrom={dateFrom} dateTo={dateTo} />
+    </>
+  );
+}
+
 export default function SpaEmployeePage({
   params,
 }: {
@@ -263,7 +304,7 @@ export default function SpaEmployeePage({
   return (
     <DashboardShell>
       {({ dateFrom, dateTo }) => (
-        <SpaEmployeeContent slug={slug} dateFrom={dateFrom} dateTo={dateTo} />
+        <SpaEmployeeDateGate slug={slug} rawDateFrom={dateFrom} dateTo={dateTo} />
       )}
     </DashboardShell>
   );

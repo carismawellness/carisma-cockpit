@@ -18,9 +18,10 @@ import { EmployeeStatCards } from "@/components/sales/employees/EmployeeStatCard
 import { EmployeeTrendChart } from "@/components/sales/employees/EmployeeTrendChart";
 import { EmployeeBreakdownTable } from "@/components/sales/employees/EmployeeBreakdownTable";
 import { useSalesEmployeeStats } from "@/lib/hooks/useSalesEmployeeStats";
+import { useIsAdmin } from "@/lib/hooks/useIsAdmin";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { BRAND } from "@/lib/constants/design-tokens";
-import { ChevronLeft, Banknote, Wallet } from "lucide-react";
+import { ChevronLeft, Banknote, Lock, Wallet } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LabelList,
@@ -308,6 +309,46 @@ function SlimmingEmployeeContent({
   );
 }
 
+// Rolling lookback enforced for non-admin users — mirrors API-side constant.
+const EMPLOYEE_MAX_LOOKBACK_MONTHS = 6;
+
+function SlimmingEmployeeDateGate({
+  slug,
+  rawDateFrom,
+  dateTo,
+}: {
+  slug: string;
+  rawDateFrom: Date;
+  dateTo: Date;
+}) {
+  const { isAdmin, isLoaded } = useIsAdmin();
+
+  const { dateFrom, isClamped } = useMemo(() => {
+    if (!isLoaded || isAdmin) return { dateFrom: rawDateFrom, isClamped: false };
+    const earliest = new Date();
+    earliest.setMonth(earliest.getMonth() - EMPLOYEE_MAX_LOOKBACK_MONTHS);
+    earliest.setHours(0, 0, 0, 0);
+    if (rawDateFrom < earliest) return { dateFrom: earliest, isClamped: true };
+    return { dateFrom: rawDateFrom, isClamped: false };
+  }, [isAdmin, isLoaded, rawDateFrom]);
+
+  if (!isLoaded) {
+    return <div className="text-center py-12 text-gray-400 text-sm">Verifying access…</div>;
+  }
+
+  return (
+    <>
+      {isClamped && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 flex items-center gap-2">
+          <Lock className="h-4 w-4 flex-shrink-0" />
+          <span className="font-semibold">Data restricted to the last {EMPLOYEE_MAX_LOOKBACK_MONTHS} months.</span>
+        </div>
+      )}
+      <SlimmingEmployeeContent slug={slug} dateFrom={dateFrom} dateTo={dateTo} />
+    </>
+  );
+}
+
 export default function SlimmingEmployeePage({
   params,
 }: {
@@ -318,7 +359,7 @@ export default function SlimmingEmployeePage({
   return (
     <DashboardShell>
       {({ dateFrom, dateTo }) => (
-        <SlimmingEmployeeContent slug={slug} dateFrom={dateFrom} dateTo={dateTo} />
+        <SlimmingEmployeeDateGate slug={slug} rawDateFrom={dateFrom} dateTo={dateTo} />
       )}
     </DashboardShell>
   );
