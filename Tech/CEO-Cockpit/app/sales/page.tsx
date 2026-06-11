@@ -10,7 +10,7 @@ import { GroupBrandBreakdown } from "@/components/sales/GroupBrandBreakdown";
 import { GroupForecastSummary } from "@/components/sales/GroupForecastSummary";
 import { GroupLongitudinal } from "@/components/sales/GroupLongitudinal";
 import { useGroupRevenue } from "@/lib/hooks/useGroupRevenue";
-import { Building2, Sparkles, Scale } from "lucide-react";
+import { Building2, Sparkles, Scale, ShoppingBag } from "lucide-react";
 
 function fmtK(v: number) {
   if (Math.abs(v) >= 1_000_000) return `€${(v / 1_000_000).toFixed(2)}M`;
@@ -28,11 +28,18 @@ function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
   const { period, ly, spa_locations, monthly, forecast, isFetching } = useGroupRevenue(dateFrom, dateTo);
 
   const yoy = useMemo(() => ({
-    total:      calcYoY(period.total,      ly.total),
-    spa:        calcYoY(period.spa,        ly.spa),
-    aesthetics: calcYoY(period.aesthetics, ly.aesthetics),
-    slimming:   calcYoY(period.slimming,   ly.slimming),
+    total:      calcYoY(period.total,             ly.total),
+    spa:        calcYoY(period.spa,               ly.spa),
+    spa_retail: calcYoY(period.spa_retail ?? 0,   ly.spa_retail ?? 0),
+    aesthetics: calcYoY(period.aesthetics,        ly.aesthetics),
+    slimming:   calcYoY(period.slimming,          ly.slimming),
   }), [period, ly]);
+
+  // Spa retail share of the brand — surfaces alongside the standalone retail
+  // card so you can see how much of Spa revenue is product-driven at a glance.
+  const retailSharePct = period.spa > 0 && period.spa_retail !== undefined
+    ? (period.spa_retail / period.spa) * 100
+    : null;
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -41,7 +48,7 @@ function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
         <p className="text-xs text-muted-foreground mt-0.5">All brands · Gross (inc-VAT) · Source: Cockpit Datasheet</p>
       </div>
 
-      <SalesKPIGrid columns={4}>
+      <SalesKPIGrid columns={5}>
         <div className="h-full">
           <SalesKPICard
             label="Group Revenue"
@@ -90,6 +97,28 @@ function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
             subtitle="Single location"
             yoyChange={isFetching ? undefined : yoy.slimming}
             icon={Scale}
+          />
+        </button>
+        {/* Retail revenue callout — subset of Spa, not exclusive. Linked to the
+            Spa Retail drill-down for full breakdown. */}
+        <button
+          type="button"
+          className="h-full text-left cursor-pointer rounded-2xl focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-ring focus-visible:outline-none"
+          onClick={() => router.push("/sales/spa/retail")}
+          aria-label="View Spa retail dashboard"
+        >
+          <SalesKPICard
+            label="Spa Retail"
+            value={isFetching ? "—" : fmtK(period.spa_retail ?? 0)}
+            subtitle={
+              isFetching
+                ? "—"
+                : retailSharePct != null
+                  ? `${retailSharePct.toFixed(1)}% of Spa revenue`
+                  : "Subset of Spa"
+            }
+            yoyChange={isFetching ? undefined : yoy.spa_retail}
+            icon={ShoppingBag}
           />
         </button>
       </SalesKPIGrid>

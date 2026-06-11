@@ -40,8 +40,9 @@ function toMonthStr(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
-// Spa revenue for a date window: returns { total, byLocation }
+// Spa revenue for a date window: returns { total, services, retail, byLocation }
 // Uses spa_revenue_daily for exact date-range filtering (no month snapping).
+// services + retail = total (inc-VAT after migration 073).
 async function fetchSpaRevenue(
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
   fromDate: string,
@@ -58,11 +59,17 @@ async function fetchSpaRevenue(
   const rows = data ?? [];
   const locMap = new Map<number, number>();
   let total = 0;
+  let services = 0;
+  let retail   = 0;
 
   for (const r of rows) {
-    const gross = computeSpaGrossRevenue(r);
+    const gross    = computeSpaGrossRevenue(r);
+    const services_inc = r.services ?? 0;
+    const retail_inc   = (r.product_phytomer ?? 0) + (r.product_purest ?? 0) + (r.product_other ?? 0);
     locMap.set(r.location_id, (locMap.get(r.location_id) ?? 0) + gross);
-    total += gross;
+    total    += gross;
+    services += services_inc;
+    retail   += retail_inc;
   }
 
   const byLocation = Array.from(locMap.entries())
@@ -74,7 +81,12 @@ async function fetchSpaRevenue(
     }))
     .sort((a, b) => b.revenue - a.revenue || a.location_id - b.location_id);
 
-  return { total: Math.round(total), byLocation };
+  return {
+    total:    Math.round(total),
+    services: Math.round(services),
+    retail:   Math.round(retail),
+    byLocation,
+  };
 }
 
 // True when the [fromDateStr, toDateStr] window covers every day of `month`
@@ -339,16 +351,20 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       period: {
-        spa:        spaCurr.total,
-        aesthetics: aesCurr.total,
-        slimming:   slimCurr.total,
-        total:      spaCurr.total + aesCurr.total + slimCurr.total,
+        spa:           spaCurr.total,
+        spa_services:  spaCurr.services,
+        spa_retail:    spaCurr.retail,
+        aesthetics:    aesCurr.total,
+        slimming:      slimCurr.total,
+        total:         spaCurr.total + aesCurr.total + slimCurr.total,
       },
       ly: {
-        spa:        spaLY.total,
-        aesthetics: aesLY.total,
-        slimming:   slimLY.total,
-        total:      spaLY.total + aesLY.total + slimLY.total,
+        spa:           spaLY.total,
+        spa_services:  spaLY.services,
+        spa_retail:    spaLY.retail,
+        aesthetics:    aesLY.total,
+        slimming:      slimLY.total,
+        total:         spaLY.total + aesLY.total + slimLY.total,
       },
       // Undated rows excluded from partial-period windows (month not fully covered)
       undatedExcluded: {

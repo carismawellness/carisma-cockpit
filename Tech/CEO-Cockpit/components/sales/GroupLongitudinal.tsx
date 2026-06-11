@@ -442,7 +442,44 @@ export function GroupLongitudinal({ monthly, forecast, isFetching }: Props) {
                   label={{ value: "Today", position: "top", fontSize: 10, fill: "#6b7280" }}
                 />
               )}
-              {/* LY total trajectory overlay — neutral gray dashed line */}
+              {/* Per-brand LY trajectories — thin dashed lines in each brand's
+                  dark color. Lets the CEO see *which* brand drove LY changes,
+                  not just the aggregate, on the same bar chart. */}
+              <Line
+                type="monotone"
+                dataKey="spa_ly"
+                name={`Spa ${lyYearTwo}`}
+                stroke={BRAND.spa.dark}
+                strokeWidth={1.5}
+                strokeDasharray="3 3"
+                strokeOpacity={0.7}
+                dot={false}
+                activeDot={{ r: 3 }}
+              />
+              <Line
+                type="monotone"
+                dataKey="aesthetics_ly"
+                name={`Aesthetics ${lyYearTwo}`}
+                stroke={BRAND.aesthetics.dark}
+                strokeWidth={1.5}
+                strokeDasharray="3 3"
+                strokeOpacity={0.7}
+                dot={false}
+                activeDot={{ r: 3 }}
+              />
+              <Line
+                type="monotone"
+                dataKey="slimming_ly"
+                name={`Slimming ${lyYearTwo}`}
+                stroke={BRAND.slimming.dark}
+                strokeWidth={1.5}
+                strokeDasharray="3 3"
+                strokeOpacity={0.7}
+                dot={false}
+                activeDot={{ r: 3 }}
+              />
+              {/* LY total trajectory overlay — neutral gray dashed line on top
+                  so the aggregate stays visually distinct from the brand lines. */}
               <Line
                 type="monotone"
                 dataKey="total_ly"

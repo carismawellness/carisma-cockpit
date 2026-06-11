@@ -12,10 +12,14 @@ export interface GroupLocationRow {
 }
 
 export interface GroupPeriod {
-  spa:        number;
-  aesthetics: number;
-  slimming:   number;
-  total:      number;
+  spa:           number;
+  /** Spa services (excluding retail) — optional; backfilled with 0 when absent. */
+  spa_services?: number;
+  /** Spa retail (product_*) — optional; backfilled with 0 when absent. */
+  spa_retail?:   number;
+  aesthetics:    number;
+  slimming:      number;
+  total:         number;
 }
 
 export interface GroupMonthlyPoint {
