@@ -28,7 +28,8 @@ import {
 
 /* ---------- constants ---------- */
 
-const BRAND_COLOR = BRAND.aesthetics.dark;  // canonical aesthetics brand color
+const BRAND_COLOR = BRAND.aesthetics.dark;   // text colors only
+const BRAND_FILL  = BRAND.aesthetics.soft;   // fills, strokes, borders, backgrounds
 
 /* ---------- helpers ---------- */
 
@@ -78,7 +79,7 @@ function AggregateBox({
   return (
     <div
       className={`rounded-lg border-2 p-4 text-center ${className ?? ""}`}
-      style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}
+      style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}
     >
       <p className="text-sm text-gray-600">{label}</p>
       <p className="text-xl md:text-2xl font-bold mt-1" style={{ color: BRAND_COLOR }}>
@@ -101,7 +102,7 @@ function EmailRateBar({ label, value, max }: { label: string; value: number; max
       <div className="h-3 w-full rounded-full bg-gray-100">
         <div
           className="h-3 rounded-full transition-all"
-          style={{ width: `${pct}%`, backgroundColor: BRAND_COLOR }}
+          style={{ width: `${pct}%`, backgroundColor: BRAND_FILL }}
         />
       </div>
     </div>
@@ -473,7 +474,7 @@ function AestheticsMarketingContent({
             />
             <div
               className="rounded-lg border-2 p-4 text-center"
-              style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}
+              style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}
             >
               <p className="text-sm text-gray-600">ROAS</p>
               <p
@@ -574,7 +575,7 @@ function AestheticsMarketingContent({
                 />
                 <div
                   className="rounded-lg border-2 p-4 text-center"
-                  style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}
+                  style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}
                 >
                   <p className="text-sm text-gray-600">ROAS</p>
                   <p
@@ -652,7 +653,7 @@ function AestheticsMarketingContent({
             {/* Flow breakdown table */}
             <div className="mt-6">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Flow Performance</h3>
-              <FlowsTable brand="aesthetics" dateFrom={dateFrom} dateTo={dateTo} brandColor={BRAND.aesthetics.dark} />
+              <FlowsTable brand="aesthetics" dateFrom={dateFrom} dateTo={dateTo} brandColor={BRAND_COLOR} />
             </div>
           </>
         )}
@@ -776,7 +777,7 @@ function AestheticsMarketingContent({
                   <AggregateBox label="Total Revenue" value={formatCurrency(totalRevenue)} />
                   <div
                     className="rounded-lg border-2 p-4 text-center"
-                    style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}
+                    style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}
                   >
                     <p className="text-sm text-gray-600">Blended ROAS</p>
                     <p
@@ -789,7 +790,7 @@ function AestheticsMarketingContent({
                 <div className="mt-3 flex justify-center">
                   <div
                     className="rounded-lg border-2 px-8 py-4 text-center"
-                    style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}
+                    style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}
                   >
                     <p className="text-sm text-gray-600">Total Profit</p>
                     <p

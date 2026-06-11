@@ -26,8 +26,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList,
 } from "recharts";
 
-const ACCENT = BRAND.aesthetics.dark; // #3B7676
-const ACCENT_SOFT = BRAND.aesthetics.soft; // #DEEBEB
+const ACCENT      = BRAND.aesthetics.dark; // text colors, icons
+const ACCENT_SOFT = BRAND.aesthetics.soft; // fills, backgrounds, borders
 
 interface PaymentMixEntry {
   type: string;
@@ -81,7 +81,7 @@ function PaymentMixCard({ mix }: { mix: PaymentMixEntry[] }) {
                 formatter={(v: unknown) => [formatCurrency(Number(v)), "Revenue"]}
                 contentStyle={{ fontSize: 12 }}
               />
-              <Bar dataKey="revenue" fill={ACCENT} radius={[0, 4, 4, 0]} barSize={22}>
+              <Bar dataKey="revenue" fill={ACCENT_SOFT} radius={[0, 4, 4, 0]} barSize={22}>
                 <LabelList
                   dataKey="revenue"
                   position="right"
@@ -209,7 +209,7 @@ function EmployeeDashboardContent({
             serviceRate={stats.rates?.service_rate ?? 0}
             retailRate={stats.rates?.retail_rate ?? 0}
             ratesSet={stats.employee.rates_set}
-            accentColor={ACCENT}
+            accentColor={ACCENT_SOFT}
             periodLabel={periodLabel}
           />
 

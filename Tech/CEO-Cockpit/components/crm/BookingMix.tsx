@@ -84,11 +84,12 @@ export function BookingMix({
 
         const total = items.reduce((s, t) => s + t.value, 0);
 
-        const brandColor = BRAND[brand.slug as BrandKey].dark;
+        const brandColor     = BRAND[brand.slug as BrandKey].soft; // bar fill
+        const brandTextColor = BRAND[brand.slug as BrandKey].dark; // heading text
 
         return (
           <Card key={brand.slug} className="p-3 md:p-6 relative">
-            <h3 className="text-base font-semibold mb-4" style={{ color: brandColor }}>
+            <h3 className="text-base font-semibold mb-4" style={{ color: brandTextColor }}>
               {brand.label}
             </h3>
             {items.length === 0 ? (

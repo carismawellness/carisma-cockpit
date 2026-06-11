@@ -27,11 +27,11 @@ import {
 import { format, addDays } from "date-fns";
 import { BRAND } from "@/lib/constants/design-tokens";
 
-// Canonical brand palette — `dark` for left-border accents on brand cards.
+// Canonical brand palette — `soft` for left-border accents on brand cards.
 const BRAND_DARK: Record<string, string> = {
-  spa:        BRAND.spa.dark,
-  aesthetics: BRAND.aesthetics.dark,
-  slimming:   BRAND.slimming.dark,
+  spa:        BRAND.spa.soft,
+  aesthetics: BRAND.aesthetics.soft,
+  slimming:   BRAND.slimming.soft,
 };
 
 /* ------------------------------------------------------------------ */
@@ -466,7 +466,7 @@ export function EmployeeTable({
                     formatter={(v: unknown, name) => [formatCurrency(Number(v)), String(name ?? "")]}
                   />
                   <Legend />
-                  <Bar dataKey="Sales" fill={BRAND.spa.dark}>
+                  <Bar dataKey="Sales" fill={BRAND.spa.soft}>
                     <LabelList
                       dataKey="Sales"
                       position="top"
@@ -474,7 +474,7 @@ export function EmployeeTable({
                       style={{ fontSize: 10, fontWeight: 600, fill: "#111827" }}
                     />
                   </Bar>
-                  <Bar dataKey="Bookings" fill={BRAND.aesthetics.dark}>
+                  <Bar dataKey="Bookings" fill={BRAND.aesthetics.soft}>
                     <LabelList
                       dataKey="Bookings"
                       position="top"
@@ -504,7 +504,7 @@ export function EmployeeTable({
                   <Line
                     type="monotone"
                     dataKey="Conv %"
-                    stroke={BRAND.aesthetics.dark}
+                    stroke={BRAND.aesthetics.soft}
                     strokeWidth={chartDefaults.strokeWidth}
                     dot={{ r: 2 }}
                     connectNulls
@@ -512,7 +512,7 @@ export function EmployeeTable({
                   <Line
                     type="monotone"
                     dataKey="Deposit %"
-                    stroke={BRAND.spa.dark}
+                    stroke={BRAND.spa.soft}
                     strokeWidth={chartDefaults.strokeWidth}
                     dot={{ r: 2 }}
                     connectNulls

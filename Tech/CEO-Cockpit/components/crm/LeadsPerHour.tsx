@@ -26,11 +26,11 @@ const BRAND_LABELS: Record<string, string> = {
   slimming: "Slimming",
 };
 
-// Canonical brand palette — `dark` for solid bar fills.
+// Canonical brand palette — `soft` for solid bar fills.
 const BRAND_FILL: Record<string, string> = {
-  spa:        BRAND.spa.dark,
-  aesthetics: BRAND.aesthetics.dark,
-  slimming:   BRAND.slimming.dark,
+  spa:        BRAND.spa.soft,
+  aesthetics: BRAND.aesthetics.soft,
+  slimming:   BRAND.slimming.soft,
 };
 
 export function LeadsPerHour({

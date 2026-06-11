@@ -14,11 +14,11 @@ const BRAND_LABELS: Record<string, string> = {
 const FUNNEL_STAGES = ["New Leads", "Call Back", "Contacted", "Booking Won", "Active Member"];
 const OUTCOME_STAGES = ["Booking Lost", "No Show", "Nurturing"];
 
-// Canonical brand palette — dark variant for primary marks on light backgrounds.
+// Canonical brand palette — soft fills for bars/swatches on light backgrounds.
 const BRAND_ACCENT: Record<string, string> = {
-  spa:        BRAND.spa.dark,
-  aesthetics: BRAND.aesthetics.dark,
-  slimming:   BRAND.slimming.dark,
+  spa:        BRAND.spa.soft,
+  aesthetics: BRAND.aesthetics.soft,
+  slimming:   BRAND.slimming.soft,
 };
 
 function BrandFunnel({

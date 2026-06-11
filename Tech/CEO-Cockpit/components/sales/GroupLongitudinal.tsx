@@ -355,9 +355,9 @@ export function GroupLongitudinal({ monthly, forecast, isFetching }: Props) {
                   </Bar>
                 ))
               ) : (
-                <Bar dataKey="spa" name="Spa" stackId="a" fill={BRAND.spa.dark} />
+                <Bar dataKey="spa" name="Spa" stackId="a" fill={BRAND.spa.soft} />
               )}
-              <Bar dataKey="aesthetics" name="Aesthetics" stackId="a" fill={BRAND.aesthetics.dark}>
+              <Bar dataKey="aesthetics" name="Aesthetics" stackId="a" fill={BRAND.aesthetics.soft}>
                 {expanded && (
                   <LabelList
                     dataKey="aesthetics"
@@ -370,7 +370,7 @@ export function GroupLongitudinal({ monthly, forecast, isFetching }: Props) {
                   />
                 )}
               </Bar>
-              <Bar dataKey="slimming"   name="Slimming"   stackId="a" fill={BRAND.slimming.dark}>
+              <Bar dataKey="slimming"   name="Slimming"   stackId="a" fill={BRAND.slimming.soft}>
                 {expanded && (
                   <LabelList
                     dataKey="slimming"
@@ -407,13 +407,13 @@ export function GroupLongitudinal({ monthly, forecast, isFetching }: Props) {
               {/* Forecast region — translucent, dashed-outline brand stacks (ƒ).
                   Zero on actual months, so they share the same stack safely. */}
               {hasForecast && (
-                <Bar dataKey="fc_spa" name="Spa ƒ" stackId="a" fill={BRAND.spa.dark} fillOpacity={FORECAST_FILL_OPACITY} stroke={BRAND.spa.dark} strokeWidth={1} strokeDasharray="4 3" legendType="none" isAnimationActive={false} />
+                <Bar dataKey="fc_spa" name="Spa ƒ" stackId="a" fill={BRAND.spa.soft} fillOpacity={FORECAST_FILL_OPACITY} stroke={BRAND.spa.soft} strokeWidth={1} strokeDasharray="4 3" legendType="none" isAnimationActive={false} />
               )}
               {hasForecast && (
-                <Bar dataKey="fc_aesthetics" name="Aesthetics ƒ" stackId="a" fill={BRAND.aesthetics.dark} fillOpacity={FORECAST_FILL_OPACITY} stroke={BRAND.aesthetics.dark} strokeWidth={1} strokeDasharray="4 3" legendType="none" isAnimationActive={false} />
+                <Bar dataKey="fc_aesthetics" name="Aesthetics ƒ" stackId="a" fill={BRAND.aesthetics.soft} fillOpacity={FORECAST_FILL_OPACITY} stroke={BRAND.aesthetics.soft} strokeWidth={1} strokeDasharray="4 3" legendType="none" isAnimationActive={false} />
               )}
               {hasForecast && (
-                <Bar dataKey="fc_slimming" name="Slimming ƒ" stackId="a" fill={BRAND.slimming.dark} fillOpacity={FORECAST_FILL_OPACITY} stroke={BRAND.slimming.dark} strokeWidth={1} strokeDasharray="4 3" legendType="none" isAnimationActive={false} />
+                <Bar dataKey="fc_slimming" name="Slimming ƒ" stackId="a" fill={BRAND.slimming.soft} fillOpacity={FORECAST_FILL_OPACITY} stroke={BRAND.slimming.soft} strokeWidth={1} strokeDasharray="4 3" legendType="none" isAnimationActive={false} />
               )}
               {/* Current partial month: ghost extension from actual MTD up to projection */}
               {hasForecast && (
@@ -477,21 +477,21 @@ export function GroupLongitudinal({ monthly, forecast, isFetching }: Props) {
                 formatter={(v: unknown, name) => [fmtK(Number(v)), String(name ?? "")]}
               />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="spa"        name={`Spa ${curYearTwo}`}        stroke={BRAND.spa.dark}        strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="aesthetics" name={`Aesthetics ${curYearTwo}`} stroke={BRAND.aesthetics.dark} strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="slimming"   name={`Slimming ${curYearTwo}`}   stroke={BRAND.slimming.dark}   strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="spa_ly"        name={`Spa ${lyYearTwo}`}        stroke={BRAND.spa.dark}        strokeWidth={1.5} strokeDasharray="4 2" strokeOpacity={0.5} dot={false} />
-              <Line type="monotone" dataKey="aesthetics_ly" name={`Aesthetics ${lyYearTwo}`} stroke={BRAND.aesthetics.dark} strokeWidth={1.5} strokeDasharray="4 2" strokeOpacity={0.5} dot={false} />
-              <Line type="monotone" dataKey="slimming_ly"   name={`Slimming ${lyYearTwo}`}   stroke={BRAND.slimming.dark}   strokeWidth={1.5} strokeDasharray="4 2" strokeOpacity={0.5} dot={false} />
+              <Line type="monotone" dataKey="spa"        name={`Spa ${curYearTwo}`}        stroke={BRAND.spa.soft}        strokeWidth={2.5} dot={false} />
+              <Line type="monotone" dataKey="aesthetics" name={`Aesthetics ${curYearTwo}`} stroke={BRAND.aesthetics.soft} strokeWidth={2.5} dot={false} />
+              <Line type="monotone" dataKey="slimming"   name={`Slimming ${curYearTwo}`}   stroke={BRAND.slimming.soft}   strokeWidth={2.5} dot={false} />
+              <Line type="monotone" dataKey="spa_ly"        name={`Spa ${lyYearTwo}`}        stroke={BRAND.spa.soft}        strokeWidth={1.5} strokeDasharray="4 2" strokeOpacity={0.5} dot={false} />
+              <Line type="monotone" dataKey="aesthetics_ly" name={`Aesthetics ${lyYearTwo}`} stroke={BRAND.aesthetics.soft} strokeWidth={1.5} strokeDasharray="4 2" strokeOpacity={0.5} dot={false} />
+              <Line type="monotone" dataKey="slimming_ly"   name={`Slimming ${lyYearTwo}`}   stroke={BRAND.slimming.soft}   strokeWidth={1.5} strokeDasharray="4 2" strokeOpacity={0.5} dot={false} />
               {/* Dotted forecast continuations (ƒ) — connect to the actual lines at the current month */}
               {hasForecast && (
-                <Line type="monotone" dataKey="fcl_spa" name="Spa ƒ" stroke={BRAND.spa.dark} strokeWidth={2} strokeDasharray="2 5" strokeLinecap="round" dot={false} legendType="none" />
+                <Line type="monotone" dataKey="fcl_spa" name="Spa ƒ" stroke={BRAND.spa.soft} strokeWidth={2.5} strokeDasharray="2 5" strokeLinecap="round" dot={false} legendType="none" />
               )}
               {hasForecast && (
-                <Line type="monotone" dataKey="fcl_aesthetics" name="Aesthetics ƒ" stroke={BRAND.aesthetics.dark} strokeWidth={2} strokeDasharray="2 5" strokeLinecap="round" dot={false} legendType="none" />
+                <Line type="monotone" dataKey="fcl_aesthetics" name="Aesthetics ƒ" stroke={BRAND.aesthetics.soft} strokeWidth={2.5} strokeDasharray="2 5" strokeLinecap="round" dot={false} legendType="none" />
               )}
               {hasForecast && (
-                <Line type="monotone" dataKey="fcl_slimming" name="Slimming ƒ" stroke={BRAND.slimming.dark} strokeWidth={2} strokeDasharray="2 5" strokeLinecap="round" dot={false} legendType="none" />
+                <Line type="monotone" dataKey="fcl_slimming" name="Slimming ƒ" stroke={BRAND.slimming.soft} strokeWidth={2.5} strokeDasharray="2 5" strokeLinecap="round" dot={false} legendType="none" />
               )}
               {hasForecast && (
                 <ReferenceLine

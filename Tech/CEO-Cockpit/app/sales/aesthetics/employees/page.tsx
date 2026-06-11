@@ -11,8 +11,8 @@ import {
   AlertTriangle, BadgeCheck, ChevronDown, ChevronRight, Settings, Users,
 } from "lucide-react";
 
-const ACCENT      = BRAND.aesthetics.dark; // #3B7676
-const ACCENT_SOFT = BRAND.aesthetics.soft; // #DEEBEB
+const ACCENT      = BRAND.aesthetics.dark; // text colors, icons
+const ACCENT_SOFT = BRAND.aesthetics.soft; // fills, backgrounds, borders
 
 type TypeFilter = "all" | EmployeeType;
 
@@ -116,10 +116,10 @@ function TypeFilterTabs({
           onClick={() => onChange(t.key)}
           className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
             value === t.key
-              ? "border-[#3B7676] text-white"
+              ? "border-[#3B7676]"
               : "border-gray-200 bg-white text-muted-foreground hover:border-[#3B7676]/50 hover:text-foreground"
           }`}
-          style={value === t.key ? { backgroundColor: ACCENT, borderColor: ACCENT } : undefined}
+          style={value === t.key ? { backgroundColor: ACCENT_SOFT, borderColor: ACCENT_SOFT, color: ACCENT } : undefined}
         >
           {t.label}
         </button>

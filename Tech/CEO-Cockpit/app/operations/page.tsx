@@ -44,7 +44,7 @@ import {
 // Spa-hotel locations use a categorical palette (not brand colors).
 // Carisma Aesthetics + Slimming use their canonical BRAND.x.dark.
 const LOCATION_COLORS: Record<string, string> = {
-  inter:               BRAND.spa.dark,
+  inter:               BRAND.spa.soft,
   hugos:               "#B8C9E0",
   ramla:               "#E5B8B0",
   hyatt:               "#E5C088",
@@ -52,8 +52,8 @@ const LOCATION_COLORS: Record<string, string> = {
   novotel:             "#B5DCDC",
   labranda:            "#C7C4BD",
   odycy:               "#E5B5D0",
-  "aesthetics-clinic": BRAND.aesthetics.dark,
-  "slimming-clinic":   BRAND.slimming.dark,
+  "aesthetics-clinic": BRAND.aesthetics.soft,
+  "slimming-clinic":   BRAND.slimming.soft,
 };
 const FALLBACK_COLOR = "#9CA3AF";
 

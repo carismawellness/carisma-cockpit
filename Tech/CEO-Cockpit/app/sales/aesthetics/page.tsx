@@ -181,7 +181,7 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
           {hasCostData && (
             <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: BRAND.aesthetics.dark }} />
+                <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: BRAND.aesthetics.soft }} />
                 Revenue (inc-VAT, net of salary)
               </span>
               <span className="flex items-center gap-1">
@@ -234,7 +234,7 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
               />
               {hasCostData ? (
                 <>
-                  <Bar dataKey="revenue_net" stackId="rev" fill={BRAND.aesthetics.dark} radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="revenue_net" stackId="rev" fill={BRAND.aesthetics.soft} radius={[0, 0, 0, 0]} />
                   <Bar dataKey="salary_cost" stackId="rev" fill="#4a7fa5" radius={[0, 4, 4, 0]}>
                     <LabelList
                       dataKey="k_label"
@@ -251,7 +251,7 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
                   </Bar>
                 </>
               ) : (
-                <Bar dataKey="revenue_inc" fill={BRAND.aesthetics.dark} radius={[0, 4, 4, 0]}>
+                <Bar dataKey="revenue_inc" fill={BRAND.aesthetics.soft} radius={[0, 4, 4, 0]}>
                   <LabelList
                     dataKey="revenue_inc"
                     position="right"

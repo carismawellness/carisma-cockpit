@@ -55,7 +55,8 @@ const BRAND_LABEL_COLOR: Record<AgentBrand, string> = {
   SLIMMING:   BRAND.slimming.dark,
 };
 
-const SLIMMING_BAR_COLOR = BRAND.slimming.dark;
+const SLIMMING_BAR_COLOR = BRAND.slimming.dark; // text/axis labels only
+const SLIMMING_BAR_FILL  = BRAND.slimming.soft;  // bar fill + legend swatch
 
 // ── Data shaping ──────────────────────────────────────────────────────────────
 
@@ -334,7 +335,7 @@ function BrandPanel({
 
             {/* Bookings bar — Slimming only */}
             {isSlimming && (
-              <Bar yAxisId="bkg" dataKey="bkgBar" stackId="bkg" barSize={72} radius={[6, 6, 0, 0]} fill={SLIMMING_BAR_COLOR}>
+              <Bar yAxisId="bkg" dataKey="bkgBar" stackId="bkg" barSize={72} radius={[6, 6, 0, 0]} fill={SLIMMING_BAR_FILL}>
                 <LabelList
                   dataKey="bkgBar"
                   position="top"
@@ -434,7 +435,7 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
               </span>
             ))}
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-3 w-3 rounded-[3px]" style={{ backgroundColor: SLIMMING_BAR_COLOR }} />
+              <span className="inline-block h-3 w-3 rounded-[3px]" style={{ backgroundColor: SLIMMING_BAR_FILL }} />
               <span style={{ color: BRAND_LABEL_COLOR.SLIMMING }} className="font-medium">Bookings</span>
               <span>(Slimming)</span>
             </span>

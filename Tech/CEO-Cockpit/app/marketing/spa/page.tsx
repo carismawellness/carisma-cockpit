@@ -28,7 +28,8 @@ import {
 
 /* ---------- constants ---------- */
 
-const BRAND_COLOR = BRAND.spa.dark;  // canonical spa brand color
+const BRAND_COLOR = BRAND.spa.dark;   // text colors only
+const BRAND_FILL  = BRAND.spa.soft;   // fills, strokes, borders, backgrounds
 
 /* ---------- helpers ---------- */
 
@@ -73,7 +74,7 @@ function AggregateBox({ label, value, valueColor }: { label: string; value: stri
   return (
     <div
       className="rounded-lg border-2 p-4 text-center"
-      style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}
+      style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}10` }}
     >
       <p className="text-sm text-gray-600">{label}</p>
       <p className="text-xl md:text-2xl font-bold mt-1" style={{ color: valueColor ?? BRAND_COLOR }}>{value}</p>
@@ -574,21 +575,21 @@ function SpaMarketingContent({
         {/* Key rates as progress bars */}
         <div className="flex flex-col md:flex-row gap-6 mb-6 p-4 bg-gray-50 rounded-lg">
           <EmailRateBar label="Open Rate" value={emailOpenRate || 0} max={60} color="#22C55E" />
-          <EmailRateBar label="Click Rate" value={emailClickRate || 0} max={10} color={BRAND_COLOR} />
+          <EmailRateBar label="Click Rate" value={emailClickRate || 0} max={10} color={BRAND_FILL} />
           <EmailRateBar label="Unsubscribe Rate" value={emailUnsubRate || 0} max={2} color="#EF4444" />
         </div>
 
         {/* Bottom row: Accent cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="p-4" style={{ backgroundColor: `${BRAND_COLOR}15`, borderColor: BRAND_COLOR, borderWidth: 1 }}>
+          <Card className="p-4" style={{ backgroundColor: `${BRAND_FILL}`, borderColor: BRAND_FILL, borderWidth: 1 }}>
             <p className="text-xs font-medium uppercase tracking-wide" style={{ color: BRAND_COLOR }}>Campaigns Sent</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900 mt-1">{campaignCount}</p>
           </Card>
-          <Card className="p-4" style={{ backgroundColor: `${BRAND_COLOR}15`, borderColor: BRAND_COLOR, borderWidth: 1 }}>
+          <Card className="p-4" style={{ backgroundColor: `${BRAND_FILL}`, borderColor: BRAND_FILL, borderWidth: 1 }}>
             <p className="text-xs font-medium uppercase tracking-wide" style={{ color: BRAND_COLOR }}>Total Subscribers</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900 mt-1">{emailTotalSubscribers.toLocaleString()}</p>
           </Card>
-          <Card className="p-4" style={{ backgroundColor: `${BRAND_COLOR}15`, borderColor: BRAND_COLOR, borderWidth: 1 }}>
+          <Card className="p-4" style={{ backgroundColor: `${BRAND_FILL}`, borderColor: BRAND_FILL, borderWidth: 1 }}>
             <p className="text-xs font-medium uppercase tracking-wide" style={{ color: BRAND_COLOR }}>Active Flows</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900 mt-1">{flowCount}</p>
           </Card>
@@ -614,7 +615,7 @@ function SpaMarketingContent({
           <DataTable columns={profitabilityColumns} data={profitabilityData as unknown as Record<string, unknown>[]} />
 
           {/* Summary Row */}
-          <div className="mt-4 rounded-lg border-2 p-4" style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}08` }}>
+          <div className="mt-4 rounded-lg border-2 p-4" style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               <div className="text-center">
                 <p className="text-xs text-gray-500 font-medium uppercase">Total Campaigns</p>

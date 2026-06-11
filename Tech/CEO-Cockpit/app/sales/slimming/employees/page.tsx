@@ -9,8 +9,8 @@ import { BRAND } from "@/lib/constants/design-tokens";
 import { AlertTriangle, BadgePercent, ChevronDown, ChevronRight, Settings, Users } from "lucide-react";
 import { Card } from "@/components/ui/card";
 
-const SLIMMING_GREEN = BRAND.slimming.dark;
-const SLIMMING_SOFT  = BRAND.slimming.soft;
+const SLIMMING_GREEN = BRAND.slimming.dark; // text colors, icons
+const SLIMMING_SOFT  = BRAND.slimming.soft; // fills, backgrounds, borders
 
 type TypeFilter = "all" | EmployeeType;
 
@@ -106,12 +106,12 @@ function TypeFilterTabs({
           onClick={() => onChange(t.key)}
           className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
             value === t.key
-              ? "text-white"
+              ? ""
               : "border-gray-200 bg-white text-muted-foreground hover:text-foreground"
           }`}
           style={
             value === t.key
-              ? { backgroundColor: SLIMMING_GREEN, borderColor: SLIMMING_GREEN }
+              ? { backgroundColor: SLIMMING_SOFT, borderColor: SLIMMING_SOFT, color: SLIMMING_GREEN }
               : { borderColor: "#e5e7eb" }
           }
         >

@@ -15,11 +15,11 @@ const BRAND_LABELS: Record<string, string> = {
   slimming: "Slimming",
 };
 
-// Canonical brand palette — `dark` for left-border accents.
+// Canonical brand palette — `soft` for left-border accents.
 const BRAND_BORDER: Record<string, string> = {
-  spa:        BRAND.spa.dark,
-  aesthetics: BRAND.aesthetics.dark,
-  slimming:   BRAND.slimming.dark,
+  spa:        BRAND.spa.soft,
+  aesthetics: BRAND.aesthetics.soft,
+  slimming:   BRAND.slimming.soft,
 };
 
 function statusLabel(count: number): string {

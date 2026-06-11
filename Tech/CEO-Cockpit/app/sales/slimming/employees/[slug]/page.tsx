@@ -27,12 +27,12 @@ import {
   Cell,
 } from "recharts";
 
-const SLIMMING_GREEN = BRAND.slimming.dark;  // #3D6B3D
-const SLIMMING_SOFT  = BRAND.slimming.soft;  // #C9D8C1
+const SLIMMING_GREEN = BRAND.slimming.dark;  // text colors, icons
+const SLIMMING_SOFT  = BRAND.slimming.soft;  // fills, backgrounds, borders
 
 // Pastel palette matching app/sales/slimming/page.tsx service-type colours
 const CATEGORY_COLORS: Record<string, string> = {
-  weight_loss: SLIMMING_GREEN,
+  weight_loss: SLIMMING_SOFT,
   treatment:   "#B8C9E0", // soft blue
   medical:     "#D5C0E5", // soft purple
   product:     "#E5C088", // soft gold
@@ -159,7 +159,7 @@ function CollectionCards({ paid, fullPrice }: { paid: number; fullPrice: number 
             className="h-full rounded-full"
             style={{
               width: `${Math.min(100, Math.max(0, ratePct ?? 0))}%`,
-              backgroundColor: SLIMMING_GREEN,
+              backgroundColor: SLIMMING_SOFT,
             }}
           />
         </div>
@@ -270,7 +270,7 @@ function SlimmingEmployeeContent({
             serviceRate={stats.rates?.service_rate ?? 0}
             retailRate={stats.rates?.retail_rate ?? 0}
             ratesSet={stats.employee.rates_set}
-            accentColor={SLIMMING_GREEN}
+            accentColor={SLIMMING_SOFT}
             periodLabel={periodLabel}
           />
 

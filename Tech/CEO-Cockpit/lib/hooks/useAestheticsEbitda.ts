@@ -7,8 +7,8 @@ import { BRAND } from "@/lib/constants/design-tokens";
 
 // ── Department display metadata ───────────────────────────────────────────────
 export const AESTH_DEPT_META: Record<string, { name: string; color: string }> = {
-  aesthetics: { name: "Aesthetics", color: BRAND.aesthetics.dark },
-  slimming:   { name: "Slimming",   color: BRAND.slimming.dark },
+  aesthetics: { name: "Aesthetics", color: BRAND.aesthetics.soft },
+  slimming:   { name: "Slimming",   color: BRAND.slimming.soft },
 };
 
 export interface AestheticsDeptData {

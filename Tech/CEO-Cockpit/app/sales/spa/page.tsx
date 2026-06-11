@@ -21,7 +21,7 @@ import { SyncButton } from "@/components/dashboard/SyncButton";
 const VAT_RATE = 0.18;
 
 const PAYMENT_COLORS: Record<string, string> = {
-  "Credit Card":        BRAND.spa.dark,  // spa-dark (primary)
+  "Credit Card":        BRAND.spa.soft,  // spa-soft (primary fill)
   "Cash":               "#E5C088",  // soft amber
   "Hotel Room Account": "#B8C9E0",  // soft Meta blue (hotel-channel)
   "Payment Center":     "#A8D4A8",  // soft green (settled)
@@ -279,7 +279,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                 <YAxis tickFormatter={(v: number) => fmtShort(v)} tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(v: unknown, name: unknown) => [fmtShort(Number(v)), String(name)]} />
                 <Legend />
-                <Bar dataKey="Services" stackId="a" fill={BRAND.spa.dark} barSize={40} />
+                <Bar dataKey="Services" stackId="a" fill={BRAND.spa.soft} barSize={40} />
                 <Bar dataKey="Products" stackId="a" fill={BRAND.spa.soft} barSize={40} radius={[4, 4, 0, 0]}>
                   <LabelList
                     dataKey="prodPct"
@@ -382,7 +382,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                     <YAxis tickFormatter={(v: number) => fmtShort(v)} tick={{ fontSize: 11 }} />
                     <Tooltip formatter={(v: unknown, name: unknown) => [fmtShort(Number(v)), String(name)]} />
                     <Legend />
-                    <Bar dataKey="Hotel Guests" stackId="a" fill={BRAND.spa.dark}>
+                    <Bar dataKey="Hotel Guests" stackId="a" fill={BRAND.spa.soft}>
                       <LabelList
                         dataKey="hotelPct"
                         position="inside"
@@ -510,7 +510,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
             title="Service Revenue by Therapist"
             subtitle="EUR inc-VAT · sorted by service"
             data={staffChartData}
-            serviceColor={BRAND.spa.dark}
+            serviceColor={BRAND.spa.soft}
             retailColor="#E5C088"
             mode="service"
           />
@@ -518,7 +518,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
             title="Retail Revenue by Therapist"
             subtitle="EUR inc-VAT · sorted by retail"
             data={staffChartData}
-            serviceColor={BRAND.spa.dark}
+            serviceColor={BRAND.spa.soft}
             retailColor="#E5C088"
             mode="retail"
           />
@@ -532,7 +532,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
             <h2 className="text-base font-semibold text-foreground">Revenue &amp; Salary Cost by Therapist</h2>
             <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: BRAND.spa.dark }} />
+                <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: BRAND.spa.soft }} />
                 Net revenue
               </span>
               <span className="flex items-center gap-1">
@@ -573,7 +573,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                 }}
                 contentStyle={{ fontSize: 12 }}
               />
-              <Bar dataKey="revenue_net" stackId="rev" fill={BRAND.spa.dark} radius={[0, 0, 0, 0]} />
+              <Bar dataKey="revenue_net" stackId="rev" fill={BRAND.spa.soft} radius={[0, 0, 0, 0]} />
               <Bar dataKey="salary_cost" stackId="rev" fill="#4a7fa5" radius={[0, 4, 4, 0]}>
                 <LabelList
                   dataKey="k_label"

@@ -209,10 +209,10 @@ function SpaRetailContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }
                   type="monotone"
                   dataKey="sharePct"
                   name="Retail share"
-                  stroke={BRAND.spa.dark}
+                  stroke={BRAND.spa.soft}
                   strokeWidth={2.5}
                   strokeDasharray="4 3"
-                  dot={{ r: 4, fill: BRAND.spa.dark, strokeWidth: 0 }}
+                  dot={{ r: 4, fill: BRAND.spa.soft, strokeWidth: 0 }}
                   activeDot={{ r: 5 }}
                 >
                   <LabelList
@@ -239,7 +239,7 @@ function SpaRetailContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }
           </div>
           <div className="flex items-center gap-3 text-xs">
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: BRAND.spa.dark }} />
+              <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: BRAND.spa.soft }} />
               <span>Est. profit (80%)</span>
             </span>
             <span className="flex items-center gap-1.5">
@@ -282,7 +282,7 @@ function SpaRetailContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }
                   formatter={(v: unknown, name) => [fmtK(Number(v)), String(name ?? "")]}
                   cursor={{ fill: "rgba(0,0,0,0.03)" }}
                 />
-                <Bar dataKey="profit" name="Est. profit (80%)" stackId="r" fill={BRAND.spa.dark}>
+                <Bar dataKey="profit" name="Est. profit (80%)" stackId="r" fill={BRAND.spa.soft}>
                   <LabelList
                     dataKey="profit"
                     position="insideRight"

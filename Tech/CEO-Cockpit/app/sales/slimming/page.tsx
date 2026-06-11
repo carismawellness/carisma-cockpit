@@ -20,7 +20,8 @@ import {
 } from "recharts";
 
 // ── Colour palette (unified pastel set, see .agents/skills/carisma-brand-colors) ─
-const SLIMMING_GREEN = BRAND.slimming.dark;   // slimming text-dark — primary brand
+const SLIMMING_SOFT  = BRAND.slimming.soft;   // slimming soft — primary fill/stroke
+const SLIMMING_GREEN = SLIMMING_SOFT;         // alias kept for chart series that use fills
 const NAVY           = "#B8C9E0";   // soft Meta blue
 const BLUE           = "#B8C9E0";   // (alias)
 const PURPLE         = "#D5C0E5";   // soft SG&A purple
@@ -62,7 +63,7 @@ function StaffTooltip({ active, payload, label }: { active?: boolean; payload?: 
   return (
     <div className="bg-white border rounded-lg shadow-lg p-3 text-xs space-y-1">
       <p className="font-semibold text-sm">{label}</p>
-      <p style={{ color: SLIMMING_GREEN }}>Revenue inc-VAT: {fmtK(inc)}</p>
+      <p style={{ color: BRAND.slimming.dark }}>Revenue inc-VAT: {fmtK(inc)}</p>
       <p style={{ color: NAVY }}>Bookings: {bk}</p>
     </div>
   );
@@ -114,7 +115,7 @@ const SALARY_BLUE = "#4a7fa5";
 
 const SLM_GROUP_ORDER = ["Weight Loss", "GLP-1s", "Body Treatments", "Packages", "Medical", "Products", "Admin"] as const;
 const SLM_GROUP_COLORS: Record<string, string> = {
-  "Weight Loss":     BRAND.slimming.dark,
+  "Weight Loss":     BRAND.slimming.soft,
   "GLP-1s":          "#7C3AED",
   "Body Treatments": "#DB2777",
   "Packages":        "#B87000",

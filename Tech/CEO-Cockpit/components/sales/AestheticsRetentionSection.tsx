@@ -18,7 +18,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList,
 } from "recharts";
 
-const RETURNING_COLOR = BRAND.aesthetics.dark;   // #3B7676
+const RETURNING_COLOR = BRAND.aesthetics.soft;   // #E1EBEB — soft fill for bars/swatches
 const NEW_COLOR       = "#7FB3B3";               // aesthetics family mid-tone
 
 function fmtK(v: number): string {

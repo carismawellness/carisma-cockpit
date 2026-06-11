@@ -19,7 +19,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList,
 } from "recharts";
 
-const SLIM_DARK = BRAND.slimming.dark;   // #3D6B3D
+const SLIM_DARK = BRAND.slimming.soft;   // slimming soft fill — bars/swatches
 const SLIM_MID  = "#8FB58F";             // slimming family mid-tone (new clients)
 
 function fmtK(v: number): string {

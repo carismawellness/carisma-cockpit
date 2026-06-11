@@ -193,9 +193,9 @@ export function GroupBrandBreakdown({ period, ly, spaLocations, isFetching }: Pr
                 />
               </Bar>
             )}
-            {/* Current bar — dark brand color, with value + YoY label on top */}
+            {/* Current bar — soft brand color, with value + YoY label on top */}
             <Bar dataKey="current" name="This Period" barSize={isWide ? 80 : 84} radius={[4, 4, 0, 0]}>
-              {chartData.map((d, i) => <Cell key={`cur-${i}`} fill={d.dark} />)}
+              {chartData.map((d, i) => <Cell key={`cur-${i}`} fill={d.soft} />)}
               <LabelList
                 content={(props: { x?: number | string; y?: number | string; width?: number | string; index?: number }) => {
                   const i = props.index ?? -1;
@@ -245,11 +245,11 @@ export function GroupBrandBreakdown({ period, ly, spaLocations, isFetching }: Pr
       {/* Legend */}
       <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
         <div className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: BRAND.spa.dark }} />
+          <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: BRAND.spa.soft }} />
           <span>This Period</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: BRAND.spa.soft }} />
+          <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: "#9CA3AF" }} />
           <span>Same Period Last Year</span>
         </div>
         {spaExpanded && (

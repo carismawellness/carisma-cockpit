@@ -28,7 +28,8 @@ import {
 
 /* ---------- constants ---------- */
 
-const BRAND_COLOR = BRAND.slimming.dark;  // canonical slimming brand color
+const BRAND_COLOR = BRAND.slimming.dark;   // text colors only
+const BRAND_FILL  = BRAND.slimming.soft;   // fills, strokes, borders, backgrounds
 
 /* ---------- helpers ---------- */
 
@@ -64,7 +65,7 @@ function AggregateBox({ label, value, valueColor }: { label: string; value: stri
   return (
     <div
       className="rounded-lg border-2 p-4 text-center"
-      style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}
+      style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}
     >
       <p className="text-sm text-gray-600">{label}</p>
       <p className="text-xl md:text-2xl font-bold mt-1" style={{ color: valueColor ?? BRAND_COLOR }}>{value}</p>
@@ -382,15 +383,15 @@ function SlimmingMarketingContent({
       <Card className="p-3 md:p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Consultation Funnel</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-          <div className="border-l-4 pl-4" style={{ borderColor: BRAND_COLOR }}>
+          <div className="border-l-4 pl-4" style={{ borderColor: BRAND_FILL }}>
             <p className="text-sm text-gray-500 mb-1">Total Leads</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">{funnelStats.totalLeads}</p>
           </div>
-          <div className="border-l-4 pl-4" style={{ borderColor: BRAND_COLOR }}>
+          <div className="border-l-4 pl-4" style={{ borderColor: BRAND_FILL }}>
             <p className="text-sm text-gray-500 mb-1">Total Consultations</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">{funnelStats.totalConsultations}</p>
           </div>
-          <div className="border-l-4 pl-4" style={{ borderColor: BRAND_COLOR }}>
+          <div className="border-l-4 pl-4" style={{ borderColor: BRAND_FILL }}>
             <p className="text-sm text-gray-500 mb-1">Total Bookings</p>
             <p className="text-xl md:text-2xl font-bold text-gray-900">{funnelStats.totalBookings}</p>
           </div>
@@ -560,8 +561,8 @@ function SlimmingMarketingContent({
           <>
             {/* Progress bars for key rates */}
             <div className="space-y-4 mb-6">
-              <ProgressMetric label="Open Rate" value={parseFloat((klaviyo.openRate * 100).toFixed(1))} max={50} color={BRAND_COLOR} />
-              <ProgressMetric label="Click Rate" value={parseFloat((klaviyo.clickRate * 100).toFixed(1))} max={10} color={BRAND_COLOR} />
+              <ProgressMetric label="Open Rate" value={parseFloat((klaviyo.openRate * 100).toFixed(1))} max={50} color={BRAND_FILL} />
+              <ProgressMetric label="Click Rate" value={parseFloat((klaviyo.clickRate * 100).toFixed(1))} max={10} color={BRAND_FILL} />
               <ProgressMetric label="Unsubscribe Rate" value={parseFloat((klaviyo.unsubscribeRate * 100).toFixed(1))} max={2} color="#ef4444" />
             </div>
 
@@ -609,39 +610,39 @@ function SlimmingMarketingContent({
 
             {/* Summary Totals */}
             <div className="mt-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              <div className="rounded-lg border p-3 text-center" style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}>
+              <div className="rounded-lg border p-3 text-center" style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}>
                 <p className="text-xs text-gray-500">Total Leads</p>
                 <p className="text-lg font-bold text-gray-900">{profitabilityTotals.totalLeads}</p>
               </div>
-              <div className="rounded-lg border p-3 text-center" style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}>
+              <div className="rounded-lg border p-3 text-center" style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}>
                 <p className="text-xs text-gray-500">Total Spend</p>
                 <p className="text-lg font-bold text-gray-900">{formatCurrency(profitabilityTotals.totalSpend)}</p>
               </div>
-              <div className="rounded-lg border p-3 text-center" style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}>
+              <div className="rounded-lg border p-3 text-center" style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}>
                 <p className="text-xs text-gray-500">Blended CPL</p>
                 <p className="text-lg font-bold text-gray-900">€{profitabilityTotals.blendedCpl.toFixed(1)}</p>
               </div>
-              <div className="rounded-lg border p-3 text-center" style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}>
+              <div className="rounded-lg border p-3 text-center" style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}>
                 <p className="text-xs text-gray-500">Blended ROAS</p>
                 <p className="text-lg font-bold" style={{ color: getRoasColor(profitabilityTotals.blendedRoas) }}>{profitabilityTotals.blendedRoas.toFixed(1)}x</p>
               </div>
-              <div className="rounded-lg border p-3 text-center" style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}>
+              <div className="rounded-lg border p-3 text-center" style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}>
                 <p className="text-xs text-gray-500">Total Profit</p>
                 <p className="text-lg font-bold" style={{ color: profitabilityTotals.totalProfit >= 0 ? "#16a34a" : "#dc2626" }}>{formatCurrency(profitabilityTotals.totalProfit)}</p>
               </div>
-              <div className="rounded-lg border p-3 text-center" style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}>
+              <div className="rounded-lg border p-3 text-center" style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}>
                 <p className="text-xs text-gray-500">Total Attr. Revenue</p>
                 <p className="text-lg font-bold text-gray-900">{formatCurrency(profitabilityTotals.totalAttrRevenue)}</p>
               </div>
-              <div className="rounded-lg border p-3 text-center" style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}>
+              <div className="rounded-lg border p-3 text-center" style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}>
                 <p className="text-xs text-gray-500">Attributed Revenue</p>
                 <p className="text-lg font-bold text-gray-900">{formatCurrency(profitabilityTotals.totalNetExpected)}</p>
               </div>
-              <div className="rounded-lg border p-3 text-center" style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}>
+              <div className="rounded-lg border p-3 text-center" style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}>
                 <p className="text-xs text-gray-500">Blended CP Show</p>
                 <p className="text-lg font-bold text-gray-900">€{profitabilityTotals.blendedCpShow.toFixed(1)}</p>
               </div>
-              <div className="rounded-lg border p-3 text-center" style={{ borderColor: BRAND_COLOR, backgroundColor: `${BRAND_COLOR}10` }}>
+              <div className="rounded-lg border p-3 text-center" style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}>
                 <p className="text-xs text-gray-500">Blended CP Result</p>
                 <p className="text-lg font-bold text-gray-900">€{profitabilityTotals.blendedCpResult.toFixed(1)}</p>
               </div>
