@@ -22,7 +22,9 @@ import {
 
 const SCOPE = "https://www.googleapis.com/auth/webmasters.readonly";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
-const GSC_BASE = "https://searchconsole.googleapis.com/v1";
+// Search Console queries live under /webmasters/v3 (not /v1) per
+// https://developers.google.com/webmaster-tools/v1/searchanalytics/query
+const GSC_BASE = "https://searchconsole.googleapis.com/webmasters/v3";
 
 async function getAccessToken(): Promise<string> {
   const clientId = process.env.GOOGLE_CLIENT_ID;
