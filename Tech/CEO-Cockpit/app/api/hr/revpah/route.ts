@@ -17,7 +17,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { getAdminClient } from "@/lib/supabase/admin";
 import {
   LOCATION_ID_TO_DISPLAY,
   LOCATION_TO_BRAND,
@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "month must be YYYY-MM" }, { status: 400 });
   }
 
-  const supabase = await createServerSupabaseClient();
+  const supabase = getAdminClient();
 
   // ── Revenue by location (same logic as /api/hr/financials) ───────────────
   const revenueByLocation = new Map<string, number>();
