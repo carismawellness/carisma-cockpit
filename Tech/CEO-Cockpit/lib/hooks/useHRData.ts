@@ -59,12 +59,25 @@ export interface RevPAHRow {
   revenue: number;
   headcount?: number;
   availableHours?: number;
+  brand?: string;
+  denomSource?: string;
+}
+
+export interface RevPAHBrandSection {
+  locations: RevPAHRow[];
+  avgRevPAH: number;
+  target: number;
 }
 
 export interface HRRevPAHResponse {
   month: string;
   avgRevPAH: number;
   byLocation: RevPAHRow[];
+  byBrand?: {
+    Spa:        RevPAHBrandSection;
+    Aesthetics: RevPAHBrandSection;
+    Slimming:   RevPAHBrandSection;
+  };
 }
 
 export function useHRRevPAH(month: string) {

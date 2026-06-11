@@ -227,15 +227,23 @@ const PAYROLL_FALLBACK = {
 };
 
 const REVPAH_FALLBACK = [
-  { location: "Hugos", revpah: 48.20, revenue: 52400 },
-  { location: "Hyatt", revpah: 43.80, revenue: 41200 },
-  { location: "InterContinental", revpah: 39.50, revenue: 58700 },
-  { location: "Odycy", revpah: 37.10, revenue: 29800 },
-  { location: "Excelsior", revpah: 35.60, revenue: 22400 },
-  { location: "Ramla Bay", revpah: 32.40, revenue: 31600 },
-  { location: "Riviera", revpah: 29.80, revenue: 27500 },
-  { location: "Novotel", revpah: 26.50, revenue: 21900 },
+  { location: "Hugos",             revpah: 48.20, revenue: 52400,  brand: "Spa" },
+  { location: "Hyatt",             revpah: 43.80, revenue: 41200,  brand: "Spa" },
+  { location: "InterContinental",  revpah: 39.50, revenue: 58700,  brand: "Spa" },
+  { location: "Odycy",             revpah: 37.10, revenue: 29800,  brand: "Spa" },
+  { location: "Excelsior",         revpah: 35.60, revenue: 22400,  brand: "Spa" },
+  { location: "Ramla Bay",         revpah: 32.40, revenue: 31600,  brand: "Spa" },
+  { location: "Riviera",           revpah: 29.80, revenue: 27500,  brand: "Spa" },
+  { location: "Novotel",           revpah: 26.50, revenue: 21900,  brand: "Spa" },
+  { location: "Aesthetics Centre", revpah: 68.40, revenue: 127000, brand: "Aesthetics" },
+  { location: "Slimming Centre",   revpah: 44.20, revenue: 38200,  brand: "Slimming" },
 ];
+
+const REVPAH_BY_BRAND_FALLBACK = {
+  Spa:        { locations: REVPAH_FALLBACK.filter((r) => r.brand === "Spa"),        avgRevPAH: 36.6, target: 35 },
+  Aesthetics: { locations: REVPAH_FALLBACK.filter((r) => r.brand === "Aesthetics"), avgRevPAH: 68.4, target: 70 },
+  Slimming:   { locations: REVPAH_FALLBACK.filter((r) => r.brand === "Slimming"),   avgRevPAH: 44.2, target: 55 },
+};
 
 const TOTAL_REVENUE_FALLBACK = 285500;
 
@@ -540,7 +548,8 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const totalRevenue    = financialsQ.data?.totalRevenue ?? TOTAL_REVENUE_FALLBACK;
   const payrollComplete = financialsQ.data?.payrollComplete ?? false;
 
-  const revpahData = revpahQ.data?.byLocation ?? REVPAH_FALLBACK;
+  const revpahData   = revpahQ.data?.byLocation ?? REVPAH_FALLBACK;
+  const revpahByBrand = revpahQ.data?.byBrand ?? REVPAH_BY_BRAND_FALLBACK;
   const avgRevPAH  = useMemo(() => {
     if (revpahQ.data?.avgRevPAH !== undefined) return revpahQ.data.avgRevPAH;
     return revpahData.length > 0
@@ -742,66 +751,138 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
       )}
 
       {/* ══════════════════════════════════════════════════════════════════
-          SECTION 1: Attendance Today + Late Arrivals (period-aware)
+          SECTION 1: Attendance snapshot chips (compact)
           ══════════════════════════════════════════════════════════════════ */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-        <Card className="p-3 md:p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
-            Attendance Today
-            <span className="ml-2 text-sm font-normal text-muted-foreground">
-              ({attendance.length} of {resolvedHeadcount} clocked in)
-            </span>
-            {isAttendanceReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
-          </h2>
-          {periodSummary && (
-            <p className="text-xs text-muted-foreground mb-3">
-              {prettyMonth(month)} — {periodSummary.totalRosteredShifts} scheduled shifts:&nbsp;
-              <span className="text-emerald-600 font-medium">{periodSummary.totalOnTime} on time</span>
-              {periodSummary.totalLate > 0 && <> · <span className="text-red-500 font-medium">{periodSummary.totalLate} late</span></>}
-              {periodSummary.totalAbsent > 0 && <> · <span className="text-slate-400">{periodSummary.totalAbsent} absent</span></>}
-            </p>
-          )}
-          {timeLogsQ.isLoading ? (
-            <TableSkeleton rows={6} columns={5} />
-          ) : (
-            <DataTable
-              columns={attendanceColumns}
-              data={attendance as unknown as Record<string, unknown>[]}
-              pageSize={8}
-            />
-          )}
-        </Card>
-
-        <Card className="p-3 md:p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
-            Late Arrivals
-            <span className="ml-2 text-sm font-normal text-red-500">
-              ({periodSummary?.totalLate ?? late.length} late)
-            </span>
-            {isLateReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
-          </h2>
-          {periodSummary && (
-            <p className="text-xs text-muted-foreground mb-3">
-              {prettyMonth(month)} — roster-based · only scheduled employees counted
-            </p>
-          )}
-          {timeLogsQ.isLoading ? (
-            <TableSkeleton rows={4} columns={4} />
-          ) : periodSummary ? (
-            <DataTable
-              columns={periodLatenessColumns}
-              data={periodSummary.lateByEmployee as unknown as Record<string, unknown>[]}
-              pageSize={8}
-            />
-          ) : (
-            <DataTable
-              columns={latenessColumns}
-              data={late as unknown as Record<string, unknown>[]}
-              pageSize={8}
-            />
-          )}
-        </Card>
+      <div className="flex flex-wrap gap-3">
+        {/* Clocked in today */}
+        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+          <span className="text-xs text-muted-foreground">Clocked in today</span>
+          <span className="text-sm font-semibold text-slate-800">
+            {attendance.length} / {resolvedHeadcount}
+          </span>
+          {isAttendanceReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
+        </div>
+        {/* Late arrivals this period */}
+        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+          <span className={`w-2 h-2 rounded-full shrink-0 ${(periodSummary?.totalLate ?? late.length) > 0 ? "bg-red-400" : "bg-slate-300"}`} />
+          <span className="text-xs text-muted-foreground">Late this period</span>
+          <span className={`text-sm font-semibold ${(periodSummary?.totalLate ?? late.length) > 0 ? "text-red-600" : "text-slate-800"}`}>
+            {periodSummary?.totalLate ?? late.length}
+          </span>
+        </div>
+        {/* Rostered shifts */}
+        {periodSummary && (
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0" />
+            <span className="text-xs text-muted-foreground">Rostered shifts</span>
+            <span className="text-sm font-semibold text-slate-800">{periodSummary.totalRosteredShifts}</span>
+          </div>
+        )}
+        {/* Absent */}
+        {periodSummary && periodSummary.totalAbsent > 0 && (
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+            <span className="text-xs text-muted-foreground">Absent</span>
+            <span className="text-sm font-semibold text-amber-700">{periodSummary.totalAbsent}</span>
+          </div>
+        )}
       </div>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          SECTION 2: Revenue per Available Hour — by brand
+          ══════════════════════════════════════════════════════════════════ */}
+      <Card className="p-3 md:p-6">
+        <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
+          Revenue per Available Treatment Hour
+          {isRevPAHReal ? <LiveBadge source="supabase" /> : <SampleDataBadge />}
+        </h2>
+        <p className="text-xs text-muted-foreground mb-5">
+          Denominator = therapist-only scheduled hours. Targets are brand-specific (Malta-adjusted benchmarks).
+        </p>
+        <div className="space-y-8">
+          {(["Spa", "Aesthetics", "Slimming"] as const).map((brand) => {
+            const section  = revpahByBrand[brand];
+            const locs     = section?.locations ?? [];
+            const target   = section?.target ?? 35;
+            const avg      = section?.avgRevPAH ?? 0;
+            if (locs.length === 0) return null;
+            const brandColor = brand === "Spa" ? BRAND.spa.dark : brand === "Aesthetics" ? BRAND.aesthetics.dark : BRAND.slimming.dark;
+            const onTrack   = avg >= target * 0.9;
+            return (
+              <div key={brand}>
+                {/* Brand row header */}
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: brandColor }} />
+                    <span className="text-sm font-semibold text-slate-700">{brand}</span>
+                    <span className={`text-xs rounded-full px-2 py-0.5 font-medium ${onTrack ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                      avg {formatCurrency(avg)}/hr · target {formatCurrency(target)}/hr
+                    </span>
+                  </div>
+                </div>
+                <div style={{ height: Math.max(locs.length * 52 + 40, 120) }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={locs as unknown as Record<string, unknown>[]} layout="vertical" margin={{ top: 4, right: 100, left: 10, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
+                      <XAxis type="number" tickFormatter={(v: number) => `€${v}`} tick={{ fontSize: 11 }} />
+                      <YAxis type="category" dataKey="location" width={130} tick={{ fontSize: 12 }} />
+                      <Tooltip
+                        content={({ active, payload, label }) => {
+                          if (!active || !payload?.length) return null;
+                          const row = payload[0]?.payload as { revpah: number; revenue: number; headcount?: number; availableHours?: number; denomSource?: string };
+                          return (
+                            <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs space-y-1">
+                              <p className="font-semibold text-slate-800">{label}</p>
+                              <p><span className="text-slate-500">RevPAH:</span> <span className="font-bold text-slate-900">{formatCurrency(row.revpah)}/hr</span></p>
+                              <p><span className="text-slate-500">Revenue:</span> <span className="font-semibold">{formatCurrency(row.revenue)}</span></p>
+                              {row.headcount != null && <p><span className="text-slate-500">Therapists:</span> <span className="font-semibold">{row.headcount}</span></p>}
+                              {row.availableHours != null && <p><span className="text-slate-500">Avail hrs:</span> <span className="font-semibold">{row.availableHours.toLocaleString()}h</span></p>}
+                              {row.denomSource && <p><span className="text-slate-400 italic">Source: {row.denomSource}</span></p>}
+                            </div>
+                          );
+                        }}
+                      />
+                      <ReferenceLine
+                        x={target}
+                        stroke={TARGET_AMBER}
+                        strokeDasharray="6 3"
+                        strokeWidth={1.5}
+                        label={{ value: `Target ${formatCurrency(target)}/hr`, position: "right", fill: TARGET_AMBER, fontSize: 11 }}
+                      />
+                      <Bar dataKey="revpah" name="RevPAH">
+                        {locs.map((entry) => (
+                          <Cell key={entry.location} fill={locationColor(entry.location)} />
+                        ))}
+                        <LabelList
+                          dataKey="revpah"
+                          position="right"
+                          content={(props) => {
+                            const { x, width, y, height, value } = props as Record<string, unknown>;
+                            return (
+                              <text
+                                x={Number(x) + Number(width) + 6}
+                                y={Number(y) + Number(height) / 2}
+                                dy={4}
+                                textAnchor="start"
+                                fontSize={11}
+                                fontWeight={600}
+                                fill={Number(value) >= target ? "#059669" : "#d97706"}
+                              >
+                                €{Number(value).toFixed(1)}
+                              </text>
+                            );
+                          }}
+                        />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
 
       {/* ══════════════════════════════════════════════════════════════════
           SECTION 1b: Longitudinal Attendance History (Supabase-backed)
@@ -1021,75 +1102,6 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           </ResponsiveContainer>
         </Card>
       </div>
-
-      {/* ══════════════════════════════════════════════════════════════════
-          SECTION 3: RevPAH by Location
-          ══════════════════════════════════════════════════════════════════ */}
-      <Card className="p-3 md:p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
-          Revenue per Available Hour by Location
-          {isRevPAHReal ? <LiveBadge source="supabase" /> : <SampleDataBadge />}
-        </h2>
-        <p className="text-xs text-muted-foreground mb-4">
-          Utilization proxy — target {formatCurrency(REVPAH_TARGET)}/hr
-        </p>
-        <div className="h-[220px] md:h-[300px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={revpahData} margin={{ top: 20, right: 20, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" />
-              <XAxis dataKey="location" angle={-35} textAnchor="end" height={60} tick={{ fontSize: 12 }} />
-              <YAxis tickFormatter={(v: number) => `€${v}`} tick={{ fontSize: 11 }} />
-              <Tooltip
-                content={({ active, payload, label }) => {
-                  if (!active || !payload?.length) return null;
-                  const row = payload[0]?.payload as { revpah: number; revenue: number; headcount?: number; availableHours?: number };
-                  return (
-                    <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs space-y-1">
-                      <p className="font-semibold text-slate-800">{label}</p>
-                      <p><span className="text-slate-500">RevPAH:</span> <span className="font-bold text-slate-900">{formatCurrency(row.revpah)}/hr</span></p>
-                      <p><span className="text-slate-500">Revenue:</span> <span className="font-semibold">{formatCurrency(row.revenue)}</span></p>
-                      {row.headcount != null && <p><span className="text-slate-500">Therapists:</span> <span className="font-semibold">{row.headcount}</span></p>}
-                      {row.availableHours != null && <p><span className="text-slate-500">Avail hrs:</span> <span className="font-semibold">{row.availableHours.toLocaleString()}h</span></p>}
-                    </div>
-                  );
-                }}
-              />
-              <ReferenceLine
-                y={REVPAH_TARGET}
-                stroke={TARGET_AMBER}
-                strokeDasharray="6 3"
-                strokeWidth={1.5}
-                label={{ value: `Target ${formatCurrency(REVPAH_TARGET)}/hr`, position: "right", fill: TARGET_AMBER, fontSize: 12 }}
-              />
-              <Bar dataKey="revpah" name="RevPAH">
-                {revpahData.map((entry) => (
-                  <Cell key={entry.location} fill={locationColor(entry.location)} />
-                ))}
-                <LabelList
-                  dataKey="revpah"
-                  position="top"
-                  content={(props) => {
-                    const { x, width, y, value } = props as Record<string, unknown>;
-                    return (
-                      <text
-                        x={Number(x) + Number(width) / 2}
-                        y={Number(y) - 6}
-                        textAnchor="middle"
-                        fontSize={11}
-                        fontWeight={600}
-                        fill="currentColor"
-                      >
-                        €{Number(value).toFixed(1)}
-                      </text>
-                    );
-                  }}
-                />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
-
 
       {/* ══════════════════════════════════════════════════════════════════
           SECTION 5: Productivity Leaderboard (WE360)

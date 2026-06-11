@@ -76,10 +76,13 @@ export async function GET(req: NextRequest) {
   const attendanceFrom = fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
   const attendanceTo   = today;
 
+  // Current month param for therapist shifts (e.g. "2026-06")
+  const currentMonth = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+
   const [revenueRes, spaRes, aestheticsRes, crmAgentsRes, ghlCrmRes,
          metaCampaignsRes, googleCampaignsRes, klaviyoRes, talexioHrRes, we360Res,
          googleReviewsRes, diligenceAuditRes, brandStandardsRes, gscRes,
-         attendanceDailyRes] = await Promise.allSettled([
+         attendanceDailyRes, therapistShiftsRes] = await Promise.allSettled([
     fetch(`${BASE_URL}/api/etl/revenue-refresh`,              { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/zoho-spa-transactions`,        { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/zoho-aesthetics-transactions`, { method: "POST", headers, body: payload }),
@@ -95,6 +98,8 @@ export async function GET(req: NextRequest) {
     fetch(`${BASE_URL}/api/etl/brand-standards`,              { method: "POST", headers }),
     fetch(`${BASE_URL}/api/etl/gsc-sync`,                     { method: "POST", headers, body: "{}" }),
     fetch(`${BASE_URL}/api/etl/attendance-daily?dateFrom=${attendanceFrom}&dateTo=${attendanceTo}`, { method: "POST", headers }),
+    // Therapist shift hours for RevPAH denominator (current month only)
+    fetch(`${BASE_URL}/api/etl/therapist-shifts-monthly?month=${currentMonth}`, { method: "POST", headers }),
   ]);
 
   // Phase 2: lead reconciliation depends on ghl-crm + meta-campaigns completing first
@@ -130,8 +135,9 @@ export async function GET(req: NextRequest) {
     ["diligence_audit",     diligenceAuditRes],
     ["brand_standards",     brandStandardsRes],
     ["gsc_keywords",        gscRes],
-    ["attendance_daily",    attendanceDailyRes],
-    ["lead_reconciliation", leadReconRes],
+    ["attendance_daily",        attendanceDailyRes],
+    ["therapist_shifts_monthly", therapistShiftsRes],
+    ["lead_reconciliation",     leadReconRes],
   ];
 
   // ── Consolidated failure alerting (never breaks the cron) ──────────────────
