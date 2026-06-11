@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 
-type TalexioAction = "employees" | "headcount" | "timelogs" | "leave" | "shifts" | "payrolls" | "payslips";
+type TalexioAction = "employees" | "headcount" | "timelogs" | "leave" | "shifts" | "shiftsToday" | "payrolls" | "payslips";
 
 interface UseTalexioOptions {
   action: TalexioAction;
@@ -121,4 +121,24 @@ export interface TalexioEmployeeWithPayslips {
 
 export function useTalexioPayslips() {
   return useTalexio<{ employees: TalexioEmployeeWithPayslips[] }>({ action: "payslips" });
+}
+
+export interface TalexioWorkShift {
+  id: string;
+  date: string;
+  from: string; // "HH:MM" or "HH:MM:SS"
+  to: string;
+}
+
+export interface TalexioEmployeeWithShifts {
+  id: string;
+  fullName: string;
+  workShifts: TalexioWorkShift[];
+}
+
+export function useTalexioShiftsToday(todayStr: string) {
+  return useTalexio<{ employees: TalexioEmployeeWithShifts[] }>({
+    action: "shiftsToday",
+    params: { dateFrom: todayStr, dateTo: todayStr },
+  });
 }

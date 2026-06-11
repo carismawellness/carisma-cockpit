@@ -81,6 +81,20 @@ const QUERIES: Record<
       dateTo: params.get("dateTo") || "",
     }),
   },
+  shiftsToday: {
+    query: `query ($dateFrom: Date!, $dateTo: Date!) {
+      employees {
+        id fullName
+        workShifts(dateFrom: $dateFrom, dateTo: $dateTo, onlyPublished: true) {
+          id date from to
+        }
+      }
+    }`,
+    variables: (params) => ({
+      dateFrom: params.get("dateFrom") || "",
+      dateTo: params.get("dateTo") || "",
+    }),
+  },
   payrolls: {
     query: `query ($year: Int!) {
       payrolls(year: $year) { id payDate periodFrom periodTo isLocked }

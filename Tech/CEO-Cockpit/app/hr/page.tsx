@@ -18,6 +18,7 @@ import {
   useTalexioTimeLogs,
   useTalexioLeave,
   useTalexioPayslips,
+  useTalexioShiftsToday,
 } from "@/lib/hooks/useTalexio";
 import { useHRFinancials, useHRRevPAH, useWe360Productivity } from "@/lib/hooks/useHRData";
 import {
@@ -26,6 +27,7 @@ import {
   buildLateArrivals,
   buildLeaveBalances,
   buildPayrollSummary,
+  mtToday,
 } from "@/lib/hr/talexio-transforms";
 import {
   BarChart,
@@ -338,10 +340,12 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const queryClient = useQueryClient();
 
   // ── Live data: Talexio ────────────────────────────────────────────────────
+  const todayMalta = mtToday();
   const headcountQ = useTalexioHeadcount();
   const timeLogsQ = useTalexioTimeLogs();
   const leaveQ = useTalexioLeave();
   const payslipsQ = useTalexioPayslips();
+  const shiftsQ = useTalexioShiftsToday(todayMalta);
 
   // ── Live data: Supabase-backed HR financials ──────────────────────────────
   const financialsQ = useHRFinancials(month);
@@ -359,10 +363,23 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
     return getActiveEmployees(headcountQ.data.employees).length;
   }, [headcountQ.data]);
 
+  // Build employeeId → scheduled start (minutes from midnight) from today's roster
+  const shiftStartMap = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!shiftsQ.data?.employees) return map;
+    for (const emp of shiftsQ.data.employees) {
+      const shift = (emp.workShifts ?? []).find((s) => s.date === todayMalta);
+      if (!shift?.from) continue;
+      const [h, m] = shift.from.split(":").map(Number);
+      if (!isNaN(h) && !isNaN(m)) map.set(emp.id, h * 60 + m);
+    }
+    return map;
+  }, [shiftsQ.data, todayMalta]);
+
   const attendanceRows = useMemo(() => {
     if (!timeLogsQ.data?.employees) return null;
-    return buildAttendanceLogs(timeLogsQ.data.employees);
-  }, [timeLogsQ.data]);
+    return buildAttendanceLogs(timeLogsQ.data.employees, shiftStartMap);
+  }, [timeLogsQ.data, shiftStartMap]);
 
   const lateRows = useMemo(() => {
     if (!attendanceRows) return null;

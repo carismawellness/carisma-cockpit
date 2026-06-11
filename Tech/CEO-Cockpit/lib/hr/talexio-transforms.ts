@@ -18,9 +18,8 @@ import type {
 // ── Constants ────────────────────────────────────────────────────────────────
 const MALTA_TZ = "Europe/Malta";
 
-// Shift start (hardcoded for now — proper shifts ETL coming later)
-const SHIFT_START_HOUR = 8;
-const SHIFT_START_MINUTE = 30;
+// Default shift start when no roster entry found (earliest Carisma shift is 09:00)
+const DEFAULT_SHIFT_START_MINUTES = 9 * 60;
 const LATE_GRACE_MINUTES = 5;
 
 // ── Date helpers (Malta TZ) ──────────────────────────────────────────────────
@@ -137,10 +136,6 @@ export function getTodayTimeLogs(
   return out;
 }
 
-function shiftStartMinutes(): number {
-  return SHIFT_START_HOUR * 60 + SHIFT_START_MINUTE;
-}
-
 function clockInMinutes(hhmm: string): number {
   const [h, m] = hhmm.split(":").map(Number);
   return h * 60 + m;
@@ -148,13 +143,14 @@ function clockInMinutes(hhmm: string): number {
 
 export function buildAttendanceLogs(
   employees: TalexioEmployeeWithTimeLogs[],
+  shiftStartByEmployeeId: Map<string, number> = new Map(),
   now: Date = new Date(),
 ): AttendanceRow[] {
   const todayStr = mtToday(now);
   const todayLogs = getTodayTimeLogs(employees, todayStr);
 
   return todayLogs
-    .map(({ name, logs }) => {
+    .map(({ employeeId, name, logs }) => {
       // Sort by `from` ascending — earliest first.
       const sorted = [...logs].sort(
         (a, b) => new Date(a.from).getTime() - new Date(b.from).getTime(),
@@ -176,7 +172,8 @@ export function buildAttendanceLogs(
       const hours = totalMs / 3_600_000;
 
       const inMin = clockInMinutes(clockIn);
-      const lateBy = Math.max(0, inMin - shiftStartMinutes());
+      const scheduledStart = shiftStartByEmployeeId.get(employeeId) ?? DEFAULT_SHIFT_START_MINUTES;
+      const lateBy = Math.max(0, inMin - scheduledStart);
 
       return {
         name,
