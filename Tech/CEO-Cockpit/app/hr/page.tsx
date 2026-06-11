@@ -443,6 +443,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const queryClient = useQueryClient();
 
   const [attendanceFilter, setAttendanceFilter] = useState<AttendanceFilter>("all");
+  const [attendanceModalOpen, setAttendanceModalOpen] = useState(false);
 
   // ── Live data: Talexio ────────────────────────────────────────────────────
   const headcountQ = useTalexioHeadcount();
@@ -455,6 +456,8 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
 
   // ── Longitudinal attendance from Supabase ────────────────────────────────
   const attendanceHistoryQ = useAttendance(fromISO, toISO, attendanceFilter);
+  // Issues query: late OR left early — drives chip counts + modal
+  const attendanceIssuesQ  = useAttendance(fromISO, toISO, "issues");
 
   // ── Live data: Supabase-backed HR financials ──────────────────────────────
   const financialsQ = useHRFinancials(month);
@@ -763,14 +766,42 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           </span>
           {isAttendanceReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
         </div>
-        {/* Late arrivals this period */}
-        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
-          <span className={`w-2 h-2 rounded-full shrink-0 ${(periodSummary?.totalLate ?? late.length) > 0 ? "bg-red-400" : "bg-slate-300"}`} />
-          <span className="text-xs text-muted-foreground">Late this period</span>
-          <span className={`text-sm font-semibold ${(periodSummary?.totalLate ?? late.length) > 0 ? "text-red-600" : "text-slate-800"}`}>
-            {periodSummary?.totalLate ?? late.length}
-          </span>
-        </div>
+        {/* Late arrivals this period — Supabase-backed, double-click to drill down */}
+        {(() => {
+          const lateCount  = attendanceHistoryQ.data?.summary.total_late ?? 0;
+          const earlyCount = attendanceHistoryQ.data?.summary.total_left_early ?? 0;
+          const hasData    = attendanceHistoryQ.isSuccess;
+          return (
+            <>
+              <div
+                onDoubleClick={() => setAttendanceModalOpen(true)}
+                title="Double-click to view attendance issues"
+                className={`flex items-center gap-2 rounded-xl border bg-white px-4 py-2.5 shadow-sm cursor-pointer select-none transition-colors ${lateCount > 0 ? "border-red-200 hover:border-red-400" : "border-slate-200 hover:border-slate-300"}`}
+              >
+                <span className={`w-2 h-2 rounded-full shrink-0 ${lateCount > 0 ? "bg-red-400" : "bg-slate-300"}`} />
+                <span className="text-xs text-muted-foreground">Late this period</span>
+                <span className={`text-sm font-semibold ${lateCount > 0 ? "text-red-600" : "text-slate-800"}`}>
+                  {hasData ? lateCount : "—"}
+                </span>
+                {hasData && <span className="text-[10px] text-slate-400 hidden sm:inline">double-click</span>}
+              </div>
+              {(earlyCount > 0 || hasData) && (
+                <div
+                  onDoubleClick={() => setAttendanceModalOpen(true)}
+                  title="Double-click to view attendance issues"
+                  className={`flex items-center gap-2 rounded-xl border bg-white px-4 py-2.5 shadow-sm cursor-pointer select-none transition-colors ${earlyCount > 0 ? "border-orange-200 hover:border-orange-400" : "border-slate-200 hover:border-slate-300"}`}
+                >
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${earlyCount > 0 ? "bg-orange-400" : "bg-slate-300"}`} />
+                  <span className="text-xs text-muted-foreground">Left early</span>
+                  <span className={`text-sm font-semibold ${earlyCount > 0 ? "text-orange-600" : "text-slate-800"}`}>
+                    {hasData ? earlyCount : "—"}
+                  </span>
+                  {hasData && <span className="text-[10px] text-slate-400 hidden sm:inline">double-click</span>}
+                </div>
+              )}
+            </>
+          );
+        })()}
         {/* Rostered shifts */}
         {periodSummary && (
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
@@ -1201,6 +1232,73 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
 
       {/* Suppress unused-var warning for isPayrollReal */}
       {void isPayrollReal}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          ATTENDANCE ISSUES MODAL (late arrivals + early departures)
+          Opened by double-clicking either attendance chip above.
+          ══════════════════════════════════════════════════════════════════ */}
+      {attendanceModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center pt-12 pb-8 px-4 bg-black/50 backdrop-blur-sm"
+          onClick={() => setAttendanceModalOpen(false)}
+          onKeyDown={(e) => e.key === "Escape" && setAttendanceModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden"
+            style={{ maxHeight: "calc(100vh - 6rem)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Attendance Issues</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {prettyMonth(month)} · Late arrivals &amp; early departures · from Supabase
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                {attendanceIssuesQ.isSuccess && (
+                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                    {attendanceIssuesQ.data.summary.total_late > 0 && (
+                      <span className="bg-red-50 text-red-600 rounded-full px-2.5 py-1 font-medium">
+                        {attendanceIssuesQ.data.summary.total_late} late
+                      </span>
+                    )}
+                    {attendanceIssuesQ.data.summary.total_left_early > 0 && (
+                      <span className="bg-orange-50 text-orange-600 rounded-full px-2.5 py-1 font-medium">
+                        {attendanceIssuesQ.data.summary.total_left_early} left early
+                      </span>
+                    )}
+                  </div>
+                )}
+                <button
+                  onClick={() => setAttendanceModalOpen(false)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors text-lg font-light"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+            {/* Modal body */}
+            <div className="overflow-auto flex-1 p-4">
+              {attendanceIssuesQ.isLoading ? (
+                <TableSkeleton rows={10} columns={9} />
+              ) : !attendanceIssuesQ.isSuccess || attendanceIssuesQ.data.records.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center gap-2">
+                  <p className="text-sm text-muted-foreground font-medium">No attendance issues found for this period</p>
+                  <p className="text-xs text-muted-foreground">Hit Sync to refresh data from Talexio.</p>
+                </div>
+              ) : (
+                <DataTable
+                  columns={attendanceHistoryColumns}
+                  data={attendanceIssuesQ.data.records as unknown as Record<string, unknown>[]}
+                  pageSize={20}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

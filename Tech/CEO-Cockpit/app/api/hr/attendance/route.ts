@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
   const to        = searchParams.get("to");
   const isLate    = searchParams.get("is_late");
   const leftEarly = searchParams.get("left_early");
+  const hasIssue  = searchParams.get("has_issue");
 
   if (!from || !to) {
     return NextResponse.json({ error: "from and to query params are required" }, { status: 400 });
@@ -34,6 +35,7 @@ export async function GET(req: NextRequest) {
 
   if (isLate === "true")    query = query.eq("is_late", true);
   if (leftEarly === "true") query = query.eq("left_early", true);
+  if (hasIssue === "true")  query = query.or("is_late.eq.true,left_early.eq.true");
 
   const { data: records, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

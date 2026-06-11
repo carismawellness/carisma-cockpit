@@ -32,15 +32,16 @@ export interface AttendanceResponse {
   summary: AttendanceSummary;
 }
 
-export type AttendanceFilter = "all" | "late" | "early";
+export type AttendanceFilter = "all" | "late" | "early" | "issues";
 
 export function useAttendance(from: string, to: string, filter: AttendanceFilter = "all") {
   return useQuery<AttendanceResponse>({
     queryKey: ["attendance", from, to, filter],
     queryFn: async () => {
       const params = new URLSearchParams({ from, to });
-      if (filter === "late")  params.set("is_late", "true");
-      if (filter === "early") params.set("left_early", "true");
+      if (filter === "late")   params.set("is_late", "true");
+      if (filter === "early")  params.set("left_early", "true");
+      if (filter === "issues") params.set("has_issue", "true");
       const res = await fetch(`/api/hr/attendance?${params}`);
       if (!res.ok) throw new Error(`Attendance API error: ${res.status}`);
       return res.json() as Promise<AttendanceResponse>;
