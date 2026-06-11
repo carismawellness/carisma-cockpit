@@ -15,25 +15,29 @@ import { FlowsTable } from "@/components/marketing/FlowsTable";
 import { KeywordRankingsTable } from "@/components/marketing/KeywordRankingsTable";
 import { BRAND } from "@/lib/constants/design-tokens";
 import type { CampaignData } from "@/lib/types/ads";
-import type { LucideIcon } from "lucide-react";
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-  LabelList,
-} from "recharts";
+  MarketingPageHeader,
+  HeroKPICard,
+  AggregateBox,
+  EmailRateBar,
+  ChannelHeader,
+  FatiguePills,
+  CplBarChart,
+  ChannelBadge,
+  ActionBadge,
+  EmptyState,
+  PortfolioTotals,
+  EMAIL_BENCHMARKS,
+  getRoasColor,
+  getFatigueSummary,
+  buildCplChartData,
+} from "@/components/marketing/ui";
 import {
   Euro,
   TrendingUp,
   Users,
   Wallet,
   MousePointerClick,
-  BarChart3,
   Mail,
   Search,
   Activity,
@@ -42,250 +46,9 @@ import {
 
 /* ---------- constants ---------- */
 
-const BRAND_COLOR = BRAND.spa.dark;
-const BRAND_FILL  = BRAND.spa.soft;
-
-/** Industry-average email benchmarks (Klaviyo 2024 Health & Wellness report) */
-const EMAIL_BENCHMARKS = { open: 21.5, click: 2.3, unsub: 0.5 };
-
-/* ---------- helpers ---------- */
-
-function getFatigueStatus(frequency: number, ctr: number, peakCtr: number): { label: string; color: string; bg: string } {
-  const ctrDrop = peakCtr > 0 ? (peakCtr - ctr) / peakCtr : 0;
-  if (frequency > 3.0 && ctrDrop > 0.2) return { label: "Fatigued", color: "bg-red-500", bg: "bg-red-50 text-red-700" };
-  if (frequency >= 2.0 && ctrDrop >= 0.1) return { label: "Watch", color: "bg-amber-500", bg: "bg-amber-50 text-amber-700" };
-  return { label: "Healthy", color: "bg-green-500", bg: "bg-green-50 text-green-700" };
-}
-
-function getFatigueSummary(campaigns: { frequency: number; ctr: number; peakCtr: number }[]) {
-  let healthy = 0, watch = 0, fatigued = 0;
-  campaigns.forEach((c) => {
-    const s = getFatigueStatus(c.frequency, c.ctr, c.peakCtr);
-    if (s.label === "Healthy") healthy++;
-    else if (s.label === "Watch") watch++;
-    else fatigued++;
-  });
-  return { healthy, watch, fatigued };
-}
-
-function getRoasColor(roas: number): string {
-  if (roas >= 5) return "#22C55E";
-  if (roas >= 3) return "#F59E0B";
-  return "#EF4444";
-}
-
-/* ---------- Hero KPI Card ---------- */
-
-function HeroKPICard({
-  label,
-  value,
-  icon: Icon,
-  sub,
-}: {
-  label: string;
-  value: string;
-  icon?: LucideIcon;
-  sub?: string;
-}) {
-  return (
-    <Card className="relative p-5 hover:shadow-md transition-all duration-200 group cursor-default">
-      {/* Left accent bar */}
-      <div
-        className="absolute left-0 top-3 bottom-3 w-[3px] rounded-r-full"
-        style={{ backgroundColor: BRAND_COLOR }}
-      />
-      {/* Content */}
-      <div className="pl-3 flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400 mb-2.5 leading-none">
-            {label}
-          </p>
-          <p className="text-[1.65rem] font-black tracking-tight text-gray-900 leading-none tabular-nums">
-            {value}
-          </p>
-          {sub && (
-            <p className="text-[11px] text-gray-400 mt-2 font-medium">{sub}</p>
-          )}
-        </div>
-        {Icon && (
-          <div
-            className="rounded-xl p-2.5 shrink-0 transition-transform duration-200 group-hover:scale-110"
-            style={{ backgroundColor: BRAND_FILL }}
-          >
-            <Icon className="h-[18px] w-[18px]" style={{ color: BRAND_COLOR }} />
-          </div>
-        )}
-      </div>
-    </Card>
-  );
-}
-
-/* ---------- Aggregate Metric Box ---------- */
-
-function AggregateBox({
-  label,
-  value,
-  valueColor,
-  icon: Icon,
-}: {
-  label: string;
-  value: string;
-  valueColor?: string;
-  icon?: LucideIcon;
-}) {
-  return (
-    <div
-      className="rounded-xl p-4 border"
-      style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}50` }}
-    >
-      <div className="flex items-center gap-2 mb-2.5">
-        {Icon && (
-          <div className="rounded-lg p-1.5" style={{ backgroundColor: BRAND_FILL }}>
-            <Icon className="h-3 w-3" style={{ color: BRAND_COLOR }} />
-          </div>
-        )}
-        <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-500">{label}</p>
-      </div>
-      <p className="text-xl font-black tracking-tight tabular-nums" style={{ color: valueColor ?? BRAND_COLOR }}>
-        {value}
-      </p>
-    </div>
-  );
-}
-
-/* ---------- Email Progress Bar ---------- */
-
-function EmailRateBar({
-  label,
-  value,
-  max,
-  color,
-  benchmark,
-}: {
-  label: string;
-  value: number;
-  max: number;
-  color: string;
-  benchmark?: number;
-}) {
-  const pct = Math.min((value / max) * 100, 100);
-  const benchmarkPct = benchmark !== undefined ? Math.min((benchmark / max) * 100, 100) : null;
-  const isAbove = benchmark !== undefined && value >= benchmark;
-
-  return (
-    <div className="flex-1 min-w-0">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-semibold text-gray-700">{label}</span>
-        <div className="flex items-center gap-2">
-          <span className="text-base font-black" style={{ color }}>{value}%</span>
-          {benchmark !== undefined && (
-            <span
-              className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none ${
-                isAbove ? "bg-green-50 text-green-600" : "bg-amber-50 text-amber-600"
-              }`}
-            >
-              {isAbove ? "▲" : "▼"} avg {benchmark}%
-            </span>
-          )}
-        </div>
-      </div>
-      <div className="relative w-full h-2 bg-gray-100 rounded-full overflow-visible">
-        <div
-          className="absolute inset-y-0 left-0 rounded-full transition-all duration-700"
-          style={{ width: `${pct}%`, backgroundColor: color }}
-        />
-        {benchmarkPct !== null && (
-          <div
-            className="absolute top-1/2 -translate-y-1/2 w-px h-4 bg-gray-400/70 rounded-full"
-            style={{ left: `${benchmarkPct}%` }}
-          />
-        )}
-      </div>
-      {benchmark !== undefined && (
-        <p className="text-[10px] text-gray-400 mt-1.5">Industry avg: {benchmark}%</p>
-      )}
-    </div>
-  );
-}
-
-/* ---------- Channel Section Header ---------- */
-
-function ChannelHeader({
-  title,
-  channelLabel,
-  channelVariant,
-  roasLabel,
-  roasValue,
-  children,
-}: {
-  title: string;
-  channelLabel?: string;
-  channelVariant?: "meta" | "google" | "email" | "seo";
-  roasLabel?: string;
-  roasValue?: string;
-  children?: React.ReactNode;
-}) {
-  const channelStyles: Record<string, string> = {
-    meta:   "bg-blue-50   text-blue-700   border-blue-100",
-    google: "bg-emerald-50 text-emerald-700 border-emerald-100",
-    email:  "bg-violet-50 text-violet-700  border-violet-100",
-    seo:    "bg-orange-50  text-orange-700  border-orange-100",
-  };
-  const style = channelVariant ? channelStyles[channelVariant] : "";
-
-  return (
-    <div className="flex items-center justify-between mb-5">
-      <div className="flex items-center gap-3">
-        <h2 className="text-[15px] font-bold text-gray-900 tracking-tight">{title}</h2>
-        {channelLabel && (
-          <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider border ${style}`}>
-            {channelLabel}
-          </span>
-        )}
-        {children}
-      </div>
-      {roasLabel && roasValue && (
-        <div className="text-right">
-          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-gray-400">{roasLabel}</p>
-          <p className="text-xl font-black leading-tight" style={{ color: BRAND_COLOR }}>{roasValue}</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ---------- Fatigue Pill Row ---------- */
-
-function FatiguePills({ healthy, watch, fatigued }: { healthy: number; watch: number; fatigued: number }) {
-  return (
-    <div className="flex items-center gap-3">
-      <span className="flex items-center gap-1.5 text-[11px] font-bold text-green-700">
-        <span className="h-2 w-2 rounded-full bg-green-500 shrink-0" />
-        {healthy} Healthy
-      </span>
-      <span className="flex items-center gap-1.5 text-[11px] font-bold text-amber-600">
-        <span className="h-2 w-2 rounded-full bg-amber-400 shrink-0" />
-        {watch} Watch
-      </span>
-      <span className="flex items-center gap-1.5 text-[11px] font-bold text-red-600">
-        <span className="h-2 w-2 rounded-full bg-red-500 shrink-0" />
-        {fatigued} Fatigued
-      </span>
-    </div>
-  );
-}
-
-/* ---------- Chart Tooltip style ---------- */
-
-const TOOLTIP_STYLE = {
-  background: "#ffffff",
-  border: "1px solid #F0EDE8",
-  borderRadius: "10px",
-  boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-  fontSize: "12px",
-  fontWeight: 600,
-  color: "#1A1A1A",
-};
+const B = BRAND.spa;
+const BRAND_COLOR = B.dark;
+const BRAND_FILL  = B.soft;
 
 /* ---------- content component ---------- */
 
@@ -359,38 +122,9 @@ function SpaMarketingContent({
     },
   ];
 
-  /* --- CPL chart data builders --- */
-  const metaCplChartData = useMemo(
-    () =>
-      [...metaCampaigns]
-        .sort((a, b) => a.cpl - b.cpl)
-        .map((c) => {
-          const status = getFatigueStatus(c.frequency, c.ctr, c.peakCtr);
-          const color = status.label === "Fatigued" ? "#EF4444" : status.label === "Watch" ? "#F59E0B" : "#22C55E";
-          return {
-            name: c.campaign.length > 28 ? c.campaign.slice(0, 25) + "..." : c.campaign,
-            cpl: c.cpl,
-            color,
-          };
-        }),
-    [metaCampaigns]
-  );
-
-  const googleCplChartData = useMemo(
-    () =>
-      [...googleCampaigns]
-        .sort((a, b) => a.cpl - b.cpl)
-        .map((c) => {
-          const status = getFatigueStatus(c.frequency, c.ctr, c.peakCtr);
-          const color = status.label === "Fatigued" ? "#EF4444" : status.label === "Watch" ? "#F59E0B" : "#22C55E";
-          return {
-            name: c.campaign.length > 28 ? c.campaign.slice(0, 25) + "..." : c.campaign,
-            cpl: c.cpl,
-            color,
-          };
-        }),
-    [googleCampaigns]
-  );
+  /* --- CPL chart data --- */
+  const metaCplChartData   = useMemo(() => buildCplChartData(metaCampaigns), [metaCampaigns]);
+  const googleCplChartData = useMemo(() => buildCplChartData(googleCampaigns), [googleCampaigns]);
 
   /* --- Meta aggregate values --- */
   const metaTotalAttributed = useMemo(() => metaCampaigns.reduce((s, c) => s + c.attributedRevenue, 0), [metaCampaigns]);
@@ -444,21 +178,7 @@ function SpaMarketingContent({
         </button>
       ),
     },
-    {
-      key: "channel",
-      label: "Channel",
-      render: (v: unknown) => (
-        <span
-          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
-            (v as string) === "Meta"
-              ? "bg-blue-50 text-blue-700 border-blue-100"
-              : "bg-emerald-50 text-emerald-700 border-emerald-100"
-          }`}
-        >
-          {v as string}
-        </span>
-      ),
-    },
+    { key: "channel", label: "Channel", render: (v: unknown) => <ChannelBadge channel={v as string} /> },
     { key: "totalLeads", label: "Leads", align: "right" as const, sortable: true },
     { key: "totalSpend", label: "Spend", align: "right" as const, sortable: true, render: (v: unknown) => formatCurrency(v as number) },
     { key: "cpl", label: "CPL", align: "right" as const, sortable: true, render: (v: unknown) => `€${(v as number).toFixed(1)}` },
@@ -493,47 +213,17 @@ function SpaMarketingContent({
         return <span style={{ color: val >= 0 ? "#22C55E" : "#EF4444", fontWeight: 700 }}>{val.toFixed(0)}%</span>;
       },
     },
-    {
-      key: "recommendation",
-      label: "Action",
-      align: "center" as const,
-      render: (v: unknown) => {
-        const rec = v as string;
-        const styles: Record<string, string> = {
-          Scale:    "bg-green-50  text-green-700  border-green-200",
-          Maintain: "bg-blue-50   text-blue-700   border-blue-200",
-          Optimize: "bg-amber-50  text-amber-700  border-amber-200",
-          Pause:    "bg-red-50    text-red-700    border-red-200",
-        };
-        return (
-          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full border text-[11px] font-bold ${styles[rec] ?? ""}`}>
-            {rec}
-          </span>
-        );
-      },
-    },
+    { key: "recommendation", label: "Action", align: "center" as const, render: (v: unknown) => <ActionBadge rec={v as string} /> },
   ];
 
   return (
     <>
       {/* ── Page Header ──────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <div
-              className="h-8 w-8 rounded-xl flex items-center justify-center shrink-0"
-              style={{ backgroundColor: BRAND_FILL }}
-            >
-              <BarChart3 className="h-4 w-4" style={{ color: BRAND_COLOR }} />
-            </div>
-            <h1 className="text-xl md:text-2xl font-black text-gray-900 tracking-tight">
-              Spa Marketing
-            </h1>
-          </div>
-          <p className="text-sm text-gray-500 ml-11">
-            {formatDateRangeLabel(dateFrom, dateTo)} · Carisma Spa &amp; Wellness
-          </p>
-        </div>
+      <MarketingPageHeader
+        title="Spa Marketing"
+        subtitle={`${formatDateRangeLabel(dateFrom, dateTo)} · Carisma Spa & Wellness`}
+        brand={B}
+      >
         <SyncButton
           onSync={async () => {
             await Promise.all([
@@ -547,7 +237,7 @@ function SpaMarketingContent({
           }}
           isExternalBusy={isLoading}
         />
-      </div>
+      </MarketingPageHeader>
 
       {/* ── Loading skeleton ─────────────────────────────────────────── */}
       {isLoading && (
@@ -598,42 +288,12 @@ function SpaMarketingContent({
 
         return (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            <HeroKPICard
-              label="Attributed Revenue"
-              value={formatCurrency(totalRevenue)}
-              icon={Euro}
-              sub="All channels"
-            />
-            <HeroKPICard
-              label="Total Marketing Spend"
-              value={formatCurrency(totalSpend)}
-              icon={Wallet}
-              sub="Meta + Google"
-            />
-            <HeroKPICard
-              label="Meta Blended CPL"
-              value={`€${metaBlendedCpl.toFixed(1)}`}
-              icon={MousePointerClick}
-              sub="Cost per lead"
-            />
-            <HeroKPICard
-              label="Google Blended CPL"
-              value={`€${googleBlendedCpc.toFixed(1)}`}
-              icon={Search}
-              sub="Cost per lead"
-            />
-            <HeroKPICard
-              label="Total Leads"
-              value={String(totalLeads)}
-              icon={Users}
-              sub="Meta + Google"
-            />
-            <HeroKPICard
-              label="Blended ROAS"
-              value={totalSpend > 0 ? `${blendedRoas.toFixed(1)}x` : "—"}
-              icon={TrendingUp}
-              sub="Revenue / spend"
-            />
+            <HeroKPICard brand={B} label="Attributed Revenue" value={formatCurrency(totalRevenue)} icon={Euro} sub="All channels" />
+            <HeroKPICard brand={B} label="Total Marketing Spend" value={formatCurrency(totalSpend)} icon={Wallet} sub="Meta + Google" />
+            <HeroKPICard brand={B} label="Meta Blended CPL" value={`€${metaBlendedCpl.toFixed(1)}`} icon={MousePointerClick} sub="Cost per lead" />
+            <HeroKPICard brand={B} label="Google Blended CPL" value={`€${googleBlendedCpc.toFixed(1)}`} icon={Search} sub="Cost per lead" />
+            <HeroKPICard brand={B} label="Total Leads" value={String(totalLeads)} icon={Users} sub="Meta + Google" />
+            <HeroKPICard brand={B} label="Blended ROAS" value={totalSpend > 0 ? `${blendedRoas.toFixed(1)}x` : "—"} icon={TrendingUp} sub="Revenue / spend" />
           </div>
         );
       })()}
@@ -642,6 +302,7 @@ function SpaMarketingContent({
       <Card className="p-5 md:p-6">
         <ChannelHeader
           title="Meta Ads"
+          brand={B}
           channelLabel="Meta"
           channelVariant="meta"
           roasLabel="Meta ROAS"
@@ -650,7 +311,6 @@ function SpaMarketingContent({
 
         {metaCampaigns.length > 0 ? (
           <>
-            {/* Fatigue summary + CPL chart */}
             <div className="mb-6">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <div>
@@ -661,59 +321,14 @@ function SpaMarketingContent({
                 </div>
               </div>
               {metaCplChartData.length > 0 && (
-                <div className="h-[180px] md:h-[220px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={metaCplChartData}
-                      layout="vertical"
-                      margin={{ top: 4, right: 56, left: 8, bottom: 4 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#F3F4F6" />
-                      <XAxis
-                        type="number"
-                        tickFormatter={(v: number) => `€${v}`}
-                        tick={{ fontSize: 11, fill: "#9CA3AF" }}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <YAxis
-                        type="category"
-                        dataKey="name"
-                        tick={{ fontSize: 11, fill: "#6B7280" }}
-                        width={150}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <Tooltip
-                        contentStyle={TOOLTIP_STYLE}
-                        cursor={{ fill: `${BRAND_FILL}40` }}
-                        formatter={(value) => [`€${Number(value).toFixed(1)}`, "CPL"]}
-                      />
-                      <Bar dataKey="cpl" name="CPL" radius={[0, 6, 6, 0]} maxBarSize={28}>
-                        {metaCplChartData.map((entry, i) => (
-                          <Cell key={i} fill={entry.color} />
-                        ))}
-                        <LabelList
-                          dataKey="cpl"
-                          position="right"
-                          formatter={(v) => `€${Number(v).toFixed(1)}`}
-                          style={{ fontSize: 11, fontWeight: 700, fill: "#374151" }}
-                        />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
+                <CplBarChart data={metaCplChartData} brand={B} className="h-[180px] md:h-[220px]" />
               )}
             </div>
 
-            {/* Campaign Table */}
             <DataTable columns={campaignColumns} data={metaCampaigns as unknown as Record<string, unknown>[]} />
           </>
         ) : !isLoading ? (
-          <div className="py-12 text-center">
-            <BarChart3 className="h-8 w-8 mx-auto mb-3 text-gray-300" />
-            <p className="text-sm font-semibold text-gray-500">No Meta campaign data for this period.</p>
-          </div>
+          <EmptyState message="No Meta campaign data for this period." />
         ) : (
           <>
             <ChartSkeleton height={200} className="mb-6" />
@@ -721,24 +336,10 @@ function SpaMarketingContent({
           </>
         )}
 
-        {/* Meta Aggregate Metrics */}
         <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-4">
-          <AggregateBox
-            label="Attributed Revenue"
-            value={metaTotalAttributed > 0 ? formatCurrency(metaTotalAttributed) : "—"}
-            icon={Euro}
-          />
-          <AggregateBox
-            label="Ad Spend"
-            value={metaTotalSpend > 0 ? formatCurrency(metaTotalSpend) : "—"}
-            icon={Wallet}
-          />
-          <AggregateBox
-            label="ROAS"
-            value={metaRoasNum > 0 ? `${metaRoas}x` : "—"}
-            valueColor={metaRoasNum > 0 ? getRoasColor(metaRoasNum) : undefined}
-            icon={TrendingUp}
-          />
+          <AggregateBox brand={B} label="Attributed Revenue" value={metaTotalAttributed > 0 ? formatCurrency(metaTotalAttributed) : "—"} icon={Euro} />
+          <AggregateBox brand={B} label="Ad Spend" value={metaTotalSpend > 0 ? formatCurrency(metaTotalSpend) : "—"} icon={Wallet} />
+          <AggregateBox brand={B} label="ROAS" value={metaRoasNum > 0 ? `${metaRoas}x` : "—"} valueColor={metaRoasNum > 0 ? getRoasColor(metaRoasNum) : undefined} icon={TrendingUp} />
         </div>
       </Card>
 
@@ -746,6 +347,7 @@ function SpaMarketingContent({
       <Card className="p-5 md:p-6">
         <ChannelHeader
           title="Google Ads"
+          brand={B}
           channelLabel="Google"
           channelVariant="google"
           roasLabel="Google ROAS"
@@ -754,7 +356,6 @@ function SpaMarketingContent({
 
         {googleCampaigns.length > 0 ? (
           <>
-            {/* Fatigue summary + CPL chart */}
             <div className="mb-6">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <div>
@@ -765,59 +366,14 @@ function SpaMarketingContent({
                 </div>
               </div>
               {googleCplChartData.length > 0 && (
-                <div className="h-[160px] md:h-[200px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={googleCplChartData}
-                      layout="vertical"
-                      margin={{ top: 4, right: 56, left: 8, bottom: 4 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#F3F4F6" />
-                      <XAxis
-                        type="number"
-                        tickFormatter={(v: number) => `€${v}`}
-                        tick={{ fontSize: 11, fill: "#9CA3AF" }}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <YAxis
-                        type="category"
-                        dataKey="name"
-                        tick={{ fontSize: 11, fill: "#6B7280" }}
-                        width={150}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <Tooltip
-                        contentStyle={TOOLTIP_STYLE}
-                        cursor={{ fill: `${BRAND_FILL}40` }}
-                        formatter={(value) => [`€${Number(value).toFixed(1)}`, "CPL"]}
-                      />
-                      <Bar dataKey="cpl" name="CPL" radius={[0, 6, 6, 0]} maxBarSize={28}>
-                        {googleCplChartData.map((entry, i) => (
-                          <Cell key={i} fill={entry.color} />
-                        ))}
-                        <LabelList
-                          dataKey="cpl"
-                          position="right"
-                          formatter={(v) => `€${Number(v).toFixed(1)}`}
-                          style={{ fontSize: 11, fontWeight: 700, fill: "#374151" }}
-                        />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
+                <CplBarChart data={googleCplChartData} brand={B} className="h-[160px] md:h-[200px]" />
               )}
             </div>
 
-            {/* Campaign Table */}
             <DataTable columns={campaignColumns} data={googleCampaigns as unknown as Record<string, unknown>[]} />
           </>
         ) : !isLoading ? (
-          <div className="py-12 text-center">
-            <Search className="h-8 w-8 mx-auto mb-3 text-gray-300" />
-            <p className="text-sm font-semibold text-gray-500">No Google Ads data for this period.</p>
-          </div>
+          <EmptyState icon={Search} message="No Google Ads data for this period." />
         ) : (
           <>
             <ChartSkeleton height={180} className="mb-6" />
@@ -825,103 +381,31 @@ function SpaMarketingContent({
           </>
         )}
 
-        {/* Google Aggregate Metrics */}
         <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-4">
-          <AggregateBox
-            label="Attributed Revenue"
-            value={googleTotalAttributed > 0 ? formatCurrency(googleTotalAttributed) : "—"}
-            icon={Euro}
-          />
-          <AggregateBox
-            label="Ad Spend"
-            value={googleTotalSpend > 0 ? formatCurrency(googleTotalSpend) : "—"}
-            icon={Wallet}
-          />
-          <AggregateBox
-            label="ROAS"
-            value={googleRoasNum > 0 ? `${googleRoas}x` : "—"}
-            valueColor={googleRoasNum > 0 ? getRoasColor(googleRoasNum) : undefined}
-            icon={TrendingUp}
-          />
+          <AggregateBox brand={B} label="Attributed Revenue" value={googleTotalAttributed > 0 ? formatCurrency(googleTotalAttributed) : "—"} icon={Euro} />
+          <AggregateBox brand={B} label="Ad Spend" value={googleTotalSpend > 0 ? formatCurrency(googleTotalSpend) : "—"} icon={Wallet} />
+          <AggregateBox brand={B} label="ROAS" value={googleRoasNum > 0 ? `${googleRoas}x` : "—"} valueColor={googleRoasNum > 0 ? getRoasColor(googleRoasNum) : undefined} icon={TrendingUp} />
         </div>
       </Card>
 
       {/* ── Section 4: Email Marketing (Klaviyo) ─────────────────────── */}
       <Card className="p-5 md:p-6">
-        <ChannelHeader title="Email Marketing" channelLabel="Klaviyo" channelVariant="email" />
+        <ChannelHeader title="Email Marketing" brand={B} channelLabel="Klaviyo" channelVariant="email" />
 
-        {/* Key rate bars with industry benchmarks */}
         <div className="flex flex-col md:flex-row gap-6 mb-6 p-5 rounded-xl" style={{ backgroundColor: `${BRAND_FILL}30`, border: `1px solid ${BRAND_FILL}` }}>
-          <EmailRateBar
-            label="Open Rate"
-            value={emailOpenRate || 0}
-            max={60}
-            color="#22C55E"
-            benchmark={EMAIL_BENCHMARKS.open}
-          />
+          <EmailRateBar label="Open Rate" value={emailOpenRate || 0} max={60} color="#22C55E" benchmark={EMAIL_BENCHMARKS.open} />
           <div className="hidden md:block w-px self-stretch" style={{ backgroundColor: `${BRAND_FILL}` }} />
-          <EmailRateBar
-            label="Click Rate"
-            value={emailClickRate || 0}
-            max={10}
-            color={BRAND_COLOR}
-            benchmark={EMAIL_BENCHMARKS.click}
-          />
+          <EmailRateBar label="Click Rate" value={emailClickRate || 0} max={10} color={BRAND_COLOR} benchmark={EMAIL_BENCHMARKS.click} />
           <div className="hidden md:block w-px self-stretch" style={{ backgroundColor: `${BRAND_FILL}` }} />
-          <EmailRateBar
-            label="Unsubscribe Rate"
-            value={emailUnsubRate || 0}
-            max={2}
-            color="#EF4444"
-            benchmark={EMAIL_BENCHMARKS.unsub}
-          />
+          <EmailRateBar label="Unsubscribe Rate" value={emailUnsubRate || 0} max={2} color="#EF4444" benchmark={EMAIL_BENCHMARKS.unsub} />
         </div>
 
-        {/* Email KPI cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div
-            className="rounded-xl p-4 border"
-            style={{ backgroundColor: `${BRAND_FILL}30`, borderColor: BRAND_FILL }}
-          >
-            <div className="flex items-center gap-2 mb-2.5">
-              <div className="rounded-lg p-1.5" style={{ backgroundColor: BRAND_FILL }}>
-                <Mail className="h-3 w-3" style={{ color: BRAND_COLOR }} />
-              </div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-500">Campaigns Sent</p>
-            </div>
-            <p className="text-xl font-black tracking-tight" style={{ color: BRAND_COLOR }}>{campaignCount}</p>
-          </div>
-
-          <div
-            className="rounded-xl p-4 border"
-            style={{ backgroundColor: `${BRAND_FILL}30`, borderColor: BRAND_FILL }}
-          >
-            <div className="flex items-center gap-2 mb-2.5">
-              <div className="rounded-lg p-1.5" style={{ backgroundColor: BRAND_FILL }}>
-                <Users className="h-3 w-3" style={{ color: BRAND_COLOR }} />
-              </div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-500">Total Subscribers</p>
-            </div>
-            <p className="text-xl font-black tracking-tight" style={{ color: BRAND_COLOR }}>
-              {emailTotalSubscribers.toLocaleString()}
-            </p>
-          </div>
-
-          <div
-            className="rounded-xl p-4 border"
-            style={{ backgroundColor: `${BRAND_FILL}30`, borderColor: BRAND_FILL }}
-          >
-            <div className="flex items-center gap-2 mb-2.5">
-              <div className="rounded-lg p-1.5" style={{ backgroundColor: BRAND_FILL }}>
-                <Activity className="h-3 w-3" style={{ color: BRAND_COLOR }} />
-              </div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-500">Active Flows</p>
-            </div>
-            <p className="text-xl font-black tracking-tight" style={{ color: BRAND_COLOR }}>{flowCount}</p>
-          </div>
+          <AggregateBox brand={B} label="Campaigns Sent" value={String(campaignCount)} icon={Mail} />
+          <AggregateBox brand={B} label="Total Subscribers" value={emailTotalSubscribers.toLocaleString()} icon={Users} />
+          <AggregateBox brand={B} label="Active Flows" value={String(flowCount)} icon={Activity} />
         </div>
 
-        {/* Flow breakdown table */}
         <div className="mt-6">
           <div className="flex items-center gap-2 mb-4">
             <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-gray-500">Flow Performance</p>
@@ -933,7 +417,7 @@ function SpaMarketingContent({
 
       {/* ── Section 4b: SEO — Google Search Console ───────────────────── */}
       <Card className="p-5 md:p-6">
-        <ChannelHeader title="Search Console Rankings" channelLabel="SEO" channelVariant="seo" />
+        <ChannelHeader title="Search Console Rankings" brand={B} channelLabel="SEO" channelVariant="seo" />
         <p className="text-sm text-gray-500 -mt-3 mb-5">
           Where carismaspa.com ranks for your tracked keywords on Google.
         </p>
@@ -943,50 +427,24 @@ function SpaMarketingContent({
       {/* ── Section 5: Profitability Matrix ─────────────────────────── */}
       {profitabilityData.length > 0 && (
         <Card className="p-5 md:p-6">
-          <ChannelHeader title="Profitability Matrix" />
+          <ChannelHeader title="Profitability Matrix" brand={B} />
           <p className="text-sm text-gray-500 -mt-3 mb-5">
             Cross-channel campaign analysis with budget scaling recommendations
           </p>
 
           <DataTable columns={profitabilityColumns} data={profitabilityData as unknown as Record<string, unknown>[]} />
 
-          {/* Summary Totals Row */}
-          <div
-            className="mt-5 rounded-xl border p-5"
-            style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}30` }}
-          >
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-gray-400 mb-4">
-              Portfolio Totals
-            </p>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-              {[
-                { label: "Campaigns", value: String(profitabilityData.length) },
-                { label: "Total Leads", value: String(profitabilityTotals.totalLeads) },
-                { label: "Total Spend", value: formatCurrency(profitabilityTotals.totalSpend) },
-                { label: "Total Revenue", value: formatCurrency(profitabilityTotals.totalRevenue) },
-                {
-                  label: "Blended ROAS",
-                  value: `${profitabilityTotals.totalRoas.toFixed(1)}x`,
-                  color: getRoasColor(profitabilityTotals.totalRoas),
-                },
-                {
-                  label: "Total Profit",
-                  value: formatCurrency(profitabilityTotals.totalProfit),
-                  color: profitabilityTotals.totalProfit >= 0 ? "#22C55E" : "#EF4444",
-                },
-              ].map(({ label, value, color }) => (
-                <div key={label} className="text-center">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-400 mb-1">{label}</p>
-                  <p
-                    className="text-lg font-black tracking-tight"
-                    style={{ color: color ?? BRAND_COLOR }}
-                  >
-                    {value}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
+          <PortfolioTotals
+            brand={B}
+            items={[
+              { label: "Campaigns", value: String(profitabilityData.length) },
+              { label: "Total Leads", value: String(profitabilityTotals.totalLeads) },
+              { label: "Total Spend", value: formatCurrency(profitabilityTotals.totalSpend) },
+              { label: "Total Revenue", value: formatCurrency(profitabilityTotals.totalRevenue) },
+              { label: "Blended ROAS", value: `${profitabilityTotals.totalRoas.toFixed(1)}x`, color: getRoasColor(profitabilityTotals.totalRoas) },
+              { label: "Total Profit", value: formatCurrency(profitabilityTotals.totalProfit), color: profitabilityTotals.totalProfit >= 0 ? "#22C55E" : "#EF4444" },
+            ]}
+          />
         </Card>
       )}
     </>

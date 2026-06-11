@@ -16,99 +16,40 @@ import { KeywordRankingsTable } from "@/components/marketing/KeywordRankingsTabl
 import { BRAND } from "@/lib/constants/design-tokens";
 import type { CampaignData } from "@/lib/types/ads";
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-  LabelList,
-} from "recharts";
+  MarketingPageHeader,
+  HeroKPICard,
+  AggregateBox,
+  EmailRateBar,
+  ChannelHeader,
+  FatiguePills,
+  CplBarChart,
+  ChannelBadge,
+  ActionBadge,
+  EmptyState,
+  PortfolioTotals,
+  EMAIL_BENCHMARKS,
+  getRoasColor,
+  getFatigueSummary,
+  buildCplChartData,
+} from "@/components/marketing/ui";
+import {
+  Euro,
+  TrendingUp,
+  Users,
+  Wallet,
+  MousePointerClick,
+  Mail,
+  Search,
+  Activity,
+  AlertTriangle,
+  BarChart3,
+} from "lucide-react";
 
 /* ---------- constants ---------- */
 
-const BRAND_COLOR = BRAND.aesthetics.dark;   // text colors only
-const BRAND_FILL  = BRAND.aesthetics.soft;   // fills, strokes, borders, backgrounds
-
-/* ---------- helpers ---------- */
-
-function getFatigueStatus(
-  frequency: number,
-  ctr: number,
-  peakCtr: number
-): { label: string; color: string; bg: string; barColor: string } {
-  const ctrDrop = peakCtr > 0 ? (peakCtr - ctr) / peakCtr : 0;
-  if (frequency > 3.0 && ctrDrop > 0.2)
-    return { label: "Fatigued", color: "bg-red-500", bg: "bg-red-50 text-red-700", barColor: "#EF4444" };
-  if (frequency >= 2.0 && ctrDrop >= 0.1)
-    return { label: "Watch", color: "bg-amber-500", bg: "bg-amber-50 text-amber-700", barColor: "#F59E0B" };
-  return { label: "Healthy", color: "bg-green-500", bg: "bg-green-50 text-green-700", barColor: "#22C55E" };
-}
-
-function countFatigueStatuses(campaigns: CampaignData[]) {
-  let healthy = 0,
-    watch = 0,
-    fatigued = 0;
-  for (const c of campaigns) {
-    const s = getFatigueStatus(c.frequency, c.ctr, c.peakCtr);
-    if (s.label === "Healthy") healthy++;
-    else if (s.label === "Watch") watch++;
-    else fatigued++;
-  }
-  return { healthy, watch, fatigued };
-}
-
-function roasColor(roas: number): string {
-  if (roas >= 5) return "text-green-600";
-  if (roas >= 3) return "text-amber-600";
-  return "text-red-600";
-}
-
-/* ---------- Aggregate Metric Box ---------- */
-
-function AggregateBox({
-  label,
-  value,
-  className,
-}: {
-  label: string;
-  value: string;
-  className?: string;
-}) {
-  return (
-    <div
-      className={`rounded-lg border-2 p-4 text-center ${className ?? ""}`}
-      style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}
-    >
-      <p className="text-sm text-gray-600">{label}</p>
-      <p className="text-xl md:text-2xl font-bold mt-1" style={{ color: BRAND_COLOR }}>
-        {value}
-      </p>
-    </div>
-  );
-}
-
-/* ---------- Email Progress Bar ---------- */
-
-function EmailRateBar({ label, value, max }: { label: string; value: number; max: number }) {
-  const pct = Math.min((value / max) * 100, 100);
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-sm">
-        <span className="font-medium text-gray-700">{label}</span>
-        <span className="font-semibold text-gray-900">{value}%</span>
-      </div>
-      <div className="h-3 w-full rounded-full bg-gray-100">
-        <div
-          className="h-3 rounded-full transition-all"
-          style={{ width: `${pct}%`, backgroundColor: BRAND_FILL }}
-        />
-      </div>
-    </div>
-  );
-}
+const B = BRAND.aesthetics;
+const BRAND_COLOR = B.dark;
+const BRAND_FILL  = B.soft;
 
 /* ---------- content component ---------- */
 
@@ -122,7 +63,6 @@ function AestheticsMarketingContent({
   brandFilter: string | null;
 }) {
   const queryClient = useQueryClient();
-  /* ---- fetch campaign data from Meta & Google APIs ---- */
   const metaQuery = useMetaCampaigns("aesthetics", dateFrom, dateTo);
   const googleQuery = useGoogleCampaigns("aesthetics", dateFrom, dateTo);
 
@@ -134,18 +74,12 @@ function AestheticsMarketingContent({
   const tokenExpired = metaQuery.data?.tokenExpired || googleQuery.data?.tokenExpired;
 
   /* ---- Fatigue counts ---- */
-  const metaFatigue = useMemo(
-    () => countFatigueStatuses(metaCampaigns),
-    [metaCampaigns]
-  );
-  const googleFatigue = useMemo(
-    () => countFatigueStatuses(googleCampaigns),
-    [googleCampaigns]
-  );
+  const metaFatigue   = useMemo(() => getFatigueSummary(metaCampaigns), [metaCampaigns]);
+  const googleFatigue = useMemo(() => getFatigueSummary(googleCampaigns), [googleCampaigns]);
   const totalFatigued = metaFatigue.fatigued + googleFatigue.fatigued;
-  const totalWatch = metaFatigue.watch + googleFatigue.watch;
+  const totalWatch    = metaFatigue.watch + googleFatigue.watch;
 
-  /* ---- Meta aggregate ---- */
+  /* ---- Channel aggregates ---- */
   const metaAggregate = useMemo(() => {
     if (!metaCampaigns.length) return null;
     const totalSpend = metaCampaigns.reduce((s, c) => s + c.totalSpend, 0);
@@ -155,7 +89,6 @@ function AestheticsMarketingContent({
     return { totalSpend, totalLeads, totalRevenue, roas };
   }, [metaCampaigns]);
 
-  /* ---- Google aggregate ---- */
   const googleAggregate = useMemo(() => {
     if (!googleCampaigns.length) return null;
     const totalSpend = googleCampaigns.reduce((s, c) => s + c.totalSpend, 0);
@@ -167,75 +100,24 @@ function AestheticsMarketingContent({
 
   /* ---- Campaign table columns ---- */
   const campaignColumns = [
-    { key: "campaign", label: "Campaign Name" },
     {
-      key: "cpl",
-      label: "CPL",
-      align: "right" as const,
-      sortable: true,
-      render: (v: unknown) => `€${(v as number).toFixed(1)}`,
+      key: "campaign",
+      label: "Campaign Name",
+      render: (v: unknown) => (
+        <span className="font-semibold" style={{ color: BRAND_COLOR }}>{v as string}</span>
+      ),
     },
-    {
-      key: "totalSpend",
-      label: "Total Spend",
-      align: "right" as const,
-      sortable: true,
-      render: (v: unknown) => formatCurrency(v as number),
-    },
+    { key: "cpl", label: "CPL", align: "right" as const, sortable: true, render: (v: unknown) => `€${(v as number).toFixed(1)}` },
+    { key: "totalSpend", label: "Total Spend", align: "right" as const, sortable: true, render: (v: unknown) => formatCurrency(v as number) },
     { key: "totalLeads", label: "Total Leads", align: "right" as const, sortable: true },
-    {
-      key: "ctr",
-      label: "CTR",
-      align: "right" as const,
-      sortable: true,
-      render: (v: unknown) => `${(v as number).toFixed(1)}%`,
-    },
-    {
-      key: "cpm",
-      label: "CPM",
-      align: "right" as const,
-      render: (v: unknown) => `€${(v as number).toFixed(1)}`,
-    },
-    {
-      key: "frequency",
-      label: "Freq",
-      align: "right" as const,
-      render: (v: unknown) => (v as number).toFixed(1),
-    },
+    { key: "ctr", label: "CTR", align: "right" as const, sortable: true, render: (v: unknown) => `${(v as number).toFixed(1)}%` },
+    { key: "cpm", label: "CPM", align: "right" as const, render: (v: unknown) => `€${(v as number).toFixed(1)}` },
+    { key: "frequency", label: "Freq", align: "right" as const, render: (v: unknown) => (v as number).toFixed(1) },
   ];
 
   /* ---- CPL chart data ---- */
-  const metaCplChartData = useMemo(
-    () =>
-      [...metaCampaigns]
-        .sort((a, b) => a.cpl - b.cpl)
-        .map((c) => {
-          const status = getFatigueStatus(c.frequency, c.ctr, c.peakCtr);
-          return {
-            name: c.campaign.length > 25 ? c.campaign.slice(0, 22) + "..." : c.campaign,
-            cpl: parseFloat(c.cpl.toFixed(2)),
-            fullName: c.campaign,
-            barColor: status.barColor,
-          };
-        }),
-    [metaCampaigns]
-  );
-
-  const googleCplChartData = useMemo(
-    () =>
-      [...googleCampaigns]
-        .sort((a, b) => a.cpl - b.cpl)
-        .map((c) => {
-          const status = getFatigueStatus(c.frequency, c.ctr, c.peakCtr);
-          return {
-            name: c.campaign.length > 25 ? c.campaign.slice(0, 22) + "..." : c.campaign,
-            cpl: parseFloat(c.cpl.toFixed(2)),
-            fullName: c.campaign,
-            barColor: status.barColor,
-          };
-        }),
-    [googleCampaigns]
-  );
+  const metaCplChartData   = useMemo(() => buildCplChartData(metaCampaigns), [metaCampaigns]);
+  const googleCplChartData = useMemo(() => buildCplChartData(googleCampaigns), [googleCampaigns]);
 
   /* ---- Profitability matrix ---- */
   const profitabilityData = useMemo(() => {
@@ -249,8 +131,6 @@ function AestheticsMarketingContent({
         const profit = attributedRevenue - c.totalSpend;
         const recommendation =
           roas >= 5 ? "Scale" : roas >= 3 ? "Maintain" : roas >= 2 ? "Optimize" : "Pause";
-
-        // Determine channel from which array the campaign came from
         const isMeta = metaCampaigns.some((mc) => mc.campaignId === c.campaignId);
         return {
           campaign: c.campaign,
@@ -267,6 +147,42 @@ function AestheticsMarketingContent({
       .sort((a, b) => b.profit - a.profit);
   }, [metaCampaigns, googleCampaigns]);
 
+  const profitabilityColumns = [
+    {
+      key: "campaign",
+      label: "Campaign",
+      render: (v: unknown) => (
+        <span className="font-semibold" style={{ color: BRAND_COLOR }}>{String(v)}</span>
+      ),
+    },
+    { key: "channel", label: "Channel", render: (v: unknown) => <ChannelBadge channel={v as string} /> },
+    { key: "totalLeads", label: "Leads", align: "right" as const, sortable: true },
+    { key: "totalSpend", label: "Spend", align: "right" as const, sortable: true, render: (v: unknown) => formatCurrency(v as number) },
+    { key: "cpl", label: "CPL", align: "right" as const, sortable: true, render: (v: unknown) => `€${(v as number).toFixed(1)}` },
+    { key: "attributedRevenue", label: "Revenue", align: "right" as const, sortable: true, render: (v: unknown) => formatCurrency(v as number) },
+    {
+      key: "roas",
+      label: "ROAS",
+      align: "right" as const,
+      sortable: true,
+      render: (v: unknown) => {
+        const val = v as number;
+        return <span style={{ color: getRoasColor(val), fontWeight: 700 }}>{val.toFixed(1)}x</span>;
+      },
+    },
+    {
+      key: "profit",
+      label: "Profit",
+      align: "right" as const,
+      sortable: true,
+      render: (v: unknown) => {
+        const val = v as number;
+        return <span style={{ color: val >= 0 ? "#22C55E" : "#EF4444", fontWeight: 700 }}>{formatCurrency(val)}</span>;
+      },
+    },
+    { key: "recommendation", label: "Action", align: "center" as const, render: (v: unknown) => <ActionBadge rec={String(v)} /> },
+  ];
+
   /* ---- Email data (Klaviyo API) ---- */
   const { overview: klaviyo, loading: klaviyoLoading } = useKlaviyoOverview({
     brand: "aesthetics",
@@ -278,35 +194,30 @@ function AestheticsMarketingContent({
   if (isLoading) {
     return (
       <>
-        <div>
-          <h1 className="text-xl md:text-2xl font-bold text-gray-900">
-            Aesthetics Marketing Dashboard
-          </h1>
-          <p className="text-sm text-text-secondary mt-1">Loading data…</p>
-        </div>
+        <MarketingPageHeader
+          title="Aesthetics Marketing"
+          subtitle="Loading data…"
+          brand={B}
+        />
         <KPIGridSkeleton count={6} className="grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6" />
-        <div className="rounded-xl border border-border p-6">
+        <Card className="p-6">
           <ChartSkeleton height={200} />
-        </div>
-        <div className="rounded-xl border border-border p-6">
+        </Card>
+        <Card className="p-6">
           <ChartSkeleton height={200} />
-        </div>
+        </Card>
       </>
     );
   }
 
   return (
     <>
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl md:text-2xl font-bold text-gray-900">
-            Aesthetics Marketing Dashboard
-          </h1>
-          <p className="text-sm text-text-secondary mt-1">
-            {formatDateRangeLabel(dateFrom, dateTo)} · Carisma Aesthetics — consult-driven
-            performance
-          </p>
-        </div>
+      {/* ── Page Header ──────────────────────────────────────────────── */}
+      <MarketingPageHeader
+        title="Aesthetics Marketing"
+        subtitle={`${formatDateRangeLabel(dateFrom, dateTo)} · Carisma Aesthetics — consult-driven performance`}
+        brand={B}
+      >
         <SyncButton
           onSync={async () => {
             await Promise.all([
@@ -320,32 +231,34 @@ function AestheticsMarketingContent({
           }}
           isExternalBusy={isLoading}
         />
-      </div>
+      </MarketingPageHeader>
 
-      {/* API status banners */}
+      {/* ── Error banners ────────────────────────────────────────────── */}
       {tokenExpired && (
-        <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-center">
+        <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 flex items-center gap-3">
+          <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
           <p className="text-sm font-semibold text-amber-700">API token expired — update credentials in .env.local</p>
         </div>
       )}
 
       {apiError && !tokenExpired && (
-        <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-center">
+        <div className="rounded-xl bg-red-50 border border-red-200 p-4 flex items-center gap-3">
+          <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
           <p className="text-sm font-semibold text-red-700">API Error: {apiError}</p>
         </div>
       )}
 
-      {/* Ad Fatigue Alert Banner */}
+      {/* ── Creative Fatigue Alert ───────────────────────────────────── */}
       {(totalFatigued > 0 || totalWatch > 0) && (
-        <div className="rounded-lg bg-red-50 border border-red-200 p-3 flex items-center justify-center gap-2">
-          <span className="h-3 w-3 rounded-full bg-red-500 animate-pulse" />
-          <span className="text-sm font-semibold text-red-700">
-            Creative Fatigue Alert: {totalFatigued + totalWatch} campaigns need attention
+        <div className="rounded-xl bg-red-50 border border-red-200 p-3.5 flex items-center justify-center gap-2.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-red-500 animate-pulse shrink-0" />
+          <span className="text-sm font-bold text-red-700">
+            Creative Fatigue Alert — {totalFatigued + totalWatch} campaign{totalFatigued + totalWatch !== 1 ? "s" : ""} need attention
           </span>
         </div>
       )}
 
-      {/* Section 1: Hero KPIs */}
+      {/* ── Section 1: Hero KPIs ────────────────────────────────────── */}
       {(() => {
         const totalMetaSpend = metaCampaigns.reduce((s, c) => s + c.totalSpend, 0);
         const totalGoogleSpend = googleCampaigns.reduce((s, c) => s + c.totalSpend, 0);
@@ -357,328 +270,163 @@ function AestheticsMarketingContent({
         const metaBlendedCpl = totalMetaLeads > 0 ? totalMetaSpend / totalMetaLeads : 0;
         const googleBlendedCpl = totalGoogleLeads > 0 ? totalGoogleSpend / totalGoogleLeads : 0;
 
-        const heroKpis = [
-          { label: "Revenue", value: formatCurrency(totalRevenue) },
-          { label: "Total Marketing Spend", value: formatCurrency(totalSpend) },
-          { label: "Meta Blended CPL", value: `€${metaBlendedCpl.toFixed(1)}` },
-          { label: "Google Blended CPL", value: `€${googleBlendedCpl.toFixed(1)}` },
-          { label: "Total Leads", value: String(totalLeads) },
-          { label: "Blended ROAS", value: totalSpend > 0 ? `${(totalRevenue / totalSpend).toFixed(1)}x` : "—" },
-        ];
-
         if (totalSpend === 0 && totalLeads === 0) {
           return (
-            <Card className="p-6 text-center text-gray-500">
-              No marketing data available for the selected date range.
+            <Card className="p-6">
+              <EmptyState message="No marketing data available for the selected date range." />
             </Card>
           );
         }
 
         return (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {heroKpis.map((kpi) => (
-              <Card key={kpi.label} className="p-4">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{kpi.label}</p>
-                <p className="text-xl md:text-2xl font-bold text-gray-900 mt-1">{kpi.value}</p>
-              </Card>
-            ))}
+            <HeroKPICard brand={B} label="Attributed Revenue" value={formatCurrency(totalRevenue)} icon={Euro} sub="All channels" />
+            <HeroKPICard brand={B} label="Total Marketing Spend" value={formatCurrency(totalSpend)} icon={Wallet} sub="Meta + Google" />
+            <HeroKPICard brand={B} label="Meta Blended CPL" value={`€${metaBlendedCpl.toFixed(1)}`} icon={MousePointerClick} sub="Cost per lead" />
+            <HeroKPICard brand={B} label="Google Blended CPL" value={`€${googleBlendedCpl.toFixed(1)}`} icon={Search} sub="Cost per lead" />
+            <HeroKPICard brand={B} label="Total Leads" value={String(totalLeads)} icon={Users} sub="Meta + Google" />
+            <HeroKPICard brand={B} label="Blended ROAS" value={totalSpend > 0 ? `${(totalRevenue / totalSpend).toFixed(1)}x` : "—"} icon={TrendingUp} sub="Revenue / spend" />
           </div>
         );
       })()}
 
-      {/* Section 2: Meta Ads */}
-      <Card className="p-3 md:p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Meta Ads</h2>
-          <div className="text-right">
-            <p className="text-sm text-gray-500">Meta ROAS</p>
-            <p className="text-xl font-bold" style={{ color: BRAND_COLOR }}>
-              {metaAggregate ? `${metaAggregate.roas.toFixed(1)}x` : "—"}
-            </p>
-          </div>
-        </div>
+      {/* ── Section 2: Meta Ads ──────────────────────────────────────── */}
+      <Card className="p-5 md:p-6">
+        <ChannelHeader
+          title="Meta Ads"
+          brand={B}
+          channelLabel="Meta"
+          channelVariant="meta"
+          roasLabel="Meta ROAS"
+          roasValue={metaAggregate ? `${metaAggregate.roas.toFixed(1)}x` : "—"}
+        />
 
         {metaCampaigns.length > 0 ? (
           <>
-            {/* Fatigue summary counts */}
-            <div className="flex items-center gap-4 mb-4 text-xs">
-              <span className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-green-500" />
-                {metaFatigue.healthy} Healthy
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-amber-500" />
-                {metaFatigue.watch} Watch
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-red-500" />
-                {metaFatigue.fatigued} Fatigued
-              </span>
-            </div>
-
-            {/* CPL by Campaign */}
-            {metaCplChartData.length > 0 && (
-              <div className="mb-6">
-                <h3 className="text-sm font-medium text-gray-700 mb-3">
-                  CPL by Campaign (Best to Worst)
-                </h3>
-                <div className="h-[160px] md:h-[200px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={metaCplChartData}
-                      layout="vertical"
-                      margin={{ top: 5, right: 50, left: 100, bottom: 5 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                      <XAxis type="number" tickFormatter={(v: number) => `€${v}`} />
-                      <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={130} />
-                      <Tooltip formatter={(value) => `€${Number(value).toFixed(1)}`} />
-                      <Bar dataKey="cpl" name="CPL" radius={[0, 4, 4, 0]}>
-                        {metaCplChartData.map((entry, i) => (
-                          <Cell key={i} fill={entry.barColor} />
-                        ))}
-                        <LabelList
-                          dataKey="cpl"
-                          position="right"
-                          formatter={(v) => `€${Number(v).toFixed(1)}`}
-                          style={{ fontSize: 11, fill: "#374151" }}
-                        />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+            <div className="mb-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-gray-500 mb-2">
+                    CPL by Campaign — Best to Worst
+                  </p>
+                  <FatiguePills {...metaFatigue} />
                 </div>
               </div>
-            )}
+              {metaCplChartData.length > 0 && (
+                <CplBarChart data={metaCplChartData} brand={B} className="h-[180px] md:h-[220px]" />
+              )}
+            </div>
 
-            {/* Campaign Table */}
-            <DataTable
-              columns={campaignColumns}
-              data={metaCampaigns as unknown as Record<string, unknown>[]}
-            />
+            <DataTable columns={campaignColumns} data={metaCampaigns as unknown as Record<string, unknown>[]} />
           </>
         ) : (
-          <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800 mb-4">
-            No Meta Ads data available for the selected date range.
-          </div>
+          <EmptyState icon={BarChart3} message="No Meta Ads data available for the selected date range." />
         )}
 
-        {/* Channel Aggregate Metrics */}
         {metaAggregate && (
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <AggregateBox
-              label="Attributed Revenue (Meta)"
-              value={formatCurrency(metaAggregate.totalRevenue)}
-            />
-            <AggregateBox
-              label="Ad Spend"
-              value={formatCurrency(metaAggregate.totalSpend)}
-            />
-            <div
-              className="rounded-lg border-2 p-4 text-center"
-              style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}
-            >
-              <p className="text-sm text-gray-600">ROAS</p>
-              <p
-                className={`text-xl md:text-2xl font-bold mt-1 ${roasColor(metaAggregate.roas)}`}
-              >
-                {metaAggregate.roas.toFixed(1)}x
-              </p>
-            </div>
+          <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <AggregateBox brand={B} label="Attributed Revenue" value={formatCurrency(metaAggregate.totalRevenue)} icon={Euro} />
+            <AggregateBox brand={B} label="Ad Spend" value={formatCurrency(metaAggregate.totalSpend)} icon={Wallet} />
+            <AggregateBox brand={B} label="ROAS" value={`${metaAggregate.roas.toFixed(1)}x`} valueColor={getRoasColor(metaAggregate.roas)} icon={TrendingUp} />
           </div>
         )}
       </Card>
 
-      {/* Section 3: Google Ads */}
-      <Card className="p-3 md:p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Google Ads</h2>
-          <div className="text-right">
-            <p className="text-sm text-gray-500">Google ROAS</p>
-            <p className="text-xl font-bold" style={{ color: BRAND_COLOR }}>
-              {googleAggregate ? `${googleAggregate.roas.toFixed(1)}x` : "—"}
-            </p>
-          </div>
-        </div>
+      {/* ── Section 3: Google Ads ────────────────────────────────────── */}
+      <Card className="p-5 md:p-6">
+        <ChannelHeader
+          title="Google Ads"
+          brand={B}
+          channelLabel="Google"
+          channelVariant="google"
+          roasLabel="Google ROAS"
+          roasValue={googleAggregate ? `${googleAggregate.roas.toFixed(1)}x` : "—"}
+        />
 
         {googleCampaigns.length > 0 ? (
           <>
-            {/* Fatigue summary counts */}
-            <div className="flex items-center gap-4 mb-4 text-xs">
-              <span className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-green-500" />
-                {googleFatigue.healthy} Healthy
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-amber-500" />
-                {googleFatigue.watch} Watch
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-red-500" />
-                {googleFatigue.fatigued} Fatigued
-              </span>
-            </div>
-
-            {/* CPL by Campaign */}
-            {googleCplChartData.length > 0 && (
-              <div className="mb-6">
-                <h3 className="text-sm font-medium text-gray-700 mb-3">
-                  CPL by Campaign (Best to Worst)
-                </h3>
-                <div className="h-[150px] md:h-[180px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={googleCplChartData}
-                      layout="vertical"
-                      margin={{ top: 5, right: 50, left: 100, bottom: 5 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                      <XAxis type="number" tickFormatter={(v: number) => `€${v}`} />
-                      <YAxis
-                        type="category"
-                        dataKey="name"
-                        tick={{ fontSize: 11 }}
-                        width={130}
-                      />
-                      <Tooltip formatter={(value) => `€${Number(value).toFixed(1)}`} />
-                      <Bar dataKey="cpl" name="CPL" radius={[0, 4, 4, 0]}>
-                        {googleCplChartData.map((entry, i) => (
-                          <Cell key={i} fill={entry.barColor} />
-                        ))}
-                        <LabelList
-                          dataKey="cpl"
-                          position="right"
-                          formatter={(v) => `€${Number(v).toFixed(1)}`}
-                          style={{ fontSize: 11, fill: "#374151" }}
-                        />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+            <div className="mb-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-gray-500 mb-2">
+                    CPL by Campaign — Best to Worst
+                  </p>
+                  <FatiguePills {...googleFatigue} />
                 </div>
               </div>
-            )}
+              {googleCplChartData.length > 0 && (
+                <CplBarChart data={googleCplChartData} brand={B} className="h-[160px] md:h-[200px]" />
+              )}
+            </div>
 
-            {/* Campaign Table */}
-            <DataTable
-              columns={campaignColumns}
-              data={googleCampaigns as unknown as Record<string, unknown>[]}
-            />
+            <DataTable columns={campaignColumns} data={googleCampaigns as unknown as Record<string, unknown>[]} />
 
-            {/* Channel Aggregate Metrics */}
             {googleAggregate && (
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                <AggregateBox
-                  label="Attributed Revenue (Google)"
-                  value={formatCurrency(googleAggregate.totalRevenue)}
-                />
-                <AggregateBox
-                  label="Ad Spend"
-                  value={formatCurrency(googleAggregate.totalSpend)}
-                />
-                <div
-                  className="rounded-lg border-2 p-4 text-center"
-                  style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}
-                >
-                  <p className="text-sm text-gray-600">ROAS</p>
-                  <p
-                    className={`text-xl md:text-2xl font-bold mt-1 ${roasColor(googleAggregate.roas)}`}
-                  >
-                    {googleAggregate.roas.toFixed(1)}x
-                  </p>
-                </div>
+              <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <AggregateBox brand={B} label="Attributed Revenue" value={formatCurrency(googleAggregate.totalRevenue)} icon={Euro} />
+                <AggregateBox brand={B} label="Ad Spend" value={formatCurrency(googleAggregate.totalSpend)} icon={Wallet} />
+                <AggregateBox brand={B} label="ROAS" value={`${googleAggregate.roas.toFixed(1)}x`} valueColor={getRoasColor(googleAggregate.roas)} icon={TrendingUp} />
               </div>
             )}
           </>
         ) : (
-          <div className="rounded-lg bg-gray-50 border border-gray-200 p-4 text-sm text-gray-600">
-            No Google Ads data available for the selected date range.
-          </div>
+          <EmptyState icon={Search} message="No Google Ads data available for the selected date range." />
         )}
       </Card>
 
-      {/* Section 4: Email Marketing (Klaviyo API) */}
-      <Card className="p-3 md:p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Email Marketing</h2>
+      {/* ── Section 4: Email Marketing (Klaviyo) ─────────────────────── */}
+      <Card className="p-5 md:p-6">
+        <ChannelHeader title="Email Marketing" brand={B} channelLabel="Klaviyo" channelVariant="email" />
 
         {klaviyoLoading ? (
-          <div className="animate-pulse space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="rounded-lg border bg-white p-5 h-24" />
-              <div className="rounded-lg border bg-white p-5 h-24" />
-            </div>
-            <div className="space-y-3">
-              <div className="h-6 bg-gray-200 rounded w-full" />
-              <div className="h-6 bg-gray-200 rounded w-full" />
-              <div className="h-6 bg-gray-200 rounded w-full" />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="rounded-lg border bg-white p-4 h-20" />
-              <div className="rounded-lg border bg-white p-4 h-20" />
-              <div className="rounded-lg border bg-white p-4 h-20" />
-            </div>
+          <div className="space-y-4">
+            <ChartSkeleton height={120} withTitle={false} />
+            <ChartSkeleton height={80} withTitle={false} />
           </div>
         ) : !klaviyo.hasData ? (
-          <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-6 py-8 text-center">
-            <p className="text-sm font-medium text-gray-600">No email data available for this period.</p>
-          </div>
+          <EmptyState icon={Mail} message="No email data available for this period." />
         ) : (
           <>
-            {/* Key Rates as Progress Bars */}
-            <div className="space-y-4 mb-6">
-              <EmailRateBar label="Open Rate" value={parseFloat((klaviyo.openRate * 100).toFixed(1))} max={100} />
-              <EmailRateBar label="Click Rate" value={parseFloat((klaviyo.clickRate * 100).toFixed(1))} max={10} />
-              <EmailRateBar label="Unsubscribe Rate" value={parseFloat((klaviyo.unsubscribeRate * 100).toFixed(1))} max={2} />
+            <div className="flex flex-col md:flex-row gap-6 mb-6 p-5 rounded-xl" style={{ backgroundColor: `${BRAND_FILL}30`, border: `1px solid ${BRAND_FILL}` }}>
+              <EmailRateBar label="Open Rate" value={parseFloat((klaviyo.openRate * 100).toFixed(1))} max={60} color="#22C55E" benchmark={EMAIL_BENCHMARKS.open} />
+              <div className="hidden md:block w-px self-stretch" style={{ backgroundColor: `${BRAND_FILL}` }} />
+              <EmailRateBar label="Click Rate" value={parseFloat((klaviyo.clickRate * 100).toFixed(1))} max={10} color={BRAND_COLOR} benchmark={EMAIL_BENCHMARKS.click} />
+              <div className="hidden md:block w-px self-stretch" style={{ backgroundColor: `${BRAND_FILL}` }} />
+              <EmailRateBar label="Unsubscribe Rate" value={parseFloat((klaviyo.unsubscribeRate * 100).toFixed(1))} max={2} color="#EF4444" benchmark={EMAIL_BENCHMARKS.unsub} />
             </div>
 
-            {/* Summary Stats */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <Card className="p-4 text-center">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                  Total Subscribers
-                </p>
-                <p className="text-xl md:text-2xl font-bold text-gray-900 mt-1">{klaviyo.totalSubscribers.toLocaleString()}</p>
-              </Card>
-              <Card className="p-4 text-center">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                  Campaigns Sent
-                </p>
-                <p className="text-xl md:text-2xl font-bold text-gray-900 mt-1">{klaviyo.campaignsSent}</p>
-              </Card>
-              <Card className="p-4 text-center">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                  Active Flows
-                </p>
-                <p className="text-xl md:text-2xl font-bold text-gray-900 mt-1">{klaviyo.activeFlows}</p>
-              </Card>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <AggregateBox brand={B} label="Total Subscribers" value={klaviyo.totalSubscribers.toLocaleString()} icon={Users} />
+              <AggregateBox brand={B} label="Campaigns Sent" value={String(klaviyo.campaignsSent)} icon={Mail} />
+              <AggregateBox brand={B} label="Active Flows" value={String(klaviyo.activeFlows)} icon={Activity} />
             </div>
 
-            {/* Flow breakdown table */}
             <div className="mt-6">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Flow Performance</h3>
+              <div className="flex items-center gap-2 mb-4">
+                <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-gray-500">Flow Performance</p>
+                <div className="flex-1 h-px" style={{ backgroundColor: `${BRAND_FILL}` }} />
+              </div>
               <FlowsTable brand="aesthetics" dateFrom={dateFrom} dateTo={dateTo} brandColor={BRAND_COLOR} />
             </div>
           </>
         )}
       </Card>
 
-      {/* Section 4b: SEO — Google Search Console keyword rankings */}
-      <Card className="p-3 md:p-6">
-        <div className="mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Search Console Rankings</h2>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Where carismaaesthetics.com ranks for your tracked keywords on Google.
-          </p>
-        </div>
+      {/* ── Section 4b: SEO — Google Search Console ───────────────────── */}
+      <Card className="p-5 md:p-6">
+        <ChannelHeader title="Search Console Rankings" brand={B} channelLabel="SEO" channelVariant="seo" />
+        <p className="text-sm text-gray-500 -mt-3 mb-5">
+          Where carismaaesthetics.com ranks for your tracked keywords on Google.
+        </p>
         <KeywordRankingsTable brand="aesthetics" brandColor={BRAND_COLOR} />
       </Card>
 
-      {/* Section 5: Profitability Matrix */}
-      <Card className="p-3 md:p-6">
-        <div className="mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Profitability Matrix</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            Cross-channel campaign profitability with budget scaling recommendations
-          </p>
-        </div>
+      {/* ── Section 5: Profitability Matrix ─────────────────────────── */}
+      <Card className="p-5 md:p-6">
+        <ChannelHeader title="Profitability Matrix" brand={B} />
+        <p className="text-sm text-gray-500 -mt-3 mb-5">
+          Cross-channel campaign profitability with budget scaling recommendations
+        </p>
 
         {profitabilityData.length > 0 ? (
           (() => {
@@ -688,92 +436,6 @@ function AestheticsMarketingContent({
             const totalProfit = totalRevenue - totalSpend;
             const blendedRoas = totalSpend > 0 ? totalRevenue / totalSpend : 0;
 
-            const recBadge = (rec: string) => {
-              const styles: Record<string, string> = {
-                Scale: "bg-green-100 text-green-700",
-                Maintain: "bg-blue-100 text-blue-700",
-                Optimize: "bg-amber-100 text-amber-700",
-                Pause: "bg-red-100 text-red-700",
-              };
-              return (
-                <span
-                  className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${styles[rec] ?? ""}`}
-                >
-                  {rec}
-                </span>
-              );
-            };
-
-            const profitabilityColumns = [
-              {
-                key: "campaign",
-                label: "Campaign",
-                render: (v: unknown) => (
-                  <span
-                    className="font-medium cursor-pointer hover:underline"
-                    style={{ color: BRAND_COLOR }}
-                  >
-                    {String(v)}
-                  </span>
-                ),
-              },
-              { key: "channel", label: "Channel" },
-              { key: "totalLeads", label: "Leads", align: "right" as const, sortable: true },
-              {
-                key: "totalSpend",
-                label: "Spend",
-                align: "right" as const,
-                sortable: true,
-                render: (v: unknown) => formatCurrency(v as number),
-              },
-              {
-                key: "cpl",
-                label: "CPL",
-                align: "right" as const,
-                sortable: true,
-                render: (v: unknown) => `€${(v as number).toFixed(1)}`,
-              },
-              {
-                key: "attributedRevenue",
-                label: "Revenue",
-                align: "right" as const,
-                sortable: true,
-                render: (v: unknown) => formatCurrency(v as number),
-              },
-              {
-                key: "roas",
-                label: "ROAS",
-                align: "right" as const,
-                sortable: true,
-                render: (v: unknown) => (
-                  <span className={roasColor(v as number)}>{(v as number).toFixed(1)}x</span>
-                ),
-              },
-              {
-                key: "profit",
-                label: "Profit",
-                align: "right" as const,
-                sortable: true,
-                render: (v: unknown) => (
-                  <span
-                    className={
-                      (v as number) >= 0
-                        ? "text-green-600 font-semibold"
-                        : "text-red-600 font-semibold"
-                    }
-                  >
-                    {formatCurrency(v as number)}
-                  </span>
-                ),
-              },
-              {
-                key: "recommendation",
-                label: "Action",
-                align: "center" as const,
-                render: (v: unknown) => recBadge(String(v)),
-              },
-            ];
-
             return (
               <>
                 <DataTable
@@ -781,49 +443,24 @@ function AestheticsMarketingContent({
                   data={profitabilityData as unknown as Record<string, unknown>[]}
                   pageSize={20}
                 />
-
-                {/* Summary totals */}
-                <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <AggregateBox label="Total Leads" value={String(totalLeads)} />
-                  <AggregateBox label="Total Spend" value={formatCurrency(totalSpend)} />
-                  <AggregateBox label="Total Revenue" value={formatCurrency(totalRevenue)} />
-                  <div
-                    className="rounded-lg border-2 p-4 text-center"
-                    style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}
-                  >
-                    <p className="text-sm text-gray-600">Blended ROAS</p>
-                    <p
-                      className={`text-xl md:text-2xl font-bold mt-1 ${roasColor(blendedRoas)}`}
-                    >
-                      {blendedRoas.toFixed(1)}x
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-3 flex justify-center">
-                  <div
-                    className="rounded-lg border-2 px-8 py-4 text-center"
-                    style={{ borderColor: BRAND_FILL, backgroundColor: `${BRAND_FILL}` }}
-                  >
-                    <p className="text-sm text-gray-600">Total Profit</p>
-                    <p
-                      className={`text-2xl md:text-3xl font-bold mt-1 ${
-                        totalProfit >= 0 ? "text-green-600" : "text-red-600"
-                      }`}
-                    >
-                      {formatCurrency(totalProfit)}
-                    </p>
-                  </div>
-                </div>
+                <PortfolioTotals
+                  brand={B}
+                  items={[
+                    { label: "Campaigns", value: String(profitabilityData.length) },
+                    { label: "Total Leads", value: String(totalLeads) },
+                    { label: "Total Spend", value: formatCurrency(totalSpend) },
+                    { label: "Total Revenue", value: formatCurrency(totalRevenue) },
+                    { label: "Blended ROAS", value: `${blendedRoas.toFixed(1)}x`, color: getRoasColor(blendedRoas) },
+                    { label: "Total Profit", value: formatCurrency(totalProfit), color: totalProfit >= 0 ? "#22C55E" : "#EF4444" },
+                  ]}
+                />
               </>
             );
           })()
         ) : (
-          <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800">
-            No campaign data available for profitability analysis.
-          </div>
+          <EmptyState message="No campaign data available for profitability analysis." />
         )}
       </Card>
-
     </>
   );
 }
