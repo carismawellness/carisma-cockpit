@@ -127,7 +127,10 @@ export function useSpaRetail(dateFrom: Date, dateTo: Date): UseSpaRetailResult {
         tx_count:      v.tx_count,
       };
     })
-    .sort((a, b) => b.revenue_gross - a.revenue_gross);
+    // Secondary tiebreaker on location_id keeps ordering stable when two
+    // branches happen to land on identical revenue — otherwise Array.sort()
+    // is implementation-defined and rows can reshuffle on re-fetch.
+    .sort((a, b) => b.revenue_gross - a.revenue_gross || a.location_id - b.location_id);
 
   // ── By employee ─────────────────────────────────────────────────────────────
   const empMap = new Map<string, { revenue_ex: number; tx_count: number }>();
@@ -144,7 +147,12 @@ export function useSpaRetail(dateFrom: Date, dateTo: Date): UseSpaRetailResult {
       revenue_gross: Math.round(v.revenue_ex * (1 + VAT_RATE)),
       tx_count:      v.tx_count,
     }))
-    .sort((a, b) => b.revenue_gross - a.revenue_gross);
+    // Secondary tiebreaker on name keeps the top-N employee list deterministic
+    // when revenue ties (common at the long tail).
+    .sort((a, b) =>
+      b.revenue_gross - a.revenue_gross
+      || a.employee_name.localeCompare(b.employee_name)
+    );
 
   // ── By brand ────────────────────────────────────────────────────────────────
   const brandMap = new Map<string, { revenue_ex: number; tx_count: number }>();
@@ -163,7 +171,12 @@ export function useSpaRetail(dateFrom: Date, dateTo: Date): UseSpaRetailResult {
       tx_count:      v.tx_count,
       pct:           Math.round((v.revenue_ex / totalBrandEx) * 1000) / 10,
     }))
-    .sort((a, b) => b.revenue_gross - a.revenue_gross);
+    // Secondary tiebreaker on brand name — brand mix table renders bottom-up
+    // and small brands tying on revenue must not flicker between renders.
+    .sort((a, b) =>
+      b.revenue_gross - a.revenue_gross
+      || a.brand.localeCompare(b.brand)
+    );
 
   // ── Totals ──────────────────────────────────────────────────────────────────
   const revenue_ex_vat = rows.reduce((s, r) => s + (r.amount_ex_vat ?? 0), 0);
