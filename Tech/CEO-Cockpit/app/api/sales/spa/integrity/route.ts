@@ -87,30 +87,59 @@ function safeFloat(val: string): number {
 
 // ── Triangulation ───────────────────────────────────────────────────────────
 
-type Status = "ok" | "warn" | "error";
+// Status semantics:
+//   ok          — source ≈ stored within band; numbers are trustworthy.
+//   pending     — source > stored (sheet ahead of Supabase by > band). Expected
+//                 between ETL runs — the nightly cron writes Supabase from the
+//                 sheet, so fresh rows sit on the sheet until the next run.
+//                 NOT a failure; numbers are accurate up to the last ETL.
+//   warn        — stored > source by a small amount (≤ warn band). Unusual —
+//                 could be a sheet deletion since last ETL or a small
+//                 round-trip discrepancy worth keeping an eye on.
+//   error       — stored > source by a lot, or any direction beyond warn band
+//                 AND the last ETL is stale (> 36h). Investigate.
+type Status = "ok" | "pending" | "warn" | "error";
 
 interface Check {
   name:         string;
   status:       Status;
   source_total: number;  // live Cockpit CSV, inc-VAT
   stored_total: number;  // spa_revenue_daily, inc-VAT
-  diff:         number;  // source - stored
+  diff:         number;  // source - stored (positive = sheet ahead)
   diff_pct:     number;
   source_rows:  number;
-  stored_rows:  number;
+  stored_rows:  number;  // daily aggregate rows in Supabase (NOT line items)
   note?:        string;
 }
 
 // Drift bands. Tight because we expect bit-exact agreement post-migration 073.
 const OK_PCT   = 0.5;   // ≤ 0.5% drift = ✓
-const WARN_PCT = 5;     // ≤ 5% drift = ⚠
-                        //  > 5% = ❌
+const WARN_PCT = 5;     // > OK_PCT, ≤ this = ⚠ when stored > source (or stale ETL)
+const STALE_ETL_HOURS = 36;
 
-function classify(diffPct: number): Status {
+function classify(diff: number, diffPct: number, etlAgeHours: number | null): Status {
   const abs = Math.abs(diffPct);
-  if (abs <= OK_PCT)   return "ok";
+  if (abs <= OK_PCT) return "ok";
+
+  const etlStale = etlAgeHours !== null && etlAgeHours > STALE_ETL_HOURS;
+
+  // Sheet ahead of Supabase = expected ETL lag, not a failure.
+  if (diff > 0) {
+    // Unless the last ETL is stale — then it's actually drift worth flagging.
+    if (etlStale && abs > WARN_PCT) return "error";
+    if (etlStale)                  return "warn";
+    return "pending";
+  }
+
+  // Supabase ahead of sheet = unusual. Could be sheet edits/deletions since
+  // the last ETL, or a real bug in the sync.
   if (abs <= WARN_PCT) return "warn";
   return "error";
+}
+
+function hoursSince(iso: string | null): number | null {
+  if (!iso) return null;
+  return (Date.now() - new Date(iso).getTime()) / 3_600_000;
 }
 
 export async function GET(req: NextRequest) {
@@ -177,6 +206,8 @@ export async function GET(req: NextRequest) {
     }
 
     // ── Build checks ─────────────────────────────────────────────────────
+    const etlAgeHours = hoursSince(lastSync);
+
     const mkCheck = (
       name: string,
       src: number,
@@ -188,7 +219,7 @@ export async function GET(req: NextRequest) {
       const diffPct = src > 0 ? (Math.abs(diff) / src) * 100 : (stored > 0 ? 100 : 0);
       return {
         name,
-        status: classify(diffPct),
+        status: classify(diff, diffPct, etlAgeHours),
         source_total: Math.round(src),
         stored_total: Math.round(stored),
         diff:         Math.round(diff),
@@ -220,18 +251,25 @@ export async function GET(req: NextRequest) {
       rows?.length ?? 0,
     );
 
-    // Annotate the source-newer-than-stored case (expected between ETL runs).
-    if (servicesCheck.diff > 0) servicesCheck.note = "Sheet has new entries not yet synced to Supabase.";
-    if (retailCheck.diff > 0)   retailCheck.note   = "Sheet has new entries not yet synced to Supabase.";
-    if (servicesCheck.diff < 0) servicesCheck.note = "Sheet has fewer rows than Supabase — possible sheet edit/deletion since last ETL.";
-    if (retailCheck.diff < 0)   retailCheck.note   = "Sheet has fewer rows than Supabase — possible sheet edit/deletion since last ETL.";
+    // Direction-aware notes (status already encodes severity; this is just
+    // human-readable colour).
+    const etlAgeStr = etlAgeHours !== null
+      ? etlAgeHours < 1 ? `${Math.round(etlAgeHours * 60)}m ago`
+      : etlAgeHours < 24 ? `${Math.round(etlAgeHours)}h ago`
+      : `${Math.round(etlAgeHours / 24)}d ago`
+      : "never";
 
+    const annotateDir = (c: Check) => {
+      if (c.status === "ok") return;
+      if (c.diff > 0)        c.note = `Sheet has €${Math.round(Math.abs(c.diff)).toLocaleString()} more than Supabase — likely fresh rows pending the next ETL (last ETL ${etlAgeStr}).`;
+      if (c.diff < 0)        c.note = `Supabase has €${Math.round(Math.abs(c.diff)).toLocaleString()} more than the sheet — possible sheet edit or deletion since last ETL (${etlAgeStr}).`;
+    };
+    [servicesCheck, retailCheck, totalCheck].forEach(annotateDir);
+
+    // Severity order for the overall badge.
+    const rank: Record<Status, number> = { ok: 0, pending: 1, warn: 2, error: 3 };
     const overall: Status = [servicesCheck, retailCheck, totalCheck]
-      .reduce<Status>((worst, c) => {
-        if (worst === "error" || c.status === "error") return "error";
-        if (worst === "warn"  || c.status === "warn")  return "warn";
-        return "ok";
-      }, "ok");
+      .reduce<Status>((worst, c) => rank[c.status] > rank[worst] ? c.status : worst, "ok");
 
     return NextResponse.json({
       overall,

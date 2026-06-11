@@ -10,11 +10,13 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, AlertTriangle, AlertCircle, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { CheckCircle2, AlertTriangle, AlertCircle, Loader2, ChevronDown, ChevronUp, Clock } from "lucide-react";
+
+type Status = "ok" | "pending" | "warn" | "error";
 
 interface Check {
   name:         string;
-  status:       "ok" | "warn" | "error";
+  status:       Status;
   source_total: number;
   stored_total: number;
   diff:         number;
@@ -25,7 +27,7 @@ interface Check {
 }
 
 interface IntegrityResponse {
-  overall:      "ok" | "warn" | "error";
+  overall:      Status;
   checks:       Check[];
   last_sync_at: string | null;
   generated_at: string;
@@ -103,9 +105,11 @@ export function SpaIntegrityBadge({ dateFrom, dateTo }: Props) {
   const tone =
     overall === "ok"
       ? { ring: "border-emerald-300", bg: "bg-emerald-50", fg: "text-emerald-800", Icon: CheckCircle2, label: "Data verified" }
-      : overall === "warn"
-        ? { ring: "border-amber-300", bg: "bg-amber-50", fg: "text-amber-900", Icon: AlertTriangle, label: "Drift detected" }
-        : { ring: "border-red-300", bg: "bg-red-50", fg: "text-red-900", Icon: AlertCircle, label: "Verification failed" };
+      : overall === "pending"
+        ? { ring: "border-sky-300", bg: "bg-sky-50", fg: "text-sky-900", Icon: Clock, label: "Sync pending" }
+        : overall === "warn"
+          ? { ring: "border-amber-300", bg: "bg-amber-50", fg: "text-amber-900", Icon: AlertTriangle, label: "Drift detected" }
+          : { ring: "border-red-300", bg: "bg-red-50", fg: "text-red-900", Icon: AlertCircle, label: "Verification failed" };
   const Icon = tone.Icon;
 
   return (
@@ -147,26 +151,32 @@ export function SpaIntegrityBadge({ dateFrom, dateTo }: Props) {
             <tbody>
               {checks.map((c) => {
                 const checkTone =
-                  c.status === "ok"   ? "text-emerald-700"
-                  : c.status === "warn" ? "text-amber-700"
+                  c.status === "ok"      ? "text-emerald-700"
+                  : c.status === "pending" ? "text-sky-700"
+                  : c.status === "warn"    ? "text-amber-700"
                   : "text-red-700";
+                const checkLabel =
+                  c.status === "ok"      ? "✓ ok"
+                  : c.status === "pending" ? "⏱ pending"
+                  : c.status === "warn"    ? "⚠ warn"
+                  : "✗ fail";
                 return (
                   <tr key={c.name} className="border-b last:border-0">
                     <td className="py-2 pr-2 font-medium text-foreground">{c.name}</td>
                     <td className="py-2 text-right tabular-nums">
                       {fmtEur(c.source_total)}
-                      <span className="text-muted-foreground"> · {c.source_rows.toLocaleString()} rows</span>
+                      <span className="text-muted-foreground" title="Line items in the Cockpit sheet"> · {c.source_rows.toLocaleString()} tx</span>
                     </td>
                     <td className="py-2 text-right tabular-nums">
                       {fmtEur(c.stored_total)}
-                      <span className="text-muted-foreground"> · {c.stored_rows.toLocaleString()} rows</span>
+                      <span className="text-muted-foreground" title="Daily aggregate rows (1 row = 1 day × 1 location)"> · {c.stored_rows.toLocaleString()} daily</span>
                     </td>
                     <td className="py-2 text-right tabular-nums">
                       {c.diff === 0 ? "—" : `${c.diff > 0 ? "+" : ""}${fmtEur(c.diff)}`}
                       <span className="text-muted-foreground"> ({c.diff_pct.toFixed(2)}%)</span>
                     </td>
                     <td className={`py-2 text-right font-semibold ${checkTone}`}>
-                      {c.status === "ok" ? "✓ ok" : c.status === "warn" ? "⚠ warn" : "✗ fail"}
+                      {checkLabel}
                     </td>
                   </tr>
                 );
