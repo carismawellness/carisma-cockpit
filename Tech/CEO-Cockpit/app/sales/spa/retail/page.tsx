@@ -354,26 +354,6 @@ function SpaRetailContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }
         )}
       </Card>
 
-      {/* ── Discount section (data-gap disclosure) ───────────────────── */}
-      <Card className="p-4 md:p-6 space-y-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-foreground">Discount Analysis</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              % of retail sales discounted · by location
-            </p>
-          </div>
-        </div>
-        <div className="rounded-md border border-amber-200 bg-amber-50/60 px-4 py-3 text-sm text-amber-900">
-          <p className="font-medium">Live discount tracking is not yet wired up</p>
-          <p className="mt-1 text-xs leading-relaxed">
-            The Cockpit Retail-Spa tab doesn&apos;t expose a list price or discount column today, so we
-            can&apos;t compute % discounted live. Historic discount data exists in <code className="bg-amber-100 px-1 py-0.5 rounded">spa_transactions_raw</code>
-            (2014–2023). To enable this chart for the current period, add <em>List Price</em> and
-            <em> Discount %</em> columns to the Retail-Spa sheet and we&apos;ll wire it up in the ETL.
-          </p>
-        </div>
-      </Card>
     </div>
   );
 }
