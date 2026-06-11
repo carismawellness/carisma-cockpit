@@ -53,6 +53,8 @@ export interface RevPAHRow {
   location: string;
   revpah: number;
   revenue: number;
+  headcount?: number;
+  availableHours?: number;
 }
 
 export interface HRRevPAHResponse {
