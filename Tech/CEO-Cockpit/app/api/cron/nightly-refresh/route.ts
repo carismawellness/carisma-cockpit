@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
   const currentMonth = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
 
   const [revenueRes, spaRes, aestheticsRes, crmAgentsRes, ghlCrmRes,
-         metaCampaignsRes, googleCampaignsRes, klaviyoRes, talexioHrRes, we360Res,
+         metaCampaignsRes, googleCampaignsRes, klaviyoRes, klaviyoFlowsRes, talexioHrRes, we360Res,
          googleReviewsRes, diligenceAuditRes, brandStandardsRes, gscRes,
          attendanceDailyRes, therapistShiftsRes] = await Promise.allSettled([
     fetch(`${BASE_URL}/api/etl/revenue-refresh`,              { method: "POST", headers, body: payload }),
@@ -91,6 +91,7 @@ export async function GET(req: NextRequest) {
     fetch(`${BASE_URL}/api/etl/meta-campaigns`,               { method: "POST", headers, body: mktPayload }),
     fetch(`${BASE_URL}/api/etl/google-campaigns`,             { method: "POST", headers, body: mktPayload }),
     fetch(`${BASE_URL}/api/etl/klaviyo-sync`,                 { method: "POST", headers, body: klaviyoPayload }),
+    fetch(`${BASE_URL}/api/etl/klaviyo-flows-sync`,           { method: "POST", headers, body: JSON.stringify({ date: today }) }),
     fetch(`${BASE_URL}/api/etl/talexio-hr?date=${today}`,     { method: "POST", headers }),
     fetch(`${BASE_URL}/api/etl/we360`,                        { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/google-reviews`,               { method: "POST", headers }),
@@ -129,6 +130,7 @@ export async function GET(req: NextRequest) {
     ["meta_campaigns",      metaCampaignsRes],
     ["google_campaigns",    googleCampaignsRes],
     ["klaviyo",             klaviyoRes],
+    ["klaviyo_flows",       klaviyoFlowsRes],
     ["talexio_hr",          talexioHrRes],
     ["we360",               we360Res],
     ["google_reviews",      googleReviewsRes],
