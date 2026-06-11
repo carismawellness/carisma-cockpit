@@ -54,6 +54,113 @@ function parseHourOfDay(raw: string): number | null {
   return h;
 }
 
+// ── Therapist name normalization ─────────────────────────────────────────────
+//
+// Cockpit "Service - Spa" Column G is a free-text field, so the same person
+// shows up as "TESSA-HUGOS" + "TESSA", "PAKINEE- Sunny Coast" + "PAKINEE",
+// "Julie-INTER" + "JULIE", etc. We strip location and student prefixes,
+// trim whitespace/punctuation, and title-case so revenue rolls up into a
+// single canonical bucket per person.
+//
+// Tested against the actual rendered list — see commit message for the
+// before/after examples.
+
+const KNOWN_LOCATIONS = [
+  "INTERCONTINENTAL", "INTER",
+  "HUGOS", "HUGO",
+  "HYATT",
+  "RAMLA BAY", "RAMLA",
+  "RIVIERA", "LABRANDA",
+  "NOVOTEL",
+  "EXCELSIOR",
+  "ODYCY", "SUNNY COAST",
+];
+
+// Drop admin / sales / system rows entirely — these aren't therapists.
+const ADMIN_PATTERNS = [
+  /^carisma\b/i,
+  /^reception\b/i,
+  /^admin\b/i,
+  /^front\s*desk\b/i,
+  /\(sales\)/i,
+];
+
+/**
+ * Normalize a raw "Therapist (Employee(s))" cell into a canonical person key.
+ * Returns null when the row is admin/non-therapist (and should be excluded).
+ */
+function normalizeTherapistName(raw: string): string | null {
+  if (!raw) return null;
+  let s = raw.trim().replace(/\s+/g, " ");
+  if (!s) return null;
+
+  // 1. Filter admin / sales rows
+  for (const p of ADMIN_PATTERNS) if (p.test(s)) return null;
+
+  // 2. "STUDENT[N]-LOC-NAME" → NAME  (e.g. "STUDENT2-INTER-JILL" → "JILL")
+  const slm = s.match(/^STUDENT\s*\d*\s*[-:]\s*([A-Z][A-Z\s]*?)\s*[-:]\s*(.+)$/i);
+  if (slm) {
+    const middle = slm[1].trim().toUpperCase();
+    const last   = slm[2].trim();
+    if (KNOWN_LOCATIONS.includes(middle)) s = last;
+  }
+
+  // 3. "STUDENT NAME LOC" / "VAIVA STUDENT LOC" — strip STUDENT word + any
+  //    known-location token, keep what remains.
+  if (/\bSTUDENT\b/i.test(s)) {
+    const tokens = s.split(/\s+/);
+    const filtered = tokens.filter((t) => {
+      const u = t.toUpperCase();
+      if (u === "STUDENT") return false;
+      if (/^STUDENT\d+$/.test(u)) return false;
+      if (KNOWN_LOCATIONS.includes(u)) return false;
+      return true;
+    });
+    if (filtered.length > 0) s = filtered.join(" ");
+  }
+
+  // 4. Strip "PART TIME" qualifier
+  s = s.replace(/\bpart[\s-]?time\b/gi, " ").trim();
+
+  // 5. Strip a trailing role label like " Supervisor" / " (Supervisor)"
+  s = s.replace(/\s*\(\s*supervisor\s*\)\s*$/i, "").trim();
+  s = s.replace(/\s+supervisor\s*$/i, "").trim();
+
+  // 6. Strip a trailing location: " - LOC", "-LOC", ", LOC", " LOC"
+  //    Try longest matches first so "RAMLA BAY" beats "RAMLA".
+  const locsByLength = [...KNOWN_LOCATIONS].sort((a, b) => b.length - a.length);
+  for (const loc of locsByLength) {
+    const escaped = loc.replace(/\s+/g, "\\s+");
+    const re = new RegExp(`\\s*[-,:]?\\s*${escaped}\\s*$`, "i");
+    if (re.test(s)) {
+      s = s.replace(re, "").trim();
+      break;
+    }
+  }
+
+  // 7. Strip a leading location: "LOC- " / "LOC -" / "LOC,"
+  for (const loc of locsByLength) {
+    const escaped = loc.replace(/\s+/g, "\\s+");
+    const re = new RegExp(`^${escaped}\\s*[-,:]\\s*`, "i");
+    if (re.test(s)) {
+      s = s.replace(re, "").trim();
+      break;
+    }
+  }
+
+  // 8. Clean dangling punctuation
+  s = s.replace(/^[-:,\s]+|[-:,\s]+$/g, "").replace(/\s+/g, " ").trim();
+  if (!s) return null;
+
+  // 9. Title case (preserve digit suffixes like "Natasha 2")
+  s = s.toLowerCase().replace(/\b([a-z])(\w*)/g, (_, first, rest) => first.toUpperCase() + rest);
+
+  // 10. Drop too-short results (single letter, etc.) — likely a parsing miss.
+  if (s.length < 2) return null;
+
+  return s;
+}
+
 const MONTH_NAMES: Record<string, number> = {
   january:0,february:1,march:2,april:3,may:4,june:5,
   july:6,august:7,september:8,october:9,november:10,december:11,
@@ -278,8 +385,10 @@ function computeAnalytics(
     if (locId === undefined) continue;
     if (filterLocId !== undefined && locId !== filterLocId) continue;
 
-    // Staff service revenue
-    const soldBy = stripCol(row, "Sold By").replace(/\s+/g, " ").trim();
+    // Staff service revenue. Normalize "Sold By" so "TESSA-HUGOS" + "TESSA"
+    // roll up into the same canonical bucket.
+    const soldByRaw = stripCol(row, "Sold By").replace(/\s+/g, " ").trim();
+    const soldBy = normalizeTherapistName(soldByRaw);
     if (soldBy) {
       staffServiceRev[soldBy] = (staffServiceRev[soldBy] ?? 0) + unitPriceEx;
     }
@@ -340,12 +449,15 @@ function computeAnalytics(
     // Therapist — Column G is "Therapist (Employee(s))" in the historic /
     // master sheet. Fall back to "Employee(s)" / "Therapist" / "Sold By"
     // so the cut doesn't blow up if the live tab renames the column.
-    const therapist = (
+    // Pass through normalizeTherapistName() so "TESSA-HUGOS" + "TESSA"
+    // roll up to the same canonical "Tessa" bucket.
+    const therapistRaw = (
       stripCol(row, "Therapist (Employee(s))") ||
       stripCol(row, "Employee(s)") ||
       stripCol(row, "Therapist") ||
       stripCol(row, "Sold By")
     ).replace(/\s+/g, " ").trim();
+    const therapist = normalizeTherapistName(therapistRaw);
     if (therapist) {
       const cur = therapistAcc[therapist] ?? { revenue: 0, service_count: 0 };
       cur.revenue       += unitPriceInc;
@@ -375,7 +487,9 @@ function computeAnalytics(
     const amount = safeFloat(stripCol(row, "VAT Exclusive Amount") || stripCol(row, "VAT Exclusive Amount "));
     if (amount <= 0) continue;
 
-    const salesEmployee = stripCol(row, "Sales Employee").replace(/\s+/g, " ").trim();
+    // Normalize so retail attribution consolidates with the service-side names.
+    const salesEmployeeRaw = stripCol(row, "Sales Employee").replace(/\s+/g, " ").trim();
+    const salesEmployee = normalizeTherapistName(salesEmployeeRaw);
     if (salesEmployee) {
       staffRetailRev[salesEmployee] = (staffRetailRev[salesEmployee] ?? 0) + amount;
     }
@@ -604,8 +718,10 @@ function computeAnalyticsFromRaw(
     if (r.revenue_bucket === "services") {
       // Staff service revenue: prefer the canonical therapist (matches
       // spa_services_by_employee_daily); fall back to sold_by, then skip.
-      const name = (r.therapist_canonical ?? r.sold_by ?? "").replace(/\s+/g, " ").trim();
-      if (name && name !== "CARISMA (SALES)" && name !== "SPA DAY" && name !== "REC" && name !== "CARISMA SPA") {
+      // Normalize so historic + live consolidate consistently.
+      const rawName = (r.therapist_canonical ?? r.sold_by ?? "").replace(/\s+/g, " ").trim();
+      const name = normalizeTherapistName(rawName);
+      if (name) {
         staffServiceRev[name] = (staffServiceRev[name] ?? 0) + unitPriceEx;
       }
 
