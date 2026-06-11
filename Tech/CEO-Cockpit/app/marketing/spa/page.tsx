@@ -12,6 +12,7 @@ import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useMetaCampaignsFromDb as useMetaCampaigns, useGoogleCampaignsFromDb as useGoogleCampaigns } from "@/lib/hooks/useAdsCampaigns";
 import { useKlaviyoOverview } from "@/lib/hooks/useKlaviyoOverview";
 import { FlowsTable } from "@/components/marketing/FlowsTable";
+import { KeywordRankingsTable } from "@/components/marketing/KeywordRankingsTable";
 import { BRAND } from "@/lib/constants/design-tokens";
 import type { CampaignData } from "@/lib/types/ads";
 import {
@@ -600,6 +601,17 @@ function SpaMarketingContent({
           <h3 className="text-sm font-semibold text-gray-700 mb-3">Flow Performance</h3>
           <FlowsTable brand="spa" dateFrom={dateFrom} dateTo={dateTo} brandColor={BRAND_COLOR} />
         </div>
+      </Card>
+
+      {/* Section 4b: SEO — Google Search Console keyword rankings */}
+      <Card className="p-3 md:p-6">
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Search Console Rankings</h2>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Where carismaspa.com ranks for your tracked keywords on Google.
+          </p>
+        </div>
+        <KeywordRankingsTable brand="spa" brandColor={BRAND_COLOR} />
       </Card>
 
       {/* Section 5: Profitability Matrix */}

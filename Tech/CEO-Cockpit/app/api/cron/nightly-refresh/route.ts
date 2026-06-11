@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
   // Promise.allSettled keeps one failing job from breaking the others.
   const [revenueRes, spaRes, aestheticsRes, crmAgentsRes, ghlCrmRes,
          metaCampaignsRes, googleCampaignsRes, klaviyoRes, talexioHrRes, we360Res,
-         googleReviewsRes, diligenceAuditRes, brandStandardsRes] = await Promise.allSettled([
+         googleReviewsRes, diligenceAuditRes, brandStandardsRes, gscRes] = await Promise.allSettled([
     fetch(`${BASE_URL}/api/etl/revenue-refresh`,              { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/zoho-spa-transactions`,        { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/zoho-aesthetics-transactions`, { method: "POST", headers, body: payload }),
@@ -88,6 +88,7 @@ export async function GET(req: NextRequest) {
     fetch(`${BASE_URL}/api/etl/google-reviews`,               { method: "POST", headers }),
     fetch(`${BASE_URL}/api/etl/diligence-audit`,              { method: "POST", headers }),
     fetch(`${BASE_URL}/api/etl/brand-standards`,              { method: "POST", headers }),
+    fetch(`${BASE_URL}/api/etl/gsc-sync`,                     { method: "POST", headers, body: "{}" }),
   ]);
 
   // Phase 2: lead reconciliation depends on ghl-crm + meta-campaigns completing first
@@ -122,6 +123,7 @@ export async function GET(req: NextRequest) {
     ["google_reviews",      googleReviewsRes],
     ["diligence_audit",     diligenceAuditRes],
     ["brand_standards",     brandStandardsRes],
+    ["gsc_keywords",        gscRes],
     ["lead_reconciliation", leadReconRes],
   ];
 
