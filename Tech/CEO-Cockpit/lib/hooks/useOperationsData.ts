@@ -12,7 +12,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
-import { format, subDays, subMonths, parseISO } from "date-fns";
+import { format, subDays, subMonths, parseISO, startOfMonth } from "date-fns";
 
 /* ── Shared location lookup ──────────────────────────────────────────────── */
 
@@ -65,6 +65,11 @@ export interface WeeklyReviewSummary {
   weekLabel: string;    // "2 Jun"
   totalReviews: number; // company-wide sum
   avgRating: number;    // company-wide weighted average
+  locations: {
+    slug: string;
+    name: string;
+    newReviews: number; // net new vs the previous week snapshot (>=0)
+  }[];
 }
 
 interface GoogleReviewRow {
@@ -167,19 +172,45 @@ export function useGoogleReviews(dateTo: Date) {
       // Last 10 weekly periods, oldest-first for chart
       const sortedWeeks = Array.from(weekBuckets.keys()).sort().reverse().slice(0, 10).reverse();
 
-      const weekly: WeeklyReviewSummary[] = sortedWeeks.map((weekStart) => {
+      // Build per-location total per week for delta computation
+      const weekLocTotals: Map<string, Map<number, number>> = new Map();
+      for (const [weekStart, bucket] of weekBuckets) {
+        const locMap = new Map<number, number>();
+        for (const [locId, row] of bucket) {
+          locMap.set(locId, Number(row.total_reviews ?? 0));
+        }
+        weekLocTotals.set(weekStart, locMap);
+      }
+
+      const weekly: WeeklyReviewSummary[] = sortedWeeks.map((weekStart, idx) => {
         const bucket = weekBuckets.get(weekStart)!;
+        const prevWeekStart = idx > 0 ? sortedWeeks[idx - 1] : null;
+        const prevTotals = prevWeekStart ? weekLocTotals.get(prevWeekStart) : null;
+
         let total = 0, weightedRating = 0;
-        for (const row of bucket.values()) {
+        const locations: WeeklyReviewSummary["locations"] = [];
+
+        for (const [locId, row] of bucket) {
           const rev = Number(row.total_reviews ?? 0);
           total += rev;
           weightedRating += Number(row.avg_rating ?? 0) * rev;
+
+          const prevRev = prevTotals?.get(locId) ?? null;
+          const newReviews = prevRev !== null ? Math.max(0, rev - prevRev) : 0;
+          const info = byId.get(locId);
+          if (info) {
+            locations.push({ slug: info.slug, name: info.name, newReviews });
+          }
         }
+
+        locations.sort((a, b) => b.newReviews - a.newReviews);
+
         return {
           weekStart,
           weekLabel: format(parseISO(weekStart), "d MMM"),
           totalReviews: total,
           avgRating: total > 0 ? +(weightedRating / total).toFixed(2) : 0,
+          locations,
         };
       });
 
@@ -302,46 +333,70 @@ export interface MonthlyStandardScore {
 
 export function useStandardsScores(
   standardType: "facility" | "front_desk" | "mystery_guest",
+  dateFrom: Date,
   dateTo: Date,
 ) {
   const lookup = useLocationsLookup();
+  const fromMonthStr = format(startOfMonth(dateFrom), "yyyy-MM-dd");
   const toStr = format(dateTo, "yyyy-MM-dd");
 
   const queryResult = useQuery({
-    queryKey: ["brand_standards_scores", standardType, toStr],
+    queryKey: ["brand_standards_scores", standardType, fromMonthStr, toStr],
     enabled: !!lookup.data,
     queryFn: async () => {
       const supabase = createClient();
 
-      const monthRes = await supabase
+      // Fetch all items in the date range
+      const { data: rangeData, error: rangeError } = await supabase
         .from("brand_standards")
-        .select("month")
+        .select("month, location, category, item, result")
         .eq("standard_type", standardType)
+        .gte("month", fromMonthStr)
         .lte("month", toStr)
         .order("month", { ascending: false })
-        .limit(1);
-      if (monthRes.error) throw new Error(monthRes.error.message);
+        .limit(5000);
+      if (rangeError) throw new Error(rangeError.message);
 
-      const month: string | null = monthRes.data?.[0]?.month ?? null;
-      if (!month) {
+      let data = rangeData ?? [];
+
+      // Fallback: if no data in range, show the latest available month <= dateTo
+      if (data.length === 0) {
+        const fbMonth = await supabase
+          .from("brand_standards")
+          .select("month")
+          .eq("standard_type", standardType)
+          .lte("month", toStr)
+          .order("month", { ascending: false })
+          .limit(1);
+        if (fbMonth.error) throw new Error(fbMonth.error.message);
+        const month: string | null = fbMonth.data?.[0]?.month ?? null;
+        if (!month) {
+          return { rows: [] as StandardsLocationRow[], month: null as string | null };
+        }
+        const fb = await supabase
+          .from("brand_standards")
+          .select("month, location, category, item, result")
+          .eq("standard_type", standardType)
+          .eq("month", month)
+          .order("category", { ascending: true })
+          .order("item", { ascending: true })
+          .limit(2000);
+        if (fb.error) throw new Error(fb.error.message);
+        data = fb.data ?? [];
+      }
+
+      if (data.length === 0) {
         return { rows: [] as StandardsLocationRow[], month: null as string | null };
       }
 
-      const { data, error } = await supabase
-        .from("brand_standards")
-        .select("location, category, item, result")
-        .eq("standard_type", standardType)
-        .eq("month", month)
-        .order("category", { ascending: true })
-        .order("item", { ascending: true })
-        .limit(2000);
-      if (error) throw new Error(error.message);
+      // Aggregate per location across ALL months in range
+      const latestMonth = data[0].month as string;
 
       const agg = new Map<
         string,
         { total: number; passed: number; issues: { category: string; item: string }[] }
       >();
-      for (const row of data ?? []) {
+      for (const row of data) {
         const slug = row.location as string;
         const entry = agg.get(slug) ?? { total: 0, passed: 0, issues: [] };
         entry.total += 1;
@@ -362,7 +417,7 @@ export function useStandardsScores(
         }),
       );
 
-      return { rows, month };
+      return { rows, month: latestMonth };
     },
   });
 

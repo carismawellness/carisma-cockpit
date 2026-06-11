@@ -1,7 +1,6 @@
 "use client";
 
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
-import { KPICardRow, KPIData } from "@/components/dashboard/KPICardRow";
 import { Card } from "@/components/ui/card";
 import { SkeletonKPIRow, ChartSkeleton } from "@/components/ui/skeleton";
 import {
@@ -142,6 +141,170 @@ function EmptyState({ message }: { message: string }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+   OPS SCORECARD — 3-group KPI banner replacing the generic KPICardRow
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function OpsScorecard({
+  totalReviews,
+  weightedAvg,
+  ratingDelta,
+  delCancelPct,
+  unattended,
+  avgFacility,
+  avgMystery,
+}: {
+  totalReviews: number;
+  weightedAvg: number;
+  ratingDelta: number | null;
+  delCancelPct: number;
+  unattended: number;
+  avgFacility: number;
+  avgMystery: number;
+}) {
+  const statusCol = (v: number, good: number, warn: number, invert = false) => {
+    const ok = invert ? v <= good : v >= good;
+    const at = invert ? v <= warn : v >= warn;
+    return ok ? "#22C55E" : at ? "#F59E0B" : "#EF4444";
+  };
+  const statusLabel = (v: number, good: number, warn: number, invert = false) => {
+    const ok = invert ? v <= good : v >= good;
+    const at = invert ? v <= warn : v >= warn;
+    return ok ? "On track" : at ? "At risk" : "Critical";
+  };
+  const statusBadgeCls = (v: number, good: number, warn: number, invert = false) => {
+    const ok = invert ? v <= good : v >= good;
+    const at = invert ? v <= warn : v >= warn;
+    return ok
+      ? "bg-emerald-50 text-emerald-700"
+      : at
+      ? "bg-amber-50 text-amber-700"
+      : "bg-red-50 text-red-700";
+  };
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+      {/* ── Group 1: Google Reviews ──────────────────────────────────── */}
+      <Card className="p-5 border-l-[3px] border-l-[#B79E61]">
+        <div className="flex items-center gap-2 mb-4">
+          <Star className="h-4 w-4 text-[#B79E61]" />
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Google Reviews</span>
+        </div>
+        <div className="grid grid-cols-3 gap-3 mb-3">
+          <div>
+            <div className="text-[11px] text-muted-foreground mb-1">Total</div>
+            <div className="text-2xl font-bold text-foreground">{totalReviews.toLocaleString()}</div>
+          </div>
+          <div>
+            <div className="text-[11px] text-muted-foreground mb-1">Avg Rating</div>
+            <div className="text-2xl font-bold" style={{ color: statusCol(weightedAvg, 4.8, 4.5) }}>
+              {weightedAvg} ★
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] text-muted-foreground mb-1">Δ Rating</div>
+            <div className="text-2xl font-bold" style={{
+              color: ratingDelta == null || ratingDelta === 0 ? "#9CA3AF" : ratingDelta > 0 ? "#22C55E" : "#EF4444"
+            }}>
+              {ratingDelta == null ? "—" : ratingDelta > 0 ? `+${ratingDelta}` : String(ratingDelta)}
+            </div>
+          </div>
+        </div>
+        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-1">
+          <div className="h-full rounded-full transition-all" style={{
+            width: `${Math.min((weightedAvg / 5) * 100, 100)}%`,
+            background: statusCol(weightedAvg, 4.8, 4.5),
+          }} />
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-muted-foreground">Target ≥ 4.5</span>
+          <span className={cn("text-[10px] font-semibold px-1.5 py-0.5 rounded-full", statusBadgeCls(weightedAvg, 4.8, 4.5))}>
+            {statusLabel(weightedAvg, 4.8, 4.5)}
+          </span>
+        </div>
+      </Card>
+
+      {/* ── Group 2: Compliance ──────────────────────────────────────── */}
+      <Card className="p-5 border-l-[3px] border-l-[#1B3A4B]">
+        <div className="flex items-center gap-2 mb-4">
+          <ShieldAlert className="h-4 w-4 text-[#1B3A4B]" />
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Compliance</span>
+        </div>
+        <div className="grid grid-cols-2 gap-4 mb-3">
+          <div>
+            <div className="text-[11px] text-muted-foreground mb-1">Del &amp; Cancelled</div>
+            <div className="text-2xl font-bold" style={{ color: statusCol(delCancelPct, 5, 10, true) }}>
+              {delCancelPct}%
+            </div>
+            <div className="mt-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full rounded-full transition-all" style={{
+                width: `${Math.min((delCancelPct / 20) * 100, 100)}%`,
+                background: statusCol(delCancelPct, 5, 10, true),
+              }} />
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] text-muted-foreground mb-1">Unattended</div>
+            <div className="text-2xl font-bold" style={{ color: unattended === 0 ? "#22C55E" : "#EF4444" }}>
+              {unattended.toLocaleString()}
+            </div>
+            <div className="text-[10px] text-muted-foreground mt-1">Must be 0</div>
+          </div>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-muted-foreground">Target &lt; 10%</span>
+          <span className={cn("text-[10px] font-semibold px-1.5 py-0.5 rounded-full", statusBadgeCls(delCancelPct, 5, 10, true))}>
+            {statusLabel(delCancelPct, 5, 10, true)}
+          </span>
+        </div>
+      </Card>
+
+      {/* ── Group 3: Standards ──────────────────────────────────────── */}
+      <Card className="p-5 border-l-[3px] border-l-[#22C55E]">
+        <div className="flex items-center gap-2 mb-4">
+          <ClipboardCheck className="h-4 w-4 text-[#22C55E]" />
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Standards</span>
+        </div>
+        <div className="grid grid-cols-2 gap-4 mb-3">
+          <div>
+            <div className="text-[11px] text-muted-foreground mb-1">Facility Std</div>
+            <div className="text-2xl font-bold" style={{ color: statusCol(avgFacility, 85, 60) }}>
+              {avgFacility}%
+            </div>
+            <div className="mt-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full rounded-full transition-all" style={{
+                width: `${avgFacility}%`,
+                background: statusCol(avgFacility, 85, 60),
+              }} />
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] text-muted-foreground mb-1">Mystery Guest</div>
+            <div className="text-2xl font-bold" style={{ color: statusCol(avgMystery, 85, 60) }}>
+              {avgMystery}%
+            </div>
+            <div className="mt-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full rounded-full transition-all" style={{
+                width: `${avgMystery}%`,
+                background: statusCol(avgMystery, 85, 60),
+              }} />
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-muted-foreground">Target ≥ 85%</span>
+          <span className={cn("text-[10px] font-semibold px-1.5 py-0.5 rounded-full",
+            statusBadgeCls(Math.min(avgFacility, avgMystery), 85, 60))}>
+            {statusLabel(Math.min(avgFacility, avgMystery), 85, 60)}
+          </span>
+        </div>
+      </Card>
+
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
    MAIN CONTENT
    ═══════════════════════════════════════════════════════════════════════ */
 
@@ -155,8 +318,8 @@ function OperationsContent({
   /* ── Live data ─────────────────────────────────────────────────────── */
   const reviews       = useGoogleReviews(dateTo);
   const diligence     = useDiligenceAudit(dateTo);
-  const facility      = useStandardsScores("facility", dateTo);
-  const mystery       = useStandardsScores("mystery_guest", dateTo);
+  const facility      = useStandardsScores("facility", dateFrom, dateTo);
+  const mystery       = useStandardsScores("mystery_guest", dateFrom, dateTo);
   const facilityTrend = useStandardsTrend("facility", dateTo, 12);
   const mysteryTrend  = useStandardsTrend("mystery_guest", dateTo, 12);
 
@@ -197,23 +360,27 @@ function OperationsContent({
   };
   const totPct = (n: number) => pctOf(n, diligenceTotals.totalSales);
 
-  /* ── KPI Cards (derived from live data) ───────────────────────────── */
-  const kpis: KPIData[] = [
-    { label: "Total Reviews", value: totalReviews.toLocaleString() },
-    { label: "Avg Rating", value: `${weightedAvg} ★`, target: "4.5", targetValue: 4.5, currentValue: weightedAvg },
-    ...(ratingDelta !== null
-      ? [{ label: "Rating Change", value: `${ratingDelta > 0 ? "+" : ""}${ratingDelta}`, trend: ratingDelta >= 0 ? 1 : -1 } as KPIData]
-      : []),
-    { label: "Deleted & Cancelled", value: `${totPct(diligenceTotals.deletedCancelled)}%`, target: "<10%", targetValue: 10, currentValue: totPct(diligenceTotals.deletedCancelled) },
-    { label: "Unattended (mo)", value: String(diligenceTotals.unattended), trend: diligenceTotals.unattended === 0 ? 1 : -1 },
-    { label: "Facility Std %", value: `${avgFacility}%`, target: "85%", targetValue: 85, currentValue: avgFacility },
-    { label: "Mystery Guest %", value: `${avgMystery}%`, target: "85%", targetValue: 85, currentValue: avgMystery },
-  ];
-
-  /* ── Review chart data — merged: bars = total reviews, label = rating ── */
+  /* ── Review chart data — snapshot table (worst first) ────────────── */
   const reviewChartData = [...reviews.snapshots]
     .sort((a, b) => b.totalReviews - a.totalReviews)
     .map((l) => ({ ...l, color: LOCATION_COLORS[l.slug] ?? FALLBACK_COLOR }));
+
+  // Stacked chart: each weekly item needs slug-keyed newReviews columns
+  const allLocationSlugs = reviews.weekly.length > 0
+    ? reviews.weekly[reviews.weekly.length - 1].locations.map((l) => l.slug)
+    : [];
+
+  const weeklyStackedData = reviews.weekly.map((w) => {
+    const row: Record<string, number | string> = {
+      weekLabel: w.weekLabel,
+      avgRating: w.avgRating,
+      totalReviews: w.totalReviews,
+    };
+    for (const loc of w.locations) {
+      row[loc.slug] = loc.newReviews > 0 ? loc.newReviews : 0;
+    }
+    return row;
+  });
 
   /* ── Facility & Mystery bar data (worst first) ────────────────────── */
   const facilityBarData = [...facility.rows].sort((a, b) => a.score - b.score);
@@ -249,7 +416,15 @@ function OperationsContent({
           {formatDateRangeLabel(dateFrom, dateTo)} · Facility standards, compliance &amp; reviews
         </p>
       </div>
-      <KPICardRow kpis={kpis} />
+      <OpsScorecard
+        totalReviews={totalReviews}
+        weightedAvg={weightedAvg}
+        ratingDelta={ratingDelta}
+        delCancelPct={totPct(diligenceTotals.deletedCancelled)}
+        unattended={diligenceTotals.unattended}
+        avgFacility={avgFacility}
+        avgMystery={avgMystery}
+      />
 
       {/* ═══════ REVIEWS — LONGITUDINAL TREND ════════════════════════ */}
       <Card className="p-3 md:p-6">
@@ -258,7 +433,7 @@ function OperationsContent({
           <h2 className="text-lg font-semibold text-foreground">Reviews Trend</h2>
         </div>
         <p className="text-sm text-muted-foreground mb-4">
-          Weekly company-wide review count (bars) and avg rating (line) — {totalReviews.toLocaleString()} current total
+          Weekly net new reviews per location (stacked bars) and avg rating (line) — {totalReviews.toLocaleString()} current total
           {reviews.snapshotDate ? ` · snapshot ${format(parseISO(reviews.snapshotDate), "d MMM yyyy")}` : ""}
         </p>
 
@@ -275,7 +450,7 @@ function OperationsContent({
           <div className="h-[260px] md:h-[300px] mb-6">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart
-                data={reviews.weekly}
+                data={weeklyStackedData}
                 margin={{ top: 10, right: 45, left: 10, bottom: 5 }}
               >
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -283,7 +458,7 @@ function OperationsContent({
                 <YAxis
                   yAxisId="left"
                   tick={{ fontSize: 11 }}
-                  label={{ value: "Reviews", angle: -90, position: "insideLeft", fontSize: 10, dy: 40 }}
+                  label={{ value: "New Reviews", angle: -90, position: "insideLeft", fontSize: 10, dy: 50 }}
                 />
                 <YAxis
                   yAxisId="right"
@@ -295,12 +470,51 @@ function OperationsContent({
                 />
                 <Tooltip
                   formatter={(value: unknown, name: unknown) => {
-                    if (name === "Avg Rating") return [`${Number(value).toFixed(2)} ★`, "Avg Rating"];
-                    return [String(Number(value).toLocaleString()), "Total Reviews"];
+                    if (name === "avgRating") return [`${Number(value).toFixed(2)} ★`, "Avg Rating"];
+                    return [String(Number(value)), `+reviews (${String(name)})`];
                   }}
                 />
-                <Bar yAxisId="left" dataKey="totalReviews" name="Total Reviews" fill="#B79E61" fillOpacity={0.65} radius={[4, 4, 0, 0]} barSize={28} />
-                <Line yAxisId="right" type="monotone" dataKey="avgRating" name="Avg Rating" stroke="#22C55E" strokeWidth={2.5} dot={{ r: 4, fill: "#22C55E" }} />
+                {allLocationSlugs.map((slug) => (
+                  <Bar
+                    key={slug}
+                    yAxisId="left"
+                    dataKey={slug}
+                    stackId="reviews"
+                    fill={LOCATION_COLORS[slug] ?? FALLBACK_COLOR}
+                    fillOpacity={0.85}
+                  >
+                    <LabelList
+                      dataKey={slug}
+                      position="inside"
+                      content={(props: unknown) => {
+                        const p = props as { x?: number; y?: number; width?: number; height?: number; value?: unknown };
+                        const v = Number(p.value ?? 0);
+                        if (!v || v <= 0 || !p.width || (p.width as number) < 16 || !p.height || (p.height as number) < 12) return <g />;
+                        return (
+                          <text
+                            x={(p.x ?? 0) + (p.width ?? 0) / 2}
+                            y={(p.y ?? 0) + (p.height ?? 0) / 2 + 4}
+                            textAnchor="middle"
+                            fontSize={9}
+                            fontWeight={700}
+                            fill="#fff"
+                          >
+                            +{v}
+                          </text>
+                        );
+                      }}
+                    />
+                  </Bar>
+                ))}
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="avgRating"
+                  name="avgRating"
+                  stroke="#22C55E"
+                  strokeWidth={2.5}
+                  dot={{ r: 4, fill: "#22C55E" }}
+                />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -532,7 +746,7 @@ function StandardsCard({
         <h2 className="text-lg font-semibold text-foreground">{title}</h2>
       </div>
       <p className="text-sm text-muted-foreground mb-4">
-        Latest month ({monthLabel(month)}): {aggregate}% — green &ge;85%, amber 60-84%, red &lt;60%
+        {monthLabel(month)} · {aggregate}% — green &ge;85%, amber 60-84%, red &lt;60%
       </p>
 
       {/* Trend line — monthly aggregate */}
