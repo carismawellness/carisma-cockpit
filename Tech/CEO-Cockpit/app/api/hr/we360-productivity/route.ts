@@ -114,8 +114,13 @@ export async function GET(req: NextRequest) {
       const unproductive = hrs(a.unproductive);
       const neutral      = hrs(a.neutral);
       const idle         = hrs(a.idle);
-      const totalHrs     = hrs(a.online);
-      const productivePct = a.online > 0 ? Math.round((a.productive / a.online) * 100) : 0;
+      // Use segment sum for totalHrs so the label % is mathematically consistent
+      // with the visual bar. We360's online_duration_sec can include unclassified
+      // time that isn't reflected in the four named segments, which would make
+      // (productive/online) give a lower % than the bar visually implies.
+      const segTotal      = Math.round((productive + neutral + unproductive + idle) * 10) / 10;
+      const productivePct = segTotal > 0 ? Math.round((productive / segTotal) * 100) : 0;
+      const totalHrs      = segTotal.toFixed(1);
       return {
         name: displayName(a.first_name, a.last_name, a.email),
         Productive:   productive,
@@ -123,7 +128,10 @@ export async function GET(req: NextRequest) {
         Unproductive: unproductive,
         Idle:         idle,
         productivePct,
-        totalHrs: totalHrs.toFixed(1),
+        totalHrs,
+        // Pre-formatted label used by the Recharts LabelList to avoid index
+        // misalignment in stacked vertical bar charts.
+        barLabel: `${productivePct}% — ${totalHrs}h`,
         days: a.days,
       };
     })

@@ -85,6 +85,7 @@ export interface We360ProductivityRow {
   Idle: number;
   productivePct: number;
   totalHrs: string;
+  barLabel: string;
   days: number;
 }
 

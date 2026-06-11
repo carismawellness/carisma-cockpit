@@ -4,10 +4,9 @@ import { useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { SyncButton } from "@/components/dashboard/SyncButton";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
-import { KPICardRow, KPIData } from "@/components/dashboard/KPICardRow";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { Card } from "@/components/ui/card";
-import { KPIGridSkeleton, Skeleton, TableSkeleton } from "@/components/ui/skeleton";
+import { KPIGridSkeleton, TableSkeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/charts/config";
 import { BRAND } from "@/lib/constants/design-tokens";
 
@@ -73,11 +72,11 @@ const PROD_COLORS = {
 // ════════════════════════════════════════════════════════════════════════════
 
 // Color a location bar by its business unit (warm Spa-family tone per hotel,
-// or the Aesthetics / Slimming brand color for those clinics).
+// or the Aesthetics sage / Slimming brand color for those clinics).
 function locationColor(name: string): string {
-  if (/aesthetic/i.test(name)) return BRAND.aesthetics.dark;
-  if (/slimming/i.test(name))  return BRAND.slimming.dark;
-  return SPA_LOCATION_COLORS[name] ?? BRAND.spa.dark;
+  if (/aesthetic/i.test(name)) return BRAND.aesthetics.soft;
+  if (/slimming/i.test(name))  return BRAND.slimming.soft;
+  return SPA_LOCATION_COLORS[name] ?? BRAND.spa.soft;
 }
 
 function getStatusBadge(status: string, className: string) {
@@ -87,6 +86,59 @@ function getStatusBadge(status: string, className: string) {
     >
       {status}
     </span>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// HR KPI CARD — premium variant for the HR metric grid
+// ════════════════════════════════════════════════════════════════════════════
+
+interface HRMetricData {
+  label: string;
+  value: string;
+  target?: string;
+  targetValue?: number;
+  currentValue?: number;
+  /** True when the metric improves by going lower (e.g. HC% vs revenue). */
+  lowerIsBetter?: boolean;
+  isSample?: boolean;
+}
+
+function HRMetricCard({ label, value, target, targetValue, currentValue, lowerIsBetter = false, isSample = false }: HRMetricData) {
+  const hasTarget = targetValue != null && currentValue != null && targetValue > 0;
+
+  type Status = "good" | "warn" | "bad" | "neutral";
+  let status: Status = "neutral";
+  if (hasTarget) {
+    const ratio = currentValue! / targetValue!;
+    status = lowerIsBetter
+      ? ratio <= 1 ? "good" : ratio <= 1.25 ? "warn" : "bad"
+      : ratio >= 0.9 ? "good" : ratio >= 0.7 ? "warn" : "bad";
+  }
+
+  const styles: Record<Status, { border: string; valueCls: string; bg: string; pill: string; pillText: string }> = {
+    good:    { border: "border-l-emerald-400", valueCls: "text-emerald-700",   bg: "bg-emerald-50/50",  pill: "bg-emerald-50 border-emerald-200 text-emerald-700",  pillText: "On Track" },
+    warn:    { border: "border-l-amber-400",   valueCls: "text-amber-700",     bg: "bg-amber-50/50",    pill: "bg-amber-50 border-amber-200 text-amber-700",        pillText: "Near target" },
+    bad:     { border: "border-l-red-400",     valueCls: "text-red-700",       bg: "bg-red-50/40",      pill: "bg-red-50 border-red-200 text-red-700",              pillText: "Off track" },
+    neutral: { border: "border-l-slate-200",   valueCls: "text-slate-900",     bg: "bg-white",          pill: "",                                                   pillText: "" },
+  };
+  const s = styles[status];
+
+  return (
+    <div className={`rounded-xl border border-slate-100 border-l-4 ${s.border} ${s.bg} p-4 shadow-sm flex flex-col gap-1.5`}>
+      <div className="flex items-start justify-between gap-1">
+        <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider leading-tight">{label}</p>
+        {isSample ? (
+          <span className="shrink-0 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-1.5 py-0.5 leading-none">Sample</span>
+        ) : status !== "neutral" ? (
+          <span className={`shrink-0 text-[10px] font-semibold border rounded-full px-1.5 py-0.5 leading-none ${s.pill}`}>{s.pillText}</span>
+        ) : null}
+      </div>
+      <p className={`text-2xl md:text-3xl font-bold leading-none ${s.valueCls}`}>{value}</p>
+      {target && (
+        <p className="text-xs text-slate-400 font-medium leading-none">Target: {target}</p>
+      )}
+    </div>
   );
 }
 
@@ -203,27 +255,34 @@ const HC_BY_BU_FALLBACK = [
 const GROUP_HC_PCT_FALLBACK = 33.1;
 
 const PRODUCTIVITY_DATA = [
-  { name: "Sarah M.", productive: 5.8, neutral: 0.6, unproductive: 0.2, idle: 0.8, productivePct: 89, totalHrs: "7.4" },
-  { name: "Abid K.",  productive: 5.5, neutral: 0.7, unproductive: 0.3, idle: 0.9, productivePct: 84, totalHrs: "7.4" },
-  { name: "Elena P.", productive: 5.4, neutral: 0.8, unproductive: 0.3, idle: 0.9, productivePct: 82, totalHrs: "7.4" },
-  { name: "Juli R.",  productive: 5.2, neutral: 0.8, unproductive: 0.4, idle: 1.0, productivePct: 81, totalHrs: "7.4" },
-  { name: "Rana H.",  productive: 5.1, neutral: 0.9, unproductive: 0.4, idle: 1.0, productivePct: 78, totalHrs: "7.4" },
-  { name: "Maria C.", productive: 4.9, neutral: 0.9, unproductive: 0.5, idle: 1.1, productivePct: 76, totalHrs: "7.4" },
-  { name: "Lisa F.",  productive: 4.8, neutral: 1.0, unproductive: 0.5, idle: 1.1, productivePct: 75, totalHrs: "7.4" },
-  { name: "Nicci D.", productive: 4.6, neutral: 0.9, unproductive: 0.5, idle: 1.2, productivePct: 72, totalHrs: "7.2" },
-  { name: "Jake T.",  productive: 4.5, neutral: 1.0, unproductive: 0.6, idle: 1.3, productivePct: 71, totalHrs: "7.4" },
-  { name: "Mark S.",  productive: 4.3, neutral: 1.0, unproductive: 0.6, idle: 1.4, productivePct: 68, totalHrs: "7.3" },
-  { name: "Adeel M.", productive: 3.8, neutral: 0.8, unproductive: 0.7, idle: 1.5, productivePct: 58, totalHrs: "6.8" },
-  { name: "Tom B.",   productive: 3.5, neutral: 0.7, unproductive: 0.8, idle: 1.6, productivePct: 55, totalHrs: "6.6" },
-].map((s) => ({
-  name: s.name,
-  Productive: s.productive,
-  Neutral: s.neutral,
-  Unproductive: s.unproductive,
-  Idle: s.idle,
-  productivePct: s.productivePct,
-  totalHrs: s.totalHrs,
-}));
+  { name: "Sarah M.", productive: 5.8, neutral: 0.6, unproductive: 0.2, idle: 0.8 },
+  { name: "Abid K.",  productive: 5.5, neutral: 0.7, unproductive: 0.3, idle: 0.9 },
+  { name: "Elena P.", productive: 5.4, neutral: 0.8, unproductive: 0.3, idle: 0.9 },
+  { name: "Juli R.",  productive: 5.2, neutral: 0.8, unproductive: 0.4, idle: 1.0 },
+  { name: "Rana H.",  productive: 5.1, neutral: 0.9, unproductive: 0.4, idle: 1.0 },
+  { name: "Maria C.", productive: 4.9, neutral: 0.9, unproductive: 0.5, idle: 1.1 },
+  { name: "Lisa F.",  productive: 4.8, neutral: 1.0, unproductive: 0.5, idle: 1.1 },
+  { name: "Nicci D.", productive: 4.6, neutral: 0.9, unproductive: 0.5, idle: 1.2 },
+  { name: "Jake T.",  productive: 4.5, neutral: 1.0, unproductive: 0.6, idle: 1.3 },
+  { name: "Mark S.",  productive: 4.3, neutral: 1.0, unproductive: 0.6, idle: 1.4 },
+  { name: "Adeel M.", productive: 3.8, neutral: 0.8, unproductive: 0.7, idle: 1.5 },
+  { name: "Tom B.",   productive: 3.5, neutral: 0.7, unproductive: 0.8, idle: 1.6 },
+].map((s) => {
+  const segTotal = Math.round((s.productive + s.neutral + s.unproductive + s.idle) * 10) / 10;
+  const pct = segTotal > 0 ? Math.round((s.productive / segTotal) * 100) : 0;
+  const totalHrs = segTotal.toFixed(1);
+  return {
+    name:          s.name,
+    Productive:    s.productive,
+    Neutral:       s.neutral,
+    Unproductive:  s.unproductive,
+    Idle:          s.idle,
+    productivePct: pct,
+    totalHrs,
+    barLabel:      `${pct}% — ${totalHrs}h`,
+    days:          5,
+  };
+});
 
 // ════════════════════════════════════════════════════════════════════════════
 // TABLE COLUMNS
@@ -377,6 +436,10 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   // ── We360 productivity (live → fallback) ──────────────────────────────────
   const isProductivityReal =
     we360Q.isSuccess && !!we360Q.data && we360Q.data.employees.length > 0;
+  // Distinguish "not connected" from "connected but no data for this period"
+  const we360NotConnected = we360Q.isError;
+  const we360NoDataForPeriod =
+    we360Q.isSuccess && (!we360Q.data || we360Q.data.employees.length === 0);
   const productivityData = isProductivityReal
     ? we360Q.data!.employees
     : PRODUCTIVITY_DATA;
@@ -400,13 +463,14 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
       : 0;
 
   // ── KPI cards ─────────────────────────────────────────────────────────────
-  const kpis: KPIData[] = [
+  const kpis: HRMetricData[] = [
     {
       label: "Human Capital %",
       value: `${groupHcPct}%`,
       target: `${HC_PCT_TARGET}%`,
       targetValue: HC_PCT_TARGET,
       currentValue: groupHcPct,
+      lowerIsBetter: true,
     },
     { label: "Monthly Gross Payroll", value: formatCurrency(payrollData.latestGross) },
     { label: "Avg Cost / Employee",   value: formatCurrency(payrollData.avgCostPerEmployee) },
@@ -508,11 +572,15 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
         </div>
       )}
 
-      {/* ── KPI Row ────────────────────────────────────────────────────── */}
+      {/* ── KPI Grid ───────────────────────────────────────────────────── */}
       {talexioLoading && headcountActive === null ? (
         <KPIGridSkeleton count={8} className="grid-cols-2 md:grid-cols-4" />
       ) : (
-        <KPICardRow kpis={kpis} className="grid grid-cols-2 md:grid-cols-4 gap-4" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+          {kpis.map((kpi) => (
+            <HRMetricCard key={kpi.label} {...kpi} />
+          ))}
+        </div>
       )}
 
       {/* ══════════════════════════════════════════════════════════════════
@@ -617,7 +685,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
                 {hcByBU.map((entry, i) => (
                   <Cell
                     key={entry.name}
-                    fill={[BRAND.spa.dark, BRAND.aesthetics.dark, BRAND.slimming.dark][i % 3]}
+                    fill={[BRAND.spa.soft, BRAND.aesthetics.soft, BRAND.slimming.soft][i % 3]}
                   />
                 ))}
                 <LabelList
@@ -753,7 +821,13 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
             <span aria-hidden>ℹ️</span>
             <span>
-              <strong>Sample data.</strong> Connect WE360 integration to see real productivity metrics.
+              {we360NotConnected ? (
+                <><strong>Not connected.</strong> Set up the WE360 integration to see real productivity metrics.</>
+              ) : we360NoDataForPeriod ? (
+                <><strong>No data for this period.</strong> WE360 is connected — try a broader date range or hit Sync to backfill.</>
+              ) : (
+                <><strong>Sample data.</strong> Connect WE360 integration to see real productivity metrics.</>
+              )}
             </span>
           </div>
         )}
@@ -809,11 +883,9 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
             <Bar dataKey="Unproductive" stackId="time" fill={PROD_COLORS.unproductive} barSize={24} />
             <Bar dataKey="Idle"         stackId="time" fill={PROD_COLORS.idle}         barSize={24} radius={[0, 4, 4, 0]}>
               <LabelList
-                dataKey="productivePct"
+                dataKey="barLabel"
                 content={(props) => {
-                  const { x, width, y, height, index } = props as Record<string, unknown>;
-                  const entry = productivityData[Number(index)];
-                  if (!entry) return <></>;
+                  const { x, width, y, height, value } = props as Record<string, unknown>;
                   return (
                     <text
                       x={Number(x) + Number(width) + 6}
@@ -824,7 +896,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
                       fontWeight={600}
                       fill="currentColor"
                     >
-                      {entry.productivePct}% — {entry.totalHrs}h
+                      {String(value ?? "")}
                     </text>
                   );
                 }}
