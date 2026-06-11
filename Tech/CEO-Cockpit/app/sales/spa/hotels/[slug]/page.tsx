@@ -142,19 +142,59 @@ function HotelContent({
 }) {
   const analytics = useSpaDeepaAnalytics(dateFrom, dateTo, hotel.locId);
 
+  /* ── Prior-year window for YoY ────────────────────────────────────── */
+  const priorDateFrom = useMemo(
+    () => new Date(dateFrom.getFullYear() - 1, dateFrom.getMonth(), dateFrom.getDate()),
+    [dateFrom]
+  );
+  const priorDateTo = useMemo(
+    () => new Date(dateTo.getFullYear() - 1, dateTo.getMonth(), dateTo.getDate()),
+    [dateTo]
+  );
+  const priorAnalytics = useSpaDeepaAnalytics(priorDateFrom, priorDateTo, hotel.locId);
+
   /* ── KPI totals ───────────────────────────────────────────────────── */
   const kpis = useMemo(() => {
     const serviceEx = analytics.staff.reduce((s, m) => s + m.service_revenue, 0);
     const retailEx  = analytics.staff.reduce((s, m) => s + m.retail_revenue,  0);
     const totalEx   = serviceEx + retailEx;
     const discount  = analytics.discounts.find(d => d.location_id === hotel.locId);
+    const discountEx = discount?.total_discount ?? 0;
+
+    const totalInc   = totalEx   * (1 + VAT_RATE);
+    const serviceInc = serviceEx * (1 + VAT_RATE);
+    const retailInc  = retailEx  * (1 + VAT_RATE);
+    const discountInc = discountEx * (1 + VAT_RATE);
+
+    const retailPct   = totalInc > 0 ? Math.round((retailInc / totalInc)   * 100) : 0;
+    const discountPct = totalInc > 0 ? Math.round((discountInc / totalInc) * 100) : 0;
+
+    // Prior year
+    const pServiceEx  = priorAnalytics.staff.reduce((s, m) => s + m.service_revenue, 0);
+    const pRetailEx   = priorAnalytics.staff.reduce((s, m) => s + m.retail_revenue,  0);
+    const pTotalEx    = pServiceEx + pRetailEx;
+    const pDiscount   = priorAnalytics.discounts.find(d => d.location_id === hotel.locId);
+    const pTotalInc   = pTotalEx   * (1 + VAT_RATE);
+    const pServiceInc = pServiceEx * (1 + VAT_RATE);
+    const pRetailInc  = pRetailEx  * (1 + VAT_RATE);
+    const pDiscountInc = (pDiscount?.total_discount ?? 0) * (1 + VAT_RATE);
+
+    const yoy = (curr: number, prior: number) =>
+      prior > 0 ? Math.round(((curr - prior) / prior) * 100) : undefined;
+
     return {
-      totalInc:   totalEx * (1 + VAT_RATE),
-      serviceInc: serviceEx * (1 + VAT_RATE),
-      retailInc:  retailEx * (1 + VAT_RATE),
-      discountInc: (discount?.total_discount ?? 0) * (1 + VAT_RATE),
+      totalInc,
+      serviceInc,
+      retailInc,
+      discountInc,
+      retailPct,
+      discountPct,
+      yoyTotal:    yoy(totalInc,    pTotalInc),
+      yoyService:  yoy(serviceInc,  pServiceInc),
+      yoyRetail:   yoy(retailInc,   pRetailInc),
+      yoyDiscount: yoy(discountInc, pDiscountInc),
     };
-  }, [analytics.staff, analytics.discounts, hotel.locId]);
+  }, [analytics.staff, analytics.discounts, priorAnalytics.staff, priorAnalytics.discounts, hotel.locId]);
 
   /* ── Guest mix pie ────────────────────────────────────────────────── */
   const guestMixData = useMemo(() => {
@@ -224,7 +264,7 @@ function HotelContent({
     [analytics.staff]
   );
 
-  const isLoading = analytics.isFetching;
+  const isLoading = analytics.isFetching || priorAnalytics.isFetching;
 
   /* ── Render ───────────────────────────────────────────────────────── */
   return (
@@ -260,23 +300,31 @@ function HotelContent({
           <div className="lg:col-span-3 grid grid-cols-2 gap-4">
             <SalesKPICard
               label="Total Revenue"
-              value={`${fmtShort(kpis.totalInc)}`}
+              value={fmtShort(kpis.totalInc)}
               subtitle="inc. VAT"
+              yoyChange={kpis.yoyTotal}
+              yoyLabel="vs LY"
             />
             <SalesKPICard
               label="Service Revenue"
-              value={`${fmtShort(kpis.serviceInc)}`}
-              subtitle="inc. VAT"
+              value={fmtShort(kpis.serviceInc)}
+              subtitle={`${Math.round((kpis.serviceInc / (kpis.totalInc || 1)) * 100)}% of total`}
+              yoyChange={kpis.yoyService}
+              yoyLabel="vs LY"
             />
             <SalesKPICard
               label="Retail Revenue"
-              value={`${fmtShort(kpis.retailInc)}`}
-              subtitle="inc. VAT"
+              value={fmtShort(kpis.retailInc)}
+              subtitle={`${kpis.retailPct}% of total`}
+              yoyChange={kpis.yoyRetail}
+              yoyLabel="vs LY"
             />
             <SalesKPICard
               label="Total Discounts"
-              value={`${fmtShort(kpis.discountInc)}`}
-              subtitle="given to guests"
+              value={fmtShort(kpis.discountInc)}
+              subtitle={`${kpis.discountPct}% of total`}
+              yoyChange={kpis.yoyDiscount}
+              yoyLabel="vs LY"
             />
           </div>
         </div>
