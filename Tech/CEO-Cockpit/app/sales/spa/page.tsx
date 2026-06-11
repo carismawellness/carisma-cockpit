@@ -376,8 +376,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                       }}
                     />
                     <Legend />
-                    <Bar dataKey="Hotel Guests" stackId="a" fill={BRAND.spa.dark} />
-                    <Bar dataKey="Non-Hotel" stackId="a" fill={BRAND.spa.soft} radius={[4, 4, 0, 0]}>
+                    <Bar dataKey="Non-Hotel" stackId="a" fill={BRAND.spa.soft}>
                       <LabelList
                         dataKey="Non-Hotel"
                         position="inside"
@@ -385,6 +384,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                         style={{ fontSize: 11, fontWeight: 700, fill: "#6B5E4E" }}
                       />
                     </Bar>
+                    <Bar dataKey="Hotel Guests" stackId="a" fill={BRAND.spa.dark} radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
