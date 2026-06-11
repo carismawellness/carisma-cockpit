@@ -24,7 +24,7 @@ export const colors = {
  */
 export const BRAND = {
   spa:        { dark: "#897B5E", soft: "#EEE7D9" },
-  aesthetics: { dark: "#486A42", soft: "#CCD8C3" },
+  aesthetics: { dark: "#486A42", soft: "#E1EBEB" },
   slimming:   { dark: "#486A42", soft: "#CCD8C3" },
 } as const;
 
