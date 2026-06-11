@@ -111,15 +111,16 @@ interface ApiResponse {
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
-export function useSpaDeepaAnalytics(dateFrom: Date, dateTo: Date): SpaDeepaAnalyticsResult {
+export function useSpaDeepaAnalytics(dateFrom: Date, dateTo: Date, locationId?: number): SpaDeepaAnalyticsResult {
   const dateFromStr = toDateStr(dateFrom);
   const dateToStr   = toDateStr(dateTo);
 
   const { data, isFetching, error } = useQuery<ApiResponse>({
-    queryKey: ["spa-deepa-analytics", dateFromStr, dateToStr],
+    queryKey: ["spa-deepa-analytics", dateFromStr, dateToStr, locationId ?? null],
     queryFn: async () => {
+      const locParam = locationId !== undefined ? `&location_id=${locationId}` : "";
       const res = await fetch(
-        `/api/cockpit/spa-analytics?date_from=${dateFromStr}&date_to=${dateToStr}`
+        `/api/cockpit/spa-analytics?date_from=${dateFromStr}&date_to=${dateToStr}${locParam}`
       );
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed to fetch spa analytics");

@@ -234,6 +234,7 @@ function computeAnalytics(
   productRows: Record<string, string>[],
   dateFrom: Date,
   dateTo: Date,
+  filterLocId?: number,
 ): SpaAnalyticsResponse {
 
   // Staff accumulators
@@ -283,14 +284,15 @@ function computeAnalytics(
     if (unitPriceInc <= 0) continue;
     const unitPriceEx = unitPriceInc / (1 + VAT_RATE);
 
-    // Staff service revenue — accumulate for all rows regardless of Sales Point
+    const locId = COCKPIT_SPA_LOCATION_MAP[stripCol(row, "Sales Point")];
+    if (locId === undefined) continue;
+    if (filterLocId !== undefined && locId !== filterLocId) continue;
+
+    // Staff service revenue
     const soldBy = stripCol(row, "Sold By").replace(/\s+/g, " ").trim();
     if (soldBy) {
       staffServiceRev[soldBy] = (staffServiceRev[soldBy] ?? 0) + unitPriceEx;
     }
-
-    const locId = COCKPIT_SPA_LOCATION_MAP[stripCol(row, "Sales Point")];
-    if (locId === undefined) continue;
 
     // Guest group
     const guestGroup = stripCol(row, "Guest Group");
@@ -378,6 +380,7 @@ function computeAnalytics(
     const pos   = stripCol(row, "Point of Sales") || stripCol(row, "Point of Sales ");
     const locId = COCKPIT_SPA_LOCATION_MAP[pos];
     if (locId === undefined) continue;
+    if (filterLocId !== undefined && locId !== filterLocId) continue;
 
     const amount = safeFloat(stripCol(row, "VAT Exclusive Amount") || stripCol(row, "VAT Exclusive Amount "));
     if (amount <= 0) continue;
@@ -583,6 +586,7 @@ function computeAnalyticsFromRaw(
   rawRows: RawAnalyticsRow[],
   dateFrom: Date,
   dateTo: Date,
+  filterLocId?: number,
 ): SpaAnalyticsResponse {
   // Same accumulator shapes as computeAnalytics — keeping the output structure
   // identical so the frontend renders without changes.
@@ -601,6 +605,7 @@ function computeAnalyticsFromRaw(
     if (!r.service_date) continue;
     if (r.service_date < fromIso || r.service_date > toIso) continue;
     const locId = r.location_id;
+    if (filterLocId !== undefined && locId !== filterLocId) continue;
 
     const unitPriceInc = Number(r.net_revenue_gross) || 0;
     const unitPriceEx  = Number(r.revenue_ex_vat)    || 0;
@@ -767,8 +772,10 @@ function buildAnalyticsResponse(acc: AccBundle): SpaAnalyticsResponse {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
-  const dateFromStr = searchParams.get("date_from");
-  const dateToStr   = searchParams.get("date_to");
+  const dateFromStr  = searchParams.get("date_from");
+  const dateToStr    = searchParams.get("date_to");
+  const locIdRaw     = searchParams.get("location_id");
+  const filterLocId  = locIdRaw !== null ? Number(locIdRaw) : undefined;
 
   if (!dateFromStr || !dateToStr) {
     return NextResponse.json(
@@ -807,7 +814,7 @@ export async function GET(req: NextRequest) {
   try {
     if (useHistoric) {
       const rawRows = await fetchHistoricRawRows(dateFrom, dateTo);
-      return NextResponse.json(computeAnalyticsFromRaw(rawRows, dateFrom, dateTo));
+      return NextResponse.json(computeAnalyticsFromRaw(rawRows, dateFrom, dateTo, filterLocId));
     }
 
     if (useLive) {
@@ -815,7 +822,7 @@ export async function GET(req: NextRequest) {
         fetchCockpitCsv(SERVICE_GID),
         fetchCockpitCsv(PRODUCT_GID),
       ]);
-      return NextResponse.json(computeAnalytics(serviceRows, productRows, dateFrom, dateTo));
+      return NextResponse.json(computeAnalytics(serviceRows, productRows, dateFrom, dateTo, filterLocId));
     }
 
     // Straddle: split the range at 2024-12-31 and merge the two responses.
@@ -825,8 +832,8 @@ export async function GET(req: NextRequest) {
       fetchCockpitCsv(SERVICE_GID),
       fetchCockpitCsv(PRODUCT_GID),
     ]);
-    const historic = computeAnalyticsFromRaw(rawRows, dateFrom, histTo);
-    const live     = computeAnalytics(serviceRows, productRows, LIVE_ETL_FIRST_DATE, dateTo);
+    const historic = computeAnalyticsFromRaw(rawRows, dateFrom, histTo, filterLocId);
+    const live     = computeAnalytics(serviceRows, productRows, LIVE_ETL_FIRST_DATE, dateTo, filterLocId);
     const merged   = mergeAnalytics(historic, live);
 
     // Surface the 2023-09 → 2024-12 data hole if the historic side overlapped
