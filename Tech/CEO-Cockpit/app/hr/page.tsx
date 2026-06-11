@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { SyncButton } from "@/components/dashboard/SyncButton";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
@@ -21,6 +21,7 @@ import {
   useTalexioShiftsRange,
 } from "@/lib/hooks/useTalexio";
 import { useHRFinancials, useHRRevPAH, useWe360Productivity } from "@/lib/hooks/useHRData";
+import { useAttendance, type AttendanceFilter } from "@/lib/hooks/useAttendance";
 import {
   getActiveEmployees,
   buildAttendanceLogs,
@@ -55,6 +56,21 @@ const PROD_COLORS = {
   unproductive: "#E8A8A0",
   idle: "#E5C088",
 };
+
+// ── Activity Leaderboard grouping ────────────────────────────────────────────
+// HQ = back-office / support; Yamuna = standalone; CRM = sales team.
+// Matched by first name so last-initial format changes don't break it.
+const LEADERBOARD_HQ = new Set(["Ruksana", "Mandar", "Nicole", "Melissa", "Yofan"]);
+const LEADERBOARD_GROUP_ORDER = { HQ: 0, Yamuna: 1, CRM: 2 } as const;
+type LeaderboardGroup = keyof typeof LEADERBOARD_GROUP_ORDER;
+const LEADERBOARD_GROUP_LABELS: Record<LeaderboardGroup, string> = { HQ: "HQ", Yamuna: "Yamuna", CRM: "CRM" };
+
+function empGroup(name: string): LeaderboardGroup {
+  const first = name.split(" ")[0];
+  if (LEADERBOARD_HQ.has(first)) return "HQ";
+  if (first === "Yamuna") return "Yamuna";
+  return "CRM";
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -358,11 +374,68 @@ function toISODate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+// Column defs for the longitudinal attendance table
+const attendanceHistoryColumns = [
+  { key: "date",            label: "Date",          sortable: true },
+  { key: "employee_name",   label: "Employee",      sortable: true },
+  { key: "scheduled_start", label: "Sched. Start",  align: "right" as const },
+  {
+    key: "clock_in",
+    label: "Clock In",
+    align: "right" as const,
+    render: (v: unknown, row: Record<string, unknown>) => {
+      if (!v) return getStatusBadge("Absent", "bg-slate-100 text-slate-500");
+      if (row.is_late) return getStatusBadge(String(v), "bg-red-100 text-red-700");
+      return <span className="text-slate-700">{String(v)}</span>;
+    },
+  },
+  {
+    key: "is_late",
+    label: "Late",
+    align: "center" as const,
+    render: (v: unknown, row: Record<string, unknown>) => {
+      if (!v) return null;
+      const mins = Number(row.minutes_late ?? 0);
+      const cls = mins > 30 ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700";
+      return getStatusBadge(`+${mins}m`, cls);
+    },
+  },
+  { key: "scheduled_end", label: "Sched. End",  align: "right" as const },
+  {
+    key: "clock_out",
+    label: "Clock Out",
+    align: "right" as const,
+    render: (v: unknown, row: Record<string, unknown>) => {
+      if (!v) return null;
+      if (row.left_early) return getStatusBadge(String(v), "bg-orange-100 text-orange-700");
+      return <span className="text-slate-700">{String(v)}</span>;
+    },
+  },
+  {
+    key: "left_early",
+    label: "Left Early",
+    align: "center" as const,
+    render: (v: unknown, row: Record<string, unknown>) => {
+      if (!v) return null;
+      const mins = Number(row.minutes_early_out ?? 0);
+      return getStatusBadge(`-${mins}m`, "bg-orange-100 text-orange-700");
+    },
+  },
+  {
+    key: "hours_worked",
+    label: "Hours",
+    align: "right" as const,
+    render: (v: unknown) => v != null ? `${Number(v).toFixed(1)}h` : "—",
+  },
+];
+
 function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const month = `${dateFrom.getFullYear()}-${String(dateFrom.getMonth() + 1).padStart(2, "0")}`;
   const fromISO = toISODate(dateFrom);
   const toISO = toISODate(dateTo);
   const queryClient = useQueryClient();
+
+  const [attendanceFilter, setAttendanceFilter] = useState<AttendanceFilter>("all");
 
   // ── Live data: Talexio ────────────────────────────────────────────────────
   const headcountQ = useTalexioHeadcount();
@@ -372,6 +445,9 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   // Fetch published roster for the full selected period — used to determine scheduled start
   // times and to compute period-level on-time % (roster is ground truth for lateness).
   const shiftsQ = useTalexioShiftsRange(fromISO, toISO);
+
+  // ── Longitudinal attendance from Supabase ────────────────────────────────
+  const attendanceHistoryQ = useAttendance(fromISO, toISO, attendanceFilter);
 
   // ── Live data: Supabase-backed HR financials ──────────────────────────────
   const financialsQ = useHRFinancials(month);
@@ -484,6 +560,43 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
     ? we360Q.data!.employees
     : PRODUCTIVITY_DATA;
 
+  // Sort employees: HQ → Yamuna → CRM, within each group by hours desc.
+  const sortedProductivityData = useMemo(() =>
+    [...productivityData]
+      .map(emp => ({ ...emp, _group: empGroup(emp.name) as LeaderboardGroup }))
+      .sort((a, b) => {
+        const gd = LEADERBOARD_GROUP_ORDER[a._group] - LEADERBOARD_GROUP_ORDER[b._group];
+        if (gd !== 0) return gd;
+        return parseFloat(b.totalHrs) - parseFloat(a.totalHrs);
+      }),
+  [productivityData]);
+
+  // Custom Y-axis tick: renders a small group label above the first employee
+  // in each group so categories are visually separated without extra rows.
+  const GroupedYTick = useMemo(() => {
+    const data = sortedProductivityData;
+    return function CustomGroupTick(props: Record<string, unknown>) {
+      const { x, y, payload } = props as { x: number; y: number; payload: { value: string } };
+      const idx = data.findIndex(d => d.name === payload.value);
+      const emp  = data[idx];
+      const prev = idx > 0 ? data[idx - 1] : undefined;
+      const isFirst = !prev || prev._group !== emp?._group;
+      return (
+        <g>
+          {isFirst && emp?._group && (
+            <text x={Number(x) - 4} y={Number(y) - 13} textAnchor="end" fontSize={8}
+              fontWeight={700} fill="#9ca3af" letterSpacing={0.8}>
+              {LEADERBOARD_GROUP_LABELS[emp._group]}
+            </text>
+          )}
+          <text x={Number(x) - 4} y={Number(y)} dy={4} textAnchor="end" fontSize={12} fill="#374151">
+            {payload.value}
+          </text>
+        </g>
+      );
+    };
+  }, [sortedProductivityData]);
+
   // ── Derived KPIs ──────────────────────────────────────────────────────────
   const avgProductivity = useMemo(
     () =>
@@ -593,6 +706,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
               // and We360 (productivity/attendance) over the visible range.
               await Promise.all([
                 fetch("/api/etl/talexio-hr", { method: "POST" }),
+                fetch(`/api/etl/attendance-daily?dateFrom=${fromISO}&dateTo=${toISO}`, { method: "POST" }),
                 fetch("/api/etl/we360", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
@@ -601,6 +715,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
               ]);
               await Promise.all([
                 queryClient.invalidateQueries({ queryKey: ["talexio"] }),
+                queryClient.invalidateQueries({ queryKey: ["attendance"] }),
                 queryClient.invalidateQueries({ queryKey: ["we360-productivity"] }),
               ]);
             }}
@@ -688,6 +803,93 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           )}
         </Card>
       </div>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          SECTION 1b: Longitudinal Attendance History (Supabase-backed)
+          ══════════════════════════════════════════════════════════════════ */}
+      <Card className="p-3 md:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-1">
+          <h2 className="text-lg font-semibold text-foreground flex items-center">
+            Attendance History
+            {attendanceHistoryQ.isSuccess && attendanceHistoryQ.data.records.length > 0
+              ? <LiveBadge source="supabase" />
+              : null}
+          </h2>
+          {/* Filter pills */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {(["all", "late", "early"] as AttendanceFilter[]).map((f) => {
+              const label = f === "all" ? "All" : f === "late" ? "Late arrivals" : "Left early";
+              const count = f === "late"
+                ? attendanceHistoryQ.data?.summary.total_late
+                : f === "early"
+                ? attendanceHistoryQ.data?.summary.total_left_early
+                : attendanceHistoryQ.data?.summary.total_rostered;
+              return (
+                <button
+                  key={f}
+                  onClick={() => setAttendanceFilter(f)}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
+                    attendanceFilter === f
+                      ? "bg-slate-800 text-white border-slate-800"
+                      : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
+                  }`}
+                >
+                  {label}
+                  {count != null && (
+                    <span className={`rounded-full px-1.5 py-0.5 leading-none ${
+                      attendanceFilter === f ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                    }`}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Period summary chips */}
+        {attendanceHistoryQ.isSuccess && (
+          <div className="flex flex-wrap items-center gap-2 mb-4 text-xs">
+            <span className="text-muted-foreground">
+              {prettyMonth(month)} — {attendanceHistoryQ.data.summary.total_rostered} rostered shifts
+            </span>
+            {attendanceHistoryQ.data.summary.total_absent > 0 && (
+              <span className="bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">
+                {attendanceHistoryQ.data.summary.total_absent} absent
+              </span>
+            )}
+            {attendanceHistoryQ.data.summary.total_late > 0 && (
+              <span className="bg-red-50 text-red-600 rounded-full px-2 py-0.5 font-medium">
+                {attendanceHistoryQ.data.summary.total_late} late arrivals
+              </span>
+            )}
+            {attendanceHistoryQ.data.summary.total_left_early > 0 && (
+              <span className="bg-orange-50 text-orange-600 rounded-full px-2 py-0.5 font-medium">
+                {attendanceHistoryQ.data.summary.total_left_early} left early
+              </span>
+            )}
+          </div>
+        )}
+
+        {attendanceHistoryQ.isLoading ? (
+          <TableSkeleton rows={8} columns={9} />
+        ) : !attendanceHistoryQ.isSuccess || attendanceHistoryQ.data.records.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center gap-2">
+            <p className="text-sm text-muted-foreground font-medium">No attendance data yet for this period</p>
+            <p className="text-xs text-muted-foreground max-w-sm">
+              Hit <strong>Sync</strong> to pull roster + time logs from Talexio and build the historical record.
+              The nightly cron will keep it up to date automatically after the first sync.
+            </p>
+          </div>
+        ) : (
+          <DataTable
+            columns={attendanceHistoryColumns}
+            data={attendanceHistoryQ.data.records as unknown as Record<string, unknown>[]}
+            pageSize={15}
+          />
+        )}
+      </Card>
 
       {/* ══════════════════════════════════════════════════════════════════
           SECTION 2: Human Capital %
@@ -916,21 +1118,21 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           {isProductivityReal ? <LiveBadge source="supabase" /> : <SampleDataBadge />}
         </h2>
         <p className="text-xs text-muted-foreground mb-4">
-          Avg daily hours breakdown — sorted by activity % descending (active ÷ online, matches We360) | Target: 90%
+          Avg daily hours breakdown — grouped by role, sorted by hours within group (activity % = active ÷ online, matches We360) | Target: 90%
         </p>
-        <ResponsiveContainer width="100%" height={productivityData.length * 40 + 60}>
+        <ResponsiveContainer width="100%" height={sortedProductivityData.length * 40 + 80}>
           <BarChart
-            data={productivityData}
+            data={sortedProductivityData}
             layout="vertical"
-            margin={{ top: 5, right: 100, left: 10, bottom: 5 }}
+            margin={{ top: 20, right: 100, left: 10, bottom: 5 }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
             <XAxis type="number" tickFormatter={(v: number) => `${v}h`} tick={{ fontSize: 11 }} />
-            <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 12 }} />
+            <YAxis type="category" dataKey="name" width={90} tick={GroupedYTick as unknown as object} />
             <Tooltip
               formatter={(value, name) => [`${Number(value).toFixed(1)}h`, String(name)]}
               labelFormatter={(label) => {
-                const item = productivityData.find((d) => d.name === label);
+                const item = sortedProductivityData.find((d) => d.name === label);
                 return item
                   ? `${label} — ${item.productivePct}% active (${item.totalHrs}h online)`
                   : String(label);

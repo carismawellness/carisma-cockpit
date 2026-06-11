@@ -72,9 +72,14 @@ export async function GET(req: NextRequest) {
   // Phase 1: run source ETLs in parallel
   // NOTE: google-reviews fails until GOOGLE_PLACES_API_KEY is set — harmless,
   // Promise.allSettled keeps one failing job from breaking the others.
+  // attendance-daily: backfill the last 2 days (yesterday + today) each night
+  const attendanceFrom = fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+  const attendanceTo   = today;
+
   const [revenueRes, spaRes, aestheticsRes, crmAgentsRes, ghlCrmRes,
          metaCampaignsRes, googleCampaignsRes, klaviyoRes, talexioHrRes, we360Res,
-         googleReviewsRes, diligenceAuditRes, brandStandardsRes, gscRes] = await Promise.allSettled([
+         googleReviewsRes, diligenceAuditRes, brandStandardsRes, gscRes,
+         attendanceDailyRes] = await Promise.allSettled([
     fetch(`${BASE_URL}/api/etl/revenue-refresh`,              { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/zoho-spa-transactions`,        { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/zoho-aesthetics-transactions`, { method: "POST", headers, body: payload }),
@@ -89,6 +94,7 @@ export async function GET(req: NextRequest) {
     fetch(`${BASE_URL}/api/etl/diligence-audit`,              { method: "POST", headers }),
     fetch(`${BASE_URL}/api/etl/brand-standards`,              { method: "POST", headers }),
     fetch(`${BASE_URL}/api/etl/gsc-sync`,                     { method: "POST", headers, body: "{}" }),
+    fetch(`${BASE_URL}/api/etl/attendance-daily?dateFrom=${attendanceFrom}&dateTo=${attendanceTo}`, { method: "POST", headers }),
   ]);
 
   // Phase 2: lead reconciliation depends on ghl-crm + meta-campaigns completing first
@@ -124,6 +130,7 @@ export async function GET(req: NextRequest) {
     ["diligence_audit",     diligenceAuditRes],
     ["brand_standards",     brandStandardsRes],
     ["gsc_keywords",        gscRes],
+    ["attendance_daily",    attendanceDailyRes],
     ["lead_reconciliation", leadReconRes],
   ];
 
