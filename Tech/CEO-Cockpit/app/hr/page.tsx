@@ -730,7 +730,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
                       <p className="font-semibold text-slate-800">{label}</p>
                       <p><span className="text-slate-500">RevPAH:</span> <span className="font-bold text-slate-900">{formatCurrency(row.revpah)}/hr</span></p>
                       <p><span className="text-slate-500">Revenue:</span> <span className="font-semibold">{formatCurrency(row.revenue)}</span></p>
-                      {row.headcount != null && <p><span className="text-slate-500">Headcount:</span> <span className="font-semibold">{row.headcount} staff</span></p>}
+                      {row.headcount != null && <p><span className="text-slate-500">Therapists:</span> <span className="font-semibold">{row.headcount}</span></p>}
                       {row.availableHours != null && <p><span className="text-slate-500">Avail hrs:</span> <span className="font-semibold">{row.availableHours.toLocaleString()}h</span></p>}
                     </div>
                   );

@@ -3,12 +3,17 @@
  *
  * Revenue per available hour by location.
  *
- *  - Revenue source: same queries as `/api/hr/financials`.
- *  - Available-hours: headcount × 8h × workdays_in_month from the most
- *    recent `hr_talexio_daily_snapshot` in or before the month.
- *    (hr_shifts_daily is per-day only and would give near-zero RevPAH
- *    for past months with sparse ETL runs — headcount estimate is more
- *    reliable for a monthly view.)
+ *  - Revenue: spa_revenue_daily + aesthetics_sales_daily + slimming_sales_daily
+ *    (populated from the Cockpit Google Sheet, same as all other revenue surfaces)
+ *
+ *  - Therapist headcount (spa locations): distinct employee_name values in
+ *    spa_services_by_employee_daily for the month. This counts only therapists
+ *    who actually performed services — the only staff who generate direct revenue.
+ *
+ *  - Headcount (aesthetics/slimming): falls back to most recent Talexio snapshot
+ *    since those brands don't have per-employee service tables yet.
+ *
+ *  RevPAH = revenue / (therapist_count × 8h × workdays_in_month)
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -112,19 +117,40 @@ export async function GET(req: NextRequest) {
     revenueByLocation.set("Slimming Centre", slmTotal);
   }
 
-  // ── Headcount: most recent snapshot per location (no date upper bound) ──────
-  // The Talexio ETL may have first run after the requested month (e.g. deployed
-  // in June for a May report). Restricting to snapshot_date <= month_end would
-  // return 0 rows → revpah = 0 for every location. Headcount changes slowly so
-  // using the most recent available snapshot is accurate enough for any month.
+  // ── Therapist headcount: spa locations from service records ─────────────────
+  // Count distinct therapists who performed services in the month per location.
+  // This is more accurate than total headcount from Talexio because it only
+  // counts revenue-generating staff, not managers/receptionists/admin.
+  const { data: svcRows } = await supabase
+    .from("spa_services_by_employee_daily")
+    .select("location_id, employee_name")
+    .gte("date_of_service", bounds.start)
+    .lte("date_of_service", bounds.end)
+    .not("employee_name", "is", null);
+
+  const headcountByLocation = new Map<string, number>();
+  // Count distinct therapists per location
+  const therapistSetByLocId = new Map<number, Set<string>>();
+  for (const r of svcRows ?? []) {
+    const locId = r.location_id as number;
+    const name  = String(r.employee_name ?? "").trim();
+    if (!name) continue;
+    if (!therapistSetByLocId.has(locId)) therapistSetByLocId.set(locId, new Set());
+    therapistSetByLocId.get(locId)!.add(name);
+  }
+  for (const [locId, names] of therapistSetByLocId) {
+    const loc = LOCATION_ID_TO_DISPLAY[locId];
+    if (loc) headcountByLocation.set(loc, names.size);
+  }
+
+  // ── Fallback headcount for aesthetics/slimming (no per-employee table yet) ──
+  // Only fills in locations not already covered by the services query above.
   const { data: snap } = await supabase
     .from("hr_talexio_daily_snapshot")
     .select("location_name, active_headcount, snapshot_date")
+    .in("location_name", ["Aesthetics Centre", "Slimming Centre"])
     .order("snapshot_date", { ascending: false })
-    .limit(200);
-
-  // Keep only the most recent snapshot per location
-  const headcountByLocation = new Map<string, number>();
+    .limit(20);
   for (const r of snap ?? []) {
     const loc = r.location_name as string;
     if (!headcountByLocation.has(loc)) {
