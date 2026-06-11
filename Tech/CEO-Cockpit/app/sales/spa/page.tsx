@@ -439,48 +439,79 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
         </div>
       )}
 
-      {/* ── Average Order Value by Location ──────────────────────── */}
-      {(analytics.isFetching || aovChartData.length > 0) && (
-        <Card className="p-4 md:p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-1">Average Order Value by Location</h2>
-          <p className="text-xs text-muted-foreground mb-5">
-            Average service transaction value per venue · inc-VAT
-          </p>
-          {analytics.isFetching ? (
-            <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
-              Loading analytics…
-            </div>
-          ) : (
-            <div className="h-[260px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={aovChartData} margin={{ top: 20, right: 12, left: 8, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                  <YAxis tickFormatter={(v: number) => fmtShort(v)} tick={{ fontSize: 11 }} />
-                  <Tooltip
-                    formatter={(v: unknown, _name: unknown, props: { payload?: { txns?: number } }) =>
-                      [fmtShort(Number(v)), `Avg Order Value · ${props.payload?.txns ?? 0} txns`]
-                    }
-                  />
-                  <Bar dataKey="AOV" radius={[4, 4, 0, 0]}>
-                    {aovChartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                    <LabelList
-                      dataKey="AOV"
-                      position="top"
-                      formatter={(v: unknown) => fmtShort(Number(v))}
-                      style={{ fontSize: 10, fontWeight: 600, fill: "#374151" }}
+      {/* ── New Deepa insights, rearranged: paired side-by-side, with the
+              older Revenue-by-Therapist block parked at the very bottom. ── */}
+
+      {/* Sales by day of week + Sales by time of day — side by side */}
+      {!analytics.isFetching && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+          <SpaDayOfWeekChart data={analytics.byDayOfWeek} />
+          <SpaHourOfDayChart data={analytics.byHourOfDay} />
+        </div>
+      )}
+
+      {/* Therapist utilization + AOV by location — side by side */}
+      {!analytics.isFetching && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+          <SpaTherapistChart data={analytics.byTherapist} topN={15} />
+          {aovChartData.length > 0 ? (
+            <Card className="p-4 md:p-6 space-y-3">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">Average Order Value by Location</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Average service transaction value per venue · inc-VAT
+                </p>
+              </div>
+              <div className="h-[300px] md:h-[360px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={aovChartData} margin={{ top: 24, right: 12, left: 8, bottom: 36 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#374151" }} angle={-25} textAnchor="end" interval={0} height={48} />
+                    <YAxis tickFormatter={(v: number) => fmtShort(v)} tick={{ fontSize: 11, fill: "#6b7280" }} width={56} />
+                    <Tooltip
+                      formatter={(v: unknown, _name: unknown, props: { payload?: { txns?: number } }) =>
+                        [fmtShort(Number(v)), `Avg Order Value · ${props.payload?.txns ?? 0} txns`]
+                      }
                     />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+                    <Bar dataKey="AOV" radius={[4, 4, 0, 0]} maxBarSize={44}>
+                      {aovChartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                      <LabelList
+                        dataKey="AOV"
+                        position="top"
+                        formatter={(v: unknown) => fmtShort(Number(v))}
+                        style={{ fontSize: 10, fontWeight: 600, fill: "#111827" }}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+          ) : (
+            <Card className="p-4 md:p-6 h-full flex items-center justify-center text-sm text-muted-foreground">
+              No average-order-value data for the selected period.
+            </Card>
           )}
+        </div>
+      )}
+
+      {/* Discount + Complimentary by club — full width each */}
+      {!analytics.isFetching && (
+        <>
+          <SpaDiscountByClubSection data={analytics.discounts} />
+          <SpaComplimentaryByClubSection data={analytics.complimentary} />
+        </>
+      )}
+
+      {!isLoading && locations.length === 0 && (
+        <Card className="p-10 text-center text-muted-foreground">
+          <p className="text-sm">No revenue data for the selected period.</p>
+          <button onClick={() => triggerSync(true)} className="mt-3 text-xs underline">Sync now</button>
         </Card>
       )}
 
-      {/* ── Revenue by Therapist (service + retail split, salary K%) ─ */}
+      {/* ── Revenue by Therapist (parked at the bottom of the page) ───── */}
       {(analytics.isFetching || therapistKData.length > 0) && (
         <Card className="p-4 md:p-5">
           <div className="flex items-center gap-2 mb-4">
@@ -578,24 +609,6 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
               </BarChart>
             </ResponsiveContainer>
           )}
-        </Card>
-      )}
-
-      {/* ── New Deepa insights: timing, therapist, discount, complimentary ── */}
-      {!analytics.isFetching && (
-        <>
-          <SpaDayOfWeekChart data={analytics.byDayOfWeek} />
-          <SpaHourOfDayChart data={analytics.byHourOfDay} />
-          <SpaTherapistChart data={analytics.byTherapist} />
-          <SpaDiscountByClubSection data={analytics.discounts} />
-          <SpaComplimentaryByClubSection data={analytics.complimentary} />
-        </>
-      )}
-
-      {!isLoading && locations.length === 0 && (
-        <Card className="p-10 text-center text-muted-foreground">
-          <p className="text-sm">No revenue data for the selected period.</p>
-          <button onClick={() => triggerSync(true)} className="mt-3 text-xs underline">Sync now</button>
         </Card>
       )}
 
