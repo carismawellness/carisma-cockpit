@@ -12,7 +12,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
-import { format, startOfMonth, subDays, parseISO } from "date-fns";
+import { format, subDays, parseISO } from "date-fns";
 
 /* ── Shared location lookup ──────────────────────────────────────────────── */
 
@@ -175,39 +175,28 @@ interface DiligenceDbRow {
   unattended_count: number | null;
 }
 
-export function useDiligenceAudit(dateFrom: Date, dateTo: Date) {
+export function useDiligenceAudit(dateTo: Date) {
   const lookup = useLocationsLookup();
-  const fromMonth = format(startOfMonth(dateFrom), "yyyy-MM-dd");
   const toStr = format(dateTo, "yyyy-MM-dd");
 
   const queryResult = useQuery({
-    queryKey: ["diligence_audit_latest", fromMonth, toStr],
+    queryKey: ["diligence_audit_latest", toStr],
     enabled: !!lookup.data,
     queryFn: async () => {
       const supabase = createClient();
       const select =
         "month, location_id, total_sales, deleted_cancelled, complimentary, cash_sales, discounted_cash, unattended_count";
 
-      // Latest month within [startOfMonth(dateFrom), dateTo].
-      let { data, error } = await supabase
+      // Latest available month on or before dateTo — no lower bound so the
+      // filter is always meaningful: "Last 7 days" ending Jun 11 shows May,
+      // a range ending Apr 30 shows April, etc.
+      const { data, error } = await supabase
         .from("diligence_audit")
         .select(select)
-        .gte("month", fromMonth)
         .lte("month", toStr)
         .order("month", { ascending: false })
         .limit(60);
       if (error) throw new Error(error.message);
-
-      // Fallback: no month in range — use the latest available month.
-      if (!data || data.length === 0) {
-        const fb = await supabase
-          .from("diligence_audit")
-          .select(select)
-          .order("month", { ascending: false })
-          .limit(60);
-        if (fb.error) throw new Error(fb.error.message);
-        data = fb.data;
-      }
 
       const dbRows = (data ?? []) as DiligenceDbRow[];
       if (dbRows.length === 0) {
@@ -261,42 +250,29 @@ export interface StandardsLocationRow {
 
 export function useStandardsScores(
   standardType: "facility" | "front_desk" | "mystery_guest",
-  dateFrom: Date,
   dateTo: Date,
 ) {
   const lookup = useLocationsLookup();
-  const fromMonth = format(startOfMonth(dateFrom), "yyyy-MM-dd");
   const toStr = format(dateTo, "yyyy-MM-dd");
 
   const queryResult = useQuery({
-    queryKey: ["brand_standards_scores", standardType, fromMonth, toStr],
+    queryKey: ["brand_standards_scores", standardType, toStr],
     enabled: !!lookup.data,
     queryFn: async () => {
       const supabase = createClient();
 
-      // Latest month with data in range (each standard type independently).
-      let monthRes = await supabase
+      // Latest month with data on or before dateTo (no lower bound — same
+      // rationale as useDiligenceAudit: range end drives which month is shown).
+      const monthRes = await supabase
         .from("brand_standards")
         .select("month")
         .eq("standard_type", standardType)
-        .gte("month", fromMonth)
         .lte("month", toStr)
         .order("month", { ascending: false })
         .limit(1);
       if (monthRes.error) throw new Error(monthRes.error.message);
 
-      let month: string | null = monthRes.data?.[0]?.month ?? null;
-      if (!month) {
-        // Fallback: latest month with data overall.
-        monthRes = await supabase
-          .from("brand_standards")
-          .select("month")
-          .eq("standard_type", standardType)
-          .order("month", { ascending: false })
-          .limit(1);
-        if (monthRes.error) throw new Error(monthRes.error.message);
-        month = monthRes.data?.[0]?.month ?? null;
-      }
+      const month: string | null = monthRes.data?.[0]?.month ?? null;
       if (!month) {
         return { rows: [] as StandardsLocationRow[], month: null as string | null };
       }

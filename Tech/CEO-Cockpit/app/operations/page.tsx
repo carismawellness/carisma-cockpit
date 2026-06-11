@@ -32,7 +32,6 @@ import { cn } from "@/lib/utils";
 import { BRAND } from "@/lib/constants/design-tokens";
 import {
   ShieldAlert,
-  AlertTriangle,
   Star,
   ClipboardCheck,
   UserSearch,
@@ -150,9 +149,9 @@ function OperationsContent({
 }) {
   /* ── Live data ─────────────────────────────────────────────────────── */
   const reviews   = useGoogleReviews(dateTo);
-  const diligence = useDiligenceAudit(dateFrom, dateTo);
-  const facility  = useStandardsScores("facility", dateFrom, dateTo);
-  const mystery   = useStandardsScores("mystery_guest", dateFrom, dateTo);
+  const diligence = useDiligenceAudit(dateTo);
+  const facility  = useStandardsScores("facility", dateTo);
+  const mystery   = useStandardsScores("mystery_guest", dateTo);
 
   const loading =
     reviews.loading || diligence.loading || facility.loading || mystery.loading;
@@ -204,37 +203,6 @@ function OperationsContent({
     { label: "Mystery Guest %", value: `${avgMystery}%`, target: "85%", targetValue: 85, currentValue: avgMystery },
   ];
 
-  /* ── Collect all attention items ──────────────────────────────────── */
-  const attentionItems: { type: "facility" | "mystery" | "diligence"; location: string; details: string[] }[] = [];
-
-  // Cap per-card issue lists — full lists live in the section cards below.
-  const capIssues = (details: string[], max = 4) =>
-    details.length > max
-      ? [...details.slice(0, max), `… +${details.length - max} more below`]
-      : details;
-
-  for (const loc of facility.rows) {
-    if (loc.score < 85 && loc.issues.length > 0) {
-      attentionItems.push({ type: "facility", location: loc.name, details: capIssues(loc.issues.map((i) => `[Facility ${loc.score}%] ${i.item}`)) });
-    }
-  }
-  for (const loc of mystery.rows) {
-    if (loc.score < 85 && loc.issues.length > 0) {
-      attentionItems.push({ type: "mystery", location: loc.name, details: capIssues(loc.issues.map((i) => `[Mystery Guest ${loc.score}%] ${i.item}`)) });
-    }
-  }
-  for (const d of diligence.rows) {
-    const issues: string[] = [];
-    const delCanPct = pctOf(d.deletedCancelled, d.totalSales);
-    const cashPct = pctOf(d.cashSales, d.totalSales);
-    const discCashPct = pctOf(d.discountedCash, d.totalSales);
-    if (cashPct > DILIGENCE_THRESHOLDS.cashPct) issues.push(`Cash at ${cashPct}% (threshold: <${DILIGENCE_THRESHOLDS.cashPct}%)`);
-    if (delCanPct > DILIGENCE_THRESHOLDS.deletedCancelledPct) issues.push(`Deleted & cancelled at ${delCanPct}% (threshold: <${DILIGENCE_THRESHOLDS.deletedCancelledPct}%)`);
-    if (d.unattended > 10) issues.push(`${d.unattended} unattended bookings`);
-    if (discCashPct > DILIGENCE_THRESHOLDS.discountedCashPct) issues.push(`Discounted cash at ${discCashPct}% (threshold: <${DILIGENCE_THRESHOLDS.discountedCashPct}%)`);
-    if (issues.length > 0) attentionItems.push({ type: "diligence", location: d.name, details: issues.map((i) => `[Diligence] ${i}`) });
-  }
-
   /* ── Review chart data — merged: bars = total reviews, label = rating ── */
   const reviewChartData = [...reviews.snapshots]
     .sort((a, b) => b.totalReviews - a.totalReviews)
@@ -275,38 +243,6 @@ function OperationsContent({
         </p>
       </div>
       <KPICardRow kpis={kpis} />
-
-      {/* ═══════ AREAS NEEDING ATTENTION ═════════════════════════════ */}
-      {attentionItems.length > 0 && (
-        <Card className="p-4 border-red-200 bg-gradient-to-r from-red-50/40 via-amber-50/20 to-transparent">
-          <div className="flex items-center gap-2 mb-3">
-            <AlertTriangle className="h-5 w-5 text-red-500" />
-            <h2 className="text-base font-bold text-red-800">
-              Areas Needing Attention — {attentionItems.length} Locations Flagged
-            </h2>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {attentionItems.map((item) => {
-              const borderColor = item.type === "diligence" ? "border-red-300" : item.type === "facility" ? "border-amber-300" : "border-purple-300";
-              const iconColor = item.type === "diligence" ? "text-red-500" : item.type === "facility" ? "text-amber-500" : "text-purple-500";
-              const Icon = item.type === "diligence" ? ShieldAlert : item.type === "facility" ? ClipboardCheck : UserSearch;
-              return (
-                <div key={`${item.type}-${item.location}`} className={cn("rounded-lg border p-3 bg-white/80", borderColor)}>
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <Icon className={cn("h-4 w-4", iconColor)} />
-                    <span className="text-sm font-semibold text-foreground">{item.location}</span>
-                  </div>
-                  <ul className="space-y-0.5 ml-6">
-                    {item.details.map((detail, i) => (
-                      <li key={i} className="text-xs text-muted-foreground list-disc">{detail}</li>
-                    ))}
-                  </ul>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
 
       {/* ═══════ REVIEWS — COMBINED CHART ════════════════════════════ */}
       <Card className="p-3 md:p-6">
@@ -550,8 +486,7 @@ function StandardsCard({
       {barData.length === 0 ? (
         <EmptyState message={emptyMessage} />
       ) : (
-        <>
-          <div className="h-[360px] md:h-[400px]">
+        <div className="h-[360px] md:h-[400px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={barData}
@@ -590,31 +525,6 @@ function StandardsCard({
               </BarChart>
             </ResponsiveContainer>
           </div>
-
-          {barData.filter((l) => l.score < 85 && l.issues.length > 0).length > 0 && (
-            <div className="mt-4 space-y-3">
-              <h3 className="text-sm font-semibold text-foreground">Issues</h3>
-              {barData
-                .filter((l) => l.score < 85 && l.issues.length > 0)
-                .map((loc) => (
-                  <div key={loc.slug} className="rounded-lg border border-amber-200 bg-amber-50/30 p-3">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className={cn("px-2 py-0.5 rounded text-xs font-bold", complianceBg(loc.score))}>{loc.score}%</span>
-                      <span className="text-sm font-semibold text-foreground">{loc.name}</span>
-                      <span className="text-xs text-muted-foreground">{loc.passed}/{loc.total} items passed</span>
-                    </div>
-                    <ul className="space-y-1 ml-4">
-                      {loc.issues.map((issue, i) => (
-                        <li key={i} className="text-xs text-muted-foreground list-disc">
-                          <span className="font-medium text-foreground/70">{issue.category}:</span> {issue.item}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-            </div>
-          )}
-        </>
       )}
     </Card>
   );
