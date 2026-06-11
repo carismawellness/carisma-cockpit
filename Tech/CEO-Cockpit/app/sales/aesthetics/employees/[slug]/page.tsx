@@ -5,9 +5,10 @@
 // service/retail breakdowns and the aesthetics-specific Payment Mix chart.
 // Data: GET /api/sales/employee-stats via useSalesEmployeeStats.
 
-import { use } from "react";
+import { use, useMemo } from "react";
 import Link from "next/link";
 import type { EmployeeType } from "@/lib/sales-employees/types";
+import { previousPeriod } from "@/lib/utils/period-comparison";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -115,6 +116,9 @@ function EmployeeDashboardContent({
     dateTo,
   );
 
+  const { prevFrom, prevTo } = useMemo(() => previousPeriod(dateFrom, dateTo), [dateFrom, dateTo]);
+  const { stats: prevStats } = useSalesEmployeeStats("aesthetics", slug, prevFrom, prevTo);
+
   const periodLabel = formatDateRangeLabel(dateFrom, dateTo);
   const basisLabel =
     stats?.employee.commission_basis === "inc_vat" ? "inc-VAT" : "ex-VAT";
@@ -211,9 +215,12 @@ function EmployeeDashboardContent({
             ratesSet={stats.employee.rates_set}
             accentColor={ACCENT_SOFT}
             periodLabel={periodLabel}
+            prevCommissionTotal={prevStats?.totals.commission_total}
+            prevCommissionService={prevStats?.totals.commission_service}
+            prevCommissionRetail={prevStats?.totals.commission_retail}
           />
 
-          <EmployeeStatCards totals={stats.totals} basisLabel={basisLabel} />
+          <EmployeeStatCards totals={stats.totals} basisLabel={basisLabel} prevTotals={prevStats?.totals} />
 
           <EmployeeTrendChart daily={stats.daily} accentColor={ACCENT} />
 

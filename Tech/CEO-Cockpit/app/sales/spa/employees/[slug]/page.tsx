@@ -16,6 +16,7 @@ import { EmployeeStatCards } from "@/components/sales/employees/EmployeeStatCard
 import { EmployeeTrendChart } from "@/components/sales/employees/EmployeeTrendChart";
 import { EmployeeBreakdownTable } from "@/components/sales/employees/EmployeeBreakdownTable";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
+import { previousPeriod } from "@/lib/utils/period-comparison";
 import { BRAND } from "@/lib/constants/design-tokens";
 import type { EmployeeType } from "@/lib/sales-employees/types";
 import {
@@ -57,6 +58,9 @@ function SpaEmployeeContent({
 }) {
   const { stats, isLoading, isError, error, notFound } =
     useSalesEmployeeStats("spa", slug, dateFrom, dateTo);
+
+  const { prevFrom, prevTo } = useMemo(() => previousPeriod(dateFrom, dateTo), [dateFrom, dateTo]);
+  const { stats: prevStats } = useSalesEmployeeStats("spa", slug, prevFrom, prevTo);
 
   // The stats payload doesn't carry location_name — look it up in the registry.
   const { employees } = useSalesEmployees("spa");
@@ -183,9 +187,12 @@ function SpaEmployeeContent({
             ratesSet={stats.employee.rates_set}
             accentColor={BRAND.spa.soft}
             periodLabel={periodLabel}
+            prevCommissionTotal={prevStats?.totals.commission_total}
+            prevCommissionService={prevStats?.totals.commission_service}
+            prevCommissionRetail={prevStats?.totals.commission_retail}
           />
 
-          <EmployeeStatCards totals={stats.totals} basisLabel={basisLabel} />
+          <EmployeeStatCards totals={stats.totals} basisLabel={basisLabel} prevTotals={prevStats?.totals} />
 
           <EmployeeTrendChart daily={stats.daily} accentColor={BRAND.spa.soft} />
 

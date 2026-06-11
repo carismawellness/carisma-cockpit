@@ -7,9 +7,10 @@
 // Param handling mirrors app/crm/individual/[slug]/page.tsx (Next 16: params
 // is a Promise unwrapped with React.use()).
 
-import { use } from "react";
+import { use, useMemo } from "react";
 import Link from "next/link";
 import type { EmployeeType } from "@/lib/sales-employees/types";
+import { previousPeriod } from "@/lib/utils/period-comparison";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
 import { CommissionHero, CommissionHeroSkeleton } from "@/components/sales/employees/CommissionHero";
@@ -181,6 +182,9 @@ function SlimmingEmployeeContent({
   const { stats, isLoading, isError, error, notFound } =
     useSalesEmployeeStats("slimming", slug, dateFrom, dateTo);
 
+  const { prevFrom, prevTo } = useMemo(() => previousPeriod(dateFrom, dateTo), [dateFrom, dateTo]);
+  const { stats: prevStats } = useSalesEmployeeStats("slimming", slug, prevFrom, prevTo);
+
   const periodLabel = formatDateRangeLabel(dateFrom, dateTo);
   const extras = (stats?.brand_extras ?? {}) as SlimmingExtras;
   const basisLabel =
@@ -272,9 +276,12 @@ function SlimmingEmployeeContent({
             ratesSet={stats.employee.rates_set}
             accentColor={SLIMMING_SOFT}
             periodLabel={periodLabel}
+            prevCommissionTotal={prevStats?.totals.commission_total}
+            prevCommissionService={prevStats?.totals.commission_service}
+            prevCommissionRetail={prevStats?.totals.commission_retail}
           />
 
-          <EmployeeStatCards totals={stats.totals} basisLabel={basisLabel} />
+          <EmployeeStatCards totals={stats.totals} basisLabel={basisLabel} prevTotals={prevStats?.totals} />
 
           <EmployeeTrendChart daily={stats.daily} accentColor={SLIMMING_GREEN} />
 
