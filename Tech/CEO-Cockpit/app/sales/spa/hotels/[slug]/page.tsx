@@ -344,58 +344,57 @@ function HotelContent({
         </div>
       )}
 
-      {/* ── Day of Week ── */}
+      {/* ── Day of Week + Hour of Day (side by side) ── */}
       {!isLoading && (
-        <Card className="p-5 mb-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-4">Revenue by Day of Week</h3>
-          {dowData.every(d => d.Revenue === 0) ? (
-            <p className="text-xs text-gray-400 py-8 text-center">No day-of-week data for this period</p>
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={dowData} margin={{ top: 20, right: 24, left: 8, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F0EDE8" />
-                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => fmtShort(v)} width={55} />
-                <Tooltip content={<EurTooltip />} />
-                <Bar dataKey="Revenue" fill={hotel.color} radius={[4, 4, 0, 0]}>
-                  <LabelList
-                    dataKey="Revenue"
-                    position="top"
-                    formatter={(v: unknown) => Number(v) > 0 ? fmtShort(Number(v)) : ""}
-                    style={{ fontSize: 10, fontWeight: 600, fill: "#374151" }}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </Card>
-      )}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+          <Card className="p-5">
+            <h3 className="text-sm font-semibold text-gray-700 mb-4">Revenue by Day of Week</h3>
+            {dowData.every(d => d.Revenue === 0) ? (
+              <p className="text-xs text-gray-400 py-8 text-center">No day-of-week data for this period</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={dowData} margin={{ top: 20, right: 16, left: 8, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F0EDE8" />
+                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => fmtShort(v)} width={50} />
+                  <Tooltip content={<EurTooltip />} />
+                  <Bar dataKey="Revenue" fill={hotel.color} radius={[4, 4, 0, 0]}>
+                    <LabelList
+                      dataKey="Revenue"
+                      position="top"
+                      formatter={(v: unknown) => Number(v) > 0 ? fmtShort(Number(v)) : ""}
+                      style={{ fontSize: 10, fontWeight: 600, fill: "#374151" }}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </Card>
 
-      {/* ── Hour of Day ── */}
-      {!isLoading && (
-        <Card className="p-5 mb-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-4">Revenue by Time of Day</h3>
-          {hourData.length === 0 ? (
-            <p className="text-xs text-gray-400 py-8 text-center">No time-of-day data for this period</p>
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={hourData} margin={{ top: 20, right: 24, left: 8, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F0EDE8" />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => fmtShort(v)} width={55} />
-                <Tooltip content={<EurTooltip />} />
-                <Bar dataKey="Revenue" fill={hotel.color} radius={[4, 4, 0, 0]} opacity={0.85}>
-                  <LabelList
-                    dataKey="Revenue"
-                    position="top"
-                    formatter={(v: unknown) => Number(v) > 0 ? fmtShort(Number(v)) : ""}
-                    style={{ fontSize: 10, fontWeight: 600, fill: "#374151" }}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </Card>
+          <Card className="p-5">
+            <h3 className="text-sm font-semibold text-gray-700 mb-4">Revenue by Time of Day</h3>
+            {hourData.length === 0 ? (
+              <p className="text-xs text-gray-400 py-8 text-center">No time-of-day data for this period</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={hourData} margin={{ top: 20, right: 16, left: 8, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F0EDE8" />
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => fmtShort(v)} width={50} />
+                  <Tooltip content={<EurTooltip />} />
+                  <Bar dataKey="Revenue" fill={hotel.color} radius={[4, 4, 0, 0]} opacity={0.85}>
+                    <LabelList
+                      dataKey="Revenue"
+                      position="top"
+                      formatter={(v: unknown) => Number(v) > 0 ? fmtShort(Number(v)) : ""}
+                      style={{ fontSize: 9, fontWeight: 600, fill: "#374151" }}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </Card>
+        </div>
       )}
 
       {/* ── Therapist Chart ── */}
