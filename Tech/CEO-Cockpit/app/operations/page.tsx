@@ -360,11 +360,6 @@ function OperationsContent({
   };
   const totPct = (n: number) => pctOf(n, diligenceTotals.totalSales);
 
-  /* ── Review chart data — snapshot table (worst first) ────────────── */
-  const reviewChartData = [...reviews.snapshots]
-    .sort((a, b) => b.totalReviews - a.totalReviews)
-    .map((l) => ({ ...l, color: LOCATION_COLORS[l.slug] ?? FALLBACK_COLOR }));
-
   // Stacked chart: each weekly item needs slug-keyed newReviews columns
   const allLocationSlugs = reviews.weekly.length > 0
     ? reviews.weekly[reviews.weekly.length - 1].locations.map((l) => l.slug)
@@ -433,11 +428,10 @@ function OperationsContent({
           <h2 className="text-lg font-semibold text-foreground">Reviews Trend</h2>
         </div>
         <p className="text-sm text-muted-foreground mb-4">
-          Weekly net new reviews per location (stacked bars) and avg rating (line) — {totalReviews.toLocaleString()} current total
+          Weekly net new reviews per location — {totalReviews.toLocaleString()} current total
           {reviews.snapshotDate ? ` · snapshot ${format(parseISO(reviews.snapshotDate), "d MMM yyyy")}` : ""}
         </p>
 
-        {/* Trend chart — up to 10 weekly periods */}
         {reviews.weekly.length < 2 ? (
           <div className="flex flex-col items-center justify-center h-[200px] gap-2 text-muted-foreground">
             <span className="text-4xl">📈</span>
@@ -447,121 +441,86 @@ function OperationsContent({
             </p>
           </div>
         ) : (
-          <div className="h-[260px] md:h-[300px] mb-6">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart
-                data={weeklyStackedData}
-                margin={{ top: 10, right: 45, left: 10, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="weekLabel" tick={{ fontSize: 11 }} />
-                <YAxis
-                  yAxisId="left"
-                  tick={{ fontSize: 11 }}
-                  label={{ value: "New Reviews", angle: -90, position: "insideLeft", fontSize: 10, dy: 50 }}
-                />
-                <YAxis
-                  yAxisId="right"
-                  orientation="right"
-                  domain={[4, 5]}
-                  tickFormatter={(v: number) => v.toFixed(1)}
-                  tick={{ fontSize: 11 }}
-                  label={{ value: "Rating", angle: 90, position: "insideRight", fontSize: 10, dy: -25 }}
-                />
-                <Tooltip
-                  formatter={(value: unknown, name: unknown) => {
-                    if (name === "avgRating") return [`${Number(value).toFixed(2)} ★`, "Avg Rating"];
-                    return [String(Number(value)), `+reviews (${String(name)})`];
-                  }}
-                />
-                {allLocationSlugs.map((slug) => (
-                  <Bar
-                    key={slug}
+          <div className="flex gap-4 items-start">
+            {/* Stacked bar chart */}
+            <div className="flex-1 h-[280px] md:h-[320px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart
+                  data={weeklyStackedData}
+                  margin={{ top: 10, right: 10, left: 10, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="weekLabel" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+                  <YAxis
                     yAxisId="left"
-                    dataKey={slug}
-                    stackId="reviews"
-                    fill={LOCATION_COLORS[slug] ?? FALLBACK_COLOR}
-                    fillOpacity={0.85}
-                  >
-                    <LabelList
+                    tick={{ fontSize: 11 }}
+                    label={{ value: "New Reviews", angle: -90, position: "insideLeft", fontSize: 10, dy: 50 }}
+                  />
+                  <Tooltip
+                    formatter={(value: unknown, name: unknown) => {
+                      return [String(Number(value)), `+reviews (${String(name)})`];
+                    }}
+                  />
+                  {allLocationSlugs.map((slug) => (
+                    <Bar
+                      key={slug}
+                      yAxisId="left"
                       dataKey={slug}
-                      position="inside"
-                      content={(props: unknown) => {
-                        const p = props as { x?: number; y?: number; width?: number; height?: number; value?: unknown };
-                        const v = Number(p.value ?? 0);
-                        if (!v || v <= 0 || !p.width || (p.width as number) < 16 || !p.height || (p.height as number) < 12) return <g />;
-                        return (
-                          <text
-                            x={(p.x ?? 0) + (p.width ?? 0) / 2}
-                            y={(p.y ?? 0) + (p.height ?? 0) / 2 + 4}
-                            textAnchor="middle"
-                            fontSize={9}
-                            fontWeight={700}
-                            fill="#fff"
-                          >
-                            +{v}
-                          </text>
-                        );
-                      }}
-                    />
-                  </Bar>
-                ))}
-                <Line
-                  yAxisId="right"
-                  type="monotone"
-                  dataKey="avgRating"
-                  name="avgRating"
-                  stroke="#22C55E"
-                  strokeWidth={2.5}
-                  dot={{ r: 4, fill: "#22C55E" }}
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        )}
+                      stackId="reviews"
+                      fill={LOCATION_COLORS[slug] ?? FALLBACK_COLOR}
+                      fillOpacity={0.85}
+                    >
+                      <LabelList
+                        dataKey={slug}
+                        position="inside"
+                        content={(props: unknown) => {
+                          const p = props as { x?: number; y?: number; width?: number; height?: number; value?: unknown };
+                          const v = Number(p.value ?? 0);
+                          if (!v || v <= 0 || !p.width || (p.width as number) < 16 || !p.height || (p.height as number) < 12) return <g />;
+                          return (
+                            <text
+                              x={(p.x ?? 0) + (p.width ?? 0) / 2}
+                              y={(p.y ?? 0) + (p.height ?? 0) / 2 + 4}
+                              textAnchor="middle"
+                              fontSize={9}
+                              fontWeight={700}
+                              fill="#fff"
+                            >
+                              +{v}
+                            </text>
+                          );
+                        }}
+                      />
+                    </Bar>
+                  ))}
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
 
-        {/* Per-location snapshot table */}
-        {reviewChartData.length > 0 && (
-          <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-              Latest snapshot by location
-            </p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="border-b border-warm-border/50 text-left">
-                    <th className="py-1.5 px-3 text-xs font-semibold text-muted-foreground">Location</th>
-                    <th className="py-1.5 px-3 text-xs font-semibold text-muted-foreground text-right">Reviews</th>
-                    <th className="py-1.5 px-3 text-xs font-semibold text-muted-foreground text-right">Rating</th>
-                    <th className="py-1.5 px-3 text-xs font-semibold text-muted-foreground text-right">vs prev</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {reviewChartData.map((loc) => {
-                    const delta = loc.prevRating != null ? +(loc.avgRating - loc.prevRating).toFixed(2) : null;
-                    return (
-                      <tr key={loc.slug} className="border-b border-warm-border/30 hover:bg-muted/20">
-                        <td className="py-1.5 px-3 font-medium text-foreground">
-                          <span className="inline-block w-2.5 h-2.5 rounded-full mr-2 align-middle" style={{ background: loc.color }} />
-                          {loc.name}
-                        </td>
-                        <td className="py-1.5 px-3 text-right tabular-nums">{loc.totalReviews.toLocaleString()}</td>
-                        <td className="py-1.5 px-3 text-right tabular-nums font-semibold" style={{ color: scoreColor(loc.avgRating) }}>
-                          {loc.avgRating.toFixed(2)} ★
-                        </td>
-                        <td className="py-1.5 px-3 text-right tabular-nums text-xs">
-                          {delta != null
-                            ? <span style={{ color: delta >= 0 ? "#22C55E" : "#EF4444" }}>{delta > 0 ? "+" : ""}{delta.toFixed(2)}</span>
-                            : <span className="text-muted-foreground">—</span>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            {/* Current totals panel — replaces the snapshot table */}
+            <div className="w-44 flex-shrink-0 h-[280px] md:h-[320px] flex flex-col justify-center gap-2.5 border-l border-warm-border/30 pl-4">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">
+                Current totals
+              </p>
+              {[...reviews.snapshots]
+                .sort((a, b) => b.totalReviews - a.totalReviews)
+                .map((loc) => (
+                  <div key={loc.slug} className="flex items-center gap-2">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                      style={{ background: LOCATION_COLORS[loc.slug] ?? FALLBACK_COLOR }}
+                    />
+                    <span className="text-xs text-foreground flex-1 truncate">{loc.name}</span>
+                    <span className="text-xs font-bold tabular-nums text-foreground">
+                      {loc.totalReviews.toLocaleString()}
+                    </span>
+                  </div>
+                ))
+              }
             </div>
           </div>
         )}
+
       </Card>
 
       {/* ═══════ DILIGENCE AUDIT TABLE (Heatmap) ═════════════════════ */}

@@ -82,8 +82,8 @@ interface GoogleReviewRow {
 export function useGoogleReviews(dateTo: Date) {
   const lookup = useLocationsLookup();
   const toStr = format(dateTo, "yyyy-MM-dd");
-  // Fetch up to 11 weeks back for trend (77 days × 10 locations = ~770 rows)
-  const fromStr = format(subDays(dateTo, 77), "yyyy-MM-dd");
+  // Fetch full history from 2023-01-01 so deltas are accurate for every visible week
+  const fromStr = "2023-01-01";
 
   const queryResult = useQuery({
     queryKey: ["google_reviews_trend", toStr],
@@ -98,7 +98,7 @@ export function useGoogleReviews(dateTo: Date) {
         .lte("date", toStr)
         .gte("date", fromStr)
         .order("date", { ascending: false })
-        .limit(1100);
+        .limit(50000);
       if (error) throw new Error(error.message);
 
       // Fallback: no data in range — show latest available
@@ -169,10 +169,7 @@ export function useGoogleReviews(dateTo: Date) {
         if (!existing || row.date >= existing.date) bucket.set(row.location_id, row);
       }
 
-      // Last 10 weekly periods, oldest-first for chart
-      const sortedWeeks = Array.from(weekBuckets.keys()).sort().reverse().slice(0, 10).reverse();
-
-      // Build per-location total per week for delta computation
+      // Build per-location total per week from real ETL snapshots
       const weekLocTotals: Map<string, Map<number, number>> = new Map();
       for (const [weekStart, bucket] of weekBuckets) {
         const locMap = new Map<number, number>();
@@ -182,24 +179,59 @@ export function useGoogleReviews(dateTo: Date) {
         weekLocTotals.set(weekStart, locMap);
       }
 
-      const weekly: WeeklyReviewSummary[] = sortedWeeks.map((weekStart, idx) => {
-        const bucket = weekBuckets.get(weekStart)!;
-        const prevWeekStart = idx > 0 ? sortedWeeks[idx - 1] : null;
-        const prevTotals = prevWeekStart ? weekLocTotals.get(prevWeekStart) : null;
+      // Gap-fill: generate every calendar week from the first to the last ETL run,
+      // carrying forward the previous known totals for weeks the ETL didn't run.
+      // This prevents false spikes when multiple gap weeks accumulate into one bar.
+      const allWeeksWithData = Array.from(weekBuckets.keys()).sort();
+      const allCalendarWeeks: string[] = [];
+      if (allWeeksWithData.length > 0) {
+        const startDate = parseISO(allWeeksWithData[0]);
+        const endDate = parseISO(allWeeksWithData[allWeeksWithData.length - 1]);
+        let cur = startDate;
+        while (cur <= endDate) {
+          allCalendarWeeks.push(format(cur, "yyyy-MM-dd"));
+          cur = new Date(cur.getTime() + 7 * 86400000);
+        }
+      }
+
+      // For each calendar week: real data if ETL ran, else carry forward previous totals
+      const filledLocTotals: Map<string, Map<number, number>> = new Map();
+      {
+        let prev: Map<number, number> = new Map();
+        for (const weekStart of allCalendarWeeks) {
+          const real = weekLocTotals.get(weekStart);
+          if (real && real.size > 0) {
+            filledLocTotals.set(weekStart, real);
+            prev = real;
+          } else {
+            filledLocTotals.set(weekStart, new Map(prev));
+          }
+        }
+      }
+
+      const weekly: WeeklyReviewSummary[] = allCalendarWeeks.map((weekStart, idx) => {
+        const prevWeekStart = idx > 0 ? allCalendarWeeks[idx - 1] : null;
+        const prevTotals = prevWeekStart ? filledLocTotals.get(prevWeekStart) : null;
+        const currentTotals = filledLocTotals.get(weekStart)!;
+        const realBucket = weekBuckets.get(weekStart);
 
         let total = 0, weightedRating = 0;
         const locations: WeeklyReviewSummary["locations"] = [];
 
-        for (const [locId, row] of bucket) {
-          const rev = Number(row.total_reviews ?? 0);
+        for (const [locId, rev] of currentTotals) {
           total += rev;
-          weightedRating += Number(row.avg_rating ?? 0) * rev;
-
-          const prevRev = prevTotals?.get(locId) ?? null;
-          const newReviews = prevRev !== null ? Math.max(0, rev - prevRev) : 0;
           const info = byId.get(locId);
-          if (info) {
-            locations.push({ slug: info.slug, name: info.name, newReviews });
+          if (!info) continue;
+          const prevRev = prevTotals?.get(locId) ?? null;
+          // Can only go up: negative delta means data anomaly, clamp to 0
+          const newReviews = prevRev !== null ? Math.max(0, rev - prevRev) : 0;
+          locations.push({ slug: info.slug, name: info.name, newReviews });
+        }
+
+        // Rating only from real ETL snapshots (not gap-filled weeks)
+        if (realBucket) {
+          for (const [, row] of realBucket) {
+            weightedRating += Number(row.avg_rating ?? 0) * Number(row.total_reviews ?? 0);
           }
         }
 
