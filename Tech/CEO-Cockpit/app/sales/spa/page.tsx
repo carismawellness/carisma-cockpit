@@ -141,18 +141,36 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analytics.staff, getSpaSalary]);
 
-  /* ── Guest group chart data ──────────────────────────────────── */
+  /* ── Guest group chart data (% of bookings by count) ───────── */
   const guestChartData = useMemo(() =>
-    analytics.guestGroups.map((g) => ({
-      name: g.name,
-      "Hotel Guests": g.hotel_revenue,
-      "Non-Hotel":    g.non_hotel_revenue,
-      hotelPct: (g.hotel_revenue + g.non_hotel_revenue) > 0
-        ? Math.round(g.hotel_revenue / (g.hotel_revenue + g.non_hotel_revenue) * 100)
-        : 0,
-    })),
+    analytics.guestGroups
+      .filter(g => (g.hotel_count + g.non_hotel_count) > 0)
+      .map((g) => {
+        const total    = g.hotel_count + g.non_hotel_count;
+        const hotelPct = Math.round((g.hotel_count / total) * 100);
+        return {
+          name:           g.name,
+          "Hotel Guests": hotelPct,
+          "Non-Hotel":    100 - hotelPct,
+          hotelCount:     g.hotel_count,
+          nonHotelCount:  g.non_hotel_count,
+          total,
+        };
+      })
+      .sort((a, b) => b.total - a.total),
     [analytics.guestGroups]
   );
+
+  const overallGuestMix = useMemo(() => {
+    const hotelCount    = analytics.guestGroups.reduce((s, g) => s + g.hotel_count, 0);
+    const nonHotelCount = analytics.guestGroups.reduce((s, g) => s + g.non_hotel_count, 0);
+    const total         = hotelCount + nonHotelCount;
+    return {
+      hotelPct:    total > 0 ? Math.round((hotelCount / total) * 100) : 0,
+      hotelCount,
+      total,
+    };
+  }, [analytics.guestGroups]);
 
   /* ── Payment type by location (100% stacked) ────────────────── */
   const paymentByLocationData = useMemo(() =>
@@ -243,7 +261,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
       )}
 
       {/* ── KPI Row ─────────────────────────────────────────────────── */}
-      <SalesKPIGrid columns={3}>
+      <SalesKPIGrid columns={4}>
         <SalesKPICard
           label="Gross Revenue"
           value={fmtShort(totals.gross_revenue)}
@@ -261,6 +279,11 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
           value={fmtShort(totals.product_total)}
           subtitle={`${pct(totals.product_total, totals.gross_revenue)} of gross`}
           yoyChange={yoy.retail}
+        />
+        <SalesKPICard
+          label="Hotel Guests"
+          value={analytics.isFetching ? "…" : `${overallGuestMix.hotelPct}%`}
+          subtitle={`of bookings · ${overallGuestMix.total.toLocaleString()} total visits`}
         />
       </SalesKPIGrid>
 
@@ -358,11 +381,11 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
       {/* ── Guest Revenue Mix + Payment Type (side by side) ──────────── */}
       {(analytics.isFetching || guestChartData.length > 0 || paymentByLocationData.length > 0) && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Guest Revenue Mix */}
+          {/* Guest Mix by Venue */}
           <Card className="p-4 md:p-6">
-            <h2 className="text-lg font-semibold text-foreground mb-1">Guest Revenue Mix</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-1">Guest Mix by Venue</h2>
             <p className="text-xs text-muted-foreground mb-5">
-              Hotel vs non-hotel by venue · ex-VAT
+              Hotel vs non-hotel guest share · % of bookings per venue
             </p>
             {analytics.isFetching ? (
               <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
@@ -375,27 +398,33 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={guestChartData}
-                    margin={{ top: 20, right: 12, left: 8, bottom: 32 }}
+                    margin={{ top: 8, right: 12, left: 8, bottom: 32 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" vertical={false} />
                     <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-30} textAnchor="end" interval={0} />
-                    <YAxis tickFormatter={(v: number) => fmtShort(v)} tick={{ fontSize: 11 }} />
-                    <Tooltip formatter={(v: unknown, name: unknown) => [fmtShort(Number(v)), String(name)]} />
+                    <YAxis tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11 }} domain={[0, 100]} />
+                    <Tooltip
+                      formatter={(v: unknown, name: unknown, props: { payload?: { hotelCount?: number; nonHotelCount?: number; total?: number } }) => {
+                        const d = props.payload;
+                        const count = name === "Hotel Guests" ? d?.hotelCount : d?.nonHotelCount;
+                        return [`${v}% (${count ?? 0} visits)`, String(name)];
+                      }}
+                    />
                     <Legend />
-                    <Bar dataKey="Hotel Guests" stackId="a" fill={BRAND.spa.soft}>
+                    <Bar dataKey="Hotel Guests" stackId="a" fill={BRAND.spa.dark}>
                       <LabelList
-                        dataKey="hotelPct"
+                        dataKey="Hotel Guests"
                         position="inside"
-                        formatter={(v: unknown) => Number(v) > 15 ? `${v}%` : ""}
+                        formatter={(v: unknown) => Number(v) >= 12 ? `${v}%` : ""}
                         style={{ fontSize: 10, fontWeight: 700, fill: "#fff" }}
                       />
                     </Bar>
                     <Bar dataKey="Non-Hotel" stackId="a" fill={BRAND.spa.soft} radius={[4, 4, 0, 0]}>
                       <LabelList
                         dataKey="Non-Hotel"
-                        position="top"
-                        formatter={(v: unknown) => fmtShort(Number(v))}
-                        style={{ fontSize: 9, fontWeight: 600, fill: "#374151" }}
+                        position="inside"
+                        formatter={(v: unknown) => Number(v) >= 12 ? `${v}%` : ""}
+                        style={{ fontSize: 10, fontWeight: 700, fill: "#6B5E4E" }}
                       />
                     </Bar>
                   </BarChart>
