@@ -122,7 +122,7 @@ function SpaRetailContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }
           <SalesKPICard
             label="Average Sale"
             value={isLoading ? "—" : fmtK(retail.totals.aov)}
-            subtitle="Per retail transaction (inc-VAT)"
+            subtitle="Per line item (inc-VAT)"
             icon={Users}
           />
         </div>
@@ -282,7 +282,14 @@ function SpaRetailContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }
                   formatter={(v: unknown, name) => [fmtK(Number(v)), String(name ?? "")]}
                   cursor={{ fill: "rgba(0,0,0,0.03)" }}
                 />
-                <Bar dataKey="profit" name="Est. profit (80%)" stackId="r" fill={BRAND.spa.dark} />
+                <Bar dataKey="profit" name="Est. profit (80%)" stackId="r" fill={BRAND.spa.dark}>
+                  <LabelList
+                    dataKey="profit"
+                    position="insideRight"
+                    formatter={(v: unknown) => fmtK(Number(v))}
+                    style={{ fontSize: 10, fontWeight: 700, fill: "#ffffff" }}
+                  />
+                </Bar>
                 <Bar dataKey="cogs"   name="COGS (20%)"        stackId="r" fill={BRAND.spa.soft} radius={[0, 4, 4, 0]}>
                   <LabelList
                     dataKey="revenue"
