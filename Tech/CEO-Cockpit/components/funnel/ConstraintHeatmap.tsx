@@ -12,6 +12,7 @@ import {
   OVERALL_CONVERSION_BENCHMARK,
   LEADS_PER_DAY_PER_AGENT_MIN,
 } from "@/lib/funnel/constraint-detection";
+import { toLocalDateStr } from "@/lib/utils/dates";
 import { BRAND } from "@/lib/constants/design-tokens";
 import type { BrandHeatmapMetrics } from "@/app/api/funnel/constraint-heatmap/route";
 
@@ -185,8 +186,8 @@ export function ConstraintHeatmap({ dateFrom, dateTo }: Props) {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
-    const from = dateFrom.toISOString().slice(0, 10);
-    const to   = dateTo.toISOString().slice(0, 10);
+    const from = toLocalDateStr(dateFrom);
+    const to   = toLocalDateStr(dateTo);
     setLoading(true);
     fetch(`/api/funnel/constraint-heatmap?from=${from}&to=${to}`)
       .then(r => r.json())

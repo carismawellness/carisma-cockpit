@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/charts/config";
+import { toLocalDateStr } from "@/lib/utils/dates";
 import { BRAND, type BrandKey } from "@/lib/constants/design-tokens";
 import {
   overallConversionSeverity,
@@ -176,8 +177,8 @@ export function CampaignFunnelPanel({ dateFrom, dateTo }: Props) {
   const [loading, setLoading]     = useState(true);
 
   useEffect(() => {
-    const from = dateFrom.toISOString().slice(0, 10);
-    const to   = dateTo.toISOString().slice(0, 10);
+    const from = toLocalDateStr(dateFrom);
+    const to   = toLocalDateStr(dateTo);
     setLoading(true);
     fetch(`/api/funnel/campaign-drilldown?from=${from}&to=${to}`)
       .then(r => r.json())

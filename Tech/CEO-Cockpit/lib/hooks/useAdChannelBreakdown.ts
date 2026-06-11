@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { toLocalDateStr } from "@/lib/utils/dates";
 
 export type AdChannelBreakdown = {
   channelTotals: Record<string, number>;
@@ -10,7 +11,7 @@ export type AdChannelBreakdown = {
   date_to:       string;
 };
 
-function toIso(d: Date) { return d.toISOString().slice(0, 10); }
+const toIso = toLocalDateStr;
 
 /**
  * Fetches advertising channel shares (Meta/Google/Klaviyo/Misc) from

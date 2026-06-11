@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { toLocalDateStr } from "@/lib/utils/dates";
 
 export type WageRoleBreakdown = {
   byVenueRole:        Record<string, Record<string, number>>;
@@ -16,9 +17,7 @@ export type WageRoleData = {
   total:    number;
 };
 
-function toIso(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
+const toIso = toLocalDateStr;
 
 function transformBreakdown(raw: WageRoleBreakdown): WageRoleData {
   const roles: Record<string, number> = {};
