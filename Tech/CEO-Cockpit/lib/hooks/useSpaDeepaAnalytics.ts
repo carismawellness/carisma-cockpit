@@ -47,12 +47,44 @@ export interface DiscountLocation {
   avg_order_value: number;
 }
 
+export interface DowByLocationPoint {
+  day_of_week: number;            // 1=Mon … 7=Sun
+  day_label:   string;            // "Mon" / "Tue" / …
+  by_location: Record<number, number>;  // location_id → revenue (inc-VAT)
+}
+
+export interface HourByLocationPoint {
+  hour:        number;            // 0–23
+  by_location: Record<number, number>;
+}
+
+export interface TherapistRow {
+  therapist:     string;
+  revenue:       number;          // inc-VAT
+  service_count: number;
+}
+
+export interface ComplimentaryLocation {
+  location_id:           number;
+  name:                  string;
+  color:                 string;
+  complimentary_revenue: number;  // inc-VAT (Payment Type === "Payment Center")
+  total_revenue:         number;  // inc-VAT — all payment types at this location
+  complimentary_pct:     number;  // 0–100
+  complimentary_count:   number;
+  total_count:           number;
+}
+
 export interface SpaDeepaAnalyticsResult {
   staff: StaffMember[];
   guestGroups: GuestGroupLocation[];
   paymentTypes: PaymentType[];
   paymentByLocation: PaymentByLocation[];
   discounts: DiscountLocation[];
+  byDayOfWeek:  DowByLocationPoint[];
+  byHourOfDay:  HourByLocationPoint[];
+  byTherapist:  TherapistRow[];
+  complimentary: ComplimentaryLocation[];
   isFetching: boolean;
   error: string | null;
 }
@@ -71,6 +103,10 @@ interface ApiResponse {
   payment_types: Array<{ type: string; revenue: number; count: number }>;
   payment_by_location: PaymentByLocation[];
   discounts: DiscountLocation[];
+  by_day_of_week: DowByLocationPoint[];
+  by_hour_of_day: HourByLocationPoint[];
+  by_therapist:   TherapistRow[];
+  complimentary:  ComplimentaryLocation[];
 }
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
@@ -106,6 +142,10 @@ export function useSpaDeepaAnalytics(dateFrom: Date, dateTo: Date): SpaDeepaAnal
     paymentTypes,
     paymentByLocation:  data?.payment_by_location ?? [],
     discounts:          data?.discounts           ?? [],
+    byDayOfWeek:        data?.by_day_of_week      ?? [],
+    byHourOfDay:        data?.by_hour_of_day      ?? [],
+    byTherapist:        data?.by_therapist        ?? [],
+    complimentary:      data?.complimentary       ?? [],
     isFetching,
     error:              error ? (error as Error).message : null,
   };

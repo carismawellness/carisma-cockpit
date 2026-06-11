@@ -5,6 +5,13 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { SalesKPICard } from "@/components/sales/SalesKPICard";
 import { SalesKPIGrid } from "@/components/sales/SalesKPIGrid";
 import { StaffPerformanceChart } from "@/components/sales/StaffPerformanceChart";
+import {
+  SpaDayOfWeekChart,
+  SpaHourOfDayChart,
+  SpaTherapistChart,
+  SpaDiscountByClubSection,
+  SpaComplimentaryByClubSection,
+} from "@/components/sales/SpaDeepaInsights";
 import { Card } from "@/components/ui/card";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useSpaRevenue } from "@/lib/hooks/useSpaRevenue";
@@ -620,6 +627,17 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
             </BarChart>
           </ResponsiveContainer>
         </Card>
+      )}
+
+      {/* ── New Deepa insights: timing, therapist, discount, complimentary ── */}
+      {!analytics.isFetching && (
+        <>
+          <SpaDayOfWeekChart data={analytics.byDayOfWeek} />
+          <SpaHourOfDayChart data={analytics.byHourOfDay} />
+          <SpaTherapistChart data={analytics.byTherapist} />
+          <SpaDiscountByClubSection data={analytics.discounts} />
+          <SpaComplimentaryByClubSection data={analytics.complimentary} />
+        </>
       )}
 
       {!isLoading && locations.length === 0 && (

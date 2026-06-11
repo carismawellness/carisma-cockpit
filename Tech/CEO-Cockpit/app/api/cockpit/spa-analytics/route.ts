@@ -54,6 +54,16 @@ function parseCSVRow(line: string): string[] {
   return cells;
 }
 
+/** Extract 0-23 hour from a "HH:mm" / "HH:mm:ss" / "HH.mm" string. */
+function parseHourOfDay(raw: string): number | null {
+  if (!raw) return null;
+  const m = raw.trim().match(/^(\d{1,2})[:\.](\d{1,2})/);
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  if (!Number.isFinite(h) || h < 0 || h > 23) return null;
+  return h;
+}
+
 const MONTH_NAMES: Record<string, number> = {
   january:0,february:1,march:2,april:3,may:4,june:5,
   july:6,august:7,september:8,october:9,november:10,december:11,
@@ -156,12 +166,48 @@ interface PaymentTypeByLocation {
   payment_types: Record<string, number>; // payType → revenue (ex-VAT)
 }
 
+interface DowByLocationPoint {
+  day_of_week: number;   // 1 = Monday … 7 = Sunday
+  day_label:   string;   // "Mon" / "Tue" / …
+  by_location: Record<number, number>; // location_id → revenue (inc-VAT)
+}
+
+interface HourByLocationPoint {
+  hour:        number;   // 0–23
+  by_location: Record<number, number>; // location_id → revenue (inc-VAT)
+}
+
+interface TherapistRow {
+  therapist:    string;
+  revenue:      number;  // inc-VAT
+  service_count: number;
+}
+
+interface ComplimentaryEntry {
+  location_id:        number;
+  name:               string;
+  color:              string;
+  complimentary_revenue: number;  // inc-VAT — only Payment Type === "Payment Center"
+  total_revenue:       number;    // inc-VAT — all payment types
+  complimentary_pct:   number;    // 0-100
+  complimentary_count: number;
+  total_count:         number;
+}
+
 interface SpaAnalyticsResponse {
   staff_combined: StaffCombined[];
   guest_groups: GuestGroup[];
   payment_types: PaymentType[];
   payment_by_location: PaymentTypeByLocation[];
   discounts: DiscountEntry[];
+  /** Sales by day of week, broken out by club. Useful for staffing/scheduling. */
+  by_day_of_week: DowByLocationPoint[];
+  /** Sales by service-start hour, broken out by club. */
+  by_hour_of_day: HourByLocationPoint[];
+  /** Therapist utilization — sum of unit price per therapist (Column G). */
+  by_therapist: TherapistRow[];
+  /** Complimentary breakdown per club (Payment Type === 'Payment Center'). */
+  complimentary: ComplimentaryEntry[];
   // Optional. Populated only when the requested date range straddles
   // 2025-01-01 AND part of it falls in a known data-gap window (e.g. the
   // 2023-09 → 2024-12 hole between the historic backfill and live ETL).
@@ -217,6 +263,15 @@ function computeAnalytics(
     total_txn_count: number;
   }> = {};
 
+  // Day-of-week accumulators: dow (1=Mon…7=Sun) → locId → revenue (inc-VAT)
+  const dowAcc: Record<number, Record<number, number>> = {};
+  // Hour-of-day accumulators: hour (0-23) → locId → revenue (inc-VAT)
+  const hourAcc: Record<number, Record<number, number>> = {};
+  // Therapist utilization: therapist name → { revenue inc-VAT, service count }
+  const therapistAcc: Record<string, { revenue: number; service_count: number }> = {};
+  // Complimentary (Payment Type === "Payment Center"): locId → { comp_revenue, comp_count }
+  const complimentaryAcc: Record<number, { comp_revenue: number; comp_count: number }> = {};
+
   // ── Process services sheet ──────────────────────────────────────────────────
   for (const row of serviceRows) {
     if (!["Given", "Unplanned"].includes(stripCol(row, "Status"))) continue;
@@ -270,6 +325,48 @@ function computeAnalytics(
       discountAcc[locId].gross_list_revenue   += listPriceEx;
       discountAcc[locId].net_unit_revenue     += unitPriceEx;
       discountAcc[locId].discounted_txn_count += 1;
+    }
+
+    // ── New cuts: by day of week, by hour, by therapist, complimentary ────
+    // Day of week: 1 = Monday … 7 = Sunday (ISO).
+    const jsDow = d.getDay();             // 0 = Sun … 6 = Sat
+    const isoDow = jsDow === 0 ? 7 : jsDow;
+    if (!dowAcc[isoDow]) dowAcc[isoDow] = {};
+    dowAcc[isoDow][locId] = (dowAcc[isoDow][locId] ?? 0) + unitPriceInc;
+
+    // Hour of day from the "Time of Service (Service Start Time)" column.
+    // Format usually "HH:mm" or "HH:mm:ss"; tolerant of "HH.mm".
+    const timeRaw = stripCol(row, "Time of Service (Service Start Time)")
+                 || stripCol(row, "Service Start Time")
+                 || stripCol(row, "Time of Service");
+    const hour = parseHourOfDay(timeRaw);
+    if (hour !== null) {
+      if (!hourAcc[hour]) hourAcc[hour] = {};
+      hourAcc[hour][locId] = (hourAcc[hour][locId] ?? 0) + unitPriceInc;
+    }
+
+    // Therapist — Column G is "Therapist (Employee(s))" in the historic /
+    // master sheet. Fall back to "Employee(s)" / "Therapist" / "Sold By"
+    // so the cut doesn't blow up if the live tab renames the column.
+    const therapist = (
+      stripCol(row, "Therapist (Employee(s))") ||
+      stripCol(row, "Employee(s)") ||
+      stripCol(row, "Therapist") ||
+      stripCol(row, "Sold By")
+    ).replace(/\s+/g, " ").trim();
+    if (therapist) {
+      const cur = therapistAcc[therapist] ?? { revenue: 0, service_count: 0 };
+      cur.revenue       += unitPriceInc;
+      cur.service_count += 1;
+      therapistAcc[therapist] = cur;
+    }
+
+    // Complimentary — Payment Type === "Payment Center" (case-insensitive,
+    // ignoring trailing whitespace).
+    if (!complimentaryAcc[locId]) complimentaryAcc[locId] = { comp_revenue: 0, comp_count: 0 };
+    if (payType.replace(/\s+/g, " ").trim().toLowerCase() === "payment center") {
+      complimentaryAcc[locId].comp_revenue += unitPriceInc;
+      complimentaryAcc[locId].comp_count   += 1;
     }
   }
 
@@ -365,12 +462,66 @@ function computeAnalytics(
     })
     .sort((a, b) => a.location_id - b.location_id);
 
+  // ── Build by_day_of_week / by_hour_of_day ──────────────────────────────────
+  const DOW_LABELS = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const by_day_of_week: DowByLocationPoint[] = [];
+  for (let dow = 1; dow <= 7; dow++) {
+    const byLoc: Record<number, number> = {};
+    const rec = dowAcc[dow] ?? {};
+    for (const [k, v] of Object.entries(rec)) byLoc[Number(k)] = +v.toFixed(2);
+    by_day_of_week.push({ day_of_week: dow, day_label: DOW_LABELS[dow], by_location: byLoc });
+  }
+
+  const by_hour_of_day: HourByLocationPoint[] = [];
+  for (let h = 0; h < 24; h++) {
+    const byLoc: Record<number, number> = {};
+    const rec = hourAcc[h] ?? {};
+    for (const [k, v] of Object.entries(rec)) byLoc[Number(k)] = +v.toFixed(2);
+    by_hour_of_day.push({ hour: h, by_location: byLoc });
+  }
+
+  // ── Build by_therapist (sorted desc by revenue) ────────────────────────────
+  const by_therapist: TherapistRow[] = Object.entries(therapistAcc)
+    .map(([therapist, v]) => ({
+      therapist,
+      revenue:       +v.revenue.toFixed(2),
+      service_count: v.service_count,
+    }))
+    .sort((a, b) => b.revenue - a.revenue);
+
+  // ── Build complimentary ────────────────────────────────────────────────────
+  const complimentary: ComplimentaryEntry[] = Object.entries(SPA_LOCATION_META)
+    .map(([idStr, meta]) => {
+      const locId = Number(idStr);
+      const comp  = complimentaryAcc[locId] ?? { comp_revenue: 0, comp_count: 0 };
+      const totalAcc = discountAcc[locId] ?? { all_net_revenue: 0, total_txn_count: 0 };
+      // total revenue is ex-VAT in discountAcc; convert to inc-VAT for parity
+      // with complimentary (which we stored inc-VAT above).
+      const totalRevenueInc = totalAcc.all_net_revenue * (1 + VAT_RATE);
+      const pct = totalRevenueInc > 0 ? (comp.comp_revenue / totalRevenueInc) * 100 : 0;
+      return {
+        location_id:           locId,
+        name:                  meta.name,
+        color:                 meta.color,
+        complimentary_revenue: +comp.comp_revenue.toFixed(2),
+        total_revenue:         +totalRevenueInc.toFixed(2),
+        complimentary_pct:     +pct.toFixed(2),
+        complimentary_count:   comp.comp_count,
+        total_count:           totalAcc.total_txn_count,
+      };
+    })
+    .sort((a, b) => a.location_id - b.location_id);
+
   return {
     staff_combined:      staffCombined,
     guest_groups:        guestGroups,
     payment_types:       paymentTypes,
     payment_by_location: paymentByLocation,
     discounts,
+    by_day_of_week,
+    by_hour_of_day,
+    by_therapist,
+    complimentary,
   };
 }
 
@@ -601,6 +752,14 @@ function buildAnalyticsResponse(acc: AccBundle): SpaAnalyticsResponse {
     payment_types:       paymentTypes,
     payment_by_location: paymentByLocation,
     discounts,
+    // The historic-sheet path doesn't have time-of-day / payment-type / therapist
+    // detail in the audited columns yet, so we return empty arrays. The UI
+    // gracefully renders the "no data" branch for these sections in pre-2025
+    // periods.
+    by_day_of_week:      [],
+    by_hour_of_day:      [],
+    by_therapist:        [],
+    complimentary:       [],
   };
 }
 
@@ -762,11 +921,54 @@ function mergeAnalytics(a: SpaAnalyticsResponse, b: SpaAnalyticsResponse): SpaAn
     delete cur._allNet;
   }
 
+  // Merge the new dimensions — additive sums per (location, day-of-week / hour /
+  // therapist). Pre-2025 (historic) returns empty arrays so it's an additive no-op.
+  const mergedDow: DowByLocationPoint[] = [];
+  for (let dow = 1; dow <= 7; dow++) {
+    const aRec = a.by_day_of_week.find((p) => p.day_of_week === dow)?.by_location ?? {};
+    const bRec = b.by_day_of_week.find((p) => p.day_of_week === dow)?.by_location ?? {};
+    const merged: Record<number, number> = { ...aRec };
+    for (const [k, v] of Object.entries(bRec)) merged[+k] = +(((merged[+k] ?? 0) + v).toFixed(2));
+    mergedDow.push({ day_of_week: dow, day_label: ["", "Mon","Tue","Wed","Thu","Fri","Sat","Sun"][dow], by_location: merged });
+  }
+
+  const mergedHour: HourByLocationPoint[] = [];
+  for (let h = 0; h < 24; h++) {
+    const aRec = a.by_hour_of_day.find((p) => p.hour === h)?.by_location ?? {};
+    const bRec = b.by_hour_of_day.find((p) => p.hour === h)?.by_location ?? {};
+    const merged: Record<number, number> = { ...aRec };
+    for (const [k, v] of Object.entries(bRec)) merged[+k] = +(((merged[+k] ?? 0) + v).toFixed(2));
+    mergedHour.push({ hour: h, by_location: merged });
+  }
+
+  const thMap = new Map<string, TherapistRow>();
+  for (const t of [...a.by_therapist, ...b.by_therapist]) {
+    const cur = thMap.get(t.therapist) ?? { therapist: t.therapist, revenue: 0, service_count: 0 };
+    cur.revenue       = +(cur.revenue + t.revenue).toFixed(2);
+    cur.service_count = cur.service_count + t.service_count;
+    thMap.set(t.therapist, cur);
+  }
+
+  const compMap = new Map<number, ComplimentaryEntry>();
+  for (const c of [...a.complimentary, ...b.complimentary]) {
+    const cur = compMap.get(c.location_id) ?? { ...c, complimentary_revenue: 0, total_revenue: 0, complimentary_pct: 0, complimentary_count: 0, total_count: 0 };
+    cur.complimentary_revenue = +(cur.complimentary_revenue + c.complimentary_revenue).toFixed(2);
+    cur.total_revenue         = +(cur.total_revenue + c.total_revenue).toFixed(2);
+    cur.complimentary_count   = cur.complimentary_count + c.complimentary_count;
+    cur.total_count           = cur.total_count + c.total_count;
+    cur.complimentary_pct     = cur.total_revenue > 0 ? +((cur.complimentary_revenue / cur.total_revenue) * 100).toFixed(2) : 0;
+    compMap.set(c.location_id, cur);
+  }
+
   return {
     staff_combined,
     guest_groups:        [...ggMap.values()].sort((x, y) => x.location_id - y.location_id),
     payment_types:       [...ptMap.values()].sort((x, y) => y.revenue - x.revenue),
     payment_by_location: [...pblMap.values()].sort((x, y) => x.location_id - y.location_id),
     discounts:           [...dMap.values()].sort((x, y) => x.location_id - y.location_id),
+    by_day_of_week:      mergedDow,
+    by_hour_of_day:      mergedHour,
+    by_therapist:        [...thMap.values()].sort((x, y) => y.revenue - x.revenue),
+    complimentary:       [...compMap.values()].sort((x, y) => x.location_id - y.location_id),
   };
 }
