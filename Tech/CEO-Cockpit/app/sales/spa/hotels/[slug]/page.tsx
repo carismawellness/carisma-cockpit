@@ -7,14 +7,18 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { SalesKPICard } from "@/components/sales/SalesKPICard";
 import { Card } from "@/components/ui/card";
 import { useSpaDeepaAnalytics } from "@/lib/hooks/useSpaDeepaAnalytics";
+import { useIsAdmin } from "@/lib/hooks/useIsAdmin";
 import { HOTEL_SLUG_MAP } from "@/lib/constants/spa-hotel-slugs";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LabelList, Cell,
   PieChart, Pie, Legend,
 } from "recharts";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Lock } from "lucide-react";
 import Link from "next/link";
+
+// Rolling window enforced for non-admin users (mirrors API-side constant)
+const HOTEL_MAX_LOOKBACK_MONTHS = 6;
 
 const VAT_RATE = 0.18;
 
@@ -135,14 +139,19 @@ function HotelContent({
   hotel,
   dateFrom,
   dateTo,
+  isAdmin,
+  isClamped,
 }: {
   hotel: ReturnType<typeof Object.values<(typeof HOTEL_SLUG_MAP)[string]>>[number];
   dateFrom: Date;
   dateTo: Date;
+  isAdmin: boolean;
+  isClamped: boolean;
 }) {
   const analytics = useSpaDeepaAnalytics(dateFrom, dateTo, hotel.locId);
 
-  /* ── Prior-year window for YoY ────────────────────────────────────── */
+  /* ── Prior-year window for YoY (admins only — non-admins' prior period
+       would fall outside the 6-month cap so YoY is meaningless there) ── */
   const priorDateFrom = useMemo(
     () => new Date(dateFrom.getFullYear() - 1, dateFrom.getMonth(), dateFrom.getDate()),
     [dateFrom]
@@ -151,7 +160,12 @@ function HotelContent({
     () => new Date(dateTo.getFullYear() - 1, dateTo.getMonth(), dateTo.getDate()),
     [dateTo]
   );
-  const priorAnalytics = useSpaDeepaAnalytics(priorDateFrom, priorDateTo, hotel.locId);
+  // Pass location_id only for admins — non-admins would hit the API cap anyway
+  const priorAnalytics = useSpaDeepaAnalytics(
+    priorDateFrom,
+    priorDateTo,
+    isAdmin ? hotel.locId : undefined
+  );
 
   /* ── KPI totals ───────────────────────────────────────────────────── */
   const kpis = useMemo(() => {
@@ -282,6 +296,19 @@ function HotelContent({
         <span className="text-sm font-semibold" style={{ color: hotel.color }}>{hotel.name}</span>
       </div>
 
+      {/* Data restriction banner — shown when non-admin date range was clamped */}
+      {isClamped && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 mb-4 text-sm">
+          <Lock className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+          <div>
+            <span className="font-semibold text-amber-800">Data restricted to the last {HOTEL_MAX_LOOKBACK_MONTHS} months.</span>
+            <span className="text-amber-700 ml-1">
+              Your earliest available date is {dateFrom.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}. Contact an administrator to view older data.
+            </span>
+          </div>
+        </div>
+      )}
+
       {isLoading && (
         <div className="text-center py-12 text-gray-400 text-sm">Loading hotel data…</div>
       )}
@@ -302,28 +329,28 @@ function HotelContent({
               label="Total Revenue"
               value={fmtShort(kpis.totalInc)}
               subtitle="inc. VAT"
-              yoyChange={kpis.yoyTotal}
+              yoyChange={isAdmin ? kpis.yoyTotal : undefined}
               yoyLabel="vs LY"
             />
             <SalesKPICard
               label="Service Revenue"
               value={fmtShort(kpis.serviceInc)}
               subtitle={`${Math.round((kpis.serviceInc / (kpis.totalInc || 1)) * 100)}% of total`}
-              yoyChange={kpis.yoyService}
+              yoyChange={isAdmin ? kpis.yoyService : undefined}
               yoyLabel="vs LY"
             />
             <SalesKPICard
               label="Retail Revenue"
               value={fmtShort(kpis.retailInc)}
               subtitle={`${kpis.retailPct}% of total`}
-              yoyChange={kpis.yoyRetail}
+              yoyChange={isAdmin ? kpis.yoyRetail : undefined}
               yoyLabel="vs LY"
             />
             <SalesKPICard
               label="Total Discounts"
               value={fmtShort(kpis.discountInc)}
               subtitle={`${kpis.discountPct}% of total`}
-              yoyChange={kpis.yoyDiscount}
+              yoyChange={isAdmin ? kpis.yoyDiscount : undefined}
               yoyLabel="vs LY"
             />
           </div>
@@ -520,6 +547,45 @@ function HotelContent({
   );
 }
 
+/* ── Date-gate wrapper (enforces 6-month cap for non-admins) ─────────── */
+
+function HotelDateGate({
+  hotel,
+  rawDateFrom,
+  dateTo,
+}: {
+  hotel: (typeof HOTEL_SLUG_MAP)[string];
+  rawDateFrom: Date;
+  dateTo: Date;
+}) {
+  const { isAdmin, isLoaded } = useIsAdmin();
+
+  const { dateFrom, isClamped } = useMemo(() => {
+    if (!isLoaded || isAdmin) return { dateFrom: rawDateFrom, isClamped: false };
+    const earliest = new Date();
+    earliest.setMonth(earliest.getMonth() - HOTEL_MAX_LOOKBACK_MONTHS);
+    earliest.setHours(0, 0, 0, 0);
+    if (rawDateFrom < earliest) {
+      return { dateFrom: earliest, isClamped: true };
+    }
+    return { dateFrom: rawDateFrom, isClamped: false };
+  }, [isAdmin, isLoaded, rawDateFrom]);
+
+  if (!isLoaded) {
+    return <div className="text-center py-12 text-gray-400 text-sm">Verifying access…</div>;
+  }
+
+  return (
+    <HotelContent
+      hotel={hotel}
+      dateFrom={dateFrom}
+      dateTo={dateTo}
+      isAdmin={isAdmin}
+      isClamped={isClamped}
+    />
+  );
+}
+
 /* ── Page export ─────────────────────────────────────────────────────── */
 
 export default function HotelPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -530,7 +596,7 @@ export default function HotelPage({ params }: { params: Promise<{ slug: string }
   return (
     <DashboardShell>
       {({ dateFrom, dateTo }) => (
-        <HotelContent hotel={hotel} dateFrom={dateFrom} dateTo={dateTo} />
+        <HotelDateGate hotel={hotel} rawDateFrom={dateFrom} dateTo={dateTo} />
       )}
     </DashboardShell>
   );

@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cockpitCsvUrl, COCKPIT_TABS } from "@/lib/constants/cockpit-sheets";
 import { SPA_LOCATION_PALETTE } from "@/lib/constants/spa-locations";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { isAdminEmail } from "@/lib/auth/admins";
+
+// ── Hotel dashboard data-access window ────────────────────────────────────────
+// Non-admin users may only query hotel-scoped data (location_id filter set)
+// within a rolling 6-month window.  This is enforced SERVER-SIDE so URL
+// manipulation or client patching cannot bypass it.
+const HOTEL_MAX_LOOKBACK_MONTHS = 6;
 
 export const maxDuration = 30;
 
@@ -893,8 +901,8 @@ export async function GET(req: NextRequest) {
   // Parse as local midnight so the full dateTo day is included in comparisons.
   const [fyear, fmo, fday] = dateFromStr.split("-").map(Number);
   const [tyear, tmo, tday] = dateToStr.split("-").map(Number);
-  const dateFrom = new Date(fyear, fmo - 1, fday);
-  const dateTo   = new Date(tyear, tmo - 1, tday);
+  let dateFrom = new Date(fyear, fmo - 1, fday);
+  const dateTo = new Date(tyear, tmo - 1, tday);
 
   if (isNaN(dateFrom.getTime()) || isNaN(dateTo.getTime())) {
     return NextResponse.json(
@@ -908,6 +916,34 @@ export async function GET(req: NextRequest) {
       { error: "date_from must be on or before date_to" },
       { status: 400 },
     );
+  }
+
+  // ── SECURITY: hotel data-access window ────────────────────────────────────
+  // When a location_id filter is present (hotel dashboard), non-admin users
+  // are restricted to the most recent HOTEL_MAX_LOOKBACK_MONTHS months.
+  // This is a HARD server-side cap — the client cannot override it.
+  if (filterLocId !== undefined) {
+    try {
+      const supabase = await createServerSupabaseClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      const email = user?.email ?? "";
+      if (!isAdminEmail(email)) {
+        const earliest = new Date();
+        earliest.setMonth(earliest.getMonth() - HOTEL_MAX_LOOKBACK_MONTHS);
+        earliest.setHours(0, 0, 0, 0);
+        if (dateFrom < earliest) {
+          dateFrom = earliest;
+        }
+      }
+    } catch {
+      // If auth check fails, fail CLOSED — apply the cap as a safety default
+      const earliest = new Date();
+      earliest.setMonth(earliest.getMonth() - HOTEL_MAX_LOOKBACK_MONTHS);
+      earliest.setHours(0, 0, 0, 0);
+      if (dateFrom < earliest) {
+        dateFrom = earliest;
+      }
+    }
   }
 
   // Route to the right source based on the selected range.
