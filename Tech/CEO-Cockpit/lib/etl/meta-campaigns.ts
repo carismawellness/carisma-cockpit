@@ -156,6 +156,9 @@ async function fetchInsights(
   url.searchParams.set("level", "campaign");
   url.searchParams.set("time_increment", "1"); // daily breakdown
   url.searchParams.set("time_range", JSON.stringify({ since: dateFrom, until: dateTo }));
+  // Force the same attribution window Meta Ads Manager uses by default (7-day click, 1-day view).
+  // Without this, the API defaults to a broader window (includes 7-day view) and over-counts leads.
+  url.searchParams.set("action_attribution_windows", JSON.stringify(["7d_click", "1d_view"]));
   url.searchParams.set("limit", "500");
   url.searchParams.set("access_token", token);
 
@@ -258,16 +261,9 @@ async function runMetaCampaignsEtlInner(opts: {
         const frequency   = safeNum(row.frequency);
         const campaignId  = row.campaign_id ?? "";
 
-        // Meta returns form leads as "lead" (parent) OR "onsite_conversion.lead_grouped"
-        // (Instant Forms sub-type). If "lead" is present, it already aggregates sub-types;
-        // if absent, fall back to the sub-type to avoid zero-counting newer campaigns.
-        const actionMap = new Map<string, number>();
-        for (const a of row.actions ?? []) {
-          actionMap.set(a.action_type, parseInt(a.value || "0", 10));
-        }
-        const leads =
-          actionMap.get("lead") ??
-          (actionMap.get("onsite_conversion.lead_grouped") ?? 0);
+        const leads = (row.actions ?? []).reduce((sum, a) => {
+          return a.action_type === "lead" ? sum + parseInt(a.value || "0", 10) : sum;
+        }, 0);
 
         const roasRaw = row.purchase_roas?.find(
           (r) => r.action_type === "omni_purchase",
