@@ -120,7 +120,7 @@ function buildRows(brands: Record<string, BrandHeatmapMetrics>): { main: AnyRow[
       )),
     },
     {
-      metric: "Booking Efficiency", benchmark: `${OVERALL_CONVERSION_BENCHMARK}%`,
+      metric: "Lead Conversion Rate", benchmark: `${OVERALL_CONVERSION_BENCHMARK}%`,
       cells: BRANDS.map(b => cell(
         brands[b]?.booking_efficiency,
         n => `${n.toFixed(1)}%`,

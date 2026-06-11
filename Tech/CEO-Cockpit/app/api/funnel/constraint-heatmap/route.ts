@@ -167,9 +167,15 @@ export async function GET(req: NextRequest) {
     const metaBooked     = (agentRows ?? []).reduce((s: number, r: AgentRow) => s + (r.other_booked        ?? 0), 0);
     const totalDeposits  = (agentRows ?? []).reduce((s: number, r: AgentRow) => s + (r.total_deposit_count ?? 0), 0);
 
-    // Booking efficiency: brand-level GHL Lead Conv — same calculation as the
-    // Pipeline Funnel widget. Booking Won ÷ all leads acquired in the period.
-    const leadConv = await computeLeadConversion(supabase, brandId, from, to);
+    // Lead conversion rate: Booking Won ÷ all leads acquired in the window.
+    // Cohort-based — leads must have time to convert, so enforce a 30-day
+    // minimum lookback (extend from backwards if the window is shorter).
+    const convFrom = (() => {
+      const toMs  = new Date(to).getTime();
+      const floor = new Date(toMs - 29 * 86_400_000).toISOString().slice(0, 10);
+      return from < floor ? from : floor; // min(from, to-29d)
+    })();
+    const leadConv = await computeLeadConversion(supabase, brandId, convFrom, to);
     const booking_efficiency = leadConv.ratePct;
 
     const deposit_rate = totalBooked > 0
