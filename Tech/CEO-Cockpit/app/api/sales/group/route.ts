@@ -1,6 +1,6 @@
 // app/api/sales/group/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { getAdminClient } from "@/lib/supabase/admin";
 import { buildGroupForecast, type GroupForecast } from "@/lib/analytics/revenue-forecast";
 import { SPA_LOCATION_PALETTE } from "@/lib/constants/spa-locations";
 
@@ -44,7 +44,7 @@ function toMonthStr(d: Date) {
 // Uses spa_revenue_daily for exact date-range filtering (no month snapping).
 // services + retail = total (inc-VAT after migration 073).
 async function fetchSpaRevenue(
-  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  supabase: ReturnType<typeof getAdminClient>,
   fromDate: string,
   toDate: string
 ) {
@@ -112,7 +112,7 @@ const GROSS_COLUMN: Record<"aesthetics_sales_daily" | "slimming_sales_daily", "p
 // Undated rows are month-anchored, so they only belong to windows that fully
 // cover their month; in partial windows they're excluded and counted instead.
 async function fetchDailySalesRevenue(
-  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  supabase: ReturnType<typeof getAdminClient>,
   table: "aesthetics_sales_daily" | "slimming_sales_daily",
   fromDateStr: string,
   toDateStr: string
@@ -151,7 +151,7 @@ async function fetchDailySalesRevenue(
 
 // Monthly time series: for each of the last TRAILING_MONTHS months, return spa+aesthetics+slimming for THIS year and LAST year
 async function fetchMonthlySeries(
-  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>
+  supabase: ReturnType<typeof getAdminClient>
 ) {
   const today = new Date();
   // TRAILING_MONTHS months ending at current month
@@ -297,7 +297,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Missing from/to params" }, { status: 400 });
     }
 
-    const supabase = await createServerSupabaseClient();
+    const supabase = getAdminClient();
 
     // Derive LY range (same calendar span, one year back).
     // Clamp the day to the target month's last valid day — otherwise

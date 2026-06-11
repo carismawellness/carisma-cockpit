@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/charts/config";
@@ -173,18 +174,20 @@ function CampaignTable({ campaigns, totals, brandColor }: {
 interface Props { dateFrom: Date; dateTo: Date }
 
 export function CampaignFunnelPanel({ dateFrom, dateTo }: Props) {
-  const [brandData, setBrandData] = useState<Record<string, DrilldownBrand> | null>(null);
-  const [loading, setLoading]     = useState(true);
+  const from = toLocalDateStr(dateFrom);
+  const to   = toLocalDateStr(dateTo);
 
-  useEffect(() => {
-    const from = toLocalDateStr(dateFrom);
-    const to   = toLocalDateStr(dateTo);
-    setLoading(true);
-    fetch(`/api/funnel/campaign-drilldown?from=${from}&to=${to}`)
-      .then(r => r.json())
-      .then(d => { setBrandData(d.brands ?? null); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [dateFrom, dateTo]);
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ["campaign-drilldown", from, to],
+    queryFn: async () => {
+      const res = await fetch(`/api/funnel/campaign-drilldown?from=${from}&to=${to}`);
+      if (!res.ok) throw new Error(`campaign-drilldown ${res.status}`);
+      return res.json();
+    },
+    staleTime: 60 * 1000,
+  });
+
+  const brandData = data?.brands ?? null;
 
   return (
     <section>

@@ -23,7 +23,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getAdminClient } from "@/lib/supabase/admin";
 import { computeLeadConversion } from "@/lib/funnel/lead-conversion";
 
 export const dynamic = "force-dynamic";
@@ -83,10 +83,7 @@ export async function GET(req: NextRequest) {
   const from = searchParams.get("from") ?? new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
   const to   = searchParams.get("to")   ?? new Date().toISOString().slice(0, 10);
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  );
+  const supabase = getAdminClient();
 
   const daysInRange = Math.max(1, Math.round((new Date(to).getTime() - new Date(from).getTime()) / 86_400_000) + 1);
 

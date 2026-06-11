@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { ChevronDown, ChevronUp } from "lucide-react";
@@ -181,19 +182,22 @@ function buildRows(brands: Record<string, BrandHeatmapMetrics>): { main: AnyRow[
 interface Props { dateFrom: Date; dateTo: Date }
 
 export function ConstraintHeatmap({ dateFrom, dateTo }: Props) {
-  const [brands, setBrands]             = useState<Record<string, BrandHeatmapMetrics> | null>(null);
-  const [loading, setLoading]           = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  useEffect(() => {
-    const from = toLocalDateStr(dateFrom);
-    const to   = toLocalDateStr(dateTo);
-    setLoading(true);
-    fetch(`/api/funnel/constraint-heatmap?from=${from}&to=${to}`)
-      .then(r => r.json())
-      .then(d => { setBrands(d.brands ?? null); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [dateFrom, dateTo]);
+  const from = toLocalDateStr(dateFrom);
+  const to   = toLocalDateStr(dateTo);
+
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ["constraint-heatmap", from, to],
+    queryFn: async () => {
+      const res = await fetch(`/api/funnel/constraint-heatmap?from=${from}&to=${to}`);
+      if (!res.ok) throw new Error(`constraint-heatmap ${res.status}`);
+      return res.json();
+    },
+    staleTime: 60 * 1000,
+  });
+
+  const brands = data?.brands ?? null;
 
   const { main: mainRows, advanced: advancedRows } = brands
     ? buildRows(brands)

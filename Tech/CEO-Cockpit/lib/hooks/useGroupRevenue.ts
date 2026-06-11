@@ -68,7 +68,7 @@ export function useGroupRevenue(dateFrom: Date, dateTo: Date): UseGroupRevenueRe
       }
       return res.json();
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 60 * 1000,
   });
 
   return {
