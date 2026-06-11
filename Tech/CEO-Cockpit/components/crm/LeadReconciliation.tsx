@@ -7,13 +7,12 @@ import { LeadReconRow } from "@/lib/types/crm";
 import { isExcludedCrmDate } from "@/lib/constants/excluded-dates";
 import { BRAND } from "@/lib/constants/design-tokens";
 
-// Canonical brand palette — `dark` for primary marks (borders, CRM bar),
-// `soft` for the Meta companion bar to visually pair it with the brand without
-// stealing prominence from the CRM bar.
+// Canonical brand palette — `soft` for fills/borders (CRM bar, left-border),
+// `soft` for the Meta companion bar to visually pair it with the brand.
 const BRAND_DARK: Record<string, string> = {
-  spa:        BRAND.spa.dark,
-  aesthetics: BRAND.aesthetics.dark,
-  slimming:   BRAND.slimming.dark,
+  spa:        BRAND.spa.soft,
+  aesthetics: BRAND.aesthetics.soft,
+  slimming:   BRAND.slimming.soft,
 };
 const BRAND_SOFT: Record<string, string> = {
   spa:        BRAND.spa.soft,
@@ -36,11 +35,11 @@ const BRANDS = [
 /* ------------------------------------------------------------------ */
 
 function syncPct(crm: number, meta: number): number {
-  if (meta === 0 && crm === 0) return 100;
-  const max = Math.max(crm, meta);
-  if (max === 0) return 100;
-  const min = Math.min(crm, meta);
-  return (min / max) * 100;
+  // Only a problem when Meta has MORE leads than CRM (leads not making it in).
+  // CRM having more than Meta is fine — manual entries, walk-ins, etc.
+  if (meta === 0) return 100; // no Meta leads to check against
+  if (crm >= meta) return 100; // all Meta leads accounted for
+  return (crm / meta) * 100; // what % of Meta leads made it to CRM
 }
 
 function syncColor(pct: number): string {
@@ -119,10 +118,10 @@ export function LeadReconciliation({
     }
   }
 
-  // Alert: any brand badly out of sync?
+  // Alert only when Meta has significantly MORE leads than CRM (leads not making it in)
   const alertBrands = BRANDS.filter((b) => {
     const t = brandTotals[b.slug];
-    return syncPct(t.crmLeads, t.metaLeads) < 80;
+    return t.metaLeads > 0 && syncPct(t.crmLeads, t.metaLeads) < 80;
   });
 
   const visibleBrands = brandFilter
@@ -188,10 +187,8 @@ export function LeadReconciliation({
                   </span>
                 </div>
                 <div className="flex-1 text-sm text-text-secondary">
-                  {delta === 0
-                    ? "Perfectly synced"
-                    : delta > 0
-                    ? `${Math.abs(delta)} more in CRM`
+                  {delta >= 0
+                    ? delta === 0 ? "Perfectly synced" : `${Math.abs(delta)} extra in CRM`
                     : `${Math.abs(delta)} missing from CRM`}
                 </div>
               </div>

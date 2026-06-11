@@ -258,9 +258,16 @@ async function runMetaCampaignsEtlInner(opts: {
         const frequency   = safeNum(row.frequency);
         const campaignId  = row.campaign_id ?? "";
 
-        const leads = (row.actions ?? []).reduce((sum, a) => {
-          return a.action_type === "lead" ? sum + parseInt(a.value || "0", 10) : sum;
-        }, 0);
+        // Meta returns form leads as "lead" (parent) OR "onsite_conversion.lead_grouped"
+        // (Instant Forms sub-type). If "lead" is present, it already aggregates sub-types;
+        // if absent, fall back to the sub-type to avoid zero-counting newer campaigns.
+        const actionMap = new Map<string, number>();
+        for (const a of row.actions ?? []) {
+          actionMap.set(a.action_type, parseInt(a.value || "0", 10));
+        }
+        const leads =
+          actionMap.get("lead") ??
+          (actionMap.get("onsite_conversion.lead_grouped") ?? 0);
 
         const roasRaw = row.purchase_roas?.find(
           (r) => r.action_type === "omni_purchase",
