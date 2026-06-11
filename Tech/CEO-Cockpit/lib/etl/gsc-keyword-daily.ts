@@ -154,8 +154,12 @@ export async function runGscKeywordEtl(opts: RunOpts = {}): Promise<GscEtlResult
   const accessToken = await getAccessToken();
   log.push(`[gsc] got access token; window ${startDate} → ${endDate}`);
 
+  // All site URLs — we query every keyword against all domains and keep the
+  // best position per day. This way "massage malta" shows Carisma's #1 rank
+  // across spa/aesthetics/slimming, not just the spa domain's rank.
+  const allSiteUrls = Object.values(GSC_SITE_URLS);
+
   for (const slug of brands) {
-    const siteUrl = GSC_SITE_URLS[slug];
     const keywords = TRACKED_KEYWORDS[slug];
     let brandId: number;
     try {
@@ -168,16 +172,45 @@ export async function runGscKeywordEtl(opts: RunOpts = {}): Promise<GscEtlResult
     let brandUpserts = 0;
     for (const keyword of keywords) {
       try {
-        const rows = await fetchKeywordDaily(
-          accessToken,
-          siteUrl,
-          keyword,
-          startDate,
-          endDate,
-        );
-        if (rows.length === 0) {
-          // No impressions for this keyword in the window — still record zeros
-          // for the end date so the dashboard knows "we checked" vs "we never tried".
+        // Query all 3 domains and merge: MIN position (best rank) + SUM clicks/impressions per date
+        type DateAgg = { clicks: number; impressions: number; position: number | null };
+        const byDate = new Map<string, DateAgg>();
+
+        for (const siteUrl of allSiteUrls) {
+          let rows: GscRow[] = [];
+          try {
+            rows = await fetchKeywordDaily(accessToken, siteUrl, keyword, startDate, endDate);
+          } catch (err) {
+            log.push(`[${slug}/${keyword}/${siteUrl}] WARN — ${String(err)}`);
+            continue;
+          }
+          for (const r of rows) {
+            const date = r.keys[0];
+            const existing = byDate.get(date);
+            if (!existing) {
+              byDate.set(date, {
+                clicks: r.clicks ?? 0,
+                impressions: r.impressions ?? 0,
+                position: r.position ?? null,
+              });
+            } else {
+              // Sum clicks/impressions across domains; keep the best (lowest) position
+              const pos = r.position ?? null;
+              byDate.set(date, {
+                clicks: existing.clicks + (r.clicks ?? 0),
+                impressions: existing.impressions + (r.impressions ?? 0),
+                position:
+                  pos !== null && (existing.position === null || pos < existing.position)
+                    ? pos
+                    : existing.position,
+              });
+            }
+          }
+        }
+
+        if (byDate.size === 0) {
+          // No impressions on any domain — record a zero row so the dashboard
+          // shows "checked, no data" rather than a stale value.
           const blank = [{
             date: endDate,
             brand_id: brandId,
@@ -193,14 +226,14 @@ export async function runGscKeywordEtl(opts: RunOpts = {}): Promise<GscEtlResult
           continue;
         }
 
-        const records = rows.map((r) => ({
-          date: r.keys[0],
+        const records = [...byDate.entries()].map(([date, agg]) => ({
+          date,
           brand_id: brandId,
           keyword,
-          clicks: r.clicks ?? 0,
-          impressions: r.impressions ?? 0,
-          ctr: r.ctr ?? null,
-          position: r.position ?? null,
+          clicks: agg.clicks,
+          impressions: agg.impressions,
+          ctr: agg.impressions > 0 ? agg.clicks / agg.impressions : null,
+          position: agg.position,
           etl_synced_at: new Date().toISOString(),
         }));
         const n = await upsert(
@@ -213,7 +246,7 @@ export async function runGscKeywordEtl(opts: RunOpts = {}): Promise<GscEtlResult
         log.push(`[${slug}/${keyword}] ERROR — ${String(err)}`);
       }
     }
-    log.push(`[${slug}] ${brandUpserts} rows upserted across ${keywords.length} keywords`);
+    log.push(`[${slug}] ${brandUpserts} rows upserted across ${keywords.length} keywords (best-of-3-domains)`);
     totalUpserted += brandUpserts;
   }
 
