@@ -209,12 +209,20 @@ export function SpaHourOfDayChart({ data }: { data: HourByLocationPoint[] }) {
 export function SpaTherapistChart({
   data,
   topN,
-}: { data: TherapistRow[]; topN?: number }) {
+  minRevenue = 1500,
+}: { data: TherapistRow[]; topN?: number; minRevenue?: number }) {
   const ranked = useMemo(() => {
-    const filtered = data.filter((t) => t.revenue > 0);
+    const filtered = data.filter((t) => t.revenue >= minRevenue);
     const sliced   = typeof topN === "number" ? filtered.slice(0, topN) : filtered;
     return sliced.map((t) => ({ ...t, label: t.therapist }));
-  }, [data, topN]);
+  }, [data, topN, minRevenue]);
+
+  // How many therapists were dropped by the threshold — surfaced in the subtitle
+  // so a user looking for "where did Tina go?" sees the explanation.
+  const droppedBelowThreshold = useMemo(
+    () => data.filter((t) => t.revenue > 0 && t.revenue < minRevenue).length,
+    [data, minRevenue],
+  );
 
   // Scale typography / chart height so 60+ therapists still fit.
   const n          = ranked.length;
@@ -224,17 +232,22 @@ export function SpaTherapistChart({
   const bottomPad  = n > 40 ? 110 : n > 25 ? 96 : 80;
   const chartH     = Math.max(420, Math.min(560, 360 + n * 4));
 
-  const subtitleSuffix = typeof topN === "number" && filteredCount(data) > topN
-    ? `· top ${ranked.length}`
-    : `· all ${ranked.length}`;
+  const subtitle = (() => {
+    const base = `Gross revenue per therapist (Cockpit "Service - Spa" Column G)`;
+    const countPart = typeof topN === "number" && ranked.length === topN
+      ? `· top ${ranked.length}`
+      : `· ${ranked.length} therapist${ranked.length === 1 ? "" : "s"}`;
+    const thresholdPart = ` · ≥ ${fmtK(minRevenue)}${droppedBelowThreshold > 0 ? ` (${droppedBelowThreshold} below cutoff hidden)` : ""}`;
+    return `${base} ${countPart}${thresholdPart}`;
+  })();
 
   return (
     <SectionCard
       title="Therapist utilization"
-      subtitle={`Gross revenue per therapist (Cockpit "Service - Spa" Column G) ${subtitleSuffix}`}
+      subtitle={subtitle}
     >
       {ranked.length === 0 ? (
-        <EmptyState msg="No therapist data — Column G empty for the selected period." />
+        <EmptyState msg={`No therapist with revenue ≥ ${fmtK(minRevenue)} in this period.`} />
       ) : (
         <div style={{ height: chartH }}>
           <ResponsiveContainer width="100%" height="100%">
@@ -270,12 +283,6 @@ export function SpaTherapistChart({
       )}
     </SectionCard>
   );
-}
-
-function filteredCount(data: TherapistRow[]): number {
-  let c = 0;
-  for (const t of data) if (t.revenue > 0) c++;
-  return c;
 }
 
 // ── 4. Discount by club (€ + %) ──────────────────────────────────────────────
