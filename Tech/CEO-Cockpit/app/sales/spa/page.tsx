@@ -4,7 +4,6 @@ import { useMemo } from "react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { SalesKPICard } from "@/components/sales/SalesKPICard";
 import { SalesKPIGrid } from "@/components/sales/SalesKPIGrid";
-import { StaffPerformanceChart } from "@/components/sales/StaffPerformanceChart";
 import {
   SpaDayOfWeekChart,
   SpaHourOfDayChart,
@@ -17,7 +16,7 @@ import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useSpaRevenue } from "@/lib/hooks/useSpaRevenue";
 import { useSpaDeepaAnalytics } from "@/lib/hooks/useSpaDeepaAnalytics";
 import { useSalaryRoster } from "@/lib/hooks/useSalaryRoster";
-import { BRAND } from "@/lib/constants/design-tokens";
+import { BRAND, YOY_BADGE } from "@/lib/constants/design-tokens";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LabelList, Legend, Cell,
@@ -115,43 +114,36 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
 
   const { getSpaSalary } = useSalaryRoster(dateFrom, dateTo);
 
-  /* ── Staff chart data (real data from analytics hook, inc-VAT) ── */
-  const staffChartData = useMemo(() =>
-    analytics.staff.map((s) => ({
-      name: s.name,
-      serviceRevenue: Math.round(s.service_revenue * 1.18),
-      retailRevenue:  Math.round(s.retail_revenue  * 1.18),
-    })),
-    [analytics.staff]
-  );
-
-  /* ── Therapist K% data (salary cost vs revenue) ─────────────── */
+  /* ── Therapist chart data (service + retail split, salary K%) ── */
   const therapistKData = useMemo(() => {
     return analytics.staff
       .map((s) => {
-        const revenue_ex = s.service_revenue + s.retail_revenue;
-        const revenue_inc = Math.round(revenue_ex * (1 + VAT_RATE));
-        const salary = getSpaSalary(s.name) ?? 0;
-        const salary_cost = salary > 0 ? Math.min(salary, revenue_inc) : 0;
-        const k_pct = salary > 0 && revenue_ex > 0 ? +(salary / revenue_ex * 100).toFixed(0) : null;
-        const revStr = revenue_inc >= 1000 ? `€${(revenue_inc / 1000).toFixed(1)}K` : `€${revenue_inc}`;
+        const service_inc = Math.round(s.service_revenue * (1 + VAT_RATE));
+        const retail_inc  = Math.round(s.retail_revenue  * (1 + VAT_RATE));
+        const total_inc   = service_inc + retail_inc;
+        const salary      = getSpaSalary(s.name) ?? 0;
+        const k_pct       = salary > 0 && total_inc > 0 ? Math.round(salary / total_inc * 100) : null;
+        const retail_pct  = total_inc > 0 ? Math.round(retail_inc / total_inc * 100) : 0;
+        const revStr      = total_inc >= 1000 ? `€${(total_inc / 1000).toFixed(1)}K` : `€${total_inc}`;
         return {
-          name:           s.name,
-          revenue_net:    Math.max(0, revenue_inc - salary_cost),
-          salary_cost,
-          k_label:        k_pct != null ? `${k_pct}%` : null as string | null,
-          bar_label:      revStr,
+          name:        s.name,
+          service_inc,
+          retail_inc,
+          retail_pct,
+          k_label:     k_pct != null ? `${k_pct}%K` : null as string | null,
+          bar_label:   revStr,
+          total_inc,
         };
       })
-      .filter(d => d.revenue_net + d.salary_cost > 0)
-      .sort((a, b) => (b.revenue_net + b.salary_cost) - (a.revenue_net + a.salary_cost));
+      .filter(d => d.total_inc > 0)
+      .sort((a, b) => b.total_inc - a.total_inc);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analytics.staff, getSpaSalary]);
 
-  /* ── Guest group chart data (% of bookings by count) ───────── */
+  /* ── Guest group chart data (% of bookings by count, no closed) */
   const guestChartData = useMemo(() =>
     analytics.guestGroups
-      .filter(g => (g.hotel_count + g.non_hotel_count) > 0)
+      .filter(g => (g.hotel_count + g.non_hotel_count) > 0 && !g.name.toLowerCase().includes("(closed)"))
       .map((g) => {
         const total    = g.hotel_count + g.non_hotel_count;
         const hotelPct = Math.round((g.hotel_count / total) * 100);
@@ -299,89 +291,55 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
         <Card className="p-4 md:p-6">
           <h2 className="text-lg font-semibold text-foreground mb-1">Revenue Mix by Hotel</h2>
           <p className="text-xs text-muted-foreground mb-5">
-            Gross revenue per location · inc-VAT · retail share colored
+            Gross revenue per location · inc-VAT · retail share in amber · vs LY badge
           </p>
-          <div className="h-[280px] md:h-[320px]">
+          <div className="h-[300px] md:h-[340px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={hotelChartData} margin={{ top: 20, right: 12, left: 8, bottom: 8 }}>
+              <BarChart data={hotelChartData} margin={{ top: 52, right: 12, left: 8, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" vertical={false} />
                 <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                 <YAxis tickFormatter={(v: number) => fmtShort(v)} tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(v: unknown, name: unknown) => [fmtShort(Number(v)), String(name)]} />
                 <Legend />
-                <Bar dataKey="Services" stackId="a" fill={BRAND.spa.soft} barSize={40} />
-                <Bar dataKey="Products" stackId="a" fill={BRAND.spa.soft} barSize={40} radius={[4, 4, 0, 0]}>
+                <Bar dataKey="Services" stackId="a" fill={BRAND.spa.dark} barSize={40} />
+                <Bar dataKey="Products" stackId="a" fill="#E5C088" barSize={40} radius={[4, 4, 0, 0]}>
                   <LabelList
                     dataKey="prodPct"
                     position="inside"
-                    formatter={(v: unknown) => Number(v) > 0 ? `${v}%` : ""}
-                    style={{ fontSize: 10, fontWeight: 700, fill: "#fff" }}
+                    formatter={(v: unknown) => Number(v) > 4 ? `${v}%` : ""}
+                    style={{ fontSize: 9, fontWeight: 700, fill: "#7A5C2E" }}
                   />
                   <LabelList
                     dataKey="currNet"
-                    position="top"
-                    formatter={(v: unknown) => fmtShort(Number(v))}
-                    style={{ fontSize: 10, fontWeight: 600, fill: "#374151" }}
+                    content={(lp: unknown) => {
+                      const p = lp as { x?: number; y?: number; width?: number; height?: number; value?: number; index?: number };
+                      const entry = hotelChartData[p.index ?? 0];
+                      if (!entry) return null;
+                      const cx = (p.x ?? 0) + (p.width ?? 0) / 2;
+                      const top = (p.y ?? 0) - 6;
+                      const yp = entry.yoyPct;
+                      const badge = yp != null ? (yp >= 0 ? YOY_BADGE.positive : YOY_BADGE.negative) : null;
+                      return (
+                        <g key={`hotel-top-${p.index}`}>
+                          <text x={cx} y={top - 18} textAnchor="middle" fontSize={10} fontWeight={600} fill="#374151">
+                            {fmtShort(entry.currNet)}
+                          </text>
+                          {badge && (
+                            <>
+                              <rect x={cx - 17} y={top - 14} width={34} height={13} rx={3} fill={badge.bg} />
+                              <text x={cx} y={top - 4} textAnchor="middle" fontSize={9} fontWeight={700} fill={badge.fg}>
+                                {yp! >= 0 ? "+" : ""}{yp}%
+                              </text>
+                            </>
+                          )}
+                        </g>
+                      );
+                    }}
                   />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
-
-          {/* YoY comparison table */}
-          {hotelChartData.some(d => d.priorNet > 0) && (
-            <div className="mt-6 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-xs text-muted-foreground">
-                    <th className="text-left py-2 font-medium">Location</th>
-                    <th className="text-right py-2 font-medium">This period</th>
-                    <th className="text-right py-2 font-medium">LY same period</th>
-                    <th className="text-right py-2 font-medium">vs LY</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {hotelChartData.map((row) => (
-                    <tr key={row.name} className="border-b last:border-0 hover:bg-muted/20">
-                      <td className="py-2">
-                        <div className="flex items-center gap-2">
-                          <span className="inline-block w-2 h-2 rounded-sm flex-shrink-0" style={{ backgroundColor: row.color }} />
-                          {row.name}
-                        </div>
-                      </td>
-                      <td className="py-2 text-right tabular-nums font-medium">{fmtShort(row.currNet)}</td>
-                      <td className="py-2 text-right tabular-nums text-muted-foreground">
-                        {row.priorNet > 0 ? fmtShort(row.priorNet) : "—"}
-                      </td>
-                      <td className="py-2 text-right tabular-nums">
-                        {row.yoyPct !== null ? (
-                          <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-semibold ${row.yoyPct >= 0 ? "text-emerald-700 bg-emerald-50" : "text-red-600 bg-red-50"}`}>
-                            {row.yoyPct >= 0 ? "+" : ""}{row.yoyPct}%
-                          </span>
-                        ) : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 font-semibold text-sm">
-                    <td className="py-2">Total</td>
-                    <td className="py-2 text-right tabular-nums">{fmtShort(totals.gross_revenue)}</td>
-                    <td className="py-2 text-right tabular-nums text-muted-foreground">
-                      {priorTotals.gross_revenue > 0 ? fmtShort(priorTotals.gross_revenue) : "—"}
-                    </td>
-                    <td className="py-2 text-right tabular-nums">
-                      {yoy.gross !== undefined ? (
-                        <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-bold ${yoy.gross >= 0 ? "text-emerald-700 bg-emerald-50" : "text-red-600 bg-red-50"}`}>
-                          {yoy.gross >= 0 ? "+" : ""}{Math.round(yoy.gross)}%
-                        </span>
-                      ) : "—"}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
         </Card>
       )}
 
@@ -418,20 +376,13 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                       }}
                     />
                     <Legend />
-                    <Bar dataKey="Hotel Guests" stackId="a" fill={BRAND.spa.dark}>
-                      <LabelList
-                        dataKey="Hotel Guests"
-                        position="inside"
-                        formatter={(v: unknown) => Number(v) >= 12 ? `${v}%` : ""}
-                        style={{ fontSize: 10, fontWeight: 700, fill: "#fff" }}
-                      />
-                    </Bar>
+                    <Bar dataKey="Hotel Guests" stackId="a" fill={BRAND.spa.dark} />
                     <Bar dataKey="Non-Hotel" stackId="a" fill={BRAND.spa.soft} radius={[4, 4, 0, 0]}>
                       <LabelList
                         dataKey="Non-Hotel"
                         position="inside"
-                        formatter={(v: unknown) => Number(v) >= 12 ? `${v}%` : ""}
-                        style={{ fontSize: 10, fontWeight: 700, fill: "#6B5E4E" }}
+                        formatter={(v: unknown) => Number(v) >= 10 ? `${v}%` : ""}
+                        style={{ fontSize: 11, fontWeight: 700, fill: "#6B5E4E" }}
                       />
                     </Bar>
                   </BarChart>
@@ -529,103 +480,104 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
         </Card>
       )}
 
-      {/* ── Staff Performance ──────────────────────────────────────── */}
-      {analytics.isFetching ? (
-        <Card className="p-4 md:p-6">
-          <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
-            Loading staff data…
-          </div>
-        </Card>
-      ) : staffChartData.length === 0 ? (
-        <Card className="p-4 md:p-6">
-          <p className="text-sm text-muted-foreground">No staff data for this period.</p>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          <StaffPerformanceChart
-            title="Service Revenue by Therapist"
-            subtitle="EUR inc-VAT · sorted by service"
-            data={staffChartData}
-            serviceColor={BRAND.spa.soft}
-            retailColor="#E5C088"
-            mode="service"
-          />
-          <StaffPerformanceChart
-            title="Retail Revenue by Therapist"
-            subtitle="EUR inc-VAT · sorted by retail"
-            data={staffChartData}
-            serviceColor={BRAND.spa.soft}
-            retailColor="#E5C088"
-            mode="retail"
-          />
-        </div>
-      )}
-
-      {/* ── Therapist Revenue + Salary Cost (K%) ─────────────────── */}
-      {therapistKData.length > 0 && (
+      {/* ── Revenue by Therapist (service + retail split, salary K%) ─ */}
+      {(analytics.isFetching || therapistKData.length > 0) && (
         <Card className="p-4 md:p-5">
           <div className="flex items-center gap-2 mb-4">
-            <h2 className="text-base font-semibold text-foreground">Revenue &amp; Salary Cost by Therapist</h2>
+            <h2 className="text-base font-semibold text-foreground">Revenue by Therapist</h2>
             <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: BRAND.spa.soft }} />
-                Net revenue
+                <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: BRAND.spa.dark }} />
+                Service revenue
               </span>
               <span className="flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 rounded-sm bg-[#4a7fa5]" />
-                Salary cost (K%)
+                <span className="inline-block w-2.5 h-2.5 rounded-sm bg-[#E5C088]" />
+                Retail revenue
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 rounded-sm bg-[#DBEAFE]" />
+                Salary K%
               </span>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={Math.max(180, therapistKData.length * 44)}>
-            <BarChart
-              layout="vertical"
-              data={therapistKData}
-              margin={{ top: 20, right: 100, left: 10, bottom: 0 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-              <XAxis
-                type="number"
-                tickFormatter={(v: number) => `€${(v / 1000).toFixed(0)}k`}
-                tick={{ fontSize: 11 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                type="category"
-                dataKey="name"
-                width={140}
-                tick={{ fontSize: 11 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <Tooltip
-                formatter={(value: unknown, name: unknown) => {
-                  const n = Number(value ?? 0);
-                  return [
-                    `€${n.toLocaleString("en-GB", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`,
-                    name === "salary_cost" ? "Salary cost" : "Net revenue",
-                  ];
-                }}
-                contentStyle={{ fontSize: 12 }}
-              />
-              <Bar dataKey="revenue_net" stackId="rev" fill={BRAND.spa.soft} radius={[0, 0, 0, 0]} />
-              <Bar dataKey="salary_cost" stackId="rev" fill="#4a7fa5" radius={[0, 4, 4, 0]}>
-                <LabelList
-                  dataKey="k_label"
-                  position="insideRight"
-                  formatter={(v: unknown) => v ? String(v) : ""}
-                  style={{ fontSize: 10, fill: "#fff", fontWeight: 700 }}
+          {analytics.isFetching ? (
+            <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
+              Loading staff data…
+            </div>
+          ) : therapistKData.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No staff data for this period.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={Math.max(180, therapistKData.length * 44)}>
+              <BarChart
+                layout="vertical"
+                data={therapistKData}
+                margin={{ top: 4, right: 120, left: 10, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis
+                  type="number"
+                  tickFormatter={(v: number) => `€${(v / 1000).toFixed(0)}k`}
+                  tick={{ fontSize: 11 }}
+                  axisLine={false}
+                  tickLine={false}
                 />
-                <LabelList
-                  dataKey="bar_label"
-                  position="right"
-                  formatter={(v: unknown) => String(v ?? "")}
-                  style={{ fontSize: 11, fill: "#64748b", fontWeight: 600 }}
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={140}
+                  tick={{ fontSize: 11 }}
+                  axisLine={false}
+                  tickLine={false}
                 />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+                <Tooltip
+                  formatter={(value: unknown, name: unknown) => {
+                    const n = Number(value ?? 0);
+                    const label = name === "retail_inc" ? "Retail" : "Service";
+                    return [
+                      `€${n.toLocaleString("en-GB", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`,
+                      label,
+                    ];
+                  }}
+                  contentStyle={{ fontSize: 12 }}
+                />
+                <Bar dataKey="service_inc" stackId="rev" fill={BRAND.spa.dark} radius={[0, 0, 0, 0]} />
+                <Bar dataKey="retail_inc" stackId="rev" fill="#E5C088" radius={[0, 4, 4, 0]}>
+                  <LabelList
+                    dataKey="retail_pct"
+                    position="insideRight"
+                    formatter={(v: unknown) => Number(v) >= 6 ? `${v}%` : ""}
+                    style={{ fontSize: 9, fill: "#7A5C2E", fontWeight: 700 }}
+                  />
+                  <LabelList
+                    dataKey="bar_label"
+                    content={(lp: unknown) => {
+                      const p = lp as { x?: number; y?: number; width?: number; height?: number; index?: number };
+                      const entry = therapistKData[p.index ?? 0];
+                      if (!entry) return null;
+                      const rx = (p.x ?? 0) + (p.width ?? 0) + 8;
+                      const cy = (p.y ?? 0) + (p.height ?? 0) / 2;
+                      const hasK = !!entry.k_label;
+                      return (
+                        <g key={`therapist-label-${p.index}`}>
+                          <text x={rx} y={hasK ? cy - 2 : cy + 4} fontSize={11} fill="#64748b" fontWeight={600}>
+                            {entry.bar_label}
+                          </text>
+                          {hasK && (
+                            <>
+                              <rect x={rx} y={cy + 6} width={30} height={13} rx={3} fill="#DBEAFE" />
+                              <text x={rx + 15} y={cy + 15} fontSize={9} fill="#1D4ED8" fontWeight={700} textAnchor="middle">
+                                {entry.k_label}
+                              </text>
+                            </>
+                          )}
+                        </g>
+                      );
+                    }}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </Card>
       )}
 
