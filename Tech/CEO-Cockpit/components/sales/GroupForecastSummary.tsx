@@ -84,6 +84,14 @@ export function GroupForecastSummary({ forecast, isFetching }: Props) {
             <span className="text-2xl font-bold text-foreground tabular-nums">
               {fmtK(fy.projectedTotal)}
             </span>
+            {fy.confidence && (
+              <span
+                className="text-xs text-muted-foreground tabular-nums"
+                title={`80% confidence interval — actuals to date are known (€${fy.actualsToDate.toLocaleString()}), the band reflects ±${Math.round(fy.confidence.spread * 100)}% uncertainty on the forecast remainder. Wider when LY data is missing for future months.`}
+              >
+                (80% CI: {fmtK(fy.confidence.lower)} – {fmtK(fy.confidence.upper)})
+              </span>
+            )}
             <span className="text-xs text-muted-foreground">
               {fmtK(fy.actualsToDate)} actuals to date + {fmtK(fy.forecastRemainder)} forecast
             </span>

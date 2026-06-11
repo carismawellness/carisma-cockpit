@@ -11,6 +11,7 @@ import { GroupForecastSummary } from "@/components/sales/GroupForecastSummary";
 import { GroupLongitudinal } from "@/components/sales/GroupLongitudinal";
 import { useGroupRevenue } from "@/lib/hooks/useGroupRevenue";
 import { Building2, Sparkles, Scale, ShoppingBag } from "lucide-react";
+import { SpaIntegrityBadge } from "@/components/sales/SpaIntegrityBadge";
 
 function fmtK(v: number) {
   if (Math.abs(v) >= 1_000_000) return `€${(v / 1_000_000).toFixed(2)}M`;
@@ -43,9 +44,12 @@ function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
 
   return (
     <div className="space-y-4 md:space-y-6">
-      <div>
-        <h1 className="text-xl font-bold text-foreground">Group Sales</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">All brands · Gross (inc-VAT) · Source: Cockpit Datasheet</p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-xl font-bold text-foreground">Group Sales</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">All brands · Gross (inc-VAT) · Source: Cockpit Datasheet</p>
+        </div>
+        <SpaIntegrityBadge dateFrom={dateFrom} dateTo={dateTo} />
       </div>
 
       <SalesKPIGrid columns={5}>

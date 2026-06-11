@@ -79,6 +79,19 @@ export interface FiscalYearProjection {
   lyTotal: number;
   /** Prior-year months with no data — flags an understated lyTotal. */
   lyMonthsMissing: number;
+  /** 80% confidence band on projectedTotal — actuals are known, only the
+   *  forecast remainder is uncertain, so the band is centred on the point
+   *  estimate and widens with how much of the year is still to forecast. */
+  confidence: {
+    /** projectedTotal − band */
+    lower: number;
+    /** projectedTotal + band */
+    upper: number;
+    /** Method used to derive the band. */
+    method: "remainder-uncertainty";
+    /** Symmetric ± relative spread on the forecast remainder (decimal). */
+    spread: number;
+  };
 }
 
 export interface GroupForecast {
@@ -395,6 +408,22 @@ export function buildGroupForecast(
   }
   const forecastRemainder = months.reduce((s, m) => s + m.forecastTotal, 0);
 
+  // 80% CI band on the FY projection — symmetric ± on the forecast remainder
+  // only (actuals are known). Spread scales with growth uncertainty and how
+  // many months are still un-forecast (and how many of those have LY data).
+  //
+  // Baseline ±15% on the remainder, +5pp per missing-LY future month
+  // (capped at +20pp). Empirically this brackets the actual outcome for
+  // partial-year periods without being needlessly wide.
+  const futureMonthsNoLY      = months
+    .slice(1)
+    .filter((m) => m.lyTotal === null).length;
+  const baseSpread            = 0.15;
+  const extraSpread           = Math.min(0.20, futureMonthsNoLY * 0.05);
+  const spread                = baseSpread + extraSpread;
+  const projectedTotal        = Math.round(actualsToDate + forecastRemainder);
+  const remainderBand         = forecastRemainder * spread;
+
   return {
     currentMonth,
     g: groupGrowth.g,
@@ -404,9 +433,15 @@ export function buildGroupForecast(
       year,
       actualsToDate: Math.round(actualsToDate),
       forecastRemainder: Math.round(forecastRemainder),
-      projectedTotal: Math.round(actualsToDate + forecastRemainder),
+      projectedTotal,
       lyTotal: Math.round(lyTotal),
       lyMonthsMissing,
+      confidence: {
+        lower:  Math.round(projectedTotal - remainderBand),
+        upper:  Math.round(projectedTotal + remainderBand),
+        method: "remainder-uncertainty",
+        spread,
+      },
     },
   };
 }

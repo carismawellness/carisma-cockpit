@@ -23,6 +23,7 @@ import {
 } from "recharts";
 import { AlertCircle, FileSpreadsheet } from "lucide-react";
 import { SyncButton } from "@/components/dashboard/SyncButton";
+import { SpaIntegrityBadge } from "@/components/sales/SpaIntegrityBadge";
 
 const VAT_RATE = 0.18;
 
@@ -234,10 +235,13 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
             </span>
           </div>
         </div>
-        <SyncButton
-          onSync={async () => { await triggerSync(true); }}
-          isExternalBusy={isLoading}
-        />
+        <div className="flex flex-col items-end gap-2">
+          <SyncButton
+            onSync={async () => { await triggerSync(true); }}
+            isExternalBusy={isLoading}
+          />
+          <SpaIntegrityBadge dateFrom={dateFrom} dateTo={dateTo} />
+        </div>
       </div>
 
       {syncError && (
