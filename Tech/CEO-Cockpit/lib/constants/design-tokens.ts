@@ -23,9 +23,9 @@ export const colors = {
  * Use these everywhere — no ad-hoc indigo / generic chart colors.
  */
 export const BRAND = {
-  spa:        { dark: "#8C7A5A", soft: "#EFE7D7" },
-  aesthetics: { dark: "#3B7676", soft: "#DEEBEB" },
-  slimming:   { dark: "#3D6B3D", soft: "#C9D8C1" },
+  spa:        { dark: "#897B5E", soft: "#EEE7D9" },
+  aesthetics: { dark: "#486A42", soft: "#CCD8C3" },
+  slimming:   { dark: "#486A42", soft: "#CCD8C3" },
 } as const;
 
 export type BrandKey = keyof typeof BRAND;
