@@ -143,14 +143,15 @@ export async function GET(req: NextRequest) {
     if (loc) headcountByLocation.set(loc, names.size);
   }
 
-  // ── Fallback headcount for aesthetics/slimming (no per-employee table yet) ──
-  // Only fills in locations not already covered by the services query above.
+  // ── Fallback: Talexio snapshot for any location with no service records ──────
+  // Covers aesthetics/slimming (no per-employee table) AND spa locations whose
+  // spa_services_by_employee_daily has gaps (historical months before the ETL
+  // started, or months where no services were recorded yet).
   const { data: snap } = await supabase
     .from("hr_talexio_daily_snapshot")
     .select("location_name, active_headcount, snapshot_date")
-    .in("location_name", ["Aesthetics Centre", "Slimming Centre"])
     .order("snapshot_date", { ascending: false })
-    .limit(20);
+    .limit(200);
   for (const r of snap ?? []) {
     const loc = r.location_name as string;
     if (!headcountByLocation.has(loc)) {
