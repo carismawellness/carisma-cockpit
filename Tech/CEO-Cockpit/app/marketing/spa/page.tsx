@@ -100,7 +100,7 @@ function HeroKPICard({
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400 mb-2.5 leading-none">
             {label}
           </p>
-          <p className="text-[1.65rem] font-black tracking-tight text-gray-900 leading-none">
+          <p className="text-[1.65rem] font-black tracking-tight text-gray-900 leading-none tabular-nums">
             {value}
           </p>
           {sub && (
@@ -146,7 +146,7 @@ function AggregateBox({
         )}
         <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-500">{label}</p>
       </div>
-      <p className="text-xl font-black tracking-tight" style={{ color: valueColor ?? BRAND_COLOR }}>
+      <p className="text-xl font-black tracking-tight tabular-nums" style={{ color: valueColor ?? BRAND_COLOR }}>
         {value}
       </p>
     </div>

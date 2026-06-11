@@ -9,7 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowUpDown } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface Column {
@@ -51,24 +51,34 @@ export function DataTable({ columns, data, pageSize = 10, onRowClick }: DataTabl
 
   const paged = sorted.slice(page * pageSize, (page + 1) * pageSize);
   const totalPages = Math.ceil(data.length / pageSize);
+  const rangeStart = page * pageSize + 1;
+  const rangeEnd = Math.min((page + 1) * pageSize, data.length);
 
   return (
-    <div className="rounded-xl border border-warm-border overflow-hidden">
+    <div className="rounded-xl border border-warm-border overflow-hidden bg-card">
       <div className="overflow-x-auto">
       <Table>
         <TableHeader>
-          <TableRow className="bg-warm-white hover:bg-warm-white">
+          <TableRow className="bg-warm-gray/70 hover:bg-warm-gray/70 border-b border-warm-border">
             {columns.map((col) => (
-              <TableHead key={col.key} className={`text-xs font-semibold uppercase tracking-wider text-text-secondary ${col.align === "right" ? "text-right" : ""}`}>
+              <TableHead key={col.key} className={`h-10 text-[11px] font-bold uppercase tracking-[0.08em] text-text-secondary whitespace-nowrap ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : ""}`}>
                 {col.sortable ? (
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="-ml-3 h-8 text-xs uppercase tracking-wider text-text-secondary hover:text-gold"
+                    className={`-ml-3 h-8 text-[11px] font-bold uppercase tracking-[0.08em] hover:text-gold hover:bg-transparent ${
+                      sortKey === col.key ? "text-gold" : "text-text-secondary"
+                    }`}
                     onClick={() => handleSort(col.key)}
                   >
                     {col.label}
-                    <ArrowUpDown className="ml-2 h-3.5 w-3.5 text-gold/60" />
+                    {sortKey === col.key ? (
+                      sortDir === "asc"
+                        ? <ArrowUp className="ml-1.5 h-3 w-3 text-gold" />
+                        : <ArrowDown className="ml-1.5 h-3 w-3 text-gold" />
+                    ) : (
+                      <ArrowUpDown className="ml-1.5 h-3 w-3 text-gold/40" />
+                    )}
                   </Button>
                 ) : (
                   col.label
@@ -78,10 +88,23 @@ export function DataTable({ columns, data, pageSize = 10, onRowClick }: DataTabl
           </TableRow>
         </TableHeader>
         <TableBody>
+          {paged.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={columns.length} className="h-20 text-center text-sm text-text-secondary">
+                No data for this period.
+              </TableCell>
+            </TableRow>
+          )}
           {paged.map((row, i) => (
-            <TableRow key={i} className={`hover:bg-gold-bg/50 transition-colors ${onRowClick ? "cursor-pointer" : ""}`} onClick={onRowClick ? () => onRowClick(row) : undefined}>
+            <TableRow
+              key={i}
+              className={`border-warm-border/60 transition-colors hover:bg-gold-bg/60 ${
+                i % 2 === 1 ? "bg-warm-white/60" : ""
+              } ${onRowClick ? "cursor-pointer" : ""}`}
+              onClick={onRowClick ? () => onRowClick(row) : undefined}
+            >
               {columns.map((col) => (
-                <TableCell key={col.key} className={`text-charcoal ${col.align === "right" ? "text-right tabular-nums" : col.align === "center" ? "text-center" : ""}`}>
+                <TableCell key={col.key} className={`py-2.5 text-[13px] text-charcoal ${col.align === "right" ? "text-right tabular-nums" : col.align === "center" ? "text-center" : ""}`}>
                   {col.render ? col.render(row[col.key], row) : String(row[col.key] ?? "")}
                 </TableCell>
               ))}
@@ -91,28 +114,34 @@ export function DataTable({ columns, data, pageSize = 10, onRowClick }: DataTabl
       </Table>
       </div>
       {totalPages > 1 && (
-        <div className="flex items-center justify-between py-3 px-4 border-t border-warm-border">
-          <span className="text-sm text-text-secondary">
-            Page {page + 1} of {totalPages}
+        <div className="flex items-center justify-between py-2.5 px-4 border-t border-warm-border bg-warm-white/60">
+          <span className="text-xs text-text-secondary tabular-nums">
+            Showing <span className="font-semibold text-charcoal">{rangeStart}–{rangeEnd}</span> of{" "}
+            <span className="font-semibold text-charcoal">{data.length}</span>
           </span>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-1.5">
             <Button
               variant="outline"
               size="sm"
               disabled={page === 0}
               onClick={() => setPage(page - 1)}
-              className="border-warm-border text-text-secondary hover:text-gold hover:border-gold/30"
+              aria-label="Previous page"
+              className="h-7 w-7 p-0 border-warm-border text-text-secondary hover:text-gold hover:border-gold/30 disabled:opacity-40"
             >
-              Previous
+              <ChevronLeft className="h-3.5 w-3.5" />
             </Button>
+            <span className="text-xs text-text-secondary tabular-nums px-1">
+              {page + 1} / {totalPages}
+            </span>
             <Button
               variant="outline"
               size="sm"
               disabled={page >= totalPages - 1}
               onClick={() => setPage(page + 1)}
-              className="border-warm-border text-text-secondary hover:text-gold hover:border-gold/30"
+              aria-label="Next page"
+              className="h-7 w-7 p-0 border-warm-border text-text-secondary hover:text-gold hover:border-gold/30 disabled:opacity-40"
             >
-              Next
+              <ChevronRight className="h-3.5 w-3.5" />
             </Button>
           </div>
         </div>

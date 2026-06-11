@@ -40,7 +40,7 @@ function DashboardShellInner({ children, hideDatePicker }: DashboardShellProps) 
       <main
         className={cn(
           /* pb-safe ensures content is never hidden behind iPhone home indicator bar */
-          "pt-[4.25rem] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:pt-[4.25rem] md:px-6 md:pb-6 space-y-4 md:space-y-6 transition-all duration-200",
+          "pt-[4.25rem] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:pt-[4.25rem] md:px-6 md:pb-6 space-y-4 md:space-y-6 transition-all duration-200 animate-fade-in-up",
           "ml-0",
           collapsed ? "lg:ml-[4.5rem]" : "lg:ml-60"
         )}
