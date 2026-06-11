@@ -70,6 +70,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // ?full=true → 10-page deep scan (nightly). Default → 1-page quick sync (30-min cron).
+  const isFullScan = req.nextUrl.searchParams.get("full") === "true";
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb: any = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -92,8 +95,10 @@ export async function GET(req: NextRequest) {
     let startAfter: string | undefined;
     let startAfterId: string | undefined;
 
-    // Paginate up to 10 pages (1,000 most recent opps) as a catch-up window
-    for (let page = 0; page < 10; page++) {
+    // Full scan: 10 pages (1,000 most recent opps) — for nightly deep reconcile.
+    // Quick sync: 1 page (100 most recent) — sufficient for 30-min polling intervals.
+    const maxPages = isFullScan ? 10 : 1;
+    for (let page = 0; page < maxPages; page++) {
       const params: Record<string, string> = {
         location_id: brand.locationId,
         pipeline_id: brand.pipelineId,
