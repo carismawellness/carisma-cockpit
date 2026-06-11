@@ -19,6 +19,17 @@ type SbClient = any;
 
 const WON_STAGE = "Booking Won";
 
+// GHL's search API (/opportunities/search) omits pipelineStageName from the
+// response, so the backfill and reconcile stored raw stage UUIDs instead of
+// normalized names. Until a full re-sync converts them, recognise these UUIDs
+// as "Booking Won" so the metric is not permanently zero.
+// Source: GET /opportunities/pipelines confirmed 2026-06-11.
+const BOOKING_WON_IDS = new Set([
+  "aa3b53ac-dc6e-47e2-bc05-4cfe8e65251c", // Spa         (brand_id 1)
+  "e4209bea-82d7-4802-ac5d-54fae9523360", // Aesthetics  (brand_id 2)
+  "e74d873e-001e-4746-8d55-35787a796ce0", // Slimming    (brand_id 3)
+]);
+
 // One-off data migrations that bulk-imported historical contacts into GHL in a
 // single day. Including these dates inflates the denominator by 6-9k leads and
 // makes booking efficiency appear near-zero for those brands that month.
@@ -77,7 +88,7 @@ export async function computeLeadConversion(
   for (const r of (data ?? []) as { stage_normalized: string; date_added: string }[]) {
     if (exclusionDates.size > 0 && exclusionDates.has(r.date_added.slice(0, 10))) continue;
     total += 1;
-    if (r.stage_normalized === WON_STAGE) won += 1;
+    if (r.stage_normalized === WON_STAGE || BOOKING_WON_IDS.has(r.stage_normalized)) won += 1;
   }
 
   return {

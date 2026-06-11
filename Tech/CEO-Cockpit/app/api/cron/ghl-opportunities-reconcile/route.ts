@@ -91,6 +91,19 @@ export async function GET(req: NextRequest) {
     const brandId = brandIdMap[brand.slug];
     if (!brandId) continue;
 
+    // Build UUID → normalized-name map from the pipeline definition so we
+    // don't store raw UUIDs when pipelineStageName is absent from the search API.
+    const stageUuidToName = new Map<string, string>();
+    try {
+      const pdata = (await ghlGet("/opportunities/pipelines", brand.apiKey, { locationId: brand.locationId })) as {
+        pipelines?: Array<{ id: string; stages: Array<{ id: string; name: string }> }>;
+      };
+      const pipeline = (pdata.pipelines ?? []).find(p => p.id === brand.pipelineId);
+      for (const s of pipeline?.stages ?? []) stageUuidToName.set(s.id, matchStage(s.name));
+    } catch (e) {
+      console.error(`reconcile ${brand.slug}: could not fetch pipeline stages:`, (e as Error).message);
+    }
+
     let upserted = 0;
     let startAfter: string | undefined;
     let startAfterId: string | undefined;
@@ -121,7 +134,7 @@ export async function GET(req: NextRequest) {
         ghl_location_id:       brand.locationId,
         ghl_pipeline_id:       brand.pipelineId,
         ghl_pipeline_stage_id: (opp.pipelineStageId ?? "") as string,
-        stage_normalized:      matchStage((opp.pipelineStageName ?? opp.pipelineStageId ?? "") as string),
+        stage_normalized:      stageUuidToName.get((opp.pipelineStageId ?? "") as string) ?? matchStage((opp.pipelineStageName ?? opp.pipelineStageId ?? "") as string),
         status:                (opp.status ?? null) as string | null,
         contact_id:            (opp.contactId ?? null) as string | null,
         assigned_to:           (opp.assignedTo ?? null) as string | null,
