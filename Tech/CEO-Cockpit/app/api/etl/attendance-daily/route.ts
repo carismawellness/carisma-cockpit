@@ -147,7 +147,8 @@ export async function POST(req: NextRequest) {
     if (!json.data) throw new Error("Talexio returned no data");
 
     const employees = json.data.employees ?? [];
-    const upsertRows: Array<Record<string, unknown>> = [];
+    // Keyed by "employee_id:date" — merges multiple shifts on the same day
+    const upsertMap = new Map<string, Record<string, unknown>>();
 
     for (const emp of employees) {
       if (emp.isTerminated) continue;
@@ -180,19 +181,34 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // One row per published shift
+      // One logical row per (employee, date) — merge multiple shifts for split-day schedules
       for (const shift of emp.workShifts ?? []) {
         const date = shift.date?.slice(0, 10);
         if (!date) continue;
 
-        const schedStartHHMM = shiftTimeToHHMM(shift.from);
-        const schedEndHHMM   = shiftTimeToHHMM(shift.to);
-        const schedStartMins = parseHHMM(schedStartHHMM);
-        const schedEndMins   = parseHHMM(schedEndHHMM);
+        const key = `${emp.id}:${date}`;
+        const newStartHHMM = shiftTimeToHHMM(shift.from);
+        const newEndHHMM   = shiftTimeToHHMM(shift.to);
+        const newStartMins = parseHHMM(newStartHHMM);
+        const newEndMins   = parseHHMM(newEndHHMM);
+
+        // Merge with existing row for this day (earliest start, latest end)
+        const existing = upsertMap.get(key);
+        const schedStartMins = existing
+          ? (newStartMins !== null && (existing._schedStartMins as number | null) !== null
+              ? Math.min(newStartMins, existing._schedStartMins as number)
+              : (existing._schedStartMins as number | null) ?? newStartMins)
+          : newStartMins;
+        const schedEndMins = existing
+          ? (newEndMins !== null && (existing._schedEndMins as number | null) !== null
+              ? Math.max(newEndMins, existing._schedEndMins as number)
+              : (existing._schedEndMins as number | null) ?? newEndMins)
+          : newEndMins;
+        const schedStartHHMM = schedStartMins !== null ? minutesToHHMM(schedStartMins) : null;
+        const schedEndHHMM   = schedEndMins   !== null ? minutesToHHMM(schedEndMins)   : null;
 
         const clockInMins  = clockInByDate.get(date)  ?? null;
         const clockOutMins = clockOutByDate.get(date)  ?? null;
-
         const isAbsent = clockInMins === null;
 
         // Late: clock-in > scheduled_start + 15 min grace
@@ -200,10 +216,7 @@ export async function POST(req: NextRequest) {
         let minutesLate = 0;
         if (!isAbsent && schedStartMins !== null && clockInMins !== null) {
           const excess = clockInMins - (schedStartMins + LATE_GRACE_MINUTES);
-          if (excess > 0) {
-            isLate = true;
-            minutesLate = excess;
-          }
+          if (excess > 0) { isLate = true; minutesLate = excess; }
         }
 
         // Left early: clock-out < scheduled_end - 15 min grace
@@ -211,10 +224,7 @@ export async function POST(req: NextRequest) {
         let minutesEarlyOut = 0;
         if (!isAbsent && schedEndMins !== null && clockOutMins !== null) {
           const deficit = (schedEndMins - EARLY_GRACE_MINUTES) - clockOutMins;
-          if (deficit > 0) {
-            leftEarly = true;
-            minutesEarlyOut = deficit;
-          }
+          if (deficit > 0) { leftEarly = true; minutesEarlyOut = deficit; }
         }
 
         // Hours worked (clock-in to clock-out, same calendar day)
@@ -223,7 +233,9 @@ export async function POST(req: NextRequest) {
           hoursWorked = Math.round(((clockOutMins - clockInMins) / 60) * 100) / 100;
         }
 
-        upsertRows.push({
+        upsertMap.set(key, {
+          _schedStartMins: schedStartMins,
+          _schedEndMins:   schedEndMins,
           employee_id:      emp.id,
           employee_name:    emp.fullName,
           date,
@@ -242,6 +254,9 @@ export async function POST(req: NextRequest) {
         });
       }
     }
+
+    // Strip internal merge helpers before upserting
+    const upsertRows = Array.from(upsertMap.values()).map(({ _schedStartMins, _schedEndMins, ...row }) => row);
 
     if (upsertRows.length > 0) {
       const CHUNK = 200;
