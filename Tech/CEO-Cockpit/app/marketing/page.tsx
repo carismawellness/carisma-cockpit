@@ -128,9 +128,9 @@ function MarketingMasterContent({
   const { overview: klavSpa, loading: klavSpaLoading } = useKlaviyoOverview({ brand: "spa", dateFrom, dateTo });
   const { overview: klavAes, loading: klavAesLoading } = useKlaviyoOverview({ brand: "aesthetics", dateFrom, dateTo });
   const { overview: klavSlim, loading: klavSlimLoading } = useKlaviyoOverview({ brand: "slimming", dateFrom, dateTo });
-  const { keywords: gscSpa } = useGscRankings({ brand: "spa", days: 28 });
-  const { keywords: gscAes } = useGscRankings({ brand: "aesthetics", days: 28 });
-  const { keywords: gscSlim } = useGscRankings({ brand: "slimming", days: 28 });
+  const { keywords: gscSpa } = useGscRankings({ brand: "spa", dateFrom, dateTo });
+  const { keywords: gscAes } = useGscRankings({ brand: "aesthetics", dateFrom, dateTo });
+  const { keywords: gscSlim } = useGscRankings({ brand: "slimming", dateFrom, dateTo });
 
   const isLoading =
     metaSpa.isLoading || metaAes.isLoading || metaSlim.isLoading ||
@@ -264,33 +264,20 @@ function MarketingMasterContent({
       {
         channel: "Search Console (Organic SEO)",
         rows: (() => {
-          // Aggregate per brand: total impressions, total clicks, impression-weighted avg position,
-          // counts of keywords in Top 3 / Page 1, overall CTR
+          // Cross-brand summary: just the 3 KPIs that matter at this level.
+          // (Per-keyword detail renders below the table in its own block.)
           function summary(rows: typeof gscSpa) {
-            let imp = 0, clicks = 0, posWeighted = 0, posWeight = 0;
-            let top3 = 0, page1 = 0;
+            let imp = 0, clicks = 0;
             for (const r of rows) {
               imp += r.impressions ?? 0;
               clicks += r.clicks ?? 0;
-              if (r.position !== null && (r.impressions ?? 0) > 0) {
-                posWeighted += Number(r.position) * Number(r.impressions);
-                posWeight += Number(r.impressions);
-              }
-              if (r.position !== null && r.position <= 3) top3++;
-              else if (r.position !== null && r.position <= 10) page1++;
             }
-            const avgPos = posWeight > 0 ? posWeighted / posWeight : null;
-            const ctr = imp > 0 ? clicks / imp : 0;
-            return { imp, clicks, avgPos, ctr, top3, page1, total: rows.length };
+            return { imp, clicks, ctr: imp > 0 ? clicks / imp : 0 };
           }
           const s = summary(gscSpa);
           const a = summary(gscAes);
           const sl = summary(gscSlim);
-          const fmtPos = (p: number | null) => (p === null ? "—" : p.toFixed(1));
           return [
-            { metric: "Tracked Keywords", spa: String(s.total), aesthetics: String(a.total), slimming: String(sl.total) },
-            { metric: "Avg Position", spa: fmtPos(s.avgPos), aesthetics: fmtPos(a.avgPos), slimming: fmtPos(sl.avgPos) },
-            { metric: "Top 3 / Page 1", spa: `${s.top3} / ${s.top3 + s.page1}`, aesthetics: `${a.top3} / ${a.top3 + a.page1}`, slimming: `${sl.top3} / ${sl.top3 + sl.page1}` },
             { metric: "Impressions", spa: fmtSubs(s.imp), aesthetics: fmtSubs(a.imp), slimming: fmtSubs(sl.imp) },
             { metric: "Clicks", spa: fmtSubs(s.clicks), aesthetics: fmtSubs(a.clicks), slimming: fmtSubs(sl.clicks) },
             { metric: "CTR", spa: fmtPct(s.ctr), aesthetics: fmtPct(a.ctr), slimming: fmtPct(sl.ctr) },
@@ -442,6 +429,61 @@ function MarketingMasterContent({
               <Card key={ch.channel} className="p-3 md:p-6">
                 <h3 className="font-semibold mb-4">{ch.channel}</h3>
                 <BrandTable rows={ch.rows} colorCodeRoas />
+                {ch.channel === "Search Console (Organic SEO)" && (
+                  <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {([
+                      { brand: "spa" as const, label: "Spa", color: BRAND.spa.color, keywords: gscSpa },
+                      { brand: "aesthetics" as const, label: "Aesthetics", color: BRAND.aesthetics.color, keywords: gscAes },
+                      { brand: "slimming" as const, label: "Slimming", color: BRAND.slimming.color, keywords: gscSlim },
+                    ]).map(({ brand, label, color, keywords }) => (
+                      <div key={brand} className="rounded-lg border bg-white p-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="inline-block h-3 w-3 rounded-full" style={{ backgroundColor: color }} />
+                          <h4 className="text-sm font-semibold">{label}</h4>
+                        </div>
+                        <table className="w-full text-xs">
+                          <thead className="text-gray-500">
+                            <tr>
+                              <th className="text-left font-medium pb-1">Keyword</th>
+                              <th className="text-right font-medium pb-1">Position</th>
+                              <th className="text-right font-medium pb-1">Δ</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {[...keywords]
+                              .sort((a, b) => {
+                                // sort by current position (best first); nulls go last
+                                if (a.position === null && b.position === null) return 0;
+                                if (a.position === null) return 1;
+                                if (b.position === null) return -1;
+                                return a.position - b.position;
+                              })
+                              .map((k) => {
+                                const posStr = k.position === null ? "—" : k.position.toFixed(1);
+                                let chgEl;
+                                if (k.positionChange === null) {
+                                  chgEl = <span className="text-gray-400">—</span>;
+                                } else if (Math.abs(k.positionChange) < 0.1) {
+                                  chgEl = <span className="text-gray-400">·</span>;
+                                } else if (k.positionChange > 0) {
+                                  chgEl = <span className="text-emerald-600">▲ {k.positionChange.toFixed(1)}</span>;
+                                } else {
+                                  chgEl = <span className="text-red-600">▼ {Math.abs(k.positionChange).toFixed(1)}</span>;
+                                }
+                                return (
+                                  <tr key={k.keyword}>
+                                    <td className="py-1 truncate max-w-[140px]" title={k.keyword}>{k.keyword}</td>
+                                    <td className="py-1 text-right tabular-nums font-semibold">{posStr}</td>
+                                    <td className="py-1 text-right tabular-nums">{chgEl}</td>
+                                  </tr>
+                                );
+                              })}
+                          </tbody>
+                        </table>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </Card>
             ))}
           </section>

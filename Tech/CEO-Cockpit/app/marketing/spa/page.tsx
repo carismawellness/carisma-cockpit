@@ -421,7 +421,7 @@ function SpaMarketingContent({
         <p className="text-sm text-gray-500 -mt-3 mb-5">
           Where carismaspa.com ranks for your tracked keywords on Google.
         </p>
-        <KeywordRankingsTable brand="spa" brandColor={BRAND_COLOR} />
+        <KeywordRankingsTable brand="spa" brandColor={BRAND_COLOR} dateFrom={dateFrom} dateTo={dateTo} />
       </Card>
 
       {/* ── Section 5: Profitability Matrix ─────────────────────────── */}

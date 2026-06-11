@@ -1,14 +1,17 @@
 /**
- * GET /api/marketing/gsc-rankings?brand=spa[&days=28]
+ * GET /api/marketing/gsc-rankings?brand=spa&from=YYYY-MM-DD&to=YYYY-MM-DD
  *
- * Returns one row per tracked keyword for the brand:
+ * Returns one row per tracked keyword over the requested window:
  *   - keyword
- *   - clicks, impressions (summed over last `days` days)
+ *   - clicks, impressions (summed over the window)
  *   - ctr (overall: clicks / impressions)
  *   - position (impression-weighted average over the window)
- *   - positionPrev (same metric for the previous equal-length window)
- *   - positionChange (positionPrev - position; positive = improved)
- *   - trend: [{ date, position, clicks }, ...] daily series for the window
+ *   - positionPrev (same metric for the immediately-preceding equal-length window)
+ *   - positionChange (positionPrev - position; positive = improved rank)
+ *   - trend: [{ date, position, clicks }, ...] daily series within the window
+ *
+ * Backwards-compat: if `from`/`to` are missing, falls back to last `days` days
+ * (defaults to 28). The parent dashboard's date filter is the source of truth.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminClient } from "@/lib/supabase/admin";
@@ -67,28 +70,46 @@ function aggregate(rows: DailyRow[]): {
   };
 }
 
+function dayDiff(a: string, b: string): number {
+  const ms = new Date(b).getTime() - new Date(a).getTime();
+  return Math.round(ms / 86400_000) + 1;
+}
+
+function addDays(iso: string, n: number): string {
+  const d = new Date(iso);
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const brand = searchParams.get("brand") as BrandSlug | null;
-  const days = Math.max(1, Math.min(180, parseInt(searchParams.get("days") ?? "28", 10) || 28));
+  const fromParam = searchParams.get("from");
+  const toParam = searchParams.get("to");
+  const daysParam = searchParams.get("days");
 
   if (!brand || !VALID.includes(brand)) {
     return NextResponse.json({ error: "Invalid brand" }, { status: 400 });
   }
 
-  // current window: ending today, days long
-  // previous window: same length immediately before current
-  const today = new Date();
-  const endIso = today.toISOString().slice(0, 10);
-  const startCur = new Date(today);
-  startCur.setDate(startCur.getDate() - (days - 1));
-  const startCurIso = startCur.toISOString().slice(0, 10);
-  const endPrev = new Date(startCur);
-  endPrev.setDate(endPrev.getDate() - 1);
-  const endPrevIso = endPrev.toISOString().slice(0, 10);
-  const startPrev = new Date(endPrev);
-  startPrev.setDate(startPrev.getDate() - (days - 1));
-  const startPrevIso = startPrev.toISOString().slice(0, 10);
+  // Resolve current window
+  let startCurIso: string;
+  let endCurIso: string;
+  if (fromParam && toParam) {
+    startCurIso = fromParam;
+    endCurIso = toParam;
+  } else {
+    const days = Math.max(1, Math.min(365, parseInt(daysParam ?? "28", 10) || 28));
+    const today = new Date();
+    endCurIso = today.toISOString().slice(0, 10);
+    const start = new Date(today);
+    start.setDate(start.getDate() - (days - 1));
+    startCurIso = start.toISOString().slice(0, 10);
+  }
+
+  const days = dayDiff(startCurIso, endCurIso);
+  const endPrevIso = addDays(startCurIso, -1);
+  const startPrevIso = addDays(endPrevIso, -(days - 1));
 
   const supabase = getAdminClient();
 
@@ -98,7 +119,7 @@ export async function GET(req: NextRequest) {
     .select("date,keyword,clicks,impressions,position")
     .eq("brand_id", BRAND_ID[brand])
     .gte("date", startPrevIso)
-    .lte("date", endIso)
+    .lte("date", endCurIso)
     .order("date", { ascending: true });
 
   if (error) {
@@ -116,7 +137,7 @@ export async function GET(req: NextRequest) {
 
   const result: AggregatedKeyword[] = tracked.map((kw) => {
     const all = byKeyword.get(kw) ?? [];
-    const current = all.filter((r) => r.date >= startCurIso && r.date <= endIso);
+    const current = all.filter((r) => r.date >= startCurIso && r.date <= endCurIso);
     const previous = all.filter((r) => r.date >= startPrevIso && r.date <= endPrevIso);
     const curAgg = aggregate(current);
     const prevAgg = aggregate(previous);
@@ -147,7 +168,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     brand,
-    window: { startDate: startCurIso, endDate: endIso, days },
+    window: { startDate: startCurIso, endDate: endCurIso, days },
     keywords: result,
   });
 }
