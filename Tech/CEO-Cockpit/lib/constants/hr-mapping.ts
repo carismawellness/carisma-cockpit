@@ -14,7 +14,8 @@ export type BrandName = "Spa" | "Aesthetics" | "Slimming" | "HQ";
 export const LOCATION_TO_BRAND: Record<string, BrandName> = {
   Novotel:           "Spa",
   Excelsior:         "Spa",
-  Labranda:          "Spa",
+  Labranda:          "Spa",   // legacy Talexio name — keep for backward compat
+  Riviera:           "Spa",
   InterContinental:  "Spa",
   Odycy:             "Spa",
   "Ramla Bay":       "Spa",
@@ -34,7 +35,7 @@ export const LOCATION_SLUG_TO_DISPLAY: Record<string, string> = {
   hugos:     "Hugos",
   hyatt:     "Hyatt",
   ramla:     "Ramla Bay",
-  labranda:  "Labranda",
+  labranda:  "Riviera",
   odycy:     "Odycy",
   excelsior: "Excelsior",
   novotel:   "Novotel",
@@ -50,7 +51,7 @@ export const LOCATION_ID_TO_DISPLAY: Record<number, string> = {
   2: "Hugos",
   3: "Hyatt",
   4: "Ramla Bay",
-  5: "Labranda",
+  5: "Riviera",
   6: "Odycy",
   7: "Excelsior",
   8: "Novotel",

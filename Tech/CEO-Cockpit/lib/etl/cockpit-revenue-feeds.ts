@@ -434,7 +434,7 @@ const SALARY_SLUG_TO_ENTITY: Record<string, { display: string; brand: "SPA" | "A
   inter:       { display: "InterContinental", brand: "SPA" },
   hyatt:       { display: "Hyatt",            brand: "SPA" },
   ramla:       { display: "Ramla",            brand: "SPA" },
-  labranda:    { display: "Labranda",         brand: "SPA" },
+  labranda:    { display: "Riviera",         brand: "SPA" },
   odycy:       { display: "Sunny Coast",      brand: "SPA" },
   excelsior:   { display: "Excelsior",        brand: "SPA" },
   novotel:     { display: "Novotel",          brand: "SPA" },

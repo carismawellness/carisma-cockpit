@@ -22,7 +22,7 @@ const SPA_LOCATION_COLORS: Record<string, string> = {
   "Ramla Bay":      "#8C7A5A", // canonical Spa tan
   Excelsior:        "#A0673D", // sienna
   Odycy:            "#7E7A4F", // olive-tan
-  Labranda:         "#B08D5B", // sand-bronze
+  Riviera:          "#B08D5B", // sand-bronze
   Novotel:          "#D9B98C", // pale sand
   "Sunny Coast":    "#C77B4A", // terracotta
 };
@@ -229,7 +229,7 @@ const REVPAH_FALLBACK = [
   { location: "Odycy", revpah: 37.10, revenue: 29800 },
   { location: "Excelsior", revpah: 35.60, revenue: 22400 },
   { location: "Ramla Bay", revpah: 32.40, revenue: 31600 },
-  { location: "Labranda", revpah: 29.80, revenue: 27500 },
+  { location: "Riviera", revpah: 29.80, revenue: 27500 },
   { location: "Novotel", revpah: 26.50, revenue: 21900 },
 ];
 
@@ -238,7 +238,7 @@ const TOTAL_REVENUE_FALLBACK = 285500;
 const HC_BY_LOCATION_FALLBACK = [
   { name: "Novotel",          hcPct: 28.5, payroll: 11900, revenue: 41760,  headcount: 7  },
   { name: "Excelsior",        hcPct: 30.2, payroll: 9350,  revenue: 30960,  headcount: 6  },
-  { name: "Labranda",         hcPct: 31.4, payroll: 14400, revenue: 45860,  headcount: 8  },
+  { name: "Riviera",         hcPct: 31.4, payroll: 14400, revenue: 45860,  headcount: 8  },
   { name: "InterContinental", hcPct: 32.1, payroll: 28500, revenue: 88786,  headcount: 15 },
   { name: "Odycy",            hcPct: 33.8, payroll: 13600, revenue: 40236,  headcount: 8  },
   { name: "Ramla Bay",        hcPct: 34.9, payroll: 15750, revenue: 45129,  headcount: 9  },

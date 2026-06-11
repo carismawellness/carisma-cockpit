@@ -32,7 +32,7 @@ export const SLUG_DISPLAY: Record<string, string> = {
   hugos:            "Hugos",
   hyatt:            "Hyatt",
   ramla:            "Ramla",
-  labranda:         "Labranda",
+  labranda:         "Riviera",
   sunny_coast:      "Sunny Coast",
   excelsior:        "Excelsior",
   novotel:          "Novotel",

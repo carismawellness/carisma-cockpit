@@ -32,7 +32,7 @@ const VENUE_SLUG_TO_LOCATION: Record<string, string> = {
   hugos:            "Hugos",
   hyatt:            "Hyatt",
   ramla:            "Ramla Bay",
-  labranda:         "Labranda",
+  labranda:         "Riviera",
   odycy:            "Odycy",
   sunny_coast:      "Odycy",
   excelsior:        "Excelsior",

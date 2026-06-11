@@ -22,11 +22,10 @@ const LOCATION_COLORS: Record<string, string> = {
   Hugos: "#96B2B2",
   Hyatt: "#B79E61",
   Ramla: "#E07A5F",
-  Labranda: "#8EB093",
+  Riviera: "#8EB093",
   Sunny: "#7C3AED",
   Excelsior: "#DC2626",
   Novotel: "#0EA5E9",
-  Riviera: "#D946EF",
   Odycy: "#14B8A6",
 };
 

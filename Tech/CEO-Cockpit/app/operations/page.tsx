@@ -12,13 +12,18 @@ import {
   useGoogleReviews,
   useDiligenceAudit,
   useStandardsScores,
+  useStandardsTrend,
   type DiligenceRow,
   type StandardsLocationRow,
+  type WeeklyReviewSummary,
+  type MonthlyStandardScore,
 } from "@/lib/hooks/useOperationsData";
 import { format, parseISO } from "date-fns";
 import {
   Bar,
   BarChart,
+  ComposedChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -63,7 +68,7 @@ const SHORT_NAMES: Record<string, string> = {
   hugos:               "Hugos",
   hyatt:               "Hyatt",
   ramla:               "Ramla",
-  labranda:            "Labranda",
+  labranda:            "Riviera",
   odycy:               "Sunny",
   excelsior:           "Excelsior",
   novotel:             "Novotel",
@@ -148,10 +153,12 @@ function OperationsContent({
   dateTo: Date;
 }) {
   /* ── Live data ─────────────────────────────────────────────────────── */
-  const reviews   = useGoogleReviews(dateTo);
-  const diligence = useDiligenceAudit(dateTo);
-  const facility  = useStandardsScores("facility", dateTo);
-  const mystery   = useStandardsScores("mystery_guest", dateTo);
+  const reviews       = useGoogleReviews(dateTo);
+  const diligence     = useDiligenceAudit(dateTo);
+  const facility      = useStandardsScores("facility", dateTo);
+  const mystery       = useStandardsScores("mystery_guest", dateTo);
+  const facilityTrend = useStandardsTrend("facility", dateTo, 12);
+  const mysteryTrend  = useStandardsTrend("mystery_guest", dateTo, 12);
 
   const loading =
     reviews.loading || diligence.loading || facility.loading || mystery.loading;
@@ -244,63 +251,101 @@ function OperationsContent({
       </div>
       <KPICardRow kpis={kpis} />
 
-      {/* ═══════ REVIEWS — COMBINED CHART ════════════════════════════ */}
+      {/* ═══════ REVIEWS — LONGITUDINAL TREND ════════════════════════ */}
       <Card className="p-3 md:p-6">
         <div className="flex items-center gap-2 mb-1">
           <Star className="h-5 w-5 text-[#B79E61]" />
-          <h2 className="text-lg font-semibold text-foreground">Reviews by Location</h2>
+          <h2 className="text-lg font-semibold text-foreground">Reviews Trend</h2>
         </div>
         <p className="text-sm text-muted-foreground mb-4">
-          Total Google reviews per location with average rating — {totalReviews.toLocaleString()} company-wide
+          Weekly company-wide review count (bars) and avg rating (line) — {totalReviews.toLocaleString()} current total
           {reviews.snapshotDate ? ` · snapshot ${format(parseISO(reviews.snapshotDate), "d MMM yyyy")}` : ""}
         </p>
-        {reviewChartData.length === 0 ? (
-          <EmptyState message="No review snapshots available — run the google-reviews ETL first." />
+
+        {/* Trend chart — up to 10 weekly periods */}
+        {reviews.weekly.length < 2 ? (
+          <div className="flex flex-col items-center justify-center h-[200px] gap-2 text-muted-foreground">
+            <span className="text-4xl">📈</span>
+            <p className="text-sm font-medium">Building history&hellip;</p>
+            <p className="text-xs max-w-xs text-center">
+              Weekly snapshots are collected each time the Google Reviews ETL runs. Check back after a few days for longitudinal data.
+            </p>
+          </div>
         ) : (
-          <div className="h-[380px] md:h-[440px]">
+          <div className="h-[260px] md:h-[300px] mb-6">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={reviewChartData}
-                layout="vertical"
-                margin={{ top: 5, right: 90, left: 10, bottom: 5 }}
+              <ComposedChart
+                data={reviews.weekly}
+                margin={{ top: 10, right: 45, left: 10, bottom: 5 }}
               >
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 11 }} />
-                <YAxis type="category" dataKey="name" width={145} tick={{ fontSize: 12 }} />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="weekLabel" tick={{ fontSize: 11 }} />
+                <YAxis
+                  yAxisId="left"
+                  tick={{ fontSize: 11 }}
+                  label={{ value: "Reviews", angle: -90, position: "insideLeft", fontSize: 10, dy: 40 }}
+                />
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  domain={[4, 5]}
+                  tickFormatter={(v: number) => v.toFixed(1)}
+                  tick={{ fontSize: 11 }}
+                  label={{ value: "Rating", angle: 90, position: "insideRight", fontSize: 10, dy: -25 }}
+                />
                 <Tooltip
-                  formatter={(value: unknown, name) => {
-                    if (name === "Total Reviews") return [String(Number(value)), String(name ?? "")];
-                    return [`${Number(value).toFixed(1)} ★`, String(name ?? "")];
+                  formatter={(value: unknown, name: unknown) => {
+                    if (name === "Avg Rating") return [`${Number(value).toFixed(2)} ★`, "Avg Rating"];
+                    return [String(Number(value).toLocaleString()), "Total Reviews"];
                   }}
                 />
-                <Bar dataKey="totalReviews" name="Total Reviews" radius={[0, 4, 4, 0]} barSize={22}>
-                  {reviewChartData.map((entry, i) => (
-                    <Cell key={i} fill={entry.color} fillOpacity={0.85} />
-                  ))}
-                  <LabelList
-                    dataKey="totalReviews"
-                    position="right"
-                    content={(props) => {
-                      const { x, y, width, height, index } = props as Record<string, unknown>;
-                      if (!x || !width || !y || !height || index === undefined) return <></>;
-                      const loc = reviewChartData[index as number];
-                      const xPos = (x as number) + (width as number) + 8;
-                      const yPos = (y as number) + (height as number) / 2 + 4;
-                      return (
-                        <g>
-                          <text x={xPos} y={yPos} fontSize={12} fontWeight={600} fill="#374151">
-                            {loc.totalReviews}
-                          </text>
-                          <text x={xPos + 38} y={yPos} fontSize={12} fontWeight={700} fill={scoreColor(loc.avgRating)}>
-                            {loc.avgRating.toFixed(1)} ★
-                          </text>
-                        </g>
-                      );
-                    }}
-                  />
-                </Bar>
-              </BarChart>
+                <Bar yAxisId="left" dataKey="totalReviews" name="Total Reviews" fill="#B79E61" fillOpacity={0.65} radius={[4, 4, 0, 0]} barSize={28} />
+                <Line yAxisId="right" type="monotone" dataKey="avgRating" name="Avg Rating" stroke="#22C55E" strokeWidth={2.5} dot={{ r: 4, fill: "#22C55E" }} />
+              </ComposedChart>
             </ResponsiveContainer>
+          </div>
+        )}
+
+        {/* Per-location snapshot table */}
+        {reviewChartData.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+              Latest snapshot by location
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b border-warm-border/50 text-left">
+                    <th className="py-1.5 px-3 text-xs font-semibold text-muted-foreground">Location</th>
+                    <th className="py-1.5 px-3 text-xs font-semibold text-muted-foreground text-right">Reviews</th>
+                    <th className="py-1.5 px-3 text-xs font-semibold text-muted-foreground text-right">Rating</th>
+                    <th className="py-1.5 px-3 text-xs font-semibold text-muted-foreground text-right">vs prev</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reviewChartData.map((loc) => {
+                    const delta = loc.prevRating != null ? +(loc.avgRating - loc.prevRating).toFixed(2) : null;
+                    return (
+                      <tr key={loc.slug} className="border-b border-warm-border/30 hover:bg-muted/20">
+                        <td className="py-1.5 px-3 font-medium text-foreground">
+                          <span className="inline-block w-2.5 h-2.5 rounded-full mr-2 align-middle" style={{ background: loc.color }} />
+                          {loc.name}
+                        </td>
+                        <td className="py-1.5 px-3 text-right tabular-nums">{loc.totalReviews.toLocaleString()}</td>
+                        <td className="py-1.5 px-3 text-right tabular-nums font-semibold" style={{ color: scoreColor(loc.avgRating) }}>
+                          {loc.avgRating.toFixed(2)} ★
+                        </td>
+                        <td className="py-1.5 px-3 text-right tabular-nums text-xs">
+                          {delta != null
+                            ? <span style={{ color: delta >= 0 ? "#22C55E" : "#EF4444" }}>{delta > 0 ? "+" : ""}{delta.toFixed(2)}</span>
+                            : <span className="text-muted-foreground">—</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </Card>
@@ -435,6 +480,7 @@ function OperationsContent({
         aggregate={avgFacility}
         barData={facilityBarData}
         barName="Facility %"
+        trend={facilityTrend.data ?? []}
         emptyMessage="No facility standards data for the selected period."
       />
 
@@ -446,6 +492,7 @@ function OperationsContent({
         aggregate={avgMystery}
         barData={mysteryBarData}
         barName="Mystery Guest %"
+        trend={mysteryTrend.data ?? []}
         emptyMessage="No mystery guest data for the selected period."
       />
 
@@ -464,6 +511,7 @@ function StandardsCard({
   aggregate,
   barData,
   barName,
+  trend,
   emptyMessage,
 }: {
   title: string;
@@ -472,59 +520,88 @@ function StandardsCard({
   aggregate: number;
   barData: StandardsLocationRow[];
   barName: string;
+  trend: MonthlyStandardScore[];
   emptyMessage: string;
 }) {
+  const hasTrend = trend.length >= 2;
+
   return (
     <Card className="p-3 md:p-6">
       <div className="flex items-center gap-2 mb-1">
         {icon}
-        <h2 className="text-lg font-semibold text-foreground">{title} — {monthLabel(month)}</h2>
+        <h2 className="text-lg font-semibold text-foreground">{title}</h2>
       </div>
       <p className="text-sm text-muted-foreground mb-4">
-        Aggregate: {aggregate}% — green &ge;85%, amber 60-84%, red &lt;60%
+        Latest month ({monthLabel(month)}): {aggregate}% — green &ge;85%, amber 60-84%, red &lt;60%
+      </p>
+
+      {/* Trend line — monthly aggregate */}
+      {hasTrend && (
+        <div className="mb-6">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Monthly trend — company avg
+          </p>
+          <div className="h-[160px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={trend} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="monthLabel" tick={{ fontSize: 10 }} />
+                <YAxis domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 10 }} width={32} />
+                <Tooltip formatter={(v: unknown) => [`${Number(v)}%`, "Avg Score"]} />
+                <ReferenceLine y={85} stroke="#D97706" strokeDasharray="5 3" strokeWidth={1.5} />
+                <Line type="monotone" dataKey="avgScore" stroke="#22C55E" strokeWidth={2.5} dot={{ r: 3, fill: "#22C55E" }} name="Avg Score" />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* Latest-month per-location bars */}
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+        By location — {monthLabel(month)}
       </p>
       {barData.length === 0 ? (
         <EmptyState message={emptyMessage} />
       ) : (
         <div className="h-[360px] md:h-[400px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={barData}
-                layout="vertical"
-                margin={{ top: 5, right: 50, left: 10, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11 }} />
-                <YAxis type="category" dataKey="name" width={145} tick={{ fontSize: 12 }} />
-                <Tooltip formatter={(v: unknown, name) => [`${Number(v)}%`, String(name ?? "")]} />
-                <Bar dataKey="score" name={barName} radius={[0, 4, 4, 0]} barSize={22}>
-                  {barData.map((entry, i) => (
-                    <Cell key={i} fill={complianceColor(entry.score)} fillOpacity={0.85} />
-                  ))}
-                  <LabelList
-                    dataKey="score"
-                    position="right"
-                    content={(props) => {
-                      const { x, y, width, height, value } = props as Record<string, unknown>;
-                      if (!x || !width || !y || !height) return <></>;
-                      return (
-                        <text
-                          x={(x as number) + (width as number) + 6}
-                          y={(y as number) + (height as number) / 2 + 4}
-                          fontSize={12}
-                          fontWeight={700}
-                          fill={complianceColor(value as number)}
-                        >
-                          {String(value)}%
-                        </text>
-                      );
-                    }}
-                  />
-                </Bar>
-                <ReferenceLine x={85} stroke="#D97706" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: "Target 85%", position: "top", fill: "#D97706", fontSize: 10 }} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={barData}
+              layout="vertical"
+              margin={{ top: 5, right: 50, left: 10, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis type="number" domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11 }} />
+              <YAxis type="category" dataKey="name" width={145} tick={{ fontSize: 12 }} />
+              <Tooltip formatter={(v: unknown, name) => [`${Number(v)}%`, String(name ?? "")]} />
+              <Bar dataKey="score" name={barName} radius={[0, 4, 4, 0]} barSize={22}>
+                {barData.map((entry, i) => (
+                  <Cell key={i} fill={complianceColor(entry.score)} fillOpacity={0.85} />
+                ))}
+                <LabelList
+                  dataKey="score"
+                  position="right"
+                  content={(props) => {
+                    const { x, y, width, height, value } = props as Record<string, unknown>;
+                    if (!x || !width || !y || !height) return <></>;
+                    return (
+                      <text
+                        x={(x as number) + (width as number) + 6}
+                        y={(y as number) + (height as number) / 2 + 4}
+                        fontSize={12}
+                        fontWeight={700}
+                        fill={complianceColor(value as number)}
+                      >
+                        {String(value)}%
+                      </text>
+                    );
+                  }}
+                />
+              </Bar>
+              <ReferenceLine x={85} stroke="#D97706" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: "Target 85%", position: "top", fill: "#D97706", fontSize: 10 }} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       )}
     </Card>
   );

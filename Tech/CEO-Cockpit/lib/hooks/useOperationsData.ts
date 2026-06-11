@@ -12,7 +12,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
-import { format, subDays, parseISO } from "date-fns";
+import { format, subDays, subMonths, parseISO } from "date-fns";
 
 /* ── Shared location lookup ──────────────────────────────────────────────── */
 
@@ -60,6 +60,13 @@ export interface ReviewSnapshot {
   prevRating: number | null;
 }
 
+export interface WeeklyReviewSummary {
+  weekStart: string;    // "YYYY-MM-DD" Monday of the week
+  weekLabel: string;    // "2 Jun"
+  totalReviews: number; // company-wide sum
+  avgRating: number;    // company-wide weighted average
+}
+
 interface GoogleReviewRow {
   date: string;
   location_id: number;
@@ -70,49 +77,56 @@ interface GoogleReviewRow {
 export function useGoogleReviews(dateTo: Date) {
   const lookup = useLocationsLookup();
   const toStr = format(dateTo, "yyyy-MM-dd");
+  // Fetch up to 11 weeks back for trend (77 days × 10 locations = ~770 rows)
+  const fromStr = format(subDays(dateTo, 77), "yyyy-MM-dd");
 
   const queryResult = useQuery({
-    queryKey: ["google_reviews_latest", toStr],
+    queryKey: ["google_reviews_trend", toStr],
     enabled: !!lookup.data,
     queryFn: async () => {
       const supabase = createClient();
       const select = "date, location_id, total_reviews, avg_rating";
 
-      // Latest snapshots with date ≤ dateTo. 600 rows ≈ 60 days × 10 locations,
-      // enough to also find the ~1-month-earlier snapshot per location.
       let { data, error } = await supabase
         .from("google_reviews")
         .select(select)
         .lte("date", toStr)
+        .gte("date", fromStr)
         .order("date", { ascending: false })
-        .limit(600);
+        .limit(1100);
       if (error) throw new Error(error.message);
 
-      // Fallback: nothing on/before dateTo — use latest available snapshot.
+      // Fallback: no data in range — show latest available
       if (!data || data.length === 0) {
         const fb = await supabase
           .from("google_reviews")
           .select(select)
+          .lte("date", toStr)
           .order("date", { ascending: false })
-          .limit(600);
+          .limit(200);
         if (fb.error) throw new Error(fb.error.message);
         data = fb.data;
       }
 
       const rows = (data ?? []) as GoogleReviewRow[];
       if (rows.length === 0) {
-        return { snapshots: [] as ReviewSnapshot[], snapshotDate: null as string | null };
+        return {
+          snapshots: [] as ReviewSnapshot[],
+          weekly: [] as WeeklyReviewSummary[],
+          snapshotDate: null as string | null,
+        };
       }
 
+      const byId = lookup.data!.byId;
       const snapshotDate = rows[0].date;
 
-      // Latest row per location (rows are date-desc).
+      // Current snapshot: latest row per location
       const latestByLoc = new Map<number, GoogleReviewRow>();
       for (const row of rows) {
         if (!latestByLoc.has(row.location_id)) latestByLoc.set(row.location_id, row);
       }
 
-      // Previous snapshot ≈ 1 month earlier (latest row ≥ 21 days older).
+      // Previous snapshot ≈ 1 month earlier for trend arrow
       const prevCutoff = format(subDays(parseISO(snapshotDate), 21), "yyyy-MM-dd");
       const prevByLoc = new Map<number, GoogleReviewRow>();
       for (const row of rows) {
@@ -121,7 +135,6 @@ export function useGoogleReviews(dateTo: Date) {
         }
       }
 
-      const byId = lookup.data!.byId;
       const snapshots: ReviewSnapshot[] = [];
       for (const [locationId, row] of latestByLoc) {
         const info = byId.get(locationId);
@@ -137,12 +150,46 @@ export function useGoogleReviews(dateTo: Date) {
         });
       }
 
-      return { snapshots, snapshotDate };
+      // Weekly buckets: group by ISO week (Monday start)
+      const weekBuckets = new Map<string, Map<number, GoogleReviewRow>>();
+      for (const row of rows) {
+        const d = parseISO(row.date);
+        const dow = d.getDay(); // 0=Sun … 6=Sat
+        const daysToMon = dow === 0 ? 6 : dow - 1;
+        const monday = format(new Date(d.getTime() - daysToMon * 86_400_000), "yyyy-MM-dd");
+        if (!weekBuckets.has(monday)) weekBuckets.set(monday, new Map());
+        const bucket = weekBuckets.get(monday)!;
+        const existing = bucket.get(row.location_id);
+        // Keep latest snapshot within each week
+        if (!existing || row.date >= existing.date) bucket.set(row.location_id, row);
+      }
+
+      // Last 10 weekly periods, oldest-first for chart
+      const sortedWeeks = Array.from(weekBuckets.keys()).sort().reverse().slice(0, 10).reverse();
+
+      const weekly: WeeklyReviewSummary[] = sortedWeeks.map((weekStart) => {
+        const bucket = weekBuckets.get(weekStart)!;
+        let total = 0, weightedRating = 0;
+        for (const row of bucket.values()) {
+          const rev = Number(row.total_reviews ?? 0);
+          total += rev;
+          weightedRating += Number(row.avg_rating ?? 0) * rev;
+        }
+        return {
+          weekStart,
+          weekLabel: format(parseISO(weekStart), "d MMM"),
+          totalReviews: total,
+          avgRating: total > 0 ? +(weightedRating / total).toFixed(2) : 0,
+        };
+      });
+
+      return { snapshots, weekly, snapshotDate };
     },
   });
 
   return {
     snapshots: queryResult.data?.snapshots ?? [],
+    weekly: queryResult.data?.weekly ?? [],
     snapshotDate: queryResult.data?.snapshotDate ?? null,
     loading: queryResult.isLoading || lookup.isLoading,
     error: queryResult.error?.message || lookup.error?.message || null,
@@ -222,7 +269,6 @@ export function useDiligenceAudit(dateTo: Date) {
         });
       }
 
-      // Stable order: by total sales descending (largest venue first).
       rows.sort((a, b) => b.totalSales - a.totalSales);
       return { rows, month };
     },
@@ -248,6 +294,12 @@ export interface StandardsLocationRow {
   issues: { category: string; item: string }[];
 }
 
+export interface MonthlyStandardScore {
+  month: string;       // "YYYY-MM-DD"
+  monthLabel: string;  // "Apr 26"
+  avgScore: number;    // company-wide average 0-100
+}
+
 export function useStandardsScores(
   standardType: "facility" | "front_desk" | "mystery_guest",
   dateTo: Date,
@@ -261,8 +313,6 @@ export function useStandardsScores(
     queryFn: async () => {
       const supabase = createClient();
 
-      // Latest month with data on or before dateTo (no lower bound — same
-      // rationale as useDiligenceAudit: range end drives which month is shown).
       const monthRes = await supabase
         .from("brand_standards")
         .select("month")
@@ -287,7 +337,6 @@ export function useStandardsScores(
         .limit(2000);
       if (error) throw new Error(error.message);
 
-      // Aggregate per location: score = passed/total, issues = result=false items.
       const agg = new Map<
         string,
         { total: number; passed: number; issues: { category: string; item: string }[] }
@@ -323,4 +372,55 @@ export function useStandardsScores(
     loading: queryResult.isLoading || lookup.isLoading,
     error: queryResult.error?.message || lookup.error?.message || null,
   };
+}
+
+/**
+ * Monthly aggregate trend for facility / mystery_guest standards.
+ * Returns one score per month (company-wide avg) for up to numMonths periods
+ * ending at dateTo. Data is immediately useful since brand_standards has
+ * backfilled history from 2024.
+ */
+export function useStandardsTrend(
+  standardType: "facility" | "front_desk" | "mystery_guest",
+  dateTo: Date,
+  numMonths = 12,
+) {
+  const toStr = format(dateTo, "yyyy-MM-dd");
+  const fromStr = format(subMonths(dateTo, numMonths), "yyyy-MM-dd");
+
+  return useQuery({
+    queryKey: ["brand_standards_trend", standardType, toStr, numMonths],
+    queryFn: async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("brand_standards")
+        .select("month, result")
+        .eq("standard_type", standardType)
+        .gte("month", fromStr)
+        .lte("month", toStr)
+        .order("month", { ascending: true })
+        .limit(20000);
+      if (error) throw new Error(error.message);
+
+      // Aggregate per month: company-wide avg score
+      const monthMap = new Map<string, { total: number; passed: number }>();
+      for (const row of data ?? []) {
+        const m = row.month as string;
+        const entry = monthMap.get(m) ?? { total: 0, passed: 0 };
+        entry.total += 1;
+        if (row.result) entry.passed += 1;
+        monthMap.set(m, entry);
+      }
+
+      const trend: MonthlyStandardScore[] = Array.from(monthMap.entries()).map(
+        ([month, { total, passed }]) => ({
+          month,
+          monthLabel: format(parseISO(month), "MMM yy"),
+          avgScore: total > 0 ? Math.round((passed / total) * 100) : 0,
+        }),
+      );
+
+      return trend;
+    },
+  });
 }

@@ -10,7 +10,7 @@ export const SPA_LOCATION_META: Record<string, { name: string; color: string }> 
   hugos:     { name: "Hugos",            color: "#96B2B2" },
   hyatt:     { name: "Hyatt",            color: "#B79E61" },
   ramla:     { name: "Ramla",            color: "#8EB093" },
-  labranda:  { name: "Labranda",         color: "#E07A5F" },
+  labranda:  { name: "Riviera",         color: "#E07A5F" },
   odycy:     { name: "Sunny Coast",      color: "#4A90D9" },
   excelsior: { name: "Excelsior",        color: "#7C3AED" },
   novotel:   { name: "Novotel",          color: "#DC2626" },

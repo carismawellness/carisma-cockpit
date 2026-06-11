@@ -21,7 +21,7 @@ const BENCHMARK_RENT_MONTHLY: Record<number, number> = {
   2: 1000.00,  // Hugos
   3: 1407.00,  // Hyatt
   4: 1000.00,  // Ramla
-  5: 1000.00,  // Labranda
+  5: 1000.00,  // Riviera
   6:  944.44,  // Sunny Coast (€2833.305/quarter ÷ 3)
   7: 2500.00,  // Excelsior
   8:    0.00,  // Novotel — see FIXED_RENT_MONTHLY (hardwired, never from Zoho)

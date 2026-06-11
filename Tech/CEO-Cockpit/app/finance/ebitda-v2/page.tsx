@@ -16,7 +16,7 @@ const VENUE_CONFIG = [
   { slug: "hugos",            label: "hugos",     brand: "SPA"  },
   { slug: "hyatt",            label: "hyatt",     brand: "SPA"  },
   { slug: "ramla",            label: "ramla",     brand: "SPA"  },
-  { slug: "labranda",         label: "labranda",  brand: "SPA"  },
+  { slug: "labranda",         label: "Riviera",  brand: "SPA"  },
   { slug: "sunny_coast",      label: "Sunny Coast", brand: "SPA"  },
   { slug: "excelsior",        label: "excelsior", brand: "SPA"  },
   { slug: "novotel",          label: "novotel",   brand: "SPA"  },

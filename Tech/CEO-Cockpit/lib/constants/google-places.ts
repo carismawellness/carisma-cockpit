@@ -16,7 +16,7 @@
  *   aesthetics-clinic 303 @ 4.7   slimming-clinic 17 @ 5.0
  *
  * locationId / brandId map 1:1 to the Supabase `locations` / `brands` tables.
- * NOTE: Labranda Riviera rebranded to "Riviera Spa Resort" and the Odycy
+ * NOTE: Riviera (formerly Labranda) to "Riviera Spa Resort" and the Odycy
  * (Sunny Coast) listing is named "AX Sunny Coast" — both confirmed correct.
  */
 

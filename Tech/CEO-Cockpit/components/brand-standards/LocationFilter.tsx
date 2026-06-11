@@ -13,7 +13,7 @@ const DEFAULT_LOCATIONS = [
   "Hugos",
   "Hyatt",
   "Ramla",
-  "Labranda",
+  "Riviera",
   "Sunny",
   "Excelsior",
   "Novotel",
