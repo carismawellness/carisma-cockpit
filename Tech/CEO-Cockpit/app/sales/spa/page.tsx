@@ -450,50 +450,46 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
         </div>
       )}
 
-      {/* Therapist utilization + AOV by location — side by side */}
+      {/* Therapist utilization — full width so the full Column-G employee list
+          fits without truncation. (Was previously paired with AOV; AOV now
+          owns its own row above.) */}
+      {!analytics.isFetching && aovChartData.length > 0 && (
+        <Card className="p-4 md:p-6 space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Average Order Value by Location</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Average service transaction value per venue · inc-VAT
+            </p>
+          </div>
+          <div className="h-[300px] md:h-[360px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={aovChartData} margin={{ top: 24, right: 12, left: 8, bottom: 36 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#374151" }} angle={-25} textAnchor="end" interval={0} height={48} />
+                <YAxis tickFormatter={(v: number) => fmtShort(v)} tick={{ fontSize: 11, fill: "#6b7280" }} width={56} />
+                <Tooltip
+                  formatter={(v: unknown, _name: unknown, props: { payload?: { txns?: number } }) =>
+                    [fmtShort(Number(v)), `Avg Order Value · ${props.payload?.txns ?? 0} txns`]
+                  }
+                />
+                <Bar dataKey="AOV" radius={[4, 4, 0, 0]} maxBarSize={64}>
+                  {aovChartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                  <LabelList
+                    dataKey="AOV"
+                    position="top"
+                    formatter={(v: unknown) => fmtShort(Number(v))}
+                    style={{ fontSize: 10, fontWeight: 600, fill: "#111827" }}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+      )}
       {!analytics.isFetching && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-          <SpaTherapistChart data={analytics.byTherapist} topN={15} />
-          {aovChartData.length > 0 ? (
-            <Card className="p-4 md:p-6 space-y-3">
-              <div>
-                <h2 className="text-lg font-semibold text-foreground">Average Order Value by Location</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Average service transaction value per venue · inc-VAT
-                </p>
-              </div>
-              <div className="h-[300px] md:h-[360px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={aovChartData} margin={{ top: 24, right: 12, left: 8, bottom: 36 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
-                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#374151" }} angle={-25} textAnchor="end" interval={0} height={48} />
-                    <YAxis tickFormatter={(v: number) => fmtShort(v)} tick={{ fontSize: 11, fill: "#6b7280" }} width={56} />
-                    <Tooltip
-                      formatter={(v: unknown, _name: unknown, props: { payload?: { txns?: number } }) =>
-                        [fmtShort(Number(v)), `Avg Order Value · ${props.payload?.txns ?? 0} txns`]
-                      }
-                    />
-                    <Bar dataKey="AOV" radius={[4, 4, 0, 0]} maxBarSize={44}>
-                      {aovChartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                      <LabelList
-                        dataKey="AOV"
-                        position="top"
-                        formatter={(v: unknown) => fmtShort(Number(v))}
-                        style={{ fontSize: 10, fontWeight: 600, fill: "#111827" }}
-                      />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </Card>
-          ) : (
-            <Card className="p-4 md:p-6 h-full flex items-center justify-center text-sm text-muted-foreground">
-              No average-order-value data for the selected period.
-            </Card>
-          )}
-        </div>
+        <SpaTherapistChart data={analytics.byTherapist} />
       )}
 
       {/* Discount + Complimentary by club — full width each */}

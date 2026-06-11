@@ -222,35 +222,45 @@ export function SpaHourOfDayChart({ data }: { data: HourByLocationPoint[] }) {
 
 export function SpaTherapistChart({
   data,
-  topN = 30,
+  topN,
 }: { data: TherapistRow[]; topN?: number }) {
-  const ranked = useMemo(
-    () => data
-      .filter((t) => t.revenue > 0)
-      .slice(0, topN)
-      .map((t) => ({ ...t, label: t.therapist })),
-    [data, topN],
-  );
+  const ranked = useMemo(() => {
+    const filtered = data.filter((t) => t.revenue > 0);
+    const sliced   = typeof topN === "number" ? filtered.slice(0, topN) : filtered;
+    return sliced.map((t) => ({ ...t, label: t.therapist }));
+  }, [data, topN]);
+
+  // Scale typography / chart height so 60+ therapists still fit.
+  const n          = ranked.length;
+  const tickFont   = n > 40 ? 9 : n > 25 ? 10 : 11;
+  const labelFont  = n > 40 ? 9 : 10;
+  const axisAngle  = n > 25 ? -45 : -35;
+  const bottomPad  = n > 40 ? 110 : n > 25 ? 96 : 80;
+  const chartH     = Math.max(420, Math.min(560, 360 + n * 4));
+
+  const subtitleSuffix = typeof topN === "number" && filteredCount(data) > topN
+    ? `· top ${ranked.length}`
+    : `· all ${ranked.length}`;
 
   return (
     <SectionCard
       title="Therapist utilization"
-      subtitle={`Gross revenue per therapist (Cockpit "Service - Spa" Column G) · top ${ranked.length}`}
+      subtitle={`Gross revenue per therapist (Cockpit "Service - Spa" Column G) ${subtitleSuffix}`}
     >
       {ranked.length === 0 ? (
         <EmptyState msg="No therapist data — Column G empty for the selected period." />
       ) : (
-        <div className="h-[360px] md:h-[420px]">
+        <div style={{ height: chartH }}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={ranked} margin={{ top: 28, right: 16, left: 12, bottom: 80 }}>
+            <BarChart data={ranked} margin={{ top: 28, right: 16, left: 12, bottom: bottomPad }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
               <XAxis
                 dataKey="label"
-                tick={{ fontSize: 11, fill: "#374151" }}
-                angle={-35}
+                tick={{ fontSize: tickFont, fill: "#374151" }}
+                angle={axisAngle}
                 textAnchor="end"
                 interval={0}
-                height={72}
+                height={bottomPad - 8}
               />
               <YAxis tickFormatter={(v) => fmtK(Number(v))} tick={{ fontSize: 11, fill: "#6b7280" }} width={60} />
               <Tooltip
@@ -265,7 +275,7 @@ export function SpaTherapistChart({
                   dataKey="revenue"
                   position="top"
                   formatter={(v: unknown) => fmtK(Number(v))}
-                  style={{ fontSize: 10, fontWeight: 600, fill: "#111827" }}
+                  style={{ fontSize: labelFont, fontWeight: 600, fill: "#111827" }}
                 />
               </Bar>
             </BarChart>
@@ -274,6 +284,12 @@ export function SpaTherapistChart({
       )}
     </SectionCard>
   );
+}
+
+function filteredCount(data: TherapistRow[]): number {
+  let c = 0;
+  for (const t of data) if (t.revenue > 0) c++;
+  return c;
 }
 
 // ── 4. Discount by club (€ + %) ──────────────────────────────────────────────
