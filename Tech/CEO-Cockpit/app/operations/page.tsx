@@ -360,10 +360,9 @@ function OperationsContent({
   };
   const totPct = (n: number) => pctOf(n, diligenceTotals.totalSales);
 
-  // Stacked chart: each weekly item needs slug-keyed newReviews columns
-  const allLocationSlugs = reviews.weekly.length > 0
-    ? reviews.weekly[reviews.weekly.length - 1].locations.map((l) => l.slug)
-    : [];
+  // All location slugs from the snapshot (not just the last week's active set),
+  // so every location always has a <Bar> registered in the chart.
+  const allLocationSlugs = reviews.snapshots.map((s) => s.slug);
 
   const weeklyStackedData = reviews.weekly.map((w) => {
     const row: Record<string, number | string> = {
