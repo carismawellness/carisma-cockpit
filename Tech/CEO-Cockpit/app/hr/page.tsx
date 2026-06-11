@@ -472,8 +472,8 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
     {
       label: "Avg Activity",
       value: `${avgProductivity}%`,
-      target: "80%",
-      targetValue: 80,
+      target: "90%",
+      targetValue: 90,
       currentValue: avgProductivity,
       isSample: !isProductivityReal,
     },
@@ -837,7 +837,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           {isProductivityReal ? <LiveBadge source="supabase" /> : <SampleDataBadge />}
         </h2>
         <p className="text-xs text-muted-foreground mb-4">
-          Avg daily hours breakdown — sorted by activity % descending (active ÷ online, matches We360) | Target: 80%
+          Avg daily hours breakdown — sorted by activity % descending (active ÷ online, matches We360) | Target: 90%
         </p>
         <ResponsiveContainer width="100%" height={productivityData.length * 40 + 60}>
           <BarChart
