@@ -104,15 +104,18 @@ export async function GET(req: NextRequest) {
     revenueByLocation.set("Aesthetics Centre", aesTotal);
   }
 
-  // slimming — same pattern
-  const { data: slmRev } = await supabase
-    .from("slimming_sales_daily")
-    .select("price_ex_vat, date_of_service, month")
+  // slimming — use treatments_daily (actual sessions delivered, not package sales).
+  // slimming_sales_daily records package revenue on the date of purchase, which
+  // inflates the month's RevPAH when clients buy multi-session packs upfront.
+  // slimming_treatments_daily records one row per session actually performed.
+  const { data: slmTx } = await supabase
+    .from("slimming_treatments_daily")
+    .select("price_ex_vat, date_of_service, month, therapist")
     .or(
       `and(date_of_service.gte.${bounds.start},date_of_service.lte.${bounds.end}),` +
       `and(date_of_service.is.null,month.eq.${bounds.monthStart})`,
     );
-  const slmTotal = (slmRev ?? []).reduce((a, r) => a + Number(r.price_ex_vat ?? 0), 0);
+  const slmTotal = (slmTx ?? []).reduce((a, r) => a + Number(r.price_ex_vat ?? 0), 0);
   if (slmTotal > 0) {
     revenueByLocation.set("Slimming Centre", slmTotal);
   }
@@ -141,6 +144,19 @@ export async function GET(req: NextRequest) {
   for (const [locId, names] of therapistSetByLocId) {
     const loc = LOCATION_ID_TO_DISPLAY[locId];
     if (loc) headcountByLocation.set(loc, names.size);
+  }
+
+  // ── Slimming headcount: distinct therapists from treatment records ───────────
+  // Talexio maps most slimming therapists to a central cost centre, not to
+  // "Slimming Centre", so the snapshot may show only 1. Count distinct
+  // therapist names from the treatment records instead.
+  const slmTherapists = new Set(
+    (slmTx ?? [])
+      .map((r) => String(r.therapist ?? "").trim())
+      .filter(Boolean),
+  );
+  if (slmTherapists.size > 0) {
+    headcountByLocation.set("Slimming Centre", slmTherapists.size);
   }
 
   // ── Fallback: Talexio snapshot for any location with no service records ──────
