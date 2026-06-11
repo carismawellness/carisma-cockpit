@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { fetchAll } from "@/lib/supabase/fetch-all";
+import { SPA_LOCATION_PALETTE, SPA_LOCATION_FALLBACK_COLOR } from "@/lib/constants/spa-locations";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -58,17 +59,7 @@ export interface UseSpaRetailResult {
 
 const VAT_RATE = 0.18;
 
-// Same cream palette as the brand-breakdown chart so hotels read consistently.
-const SPA_LOCATION_META: Record<number, { name: string; color: string }> = {
-  1: { name: "Inter",     color: "#3D2D1A" },
-  2: { name: "Hugos",     color: "#C49862" },
-  3: { name: "Hyatt",     color: "#7A3F35" },
-  4: { name: "Ramla",     color: "#8C7A5A" },
-  5: { name: "Riviera",   color: "#D9B98C" },
-  6: { name: "Odycy",     color: "#7E8055" },
-  7: { name: "Excelsior", color: "#A0522D" },
-  8: { name: "Novotel",   color: "#E8D9B9" },
-};
+const SPA_LOCATION_META = SPA_LOCATION_PALETTE;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -118,7 +109,7 @@ export function useSpaRetail(dateFrom: Date, dateTo: Date): UseSpaRetailResult {
   }
   const byLocation: RetailByLocation[] = Array.from(locMap.entries())
     .map(([id, v]) => {
-      const meta = SPA_LOCATION_META[id] ?? { name: `Location ${id}`, color: "#9CA3AF" };
+      const meta = SPA_LOCATION_META[id] ?? { name: `Location ${id}`, color: SPA_LOCATION_FALLBACK_COLOR };
       return {
         location_id:   id,
         name:          meta.name,

@@ -12,20 +12,7 @@ import { BRAND } from "@/lib/constants/design-tokens";
 
 const TARGET_AMBER = "#D97706"; // target reference-line marker (not a brand color)
 
-// Per-location bars are colored by their business unit so the chart reads as
-// on-brand — warm Spa-family tones for the hotels, Aesthetics teal, Slimming
-// green — instead of a flat status color. See .agents/skills/carisma-brand-colors.
-const SPA_LOCATION_COLORS: Record<string, string> = {
-  InterContinental: "#5E4B2E", // deep espresso
-  Hugos:            "#C49862", // caramel
-  Hyatt:            "#8A5A3C", // chestnut
-  "Ramla Bay":      "#8C7A5A", // canonical Spa tan
-  Excelsior:        "#A0673D", // sienna
-  Odycy:            "#7E7A4F", // olive-tan
-  Riviera:          "#B08D5B", // sand-bronze
-  Novotel:          "#D9B98C", // pale sand
-  "Sunny Coast":    "#C77B4A", // terracotta
-};
+import { SPA_LOCATION_COLOR_BY_NAME, SPA_LOCATION_FALLBACK_COLOR } from "@/lib/constants/spa-locations";
 import {
   useTalexioHeadcount,
   useTalexioTimeLogs,
@@ -76,7 +63,7 @@ const PROD_COLORS = {
 function locationColor(name: string): string {
   if (/aesthetic/i.test(name)) return BRAND.aesthetics.soft;
   if (/slimming/i.test(name))  return BRAND.slimming.soft;
-  return SPA_LOCATION_COLORS[name] ?? BRAND.spa.soft;
+  return SPA_LOCATION_COLOR_BY_NAME[name] ?? SPA_LOCATION_FALLBACK_COLOR;
 }
 
 function getStatusBadge(status: string, className: string) {

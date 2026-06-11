@@ -10,19 +10,7 @@ import {
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { GroupPeriod, GroupLocationRow } from "@/lib/hooks/useGroupRevenue";
 import { BRAND } from "@/lib/constants/design-tokens";
-
-// 8 warm/earth tones with real contrast — shared with GroupLongitudinal so
-// each hotel reads with the same identity across both charts. Stable per hotel.
-const SPA_LOCATION_PALETTE: Record<string, string> = {
-  Inter:     "#3D2D1A",  // deep espresso
-  Hyatt:     "#7A3F35",  // burgundy
-  Excelsior: "#A0522D",  // sienna
-  Ramla:     "#8C7A5A",  // canonical Spa tan
-  Hugos:     "#C49862",  // caramel
-  Riviera:   "#D9B98C",  // warm sand
-  Odycy:     "#7E8055",  // olive
-  Novotel:   "#E8D9B9",  // palest cream
-};
+import { SPA_LOCATION_COLOR_BY_NAME, SPA_LOCATION_FALLBACK_COLOR } from "@/lib/constants/spa-locations";
 
 function fmtK(v: number) {
   if (Math.abs(v) >= 1_000_000) return `€${(v / 1_000_000).toFixed(1)}M`;
@@ -70,7 +58,7 @@ export function GroupBrandBreakdown({ period, ly, spaLocations, isFetching }: Pr
         name:    l.name,
         current: l.revenue,
         ly:      0,
-        dark:    SPA_LOCATION_PALETTE[l.name] ?? BRAND.spa.dark,
+        dark:    SPA_LOCATION_COLOR_BY_NAME[l.name] ?? SPA_LOCATION_FALLBACK_COLOR,
         soft:    BRAND.spa.soft,
         hasLy:   false,
       })),

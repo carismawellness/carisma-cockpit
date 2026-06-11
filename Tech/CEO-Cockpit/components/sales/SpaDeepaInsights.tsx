@@ -16,6 +16,7 @@
 import { useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { BRAND } from "@/lib/constants/design-tokens";
+import { SPA_LOCATION_PALETTE } from "@/lib/constants/spa-locations";
 import {
   BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList,
@@ -31,22 +32,7 @@ import type {
   ComplimentaryLocation,
 } from "@/lib/hooks/useSpaDeepaAnalytics";
 
-// ── Shared palette ───────────────────────────────────────────────────────────
-//
-// Stable per-hotel cream/earth palette — same identity as
-// GroupBrandBreakdown.tsx + useSpaRetail.ts. Add closed-location greys.
-const SPA_LOCATION_PALETTE: Record<number, { name: string; color: string }> = {
-  1:  { name: "Inter",     color: "#3D2D1A" },
-  2:  { name: "Hugos",     color: "#C49862" },
-  3:  { name: "Hyatt",     color: "#7A3F35" },
-  4:  { name: "Ramla",     color: "#8C7A5A" },
-  5:  { name: "Riviera",   color: "#D9B98C" },
-  6:  { name: "Odycy",     color: "#7E8055" },
-  7:  { name: "Excelsior", color: "#A0522D" },
-  8:  { name: "Novotel",   color: "#E8D9B9" },
-  11: { name: "Qawra",     color: "#9CA3AF" },
-  12: { name: "Seashells", color: "#6B7280" },
-};
+// SPA_LOCATION_PALETTE imported from canonical source above.
 
 const ACTIVE_LOC_IDS = [1, 2, 3, 4, 5, 6, 7, 8];
 
