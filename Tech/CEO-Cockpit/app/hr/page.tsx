@@ -58,17 +58,16 @@ const PROD_COLORS = {
 };
 
 // ── Activity Leaderboard grouping ────────────────────────────────────────────
-// HQ = back-office / support; Yamuna = standalone; CRM = sales team.
+// HQ = back-office / support; CRM = sales team.
 // Matched by first name so last-initial format changes don't break it.
-const LEADERBOARD_HQ = new Set(["Ruksana", "Mandar", "Nicole", "Melissa", "Yofan"]);
-const LEADERBOARD_GROUP_ORDER = { HQ: 0, Yamuna: 1, CRM: 2 } as const;
+const LEADERBOARD_HQ = new Set(["Ruksana", "Mandar", "Nicole", "Melissa", "Yofan", "Yamuna"]);
+const LEADERBOARD_GROUP_ORDER = { HQ: 0, CRM: 1 } as const;
 type LeaderboardGroup = keyof typeof LEADERBOARD_GROUP_ORDER;
-const LEADERBOARD_GROUP_LABELS: Record<LeaderboardGroup, string> = { HQ: "HQ", Yamuna: "Yamuna", CRM: "CRM" };
+const LEADERBOARD_GROUP_LABELS: Record<LeaderboardGroup, string> = { HQ: "HQ", CRM: "CRM" };
 
 function empGroup(name: string): LeaderboardGroup {
   const first = name.split(" ")[0];
   if (LEADERBOARD_HQ.has(first)) return "HQ";
-  if (first === "Yamuna") return "Yamuna";
   return "CRM";
 }
 
