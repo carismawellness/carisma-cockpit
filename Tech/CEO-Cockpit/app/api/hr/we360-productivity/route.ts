@@ -1,10 +1,15 @@
 /**
  * GET /api/hr/we360-productivity?from=YYYY-MM-DD&to=YYYY-MM-DD
  *
- * Aggregates We360 per-employee productivity over the date range into the shape
- * the HR Productivity Leaderboard chart expects: average daily hours split by
- * category (productive / neutral / unproductive / idle), overall productive %,
- * sorted by productive % descending.
+ * Aggregates We360 per-employee data over the date range into the shape the HR
+ * Productivity Leaderboard chart expects.
+ *
+ * Metric displayed ("Activity %") = active_duration_sec / online_duration_sec.
+ * This is identical to the "Activity %" column shown in We360's Activity Report,
+ * so the cockpit and We360 always agree on the headline number.
+ *
+ * The bar chart still breaks active time into Productive / Neutral / Unproductive
+ * segments (+ Idle) so the quality of active time is visible.
  *
  * Source: we360_productivity_daily (populated by /api/etl/we360).
  * Only days with recorded activity (online_duration_sec > 0) count toward the
@@ -39,6 +44,7 @@ interface Agg {
   unproductive: number;
   neutral: number;
   idle: number;
+  active: number;
   online: number;
 }
 
@@ -95,6 +101,7 @@ export async function GET(req: NextRequest) {
         unproductive: 0,
         neutral: 0,
         idle: 0,
+        active: 0,
         online: 0,
       };
       byEmail.set(r.email, a);
@@ -104,6 +111,7 @@ export async function GET(req: NextRequest) {
     a.unproductive += r.unproductive_duration_sec ?? 0;
     a.neutral      += r.neutral_duration_sec ?? 0;
     a.idle         += r.idle_duration_sec ?? 0;
+    a.active       += r.active_duration_sec ?? 0;
     a.online       += online;
   }
 
@@ -114,24 +122,21 @@ export async function GET(req: NextRequest) {
       const unproductive = hrs(a.unproductive);
       const neutral      = hrs(a.neutral);
       const idle         = hrs(a.idle);
-      // Use segment sum for totalHrs so the label % is mathematically consistent
-      // with the visual bar. We360's online_duration_sec can include unclassified
-      // time that isn't reflected in the four named segments, which would make
-      // (productive/online) give a lower % than the bar visually implies.
-      const segTotal      = Math.round((productive + neutral + unproductive + idle) * 10) / 10;
-      const productivePct = segTotal > 0 ? Math.round((productive / segTotal) * 100) : 0;
-      const totalHrs      = segTotal.toFixed(1);
+      // Activity % = active / online — identical to the "Activity %" column in
+      // We360's Activity Report, so cockpit and We360 always show the same number.
+      const activityPct = a.online > 0 ? Math.round((a.active / a.online) * 100) : 0;
+      const totalHrs    = hrs(a.online).toFixed(1);
       return {
         name: displayName(a.first_name, a.last_name, a.email),
         Productive:   productive,
         Neutral:      neutral,
         Unproductive: unproductive,
         Idle:         idle,
-        productivePct,
+        productivePct: activityPct,
         totalHrs,
         // Pre-formatted label used by the Recharts LabelList to avoid index
         // misalignment in stacked vertical bar charts.
-        barLabel: `${productivePct}% — ${totalHrs}h`,
+        barLabel: `${activityPct}% — ${totalHrs}h`,
         days: a.days,
       };
     })

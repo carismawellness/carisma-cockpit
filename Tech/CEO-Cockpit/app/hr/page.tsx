@@ -483,7 +483,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
       currentValue: onTimePct,
     },
     {
-      label: "Avg Productivity",
+      label: "Avg Activity",
       value: `${avgProductivity}%`,
       target: "80%",
       targetValue: 80,
@@ -832,11 +832,11 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           </div>
         )}
         <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
-          Productivity Leaderboard
+          Activity Leaderboard
           {isProductivityReal ? <LiveBadge source="supabase" /> : <SampleDataBadge />}
         </h2>
         <p className="text-xs text-muted-foreground mb-4">
-          Avg daily hours breakdown — sorted by productive % descending | Target: 80%
+          Avg daily hours breakdown — sorted by activity % descending (active ÷ online, matches We360) | Target: 80%
         </p>
         <ResponsiveContainer width="100%" height={productivityData.length * 40 + 60}>
           <BarChart
@@ -852,7 +852,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
               labelFormatter={(label) => {
                 const item = productivityData.find((d) => d.name === label);
                 return item
-                  ? `${label} — ${item.productivePct}% productive (${item.totalHrs}h total)`
+                  ? `${label} — ${item.productivePct}% active (${item.totalHrs}h online)`
                   : String(label);
               }}
             />
