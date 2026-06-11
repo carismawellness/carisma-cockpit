@@ -136,9 +136,10 @@ export interface TalexioEmployeeWithShifts {
   workShifts: TalexioWorkShift[];
 }
 
-export function useTalexioShiftsToday(todayStr: string) {
+/** Fetches published work shifts for all employees within [from, to] (YYYY-MM-DD). */
+export function useTalexioShiftsRange(from: string, to: string) {
   return useTalexio<{ employees: TalexioEmployeeWithShifts[] }>({
     action: "shiftsToday",
-    params: { dateFrom: todayStr, dateTo: todayStr },
+    params: { dateFrom: from, dateTo: to },
   });
 }

@@ -18,7 +18,7 @@ import {
   useTalexioTimeLogs,
   useTalexioLeave,
   useTalexioPayslips,
-  useTalexioShiftsToday,
+  useTalexioShiftsRange,
 } from "@/lib/hooks/useTalexio";
 import { useHRFinancials, useHRRevPAH, useWe360Productivity } from "@/lib/hooks/useHRData";
 import {
@@ -27,7 +27,7 @@ import {
   buildLateArrivals,
   buildLeaveBalances,
   buildPayrollSummary,
-  mtToday,
+  buildPeriodAttendanceSummary,
 } from "@/lib/hr/talexio-transforms";
 import {
   BarChart,
@@ -300,6 +300,7 @@ const attendanceColumns = [
   },
 ];
 
+// Per-day late arrivals (today view) — kept for fallback / single-day usage
 const latenessColumns = [
   { key: "name", label: "Employee" },
   { key: "clockIn", label: "Clock In", align: "right" as const },
@@ -314,6 +315,30 @@ const latenessColumns = [
       if (mins > 15) return getStatusBadge(`${mins}m`, "bg-amber-100 text-amber-800");
       return getStatusBadge(`${mins}m`, "bg-yellow-100 text-yellow-800");
     },
+  },
+];
+
+// Period-aggregated late arrivals (roster-based, across all days in the selected range)
+const periodLatenessColumns = [
+  { key: "name", label: "Employee" },
+  { key: "daysLate", label: "Days Late", align: "right" as const, sortable: true },
+  {
+    key: "totalMinutesLate",
+    label: "Total Mins Late",
+    align: "right" as const,
+    sortable: true,
+    render: (v: unknown) => {
+      const mins = Number(v);
+      if (mins > 120) return getStatusBadge(`${mins}m`, "bg-red-100 text-red-800");
+      if (mins > 30)  return getStatusBadge(`${mins}m`, "bg-amber-100 text-amber-800");
+      return getStatusBadge(`${mins}m`, "bg-yellow-100 text-yellow-800");
+    },
+  },
+  {
+    key: "avgMinutesLate",
+    label: "Avg / Day",
+    align: "right" as const,
+    render: (v: unknown) => `${v}m`,
   },
 ];
 
@@ -340,12 +365,13 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const queryClient = useQueryClient();
 
   // ── Live data: Talexio ────────────────────────────────────────────────────
-  const todayMalta = mtToday();
   const headcountQ = useTalexioHeadcount();
   const timeLogsQ = useTalexioTimeLogs();
   const leaveQ = useTalexioLeave();
   const payslipsQ = useTalexioPayslips();
-  const shiftsQ = useTalexioShiftsToday(todayMalta);
+  // Fetch published roster for the full selected period — used to determine scheduled start
+  // times and to compute period-level on-time % (roster is ground truth for lateness).
+  const shiftsQ = useTalexioShiftsRange(fromISO, toISO);
 
   // ── Live data: Supabase-backed HR financials ──────────────────────────────
   const financialsQ = useHRFinancials(month);
@@ -363,28 +389,37 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
     return getActiveEmployees(headcountQ.data.employees).length;
   }, [headcountQ.data]);
 
-  // Build employeeId → scheduled start (minutes from midnight) from today's roster
-  const shiftStartMap = useMemo(() => {
+  // Build "employeeId|YYYY-MM-DD" → scheduled start minutes for every published shift
+  // in the selected period. This single map feeds both today's attendance table and
+  // the period-level summary — keeping the logic consistent.
+  const shiftStartByKey = useMemo(() => {
     const map = new Map<string, number>();
     if (!shiftsQ.data?.employees) return map;
     for (const emp of shiftsQ.data.employees) {
-      const shift = (emp.workShifts ?? []).find((s) => s.date === todayMalta);
-      if (!shift?.from) continue;
-      const [h, m] = shift.from.split(":").map(Number);
-      if (!isNaN(h) && !isNaN(m)) map.set(emp.id, h * 60 + m);
+      for (const shift of emp.workShifts ?? []) {
+        if (!shift?.from || !shift?.date) continue;
+        const [h, m] = shift.from.split(":").map(Number);
+        if (!isNaN(h) && !isNaN(m)) map.set(`${emp.id}|${shift.date}`, h * 60 + m);
+      }
     }
     return map;
-  }, [shiftsQ.data, todayMalta]);
+  }, [shiftsQ.data]);
 
   const attendanceRows = useMemo(() => {
     if (!timeLogsQ.data?.employees) return null;
-    return buildAttendanceLogs(timeLogsQ.data.employees, shiftStartMap);
-  }, [timeLogsQ.data, shiftStartMap]);
+    return buildAttendanceLogs(timeLogsQ.data.employees, shiftStartByKey);
+  }, [timeLogsQ.data, shiftStartByKey]);
 
   const lateRows = useMemo(() => {
     if (!attendanceRows) return null;
     return buildLateArrivals(attendanceRows);
   }, [attendanceRows]);
+
+  // Period-level attendance: on-time %, late, absent — all roster-based.
+  const periodSummary = useMemo(() => {
+    if (!timeLogsQ.data?.employees || shiftStartByKey.size === 0) return null;
+    return buildPeriodAttendanceSummary(timeLogsQ.data.employees, shiftStartByKey);
+  }, [timeLogsQ.data, shiftStartByKey]);
 
   const leaveBalances = useMemo(() => {
     if (!leaveQ.data?.employees) return null;
@@ -462,10 +497,13 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
 
   const revenuePerEmployee = resolvedHeadcount > 0 ? Math.round(totalRevenue / resolvedHeadcount) : 0;
 
-  const onTimePct =
+  // Roster-based on-time %: (rostered individuals who arrived on time) / (all rostered individuals).
+  // Absent rostered employees count against the %, not just those who showed up.
+  const onTimePct = periodSummary?.onTimePct ?? (
     attendance.length > 0
       ? Math.round(((attendance.length - late.length) / attendance.length) * 100)
-      : 0;
+      : 0
+  );
 
   // ── KPI cards ─────────────────────────────────────────────────────────────
   const kpis: HRMetricData[] = [
@@ -590,7 +628,69 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
       )}
 
       {/* ══════════════════════════════════════════════════════════════════
-          SECTION 1: Human Capital %
+          SECTION 1: Attendance Today + Late Arrivals (period-aware)
+          ══════════════════════════════════════════════════════════════════ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+        <Card className="p-3 md:p-6">
+          <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
+            Attendance Today
+            <span className="ml-2 text-sm font-normal text-muted-foreground">
+              ({attendance.length} of {resolvedHeadcount} clocked in)
+            </span>
+            {isAttendanceReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
+          </h2>
+          {periodSummary && (
+            <p className="text-xs text-muted-foreground mb-3">
+              {prettyMonth(month)} — {periodSummary.totalRosteredShifts} scheduled shifts:&nbsp;
+              <span className="text-emerald-600 font-medium">{periodSummary.totalOnTime} on time</span>
+              {periodSummary.totalLate > 0 && <> · <span className="text-red-500 font-medium">{periodSummary.totalLate} late</span></>}
+              {periodSummary.totalAbsent > 0 && <> · <span className="text-slate-400">{periodSummary.totalAbsent} absent</span></>}
+            </p>
+          )}
+          {timeLogsQ.isLoading ? (
+            <TableSkeleton rows={6} columns={5} />
+          ) : (
+            <DataTable
+              columns={attendanceColumns}
+              data={attendance as unknown as Record<string, unknown>[]}
+              pageSize={8}
+            />
+          )}
+        </Card>
+
+        <Card className="p-3 md:p-6">
+          <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
+            Late Arrivals
+            <span className="ml-2 text-sm font-normal text-red-500">
+              ({periodSummary?.totalLate ?? late.length} late)
+            </span>
+            {isLateReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
+          </h2>
+          {periodSummary && (
+            <p className="text-xs text-muted-foreground mb-3">
+              {prettyMonth(month)} — roster-based · only scheduled employees counted
+            </p>
+          )}
+          {timeLogsQ.isLoading ? (
+            <TableSkeleton rows={4} columns={4} />
+          ) : periodSummary ? (
+            <DataTable
+              columns={periodLatenessColumns}
+              data={periodSummary.lateByEmployee as unknown as Record<string, unknown>[]}
+              pageSize={8}
+            />
+          ) : (
+            <DataTable
+              columns={latenessColumns}
+              data={late as unknown as Record<string, unknown>[]}
+              pageSize={8}
+            />
+          )}
+        </Card>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          SECTION 2: Human Capital %
           ══════════════════════════════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
         <Card className="p-3 md:p-6">
@@ -722,7 +822,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════
-          SECTION 2: RevPAH by Location
+          SECTION 3: RevPAH by Location
           ══════════════════════════════════════════════════════════════════ */}
       <Card className="p-3 md:p-6">
         <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
@@ -789,46 +889,6 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
         </div>
       </Card>
 
-      {/* ══════════════════════════════════════════════════════════════════
-          SECTION 3: Attendance Today + Late Arrivals
-          ══════════════════════════════════════════════════════════════════ */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-        <Card className="p-3 md:p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center">
-            Attendance Today
-            <span className="ml-2 text-sm font-normal text-muted-foreground">
-              ({attendance.length} of {resolvedHeadcount} clocked in)
-            </span>
-            {isAttendanceReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
-          </h2>
-          {timeLogsQ.isLoading ? (
-            <TableSkeleton rows={6} columns={5} />
-          ) : (
-            <DataTable
-              columns={attendanceColumns}
-              data={attendance as unknown as Record<string, unknown>[]}
-              pageSize={8}
-            />
-          )}
-        </Card>
-
-        <Card className="p-3 md:p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center">
-            Late Arrivals
-            <span className="ml-2 text-sm font-normal text-red-500">({late.length} late)</span>
-            {isLateReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
-          </h2>
-          {timeLogsQ.isLoading ? (
-            <TableSkeleton rows={4} columns={4} />
-          ) : (
-            <DataTable
-              columns={latenessColumns}
-              data={late as unknown as Record<string, unknown>[]}
-              pageSize={8}
-            />
-          )}
-        </Card>
-      </div>
 
       {/* ══════════════════════════════════════════════════════════════════
           SECTION 5: Productivity Leaderboard (WE360)

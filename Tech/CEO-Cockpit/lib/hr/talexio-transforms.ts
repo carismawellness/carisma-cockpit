@@ -141,9 +141,13 @@ function clockInMinutes(hhmm: string): number {
   return h * 60 + m;
 }
 
+/**
+ * shiftStartByKey keys are "employeeId|YYYY-MM-DD" → scheduled start minutes from midnight.
+ * Employees with NO key for today are unscheduled — they cannot be late.
+ */
 export function buildAttendanceLogs(
   employees: TalexioEmployeeWithTimeLogs[],
-  shiftStartByEmployeeId: Map<string, number> = new Map(),
+  shiftStartByKey: Map<string, number> = new Map(),
   now: Date = new Date(),
 ): AttendanceRow[] {
   const todayStr = mtToday(now);
@@ -171,9 +175,11 @@ export function buildAttendanceLogs(
       }
       const hours = totalMs / 3_600_000;
 
-      const inMin = clockInMinutes(clockIn);
-      const scheduledStart = shiftStartByEmployeeId.get(employeeId) ?? DEFAULT_SHIFT_START_MINUTES;
-      const lateBy = Math.max(0, inMin - scheduledStart);
+      const shiftKey = `${employeeId}|${todayStr}`;
+      const isScheduled = shiftStartByKey.has(shiftKey);
+      const scheduledStart = shiftStartByKey.get(shiftKey) ?? DEFAULT_SHIFT_START_MINUTES;
+      // Unscheduled employees cannot be late — lateness is only meaningful against a roster.
+      const lateBy = isScheduled ? Math.max(0, clockInMinutes(clockIn) - scheduledStart) : 0;
 
       return {
         name,
@@ -199,6 +205,100 @@ export function buildLateArrivals(
       minutesLate: r.minutesLate,
     }))
     .sort((a, b) => b.minutesLate - a.minutesLate);
+}
+
+// ── 2b. Period attendance summary ───────────────────────────────────────────
+
+export interface PeriodAttendanceSummary {
+  totalRosteredShifts: number;
+  totalOnTime: number;
+  totalLate: number;
+  totalAbsent: number;
+  /** 0-100 integer: on-time individuals as % of all rostered individuals */
+  onTimePct: number;
+  lateByEmployee: Array<{
+    name: string;
+    daysLate: number;
+    totalMinutesLate: number;
+    avgMinutesLate: number;
+  }>;
+}
+
+/**
+ * Aggregates attendance across the full selected date range using the published
+ * roster as ground truth.  Each shift entry = one person-day.
+ *
+ *  on-time  = rostered & clocked in within grace
+ *  late     = rostered & clocked in after grace
+ *  absent   = rostered & no clock-in at all
+ *
+ * shiftStartByKey: "employeeId|YYYY-MM-DD" → scheduled start minutes.
+ */
+export function buildPeriodAttendanceSummary(
+  employees: TalexioEmployeeWithTimeLogs[],
+  shiftStartByKey: Map<string, number>,
+): PeriodAttendanceSummary {
+  // Build "employeeId|YYYY-MM-DD" → earliest clock-in HH:MM
+  const clockInByKey = new Map<string, string>();
+  for (const e of employees) {
+    const byDate = new Map<string, string>();
+    for (const l of e.timeLogs ?? []) {
+      if (!l?.from) continue;
+      const d = mtDateOf(l.from);
+      const hhmm = mtHHMM(l.from);
+      const prev = byDate.get(d);
+      if (!prev || hhmm < prev) byDate.set(d, hhmm);
+    }
+    for (const [d, hhmm] of byDate) clockInByKey.set(`${e.id}|${d}`, hhmm);
+  }
+
+  const nameById = new Map<string, string>();
+  for (const e of employees) nameById.set(e.id, e.fullName);
+
+  let totalOnTime = 0;
+  let totalLate = 0;
+  let totalAbsent = 0;
+  const lateMap = new Map<string, { name: string; daysLate: number; totalMinutesLate: number }>();
+
+  for (const [key, scheduledStart] of shiftStartByKey) {
+    const pipeIdx = key.indexOf("|");
+    const employeeId = key.slice(0, pipeIdx);
+    const clockIn = clockInByKey.get(key);
+
+    if (!clockIn) {
+      totalAbsent++;
+    } else {
+      const lateBy = Math.max(0, clockInMinutes(clockIn) - scheduledStart);
+      if (lateBy > LATE_GRACE_MINUTES) {
+        totalLate++;
+        const cur = lateMap.get(employeeId) ?? {
+          name: nameById.get(employeeId) ?? "Unknown",
+          daysLate: 0,
+          totalMinutesLate: 0,
+        };
+        lateMap.set(employeeId, {
+          name: cur.name,
+          daysLate: cur.daysLate + 1,
+          totalMinutesLate: cur.totalMinutesLate + lateBy,
+        });
+      } else {
+        totalOnTime++;
+      }
+    }
+  }
+
+  const totalRosteredShifts = shiftStartByKey.size;
+  const onTimePct =
+    totalRosteredShifts > 0 ? Math.round((totalOnTime / totalRosteredShifts) * 100) : 0;
+
+  const lateByEmployee = [...lateMap.values()]
+    .map((v) => ({
+      ...v,
+      avgMinutesLate: v.daysLate > 0 ? Math.round(v.totalMinutesLate / v.daysLate) : 0,
+    }))
+    .sort((a, b) => b.totalMinutesLate - a.totalMinutesLate);
+
+  return { totalRosteredShifts, totalOnTime, totalLate, totalAbsent, onTimePct, lateByEmployee };
 }
 
 /** Active employees with NO time log today. */
