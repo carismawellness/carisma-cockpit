@@ -280,8 +280,8 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
           yoyChange={yoy.retail}
         />
         <SalesKPICard
-          label="Hotel Guests"
-          value={analytics.isFetching ? "…" : `${overallGuestMix.hotelPct}%`}
+          label="Non-Hotel Guests"
+          value={analytics.isFetching ? "…" : `${100 - overallGuestMix.hotelPct}%`}
           subtitle={`of bookings · ${overallGuestMix.total.toLocaleString()} total visits`}
         />
       </SalesKPIGrid>
