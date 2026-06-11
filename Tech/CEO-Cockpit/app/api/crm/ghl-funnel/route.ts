@@ -13,6 +13,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { migrationExclusionDates } from "@/lib/funnel/lead-conversion";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -108,7 +109,7 @@ async function queryCohort(
   // Opportunities whose date_added is within the window, by current stage
   const { data, error } = await sb
     .from("ghl_opportunities")
-    .select("stage_normalized")
+    .select("stage_normalized, date_added")
     .eq("brand_id", brandId)
     .neq("status", "deleted")
     .gte("date_added", dateFrom)
@@ -116,8 +117,11 @@ async function queryCohort(
 
   if (error) throw new Error(`cohort ${brandSlug}: ${error.message}`);
 
+  const exclusionDates = migrationExclusionDates(brandId, dateFrom, dateTo);
+
   const counts: Record<string, number> = {};
-  for (const row of (data ?? []) as { stage_normalized: string }[]) {
+  for (const row of (data ?? []) as { stage_normalized: string; date_added: string }[]) {
+    if (exclusionDates.size > 0 && exclusionDates.has(row.date_added.slice(0, 10))) continue;
     counts[row.stage_normalized] = (counts[row.stage_normalized] ?? 0) + 1;
   }
   return counts;

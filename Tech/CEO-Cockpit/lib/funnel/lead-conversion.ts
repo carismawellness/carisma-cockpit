@@ -19,6 +19,25 @@ type SbClient = any;
 
 const WON_STAGE = "Booking Won";
 
+// One-off data migrations that bulk-imported historical contacts into GHL in a
+// single day. Including these dates inflates the denominator by 6-9k leads and
+// makes booking efficiency appear near-zero for those brands that month.
+// Each entry excludes ALL leads (both won and total) with date_added on that
+// calendar day for the specified brand.
+export const MIGRATION_EXCLUSIONS: Array<{ brand_id: number; date: string }> = [
+  { brand_id: 2, date: "2026-05-06" }, // Aesthetics: 6,328 leads bulk-imported (normal ~30/day)
+  { brand_id: 3, date: "2026-05-06" }, // Slimming:   2,690 leads bulk-imported (normal ~15/day)
+];
+
+/** Returns the set of calendar dates to skip for a given brand within [dateFrom, dateTo]. */
+export function migrationExclusionDates(brandId: number, dateFrom: string, dateTo: string): Set<string> {
+  return new Set(
+    MIGRATION_EXCLUSIONS
+      .filter(ex => ex.brand_id === brandId && ex.date >= dateFrom && ex.date <= dateTo)
+      .map(ex => ex.date),
+  );
+}
+
 export type LeadConversion = {
   won:    number;
   total:  number;
@@ -40,7 +59,7 @@ export async function computeLeadConversion(
 ): Promise<LeadConversion> {
   const { data, error } = await sb
     .from("ghl_opportunities")
-    .select("stage_normalized")
+    .select("stage_normalized, date_added")
     .eq("brand_id", brandId)
     .neq("status", "deleted")
     .gte("date_added", dateFrom)
@@ -51,9 +70,12 @@ export async function computeLeadConversion(
     return { won: 0, total: 0, ratePct: null };
   }
 
+  const exclusionDates = migrationExclusionDates(brandId, dateFrom, dateTo);
+
   let won   = 0;
   let total = 0;
-  for (const r of (data ?? []) as { stage_normalized: string }[]) {
+  for (const r of (data ?? []) as { stage_normalized: string; date_added: string }[]) {
+    if (exclusionDates.size > 0 && exclusionDates.has(r.date_added.slice(0, 10))) continue;
     total += 1;
     if (r.stage_normalized === WON_STAGE) won += 1;
   }
