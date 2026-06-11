@@ -12,6 +12,7 @@ import {
   Filter,
   BookOpen,
   ShoppingBag,
+  Hotel,
   type LucideIcon,
 } from "lucide-react";
 
@@ -62,6 +63,7 @@ export const departments: Department[] = [
         children: [
           { slug: "spa-employees", label: "Employees", path: "/sales/spa/employees", icon: Users },
           { slug: "spa-retail",    label: "Retail",    path: "/sales/spa/retail",    icon: ShoppingBag },
+          { slug: "spa-hotels",    label: "Hotels",    path: "/sales/spa/hotels",    icon: Hotel },
         ],
       },
       {
