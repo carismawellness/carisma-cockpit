@@ -59,25 +59,31 @@ function TargetGauge({
   const pctNum     = Math.round((current / target) * 100);
   const gaugeColor = pctNum >= 100 ? "#059669" : pctNum >= 75 ? "#D97706" : "#DC2626";
 
-  const cx = 150, cy = 130, r = 110, stroke = 22;
+  // Gauge opens upward (rainbow). Center at bottom of SVG.
+  // cy is the baseline (diameter line); arc goes UP through cy-r.
+  const cx = 150, cy = 140, r = 110, stroke = 22;
 
-  // Full background arc: 180° → 0° (counter-clockwise through top, sweep=0)
-  const bgStart = polarToCart(180, r, cx, cy);
-  const bgEnd   = polarToCart(0, r, cx, cy);
-  const bgPath  = `M ${bgStart.x.toFixed(1)} ${bgStart.y.toFixed(1)} A ${r} ${r} 0 1 0 ${bgEnd.x.toFixed(1)} ${bgEnd.y.toFixed(1)}`;
+  // Background arc: left (9 o'clock) → right (3 o'clock) going CLOCKWISE through top (12 o'clock).
+  // sweep=1 = clockwise in SVG screen coords = goes upward first. large-arc=1 for 180°.
+  const bgStart = polarToCart(180, r, cx, cy);   // left  (cx-r, cy)
+  const bgEnd   = polarToCart(0,   r, cx, cy);   // right (cx+r, cy)
+  const bgPath  = `M ${bgStart.x.toFixed(1)} ${bgStart.y.toFixed(1)} A ${r} ${r} 0 1 1 ${bgEnd.x.toFixed(1)} ${bgEnd.y.toFixed(1)}`;
 
-  // Fill arc: from 180° to (180 - clampedPct * 180°)
-  const fillEndAngle = 180 - clampedPct * 180;
+  // Fill arc: from left, sweeping clockwise by (clampedPct * 180°).
+  // End angle in standard math: 180° - clampedPct*180° (180→0 as pct goes 0→1).
+  const clampedFill = Math.min(clampedPct, 0.999); // avoid degenerate 180° case
+  const fillEndAngle = 180 - clampedFill * 180;
   const fillEnd      = polarToCart(fillEndAngle, r, cx, cy);
-  const fillSweepDeg = clampedPct * 180;
-  const largeArc     = fillSweepDeg > 180 ? 1 : 0;
+  const fillSweepDeg = clampedFill * 180;
+  // For ≤180° clockwise arcs the swept arc is always the "small" one (≤180°), so largeArc=0
+  const largeArc = fillSweepDeg > 180 ? 1 : 0;
   const fillPath = fillSweepDeg > 0.5
-    ? `M ${bgStart.x.toFixed(1)} ${bgStart.y.toFixed(1)} A ${r} ${r} 0 ${largeArc} 0 ${fillEnd.x.toFixed(1)} ${fillEnd.y.toFixed(1)}`
+    ? `M ${bgStart.x.toFixed(1)} ${bgStart.y.toFixed(1)} A ${r} ${r} 0 ${largeArc} 1 ${fillEnd.x.toFixed(1)} ${fillEnd.y.toFixed(1)}`
     : null;
 
   return (
     <div className="flex flex-col items-center">
-      <svg width="300" height="160" viewBox="0 0 300 160" className="overflow-visible">
+      <svg width="300" height="175" viewBox="0 0 300 175" className="overflow-visible">
         {/* Background track */}
         <path d={bgPath} fill="none" stroke="#EDE9E2" strokeWidth={stroke} strokeLinecap="round" />
         {/* Fill */}
@@ -87,22 +93,22 @@ function TargetGauge({
         {/* Tick at 100% (right end of arc) */}
         <circle cx={bgEnd.x} cy={bgEnd.y} r={4} fill="#9CA3AF" />
 
-        {/* Center values */}
-        <text x={cx} y={cy - 28} textAnchor="middle" fontSize="26" fontWeight="700" fill="#111827" fontFamily="inherit">
+        {/* Center values — positioned in the middle of the semicircle space */}
+        <text x={cx} y={cy - 36} textAnchor="middle" fontSize="26" fontWeight="700" fill="#111827" fontFamily="inherit">
           {fmtShort(current)}
         </text>
-        <text x={cx} y={cy - 4} textAnchor="middle" fontSize="11" fill="#6B7280" fontFamily="inherit">
+        <text x={cx} y={cy - 12} textAnchor="middle" fontSize="11" fill="#6B7280" fontFamily="inherit">
           of {fmtShort(target)} target
         </text>
-        <text x={cx} y={cy + 20} textAnchor="middle" fontSize="22" fontWeight="700" fill={gaugeColor} fontFamily="inherit">
+        <text x={cx} y={cy + 14} textAnchor="middle" fontSize="22" fontWeight="700" fill={gaugeColor} fontFamily="inherit">
           {pctNum}%
         </text>
 
-        {/* Arc labels */}
-        <text x={bgStart.x - 8} y={bgStart.y + 14} textAnchor="end" fontSize="10" fill="#9CA3AF" fontFamily="inherit">0%</text>
-        <text x={bgEnd.x + 8} y={bgEnd.y + 14} textAnchor="start" fontSize="10" fill="#9CA3AF" fontFamily="inherit">100%</text>
+        {/* Arc end-point labels */}
+        <text x={bgStart.x - 8} y={bgStart.y + 16} textAnchor="end" fontSize="10" fill="#9CA3AF" fontFamily="inherit">0%</text>
+        <text x={bgEnd.x + 8} y={bgEnd.y + 16} textAnchor="start" fontSize="10" fill="#9CA3AF" fontFamily="inherit">100%</text>
       </svg>
-      <p className="text-xs text-gray-400 mt-1">{label}</p>
+      <p className="text-xs text-gray-400 -mt-1">{label}</p>
     </div>
   );
 }
