@@ -23,19 +23,33 @@ const BRAND_AOV_DEFAULT: Record<string, number> = {
   slimming: 199,  // Standardised entry package (Fat Freeze / EMSculpt Starter)
 };
 
-// Keyword → AOV overrides (checked against lowercased campaign name)
+// Keyword → AOV overrides (checked against lowercased campaign name).
+// IMPORTANT: zero-AOV entries must come first — they short-circuit before
+// any positive-value match so "model call" never picks up a product AOV.
 const AOV_OVERRIDES: Array<{ keywords: string[]; aov: number }> = [
-  // Spa
+  // ── Zero-revenue campaign types (awareness / recruitment / internal) ──
+  { keywords: ["model call", "model calls", "recruitment", "gifting"], aov: 0 },
+
+  // ── Spa ──────────────────────────────────────────────────────────────
   { keywords: ["couple", "couples", "romantic"], aov: 249 },
   { keywords: ["hammam"], aov: 129 },
   { keywords: ["spa day", "body ritual", "body treatment", "ritual"], aov: 129 },
   { keywords: ["massage"], aov: 99 },
-  // Aesthetics
-  { keywords: ["filler", "lip filler", "dermal filler"], aov: 269 },
+
+  // ── Aesthetics ────────────────────────────────────────────────────────
+  { keywords: ["snatch jawline", "jawline"], aov: 269 },   // keep existing default
+  { keywords: ["lip and glow", "lip"], aov: 200 },
+  { keywords: ["hydrafacial"], aov: 100 },
+  { keywords: ["hair regrowth"], aov: 250 },
+  { keywords: ["facelift", "face lift", "face-lift"], aov: 250 },
+  { keywords: ["dr. kendra", "dr kendra", "kendra"], aov: 250 },
+  { keywords: ["filler", "dermal filler"], aov: 269 },
   { keywords: ["botox", "wrinkle", "anti-wrinkle", "injectable"], aov: 179 },
-  { keywords: ["facial", "hydrafacial", "peel", "skin", "microneedling"], aov: 149 },
-  { keywords: ["laser", "ipl", "hair removal"], aov: 199 },
-  // Slimming
+  { keywords: ["facial", "peel", "skin", "microneedling"], aov: 149 },
+  { keywords: ["laser", "ipl", "laser hair removal", "hair removal"], aov: 199 },
+
+  // ── Slimming ──────────────────────────────────────────────────────────
+  { keywords: ["risk reversal", "menopause", "after babies", "pain solution"], aov: 250 },
   { keywords: ["fat freeze", "coolsculpt", "cryolipolysis"], aov: 199 },
   { keywords: ["emsculpt", "hifu", "body sculpt", "velashape", "cavitation"], aov: 199 },
   { keywords: ["weight loss", "slimming plan", "glp", "ozempic", "mounjaro"], aov: 350 },
@@ -51,7 +65,7 @@ const FALLBACK_BRAND_AGENTS: Record<string, string[]> = {
 function resolveAov(brandSlug: string, campaignName: string): number {
   const lower = campaignName.toLowerCase();
   for (const { keywords, aov } of AOV_OVERRIDES) {
-    if (keywords.some(k => lower.includes(k))) return aov;
+    if (keywords.some(k => lower.includes(k))) return aov; // 0 is a valid override
   }
   return BRAND_AOV_DEFAULT[brandSlug] ?? 300;
 }
