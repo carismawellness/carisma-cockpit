@@ -1,103 +1,170 @@
 "use client";
 
-// Program Health section for the Slimming sales page (purely additive).
-// Data: /api/sales/slimming-retention via useSlimmingRetention.
-//   1. Active patient census (≤21d active / 22–45d at-risk / >45d inactive)
-//      + 12-month active-count trend
-//   2. At-risk work-list — the churn-save call list
-//   3. New vs Returning clients on slimming sales
+// Program Health section — Slimming.
+// Data: /api/sales/slimming-weight (reads Clients Weight Record tab from the
+// Carisma Slimming Master Google Sheet directly, zero-auth CSV export).
+//
+// Primary purpose: surface who is NOT losing weight so the team can intervene.
 
 import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { SalesKPICard } from "@/components/sales/SalesKPICard";
 import { SalesKPIGrid } from "@/components/sales/SalesKPIGrid";
-import { ChartSkeleton, KPIGridSkeleton, TableSkeleton } from "@/components/ui/skeleton";
-import { useSlimmingRetention, type SlimmingAtRiskItem } from "@/lib/hooks/useSlimmingRetention";
-import { BRAND } from "@/lib/constants/design-tokens";
-import { ArrowUpDown, AlertTriangle } from "lucide-react";
+import { KPIGridSkeleton, TableSkeleton } from "@/components/ui/skeleton";
+import { useSlimmingWeight } from "@/lib/hooks/useSlimmingWeight";
+import type { WeightClient } from "@/lib/types/slimming-weight";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList,
+  ArrowUpDown,
+  TrendingDown,
+  TrendingUp,
+  Minus,
+  AlertTriangle,
+  CheckCircle2,
+} from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
 } from "recharts";
 
-const SLIM_DARK = BRAND.slimming.soft;   // slimming soft fill — bars/swatches
-const SLIM_MID  = "#8FB58F";             // slimming family mid-tone (new clients)
-
-function fmtK(v: number): string {
-  if (Math.abs(v) >= 1_000_000) return `€${(v / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(v) >= 1_000)     return `€${(v / 1_000).toFixed(1)}K`;
-  return `€${v.toFixed(0)}`;
-}
-
-function fmtMonth(m: string): string {
-  const d = new Date(m + "T00:00:00");
-  const short = d.toLocaleString("en-GB", { month: "short" });
-  return d.getMonth() === 0 ? `${short} ${d.getFullYear()}` : short;
-}
+// ── Format helpers ────────────────────────────────────────────────────────────
 
 function fmtDate(d: string): string {
-  return new Date(d + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  return new Date(d + "T00:00:00").toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
-// ── At-risk work-list (sortable) ──────────────────────────────────────────────
+function fmtKg(v: number | null, decimals = 1): string {
+  if (v === null) return "—";
+  return `${Math.abs(v).toFixed(decimals)} kg`;
+}
 
-type SortKey = "client" | "lastSessionDate" | "daysSince" | "lastTreatment" | "totalSessions" | "totalRevenue";
+// ── Status badge ──────────────────────────────────────────────────────────────
 
-const COLUMNS: { key: SortKey; label: string; align: "left" | "right" }[] = [
-  { key: "client",          label: "Client",         align: "left"  },
-  { key: "lastTreatment",   label: "Last Treatment", align: "left"  },
-  { key: "lastSessionDate", label: "Last Session",   align: "left"  },
-  { key: "daysSince",       label: "Days Since",     align: "right" },
-  { key: "totalSessions",   label: "Sessions",       align: "right" },
-  { key: "totalRevenue",    label: "Total Revenue",  align: "right" },
-];
+const STATUS_CONFIG: Record<
+  WeightClient["status"],
+  { label: string; cls: string }
+> = {
+  on_track:    { label: "On Track",    cls: "bg-emerald-100 text-emerald-800" },
+  plateau:     { label: "Plateau",     cls: "bg-amber-100 text-amber-800" },
+  gaining:     { label: "Gaining",     cls: "bg-red-100 text-red-800 font-semibold" },
+  awaiting:    { label: "Awaiting",    cls: "bg-gray-100 text-gray-500" },
+  no_baseline: { label: "No Baseline", cls: "bg-gray-100 text-gray-400" },
+};
 
-function AtRiskWorkList({ items }: { items: SlimmingAtRiskItem[] }) {
-  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 } | null>(null);
+function StatusBadge({ status }: { status: WeightClient["status"] }) {
+  const { label, cls } = STATUS_CONFIG[status];
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}
+    >
+      {label}
+    </span>
+  );
+}
 
-  const sorted = useMemo(() => {
-    if (!sort) return items;   // API default order = highest-value saves first
-    const { key, dir } = sort;
-    return [...items].sort((a, b) => {
-      const av = a[key] ?? "", bv = b[key] ?? "";
-      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
-      return String(av).localeCompare(String(bv)) * dir;
-    });
-  }, [items, sort]);
+// ── Trend icon ────────────────────────────────────────────────────────────────
 
-  const toggleSort = (key: SortKey) =>
-    setSort(prev => prev?.key === key ? { key, dir: prev.dir === 1 ? -1 : 1 } : { key, dir: 1 });
+function TrendIcon({ trend }: { trend: WeightClient["trend"] }) {
+  if (trend === "down")
+    return <TrendingDown className="h-4 w-4 text-emerald-600" />;
+  if (trend === "up")
+    return <TrendingUp className="h-4 w-4 text-red-500" />;
+  if (trend === "flat")
+    return <Minus className="h-4 w-4 text-amber-500" />;
+  return <span className="text-muted-foreground text-xs px-0.5">•</span>;
+}
+
+// ── Change display cell ───────────────────────────────────────────────────────
+
+function ChangeCell({
+  weightLost,
+  pctLost,
+}: {
+  weightLost: number | null;
+  pctLost: number | null;
+}) {
+  if (weightLost === null || pctLost === null)
+    return <span className="text-muted-foreground">—</span>;
+
+  const lost = weightLost > 0;
+  const cls = lost ? "text-emerald-700" : "text-red-600";
+  const sign = lost ? "−" : "+";
+
+  return (
+    <span className={`font-semibold tabular-nums ${cls}`}>
+      {sign}{fmtKg(weightLost)}{" "}
+      <span className="text-xs font-normal opacity-75">
+        ({sign}{Math.abs(pctLost).toFixed(1)}%)
+      </span>
+    </span>
+  );
+}
+
+// ── Alert table: clients NOT losing weight ────────────────────────────────────
+
+function NeedsAttentionTable({ items }: { items: WeightClient[] }) {
+  if (items.length === 0) {
+    return (
+      <div className="flex items-center gap-2 py-5 text-emerald-700">
+        <CheckCircle2 className="h-5 w-5 shrink-0" />
+        <span className="text-sm font-medium">
+          All clients with data are currently on track — no intervention needed.
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
-            {COLUMNS.map(c => (
-              <th key={c.key} className={`pb-2 font-medium ${c.align === "right" ? "text-right" : "text-left"}`}>
-                <button
-                  type="button"
-                  onClick={() => toggleSort(c.key)}
-                  className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-foreground transition-colors"
-                >
-                  {c.label}
-                  <ArrowUpDown className={`h-3 w-3 ${sort?.key === c.key ? "opacity-100" : "opacity-30"}`} />
-                </button>
-              </th>
-            ))}
+            <th className="pb-2 font-medium text-left">Client</th>
+            <th className="pb-2 font-medium text-right">Start</th>
+            <th className="pb-2 font-medium text-right">Current</th>
+            <th className="pb-2 font-medium text-right">Change</th>
+            <th className="pb-2 font-medium text-right">Weeks</th>
+            <th className="pb-2 font-medium text-center">Trend</th>
+            <th className="pb-2 font-medium text-left pl-3">Status</th>
           </tr>
         </thead>
         <tbody>
-          {sorted.map((w, i) => (
-            <tr key={`${w.client}-${i}`} className="border-b last:border-0 hover:bg-muted/10">
-              <td className="py-1.5 font-medium">{w.client}</td>
-              <td className="py-1.5 text-muted-foreground">{w.lastTreatment ?? "—"}</td>
-              <td className="py-1.5 text-muted-foreground whitespace-nowrap">{fmtDate(w.lastSessionDate)}</td>
-              <td className="py-1.5 text-right tabular-nums">
-                <span className="text-amber-600 font-semibold">{w.daysSince}d</span>
+          {items.map((c, i) => (
+            <tr
+              key={`${c.name}-${i}`}
+              className={`border-b last:border-0 ${
+                c.status === "gaining"
+                  ? "bg-red-50/50"
+                  : "bg-amber-50/40"
+              }`}
+            >
+              <td className="py-1.5 font-medium">{c.name}</td>
+              <td className="py-1.5 text-right tabular-nums text-muted-foreground">
+                {c.startWeight ? `${c.startWeight} kg` : "—"}
               </td>
-              <td className="py-1.5 text-right tabular-nums text-muted-foreground">{w.totalSessions}</td>
-              <td className="py-1.5 text-right tabular-nums font-medium">
-                {w.totalRevenue > 0 ? fmtK(w.totalRevenue) : "—"}
+              <td className="py-1.5 text-right tabular-nums text-muted-foreground">
+                {c.currentWeight ? `${c.currentWeight} kg` : "—"}
+              </td>
+              <td className="py-1.5 text-right">
+                <ChangeCell weightLost={c.weightLost} pctLost={c.pctLost} />
+              </td>
+              <td className="py-1.5 text-right tabular-nums text-muted-foreground">
+                {c.weeksLogged}w
+              </td>
+              <td className="py-1.5 text-center">
+                <TrendIcon trend={c.trend} />
+              </td>
+              <td className="py-1.5 pl-3">
+                <StatusBadge status={c.status} />
               </td>
             </tr>
           ))}
@@ -107,32 +174,223 @@ function AtRiskWorkList({ items }: { items: SlimmingAtRiskItem[] }) {
   );
 }
 
-// ── Section ───────────────────────────────────────────────────────────────────
+// ── Full sortable progress table ──────────────────────────────────────────────
 
-export function SlimmingProgramHealthSection({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
-  const { data, isFetching, error } = useSlimmingRetention(dateFrom, dateTo);
+type SortKey =
+  | "name"
+  | "startWeight"
+  | "currentWeight"
+  | "weightLost"
+  | "pctLost"
+  | "weeksLogged";
 
-  const trendData = useMemo(() =>
-    (data?.census.trend ?? []).map(t => ({ ...t, name: fmtMonth(t.month) })),
-    [data],
+const PROGRESS_COLUMNS: {
+  key: SortKey;
+  label: string;
+  align: "left" | "right";
+}[] = [
+  { key: "name",          label: "Client",     align: "left"  },
+  { key: "startWeight",   label: "Start kg",   align: "right" },
+  { key: "currentWeight", label: "Current kg", align: "right" },
+  { key: "weightLost",    label: "Lost kg",    align: "right" },
+  { key: "pctLost",       label: "Lost %",     align: "right" },
+  { key: "weeksLogged",   label: "Weeks",      align: "right" },
+];
+
+function FullProgressTable({ clients }: { clients: WeightClient[] }) {
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({
+    key: "pctLost",
+    dir: -1,
+  });
+
+  const sorted = useMemo(
+    () =>
+      [...clients].sort((a, b) => {
+        const av = a[sort.key] ?? -Infinity;
+        const bv = b[sort.key] ?? -Infinity;
+        if (typeof av === "string" && typeof bv === "string")
+          return av.localeCompare(bv) * sort.dir;
+        return ((av as number) - (bv as number)) * sort.dir;
+      }),
+    [clients, sort],
   );
-  const hasTrendData = trendData.some(t => t.active > 0);
 
-  const monthlyData = useMemo(() =>
-    (data?.newReturning.monthly ?? []).map(m => ({
-      ...m,
-      name:  fmtMonth(m.month),
-      total: m.newRevenue + m.returningRevenue,
-    })),
-    [data],
+  const toggle = (key: SortKey) =>
+    setSort(prev =>
+      prev.key === key
+        ? { key, dir: prev.dir === 1 ? -1 : 1 }
+        : { key, dir: -1 },
+    );
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
+            {PROGRESS_COLUMNS.map(c => (
+              <th
+                key={c.key}
+                className={`pb-2 font-medium ${
+                  c.align === "right" ? "text-right" : "text-left"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => toggle(c.key)}
+                  className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-foreground transition-colors"
+                >
+                  {c.label}
+                  <ArrowUpDown
+                    className={`h-3 w-3 ${
+                      sort.key === c.key ? "opacity-100" : "opacity-30"
+                    }`}
+                  />
+                </button>
+              </th>
+            ))}
+            <th className="pb-2 font-medium text-center">Trend</th>
+            <th className="pb-2 font-medium text-left pl-2">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((c, i) => (
+            <tr
+              key={`${c.name}-${i}`}
+              className="border-b last:border-0 hover:bg-muted/10"
+            >
+              <td className="py-1.5 font-medium">{c.name}</td>
+              <td className="py-1.5 text-right tabular-nums text-muted-foreground">
+                {c.startWeight ?? "—"}
+              </td>
+              <td className="py-1.5 text-right tabular-nums text-muted-foreground">
+                {c.currentWeight ?? "—"}
+              </td>
+              <td className="py-1.5 text-right tabular-nums">
+                {c.weightLost !== null ? (
+                  <span
+                    className={
+                      c.weightLost >= 0 ? "text-emerald-700" : "text-red-600"
+                    }
+                  >
+                    {c.weightLost >= 0 ? "−" : "+"}
+                    {Math.abs(c.weightLost).toFixed(1)}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </td>
+              <td className="py-1.5 text-right tabular-nums font-semibold">
+                {c.pctLost !== null ? (
+                  <span
+                    className={
+                      c.pctLost >= 0 ? "text-emerald-700" : "text-red-600"
+                    }
+                  >
+                    {c.pctLost >= 0 ? "−" : "+"}
+                    {Math.abs(c.pctLost).toFixed(1)}%
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </td>
+              <td className="py-1.5 text-right tabular-nums text-muted-foreground">
+                {c.weeksLogged}
+              </td>
+              <td className="py-1.5 text-center">
+                <TrendIcon trend={c.trend} />
+              </td>
+              <td className="py-1.5 pl-2">
+                <StatusBadge status={c.status} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
-  const hasNrData = monthlyData.some(m => m.total > 0);
+}
+
+// ── Weight loss distribution chart ────────────────────────────────────────────
+
+const DIST_BINS = [
+  { label: "> 10% lost",   min:  10,    max: Infinity, color: "#059669" },
+  { label: "5 – 10% lost", min:   5,    max: 10,       color: "#34d399" },
+  { label: "1 – 5% lost",  min:   0.3,  max: 5,        color: "#6ee7b7" },
+  { label: "Plateau",      min:  -0.3,  max: 0.3,      color: "#f59e0b" },
+  { label: "Gaining",      min: -Infinity, max: -0.3,  color: "#ef4444" },
+];
+
+function DistributionChart({ clients }: { clients: WeightClient[] }) {
+  const data = useMemo(() => {
+    const counts = DIST_BINS.map(b => ({ ...b, count: 0 }));
+    for (const c of clients) {
+      const p = c.pctLost ?? 0;
+      for (const bin of counts) {
+        if (p > bin.min && p <= bin.max) { bin.count++; break; }
+      }
+    }
+    return counts.filter(b => b.count > 0);
+  }, [clients]);
+
+  if (data.length === 0) return null;
+
+  return (
+    <ResponsiveContainer width="100%" height={Math.max(160, data.length * 44)}>
+      <BarChart
+        data={data}
+        layout="vertical"
+        margin={{ top: 4, right: 48, left: 88, bottom: 4 }}
+      >
+        <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+        <XAxis
+          type="number"
+          allowDecimals={false}
+          tick={{ fontSize: 11 }}
+          axisLine={false}
+          tickLine={false}
+        />
+        <YAxis
+          type="category"
+          dataKey="label"
+          tick={{ fontSize: 11 }}
+          axisLine={false}
+          tickLine={false}
+          width={84}
+        />
+        <Tooltip
+          formatter={(v: unknown) => [`${Number(v)} clients`, "Count"]}
+          contentStyle={{ fontSize: 12 }}
+        />
+        <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={30}>
+          {data.map((entry, idx) => (
+            <Cell key={`cell-${idx}`} fill={entry.color} />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+// ── Main exported section ─────────────────────────────────────────────────────
+
+export function SlimmingProgramHealthSection({
+  dateFrom: _dateFrom,
+  dateTo: _dateTo,
+}: {
+  dateFrom: Date;
+  dateTo: Date;
+}) {
+  const { data, isFetching, error } = useSlimmingWeight();
+  const [showAll, setShowAll] = useState(false);
 
   if (error) {
     return (
       <>
-        <SectionHeader explainer={null} />
-        <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2">{error}</p>
+        <SectionHeader />
+        <div className="flex items-start gap-2 text-xs text-red-800 bg-red-50 border border-red-200 rounded px-3 py-2">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>{error}</span>
+        </div>
       </>
     );
   }
@@ -140,199 +398,172 @@ export function SlimmingProgramHealthSection({ dateFrom, dateTo }: { dateFrom: D
   if (isFetching && !data) {
     return (
       <>
-        <SectionHeader explainer={null} />
-        <KPIGridSkeleton count={3} className="md:grid-cols-3" />
-        <Card className="p-4 md:p-5"><ChartSkeleton height={240} /></Card>
-        <Card className="p-4 md:p-5"><TableSkeleton rows={6} columns={6} /></Card>
+        <SectionHeader />
+        <KPIGridSkeleton count={4} className="md:grid-cols-4" />
+        <Card className="p-4 md:p-5">
+          <TableSkeleton rows={8} columns={7} />
+        </Card>
       </>
     );
   }
 
   if (!data) return null;
 
-  const { census, treatments, atRiskList, atRiskListTotal, newReturning, salesMatchQuality } = data;
-  const nr = newReturning.period;
+  const { summary, clients, notLosingWeight } = data;
 
-  // Data-quality guard: Tx rows without client names can't feed the census.
-  // Warn when names stop noticeably before the sessions do.
-  const namesLagSessions =
-    treatments.lastSessionDate != null &&
-    (treatments.lastNamedSessionDate == null ||
-      treatments.lastNamedSessionDate < treatments.lastSessionDate);
+  const clientsWithData = clients.filter(
+    c => c.status !== "awaiting" && c.status !== "no_baseline",
+  );
 
-  const explainer =
-    `Matched by client name across Tx sessions and sales · ` +
-    `${treatments.nameCoveragePct}% of ${treatments.totalSessions} sessions have a usable client name · ` +
-    `as of ${fmtDate(data.asOf)}`;
+  const needsAttentionCount = summary.gaining + summary.plateaued;
+  const onTrackPct =
+    summary.clientsWithData > 0
+      ? Math.round((summary.onTrack / summary.clientsWithData) * 100)
+      : null;
+
+  const previewCount = 15;
 
   return (
     <>
-      <SectionHeader explainer={explainer} />
+      <SectionHeader />
 
-      {namesLagSessions && (
-        <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-          <span>
-            Client names are missing on recent Tx rows — sessions recorded through{" "}
-            {treatments.lastSessionDate ? fmtDate(treatments.lastSessionDate) : "—"}, but the last session with a client
-            name is {treatments.lastNamedSessionDate ? fmtDate(treatments.lastNamedSessionDate) : "none"}. The census
-            below understates current activity until names are filled in on the Tx Slimming tab.
-          </span>
-        </div>
-      )}
+      <p className="text-xs text-muted-foreground -mt-2">
+        Weight outcomes from Clients Weight Record ·{" "}
+        {summary.totalClients} clients tracked · as of {fmtDate(data.asOf)}
+        {summary.noBaseline > 0
+          ? ` · ${summary.noBaseline} without Tanita baseline`
+          : ""}
+        {summary.awaiting > 0
+          ? ` · ${summary.awaiting} awaiting first check-in`
+          : ""}
+      </p>
 
-      {/* ── Census KPIs ──────────────────────────────────────────────── */}
-      <SalesKPIGrid columns={3}>
+      {/* ── KPIs ─────────────────────────────────────────────────────────── */}
+      <SalesKPIGrid columns={4}>
         <SalesKPICard
-          label="Active Patients"
-          value={String(census.active)}
-          subtitle={`session in last ${census.activeDays} days`}
+          label="Clients with Data"
+          value={String(summary.clientsWithData)}
+          subtitle={`of ${summary.totalClients} enrolled`}
         />
         <SalesKPICard
-          label="At-Risk Patients"
-          value={String(census.atRisk)}
-          subtitle={`last session ${census.activeDays + 1}–${census.atRiskDays} days ago — call list below`}
+          label="On Track"
+          value={String(summary.onTrack)}
+          subtitle={
+            onTrackPct !== null
+              ? `${onTrackPct}% of clients actively losing`
+              : "actively losing weight"
+          }
         />
         <SalesKPICard
-          label="Inactive Patients"
-          value={String(census.inactive)}
-          subtitle={`no session in ${census.atRiskDays}+ days · ${census.totalPatients} named patients all-time`}
+          label="Needs Attention"
+          value={String(needsAttentionCount)}
+          subtitle={`${summary.gaining} gaining · ${summary.plateaued} plateau`}
+        />
+        <SalesKPICard
+          label="Avg Loss"
+          value={
+            summary.avgPctLost !== null
+              ? `${summary.avgPctLost.toFixed(1)}%`
+              : "—"
+          }
+          subtitle={`${summary.totalKgLost.toFixed(1)} kg total lost`}
         />
       </SalesKPIGrid>
 
-      {/* ── Active census trend ──────────────────────────────────────── */}
+      {/* ── Needs Attention (call list) ───────────────────────────────────── */}
       <Card className="p-4 md:p-5">
-        <h3 className="text-base font-semibold text-foreground mb-1">Active Patients — Trailing 12 Months</h3>
-        <p className="text-xs text-muted-foreground mb-4">
-          Distinct named patients with a session in the {census.activeDays} days ending at each month-end
-        </p>
-        {!hasTrendData ? (
-          <p className="text-sm text-muted-foreground py-6 text-center">No named sessions in the trailing 12 months</p>
-        ) : (
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={trendData} margin={{ top: 24, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-              <Tooltip
-                formatter={(v) => [`${Number(v ?? 0)} patients`, "Active"]}
-                contentStyle={{ fontSize: 12 }}
-              />
-              <Bar dataKey="active" fill={SLIM_DARK} radius={[4, 4, 0, 0]} maxBarSize={48}>
-                <LabelList
-                  dataKey="active"
-                  position="top"
-                  formatter={(v: unknown) => Number(v) > 0 ? String(v) : ""}
-                  style={{ fontSize: 10, fill: "#111827", fontWeight: 600 }}
-                />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </Card>
-
-      {/* ── At-risk work-list ────────────────────────────────────────── */}
-      <Card className="p-4 md:p-5">
-        <div className="flex items-baseline gap-2 mb-1">
-          <h3 className="text-base font-semibold text-foreground">At-Risk Work-List</h3>
-          <span className="text-xs text-muted-foreground">
-            last session {census.activeDays + 1}–{census.atRiskDays} days ago · highest-value saves first
-            {atRiskListTotal > atRiskList.length ? ` · showing top ${atRiskList.length} of ${atRiskListTotal}` : ""}
-          </span>
+        <div className="flex items-center gap-2 mb-1">
+          {needsAttentionCount > 0 ? (
+            <AlertTriangle className="h-5 w-5 text-red-500 shrink-0" />
+          ) : (
+            <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+          )}
+          <h3 className="text-base font-semibold text-foreground">
+            Needs Attention
+            {needsAttentionCount > 0 && (
+              <span className="ml-2 inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-800">
+                {needsAttentionCount} clients to call
+              </span>
+            )}
+          </h3>
         </div>
         <p className="text-xs text-muted-foreground mb-3">
-          Revenue joined from slimming sales by client name — blank where the patient has no matched sale
+          Gaining or plateaued — sorted worst first ·{" "}
+          {summary.gaining > 0 && (
+            <span className="text-red-700 font-medium">
+              {summary.gaining} gaining weight
+            </span>
+          )}
+          {summary.gaining > 0 && summary.plateaued > 0 && " · "}
+          {summary.plateaued > 0 && (
+            <span className="text-amber-700 font-medium">
+              {summary.plateaued} plateau
+            </span>
+          )}
         </p>
-        {atRiskList.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-6 text-center">
-            {namesLagSessions
-              ? "No named patients currently in the 22–45 day window (recent Tx rows lack client names)"
-              : "No patients currently in the 22–45 day window"}
-          </p>
-        ) : (
-          <AtRiskWorkList items={atRiskList} />
-        )}
+        <NeedsAttentionTable items={notLosingWeight} />
       </Card>
 
-      {/* ── New vs Returning ─────────────────────────────────────────── */}
-      <SalesKPIGrid columns={3}>
-        <SalesKPICard
-          label="New Clients"
-          value={String(nr.newClients)}
-          subtitle={`${fmtK(nr.newRevenue)} revenue · first-ever sale in period`}
-        />
-        <SalesKPICard
-          label="Returning Clients"
-          value={String(nr.returningClients)}
-          subtitle={`${fmtK(nr.returningRevenue)} revenue · seen before period`}
-        />
-        <SalesKPICard
-          label="Returning Share"
-          value={`${nr.returningSharePct}%`}
-          subtitle={`of clients in period · ${salesMatchQuality.unmatchedRevenueSharePct}% of sales revenue unmatched`}
-        />
-      </SalesKPIGrid>
+      {/* ── Distribution chart ────────────────────────────────────────────── */}
+      {clientsWithData.length > 0 && (
+        <Card className="p-4 md:p-5">
+          <h3 className="text-base font-semibold text-foreground mb-1">
+            Weight Loss Distribution
+          </h3>
+          <p className="text-xs text-muted-foreground mb-4">
+            All {clientsWithData.length} clients with data across outcome buckets
+          </p>
+          <DistributionChart clients={clientsWithData} />
+        </Card>
+      )}
 
+      {/* ── Full progress table ───────────────────────────────────────────── */}
       <Card className="p-4 md:p-5">
-        <h3 className="text-base font-semibold text-foreground mb-1">New vs Returning Revenue — Trailing 12 Months</h3>
-        <p className="text-xs text-muted-foreground mb-4">
-          From slimming sales (Paid) · New = client&apos;s first-ever sale falls in that month · history since{" "}
-          {salesMatchQuality.historyStart ? fmtDate(salesMatchQuality.historyStart) : "—"}
+        <div className="flex items-baseline justify-between mb-1">
+          <h3 className="text-base font-semibold text-foreground">
+            All Client Progress
+          </h3>
+          {clientsWithData.length > previewCount && (
+            <button
+              type="button"
+              onClick={() => setShowAll(v => !v)}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
+            >
+              {showAll
+                ? "Show less"
+                : `Show all ${clientsWithData.length} clients`}
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          Sorted by % lost by default · click any column header to re-sort
         </p>
-        {!hasNrData ? (
-          <p className="text-sm text-muted-foreground py-6 text-center">No matched-client revenue in the trailing 12 months</p>
-        ) : (
-          <>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={monthlyData} margin={{ top: 24, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tickFormatter={(v) => fmtK(Number(v))} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                <Tooltip
-                  formatter={(value, name, entry) => {
-                    const n = Number(value ?? 0);
-                    const p = entry.payload as typeof monthlyData[0];
-                    return name === "newRevenue"
-                      ? [`${fmtK(n)} · ${p.newClients} clients`, "New"]
-                      : [`${fmtK(n)} · ${p.returningClients} clients`, "Returning"];
-                  }}
-                  contentStyle={{ fontSize: 12 }}
-                />
-                <Bar dataKey="newRevenue" stackId="rev" fill={SLIM_MID} name="newRevenue" />
-                <Bar dataKey="returningRevenue" stackId="rev" fill={SLIM_DARK} name="returningRevenue" radius={[4, 4, 0, 0]}>
-                  <LabelList
-                    dataKey="total"
-                    position="top"
-                    formatter={(v: unknown) => Number(v) > 0 ? fmtK(Number(v)) : ""}
-                    style={{ fontSize: 10, fill: "#111827", fontWeight: 600 }}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-            <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: SLIM_MID }} />
-                New clients
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: SLIM_DARK }} />
-                Returning clients
-              </span>
-            </div>
-          </>
+        <FullProgressTable
+          clients={showAll ? clientsWithData : clientsWithData.slice(0, previewCount)}
+        />
+        {!showAll && clientsWithData.length > previewCount && (
+          <p className="text-xs text-muted-foreground mt-3 text-center">
+            Showing {previewCount} of {clientsWithData.length} ·{" "}
+            <button
+              type="button"
+              onClick={() => setShowAll(true)}
+              className="underline hover:text-foreground transition-colors"
+            >
+              show all
+            </button>
+          </p>
         )}
       </Card>
     </>
   );
 }
 
-function SectionHeader({ explainer }: { explainer: string | null }) {
+function SectionHeader() {
   return (
     <div className="space-y-1 pt-2">
-      <h2 className="text-lg font-bold text-foreground tracking-tight">Program Health</h2>
-      <p className="text-xs text-muted-foreground">
-        {explainer ?? "Matched by client name across Tx sessions and sales"}
-      </p>
+      <h2 className="text-lg font-bold text-foreground tracking-tight">
+        Program Health
+      </h2>
     </div>
   );
 }
