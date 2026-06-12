@@ -116,7 +116,7 @@ function HRMetricCard({ label, value, target, targetValue, currentValue, lowerIs
   if (hasTarget) {
     const ratio = currentValue! / targetValue!;
     status = lowerIsBetter
-      ? ratio <= 1 ? "good" : ratio <= 1.25 ? "warn" : "bad"
+      ? ratio <= 1 ? "good" : "bad"   // above target = red, no warn zone (e.g. HC%)
       : ratio >= 1 ? "good" : ratio >= 0.9 ? "warn" : "bad";
   }
 
@@ -444,6 +444,8 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
 
   const [attendanceFilter, setAttendanceFilter] = useState<AttendanceFilter>("all");
   const [attendanceModalOpen, setAttendanceModalOpen] = useState(false);
+  const [clockedInModalOpen, setClockedInModalOpen] = useState(false);
+  const [attendanceExpanded, setAttendanceExpanded] = useState(true);
   const attendanceHistoryRef = useRef<HTMLDivElement>(null);
 
   // ── Live data: Talexio ────────────────────────────────────────────────────
@@ -759,7 +761,11 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           ══════════════════════════════════════════════════════════════════ */}
       <div className="flex flex-wrap gap-3">
         {/* Clocked in today */}
-        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+        <div
+          onClick={() => setClockedInModalOpen(true)}
+          title="Click to see who's clocked in today"
+          className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-2.5 shadow-sm cursor-pointer select-none hover:border-emerald-400 transition-colors"
+        >
           <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
           <span className="text-xs text-muted-foreground">Clocked in today</span>
           <span className="text-sm font-semibold text-slate-800">
@@ -767,25 +773,16 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           </span>
           {isAttendanceReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
         </div>
-        {/* Late / Left early chips — click → scroll to Attendance History; double-click → modal */}
+        {/* Late / Left early chips — single click opens the attendance issues modal */}
         {(() => {
           const lateCount  = attendanceHistoryQ.data?.summary.total_late ?? 0;
           const earlyCount = attendanceHistoryQ.data?.summary.total_left_early ?? 0;
           const hasData    = attendanceHistoryQ.isSuccess;
-
-          function scrollToAttendance(filter: AttendanceFilter) {
-            setAttendanceFilter(filter);
-            setTimeout(() => {
-              attendanceHistoryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-            }, 50);
-          }
-
           return (
             <>
               <div
-                onClick={() => scrollToAttendance("late")}
-                onDoubleClick={() => setAttendanceModalOpen(true)}
-                title="Click to filter Attendance History · Double-click for modal"
+                onClick={() => setAttendanceModalOpen(true)}
+                title="Click to see who's late this period"
                 className={`flex items-center gap-2 rounded-xl border bg-white px-4 py-2.5 shadow-sm cursor-pointer select-none transition-colors ${lateCount > 0 ? "border-red-200 hover:border-red-400" : "border-slate-200 hover:border-slate-300"}`}
               >
                 <span className={`w-2 h-2 rounded-full shrink-0 ${lateCount > 0 ? "bg-red-400" : "bg-slate-300"}`} />
@@ -796,9 +793,8 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
               </div>
               {(earlyCount > 0 || hasData) && (
                 <div
-                  onClick={() => scrollToAttendance("early")}
-                  onDoubleClick={() => setAttendanceModalOpen(true)}
-                  title="Click to filter Attendance History · Double-click for modal"
+                  onClick={() => setAttendanceModalOpen(true)}
+                  title="Click to see who left early this period"
                   className={`flex items-center gap-2 rounded-xl border bg-white px-4 py-2.5 shadow-sm cursor-pointer select-none transition-colors ${earlyCount > 0 ? "border-orange-200 hover:border-orange-400" : "border-slate-200 hover:border-slate-300"}`}
                 >
                   <span className={`w-2 h-2 rounded-full shrink-0 ${earlyCount > 0 ? "bg-orange-400" : "bg-slate-300"}`} />
@@ -848,7 +844,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
             const avg      = section?.avgRevPAH ?? 0;
             if (locs.length === 0) return null;
             const brandColor = brand === "Spa" ? BRAND.spa.dark : brand === "Aesthetics" ? BRAND.aesthetics.dark : BRAND.slimming.dark;
-            const onTrack   = avg >= target * 0.9;
+            const onTrack   = avg >= target;
             return (
               <div key={brand} className="flex flex-col">
                 {/* Brand column header */}
@@ -1242,8 +1238,48 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
       {void isPayrollReal}
 
       {/* ══════════════════════════════════════════════════════════════════
+          CLOCKED IN TODAY MODAL — live Talexio data
+          ══════════════════════════════════════════════════════════════════ */}
+      {clockedInModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center pt-12 pb-8 px-4 bg-black/50 backdrop-blur-sm"
+          onClick={() => setClockedInModalOpen(false)}
+          onKeyDown={(e) => e.key === "Escape" && setClockedInModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col overflow-hidden"
+            style={{ maxHeight: "calc(100vh - 6rem)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Clocked In Today</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Live from Talexio · {attendance.length} of {resolvedHeadcount} employees
+                  {isAttendanceReal ? "" : " (sample data)"}
+                </p>
+              </div>
+              <button
+                onClick={() => setClockedInModalOpen(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors text-lg font-light"
+              >
+                ×
+              </button>
+            </div>
+            <div className="overflow-auto flex-1 p-4">
+              <DataTable
+                columns={attendanceColumns}
+                data={attendance as unknown as Record<string, unknown>[]}
+                pageSize={30}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
           ATTENDANCE ISSUES MODAL (late arrivals + early departures)
-          Opened by double-clicking either attendance chip above.
+          Opened by clicking either the Late or Left Early chip above.
           ══════════════════════════════════════════════════════════════════ */}
       {attendanceModalOpen && (
         <div
@@ -1261,7 +1297,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
               <div>
                 <h2 className="text-lg font-semibold text-slate-900">Attendance Issues</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {prettyMonth(month)} · Late arrivals &amp; early departures · from Supabase
+                  {fromISO} → {toISO} · Late arrivals &amp; early departures · from Supabase
                 </p>
               </div>
               <div className="flex items-center gap-3">

@@ -50,7 +50,7 @@ query ($dateFrom: Date!, $dateTo: Date!) {
     workShifts(dateFrom: $dateFrom, dateTo: $dateTo, onlyPublished: true) {
       id date from to
     }
-    timeLogs {
+    timeLogs(dateFrom: $dateFrom, dateTo: $dateTo) {
       ... on TimeLogEntry {
         id from to
       }
