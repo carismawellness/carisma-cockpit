@@ -45,7 +45,7 @@ export function EmployeeBreakdownTable({ title, rows, maxRows = 15 }: EmployeeBr
                   <th className="text-left py-2 font-medium w-8">#</th>
                   <th className="text-left py-2 font-medium">Name</th>
                   <th className="text-right py-2 font-medium">Revenue</th>
-                  <th className="text-right py-2 font-medium">Tx</th>
+                  <th className="text-right py-2 font-medium">Quantity</th>
                   <th className="text-right py-2 font-medium">Share</th>
                 </tr>
               </thead>

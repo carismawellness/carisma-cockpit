@@ -64,7 +64,7 @@ export function LocationReviewsCard({
     isError,
   } = useLocationReviews(locationId);
 
-  const displayName = locationName ?? "Unknown";
+  const displayName = locationName ?? "this location";
   const lineColor = BRAND.spa.dark;
 
   // ── Not assigned ─────────────────────────────────────────────────────────
@@ -91,7 +91,7 @@ export function LocationReviewsCard({
       <Card className="border-amber-200 bg-gradient-to-br from-amber-50 to-yellow-50">
         <CardHeader className="pb-2">
           <CardTitle className="text-base font-semibold text-amber-900">
-            ⭐ {displayName} Google Reviews
+            ⭐ Google Reviews — {displayName}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -115,7 +115,7 @@ export function LocationReviewsCard({
       <Card className="border-amber-200 bg-gradient-to-br from-amber-50 to-yellow-50">
         <CardHeader className="pb-2">
           <CardTitle className="text-base font-semibold text-amber-900">
-            ⭐ {displayName} Google Reviews
+            ⭐ Google Reviews — {displayName}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -133,7 +133,7 @@ export function LocationReviewsCard({
       <Card className="border-amber-200 bg-gradient-to-br from-amber-50 to-yellow-50">
         <CardHeader className="pb-2">
           <CardTitle className="text-base font-semibold text-amber-900">
-            ⭐ {displayName} Google Reviews
+            ⭐ Google Reviews — {displayName}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -153,7 +153,7 @@ export function LocationReviewsCard({
     <Card className="border-amber-200 bg-gradient-to-br from-amber-50 to-yellow-50">
       <CardHeader className="pb-2">
         <CardTitle className="text-base font-semibold text-amber-900">
-          ⭐ {displayName} Google Reviews
+          ⭐ Google Reviews — {displayName}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">

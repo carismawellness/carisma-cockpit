@@ -26,6 +26,12 @@ export function EmployeeStatCards({ totals, basisLabel = "ex-VAT", prevTotals }:
   const d = (cur: number, prev: number | undefined) =>
     prev !== undefined ? deltaPct(cur, prev) : undefined;
 
+  const avgRetailTicket = totals.retail_tx > 0 ? totals.retail_revenue / totals.retail_tx : 0;
+  const prevAvgRetailTicket =
+    prevTotals && prevTotals.retail_tx > 0 ? prevTotals.retail_revenue / prevTotals.retail_tx : 0;
+
+  const dailyRevenue = totals.active_days > 0 ? totals.total_revenue / totals.active_days : 0;
+
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-4">
       <SalesKPICard
@@ -53,27 +59,25 @@ export function EmployeeStatCards({ totals, basisLabel = "ex-VAT", prevTotals }:
         yoyLabel="vs last period"
       />
       <SalesKPICard
-        label="Transactions"
-        value={String(totals.total_tx)}
-        subtitle={`${totals.service_tx} service · ${totals.retail_tx} retail`}
-        icon={Receipt}
-        yoyChange={d(totals.total_tx, prevTotals?.total_tx)}
-        yoyLabel="vs last period"
-      />
-      <SalesKPICard
-        label="Avg Ticket"
-        value={fmtEur(totals.avg_ticket)}
-        subtitle="per transaction"
+        label="Avg Retail Ticket"
+        value={fmtEur(avgRetailTicket)}
+        subtitle="per retail tx"
         icon={Gauge}
-        yoyChange={d(totals.avg_ticket, prevTotals?.avg_ticket)}
+        yoyChange={prevTotals ? d(avgRetailTicket, prevAvgRetailTicket) : undefined}
         yoyLabel="vs last period"
       />
       <SalesKPICard
-        label="Active Days"
-        value={String(totals.active_days)}
-        subtitle="days with sales"
+        label="Daily Revenue"
+        value={fmtEur(dailyRevenue)}
+        subtitle="per active day"
         icon={CalendarDays}
-        yoyChange={d(totals.active_days, prevTotals?.active_days)}
+      />
+      <SalesKPICard
+        label="Commission"
+        value={fmtEur(totals.commission_total)}
+        subtitle="this period"
+        icon={Receipt}
+        yoyChange={d(totals.commission_total, prevTotals?.commission_total)}
         yoyLabel="vs last period"
       />
     </div>

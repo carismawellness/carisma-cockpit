@@ -64,49 +64,6 @@ function formatRate(rate: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Rank system
-// ---------------------------------------------------------------------------
-
-interface Rank {
-  emoji: string;
-  label: string;
-  min: number;
-  max: number | null;
-}
-
-const RANKS: Rank[] = [
-  { emoji: "🌱", label: "Rookie",       min: 0,   max: 50   },
-  { emoji: "⭐", label: "Rising Star",  min: 50,  max: 150  },
-  { emoji: "💎", label: "Achiever",     min: 150, max: 400  },
-  { emoji: "🏆", label: "Champion",     min: 400, max: 800  },
-  { emoji: "👑", label: "Legend",       min: 800, max: null },
-];
-
-function getRank(total: number): Rank {
-  for (let i = RANKS.length - 1; i >= 0; i--) {
-    if (total >= RANKS[i].min) return RANKS[i];
-  }
-  return RANKS[0];
-}
-
-function getRankProgress(total: number, rank: Rank): number {
-  if (rank.max === null) return 1;
-  return Math.min((total - rank.min) / (rank.max - rank.min), 1);
-}
-
-function getMotivationalLine(total: number): string {
-  const rank = getRank(total);
-  // Already Legend
-  if (rank.max === null) {
-    return "Absolute Legend — you've hit the top tier! 👑";
-  }
-  const gap = rank.max - total;
-  const nextRank = RANKS.find((r) => r.min === rank.max);
-  if (!nextRank) return "Keep going — every euro counts!";
-  return `${nextRank.emoji} ${nextRank.label} is just ${formatEur(gap)} away — you've got this!`;
-}
-
-// ---------------------------------------------------------------------------
 // DeltaBadge
 // ---------------------------------------------------------------------------
 
@@ -181,8 +138,6 @@ export function CommissionHero({
   prevCommissionBooking,
   allTimeBestCommission,
 }: CommissionHeroProps) {
-  const rank = getRank(commissionTotal);
-  const motivLine = getMotivationalLine(commissionTotal);
   const animatedTotal = useCountUp(commissionTotal);
 
   return (
@@ -200,26 +155,6 @@ export function CommissionHero({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Rank badge with progress ring */}
-            <div className="relative inline-flex items-center justify-center">
-              <svg width="44" height="44" className="absolute -inset-0.5" style={{ transform: "rotate(-90deg)" }}>
-                <circle cx="22" cy="22" r="19" fill="none" stroke="#92400e" strokeWidth="2.5" opacity="0.25" />
-                <circle
-                  cx="22" cy="22" r="19"
-                  fill="none"
-                  stroke="#FBBF24"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeDasharray={String(2 * Math.PI * 19)}
-                  strokeDashoffset={String(2 * Math.PI * 19 * (1 - getRankProgress(commissionTotal, rank)))}
-                  style={{ transition: "stroke-dashoffset 1.5s ease-out" }}
-                />
-              </svg>
-              <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/60 bg-amber-400/15 px-3 py-1 text-xs font-bold text-amber-300 shadow-inner relative z-10">
-                {rank.emoji} {rank.label}
-              </span>
-            </div>
-
             {ratesSet && (
               <>
                 <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-300">
@@ -255,11 +190,6 @@ export function CommissionHero({
                 )}
               </div>
             </div>
-
-            {/* Motivational line */}
-            <p className="text-center text-sm text-emerald-300 mb-2 font-medium">
-              {motivLine}
-            </p>
 
             {/* Personal best: new record or near-miss */}
             {allTimeBestCommission !== undefined && allTimeBestCommission > 0 && (

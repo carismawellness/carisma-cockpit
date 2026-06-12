@@ -65,6 +65,13 @@ export function useLocationReviews(locationId: number | null): UseLocationReview
     weekLabel: format(parseISO(r.date), "MMM d"),
   }));
 
+  // Enforce monotonically increasing review counts (bad ETL snapshots can cause dips)
+  let runningMax = 0;
+  for (const point of data) {
+    runningMax = Math.max(runningMax, point.total_reviews);
+    point.total_reviews = runningMax;
+  }
+
   const latest = data[data.length - 1];
   const currentRating = latest?.avg_rating ?? null;
   const currentReviews = latest?.total_reviews ?? null;

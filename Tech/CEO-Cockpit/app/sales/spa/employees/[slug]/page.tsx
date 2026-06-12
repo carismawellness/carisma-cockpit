@@ -2,7 +2,7 @@
 
 // Spa — personal sales-employee dashboard.
 
-import { use, useMemo } from "react";
+import { use, useMemo, useState } from "react";
 import Link from "next/link";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
@@ -12,7 +12,6 @@ import { useSalesEmployeeMonthly } from "@/lib/hooks/useSalesEmployeeMonthly";
 import { useIsAdmin } from "@/lib/hooks/useIsAdmin";
 import { CommissionHero, CommissionHeroSkeleton } from "@/components/sales/employees/CommissionHero";
 import { RetailTargetMeter, RetailTargetMeterSkeleton } from "@/components/sales/employees/RetailTargetMeter";
-import { CommissionTrendChart } from "@/components/sales/employees/CommissionTrendChart";
 import { PerformanceCommentary } from "@/components/sales/employees/PerformanceCommentary";
 import { LocationReviewsCard } from "@/components/sales/employees/LocationReviewsCard";
 import { EmployeeStatCards } from "@/components/sales/employees/EmployeeStatCards";
@@ -26,7 +25,7 @@ import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { previousPeriod } from "@/lib/utils/period-comparison";
 import { BRAND } from "@/lib/constants/design-tokens";
 import type { EmployeeType } from "@/lib/sales-employees/types";
-import { AlertCircle, ChevronLeft, Lock, MapPin } from "lucide-react";
+import { AlertCircle, ChevronLeft, ChevronRight, Lock, MapPin } from "lucide-react";
 
 function _pad(n: number) { return String(n).padStart(2, "0"); }
 function toDateStr(d: Date) {
@@ -64,7 +63,7 @@ function SpaEmployeeContent({
   const { prevFrom, prevTo } = useMemo(() => previousPeriod(dateFrom, dateTo), [dateFrom, dateTo]);
   const { stats: prevStats } = useSalesEmployeeStats("spa", slug, prevFrom, prevTo);
 
-  // 6-month longitudinal data for CommissionTrendChart
+  // 6-month longitudinal data for StreakBadge
   const { months: monthlyData, isLoading: monthlyLoading } = useSalesEmployeeMonthly("spa", slug);
 
   // The stats payload doesn't carry location_name — look it up in the registry.
@@ -117,22 +116,6 @@ function SpaEmployeeContent({
     if (stats) all.push(stats.totals.commission_total);
     return all.length > 0 ? Math.max(...all) : 0;
   }, [monthlyData, stats]);
-
-  // Current period partial data for CommissionTrendChart trajectory bar
-  const currentPreview = useMemo(() => {
-    if (!stats) return undefined;
-    const label = new Intl.DateTimeFormat("en-MT", { month: "short", year: "numeric" })
-      .format(dateTo);
-    return {
-      label,
-      service: stats.totals.commission_service,
-      retail: stats.totals.commission_retail,
-      booking: 0,
-      total: stats.totals.commission_total,
-      activeDays: stats.totals.active_days,
-      periodDays,
-    };
-  }, [stats, dateTo, periodDays]);
 
   // Daily AI coaching tip from Claude Haiku (cached per day in Supabase)
   const tipParams = stats ? {
@@ -306,20 +289,17 @@ function SpaEmployeeContent({
 
           <EmployeeStatCards totals={stats.totals} basisLabel={basisLabel} prevTotals={prevStats?.totals} />
 
-          <EmployeeTrendChart daily={stats.daily} accentColor={BRAND.spa.soft} />
+          <EmployeeTrendChart
+            daily={stats.daily}
+            serviceRate={stats.rates?.service_rate ?? 0}
+            retailRate={stats.rates?.retail_rate ?? 0}
+          />
 
           {/* Service + retail breakdowns */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <EmployeeBreakdownTable title="Top Services" rows={stats.service_breakdown} />
             <EmployeeBreakdownTable title="Top Retail Products" rows={stats.retail_breakdown} />
           </div>
-
-          {/* Month-over-month commission trend with current period trajectory */}
-          <CommissionTrendChart
-            months={monthlyData}
-            isLoading={monthlyLoading}
-            currentPreview={currentPreview}
-          />
 
           {/* Google Reviews for this employee's location */}
           <LocationReviewsCard
@@ -379,10 +359,75 @@ export default function SpaEmployeePage({
 }) {
   const { slug } = use(params);
 
+  // Month state: { year, month } (month is 1-based)
+  const today = new Date();
+  const [selectedYear, setSelectedYear] = useState(today.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(today.getMonth() + 1); // 1-based
+
+  // Compute dateFrom / dateTo from selected month
+  const { dateFrom, dateTo } = useMemo(() => {
+    const from = new Date(selectedYear, selectedMonth - 1, 1);
+    const isCurrentMonth =
+      selectedYear === today.getFullYear() && selectedMonth === (today.getMonth() + 1);
+    const to = isCurrentMonth
+      ? new Date(today.getFullYear(), today.getMonth(), today.getDate())
+      : new Date(selectedYear, selectedMonth, 0); // last day of selectedMonth
+    return { dateFrom: from, dateTo: to };
+  }, [selectedYear, selectedMonth]);
+
+  function goPrev() {
+    if (selectedMonth === 1) {
+      setSelectedYear((y) => y - 1);
+      setSelectedMonth(12);
+    } else {
+      setSelectedMonth((m) => m - 1);
+    }
+  }
+
+  function goNext() {
+    const now = new Date();
+    const nextYear = selectedMonth === 12 ? selectedYear + 1 : selectedYear;
+    const nextMonth = selectedMonth === 12 ? 1 : selectedMonth + 1;
+    // Don't allow navigating past current month
+    if (nextYear > now.getFullYear() || (nextYear === now.getFullYear() && nextMonth > now.getMonth() + 1)) return;
+    setSelectedYear(nextYear);
+    setSelectedMonth(nextMonth);
+  }
+
+  const isCurrentMonth =
+    selectedYear === today.getFullYear() && selectedMonth === (today.getMonth() + 1);
+
+  const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
   return (
-    <DashboardShell>
-      {({ dateFrom, dateTo }) => (
-        <SpaEmployeeDateGate slug={slug} rawDateFrom={dateFrom} dateTo={dateTo} />
+    <DashboardShell hideDatePicker>
+      {() => (
+        <>
+          {/* Month selector */}
+          <div className="flex items-center gap-3 justify-center pt-2">
+            <button
+              type="button"
+              onClick={goPrev}
+              className="rounded-full h-8 w-8 flex items-center justify-center border border-warm-border bg-background hover:bg-muted/30 transition-colors text-muted-foreground hover:text-foreground"
+              aria-label="Previous month"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="text-sm font-semibold text-foreground min-w-[90px] text-center">
+              {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
+            </span>
+            <button
+              type="button"
+              onClick={goNext}
+              disabled={isCurrentMonth}
+              className="rounded-full h-8 w-8 flex items-center justify-center border border-warm-border bg-background hover:bg-muted/30 transition-colors text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+              aria-label="Next month"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+          <SpaEmployeeDateGate slug={slug} rawDateFrom={dateFrom} dateTo={dateTo} />
+        </>
       )}
     </DashboardShell>
   );

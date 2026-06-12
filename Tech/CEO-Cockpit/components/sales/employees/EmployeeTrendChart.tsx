@@ -1,14 +1,7 @@
 "use client";
 
-// Daily trend for an employee: stacked service+retail revenue bars with a
-// commission line on a secondary axis.
-//
-// Repo bar-label rule: bar values render as LabelList on the bars — except
-// for dense daily charts, where labels are omitted when more than 20 bars
-// (matches existing dense daily charts in app/sales).
-
 import {
-  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid,
+  ComposedChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, LabelList,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,30 +10,34 @@ import type { EmployeeDailyStat } from "@/lib/sales-employees/types";
 
 export interface EmployeeTrendChartProps {
   daily: EmployeeDailyStat[];
-  /** Brand accent (hex) for the service bars; retail uses a softer tint. */
+  serviceRate?: number;
+  retailRate?: number;
   accentColor?: string;
   title?: string;
 }
 
-const DEFAULT_ACCENT = "#1B3A4B"; // deep navy
-const RETAIL_COLOR = "#B79E61";   // muted gold
-const COMMISSION_COLOR = "#E07A5F"; // coral (shared accent)
+const SERVICE_COLOR = "#1B3A4B"; // deep navy
+const RETAIL_COLOR = "#B79E61";  // muted gold
 const MAX_LABELED_BARS = 20;
 
 export function EmployeeTrendChart({
   daily,
-  accentColor = DEFAULT_ACCENT,
-  title = "Daily Revenue & Commission",
+  serviceRate = 0,
+  retailRate = 0,
+  title = "Daily Commission",
 }: EmployeeTrendChartProps) {
-  const data = daily.map((d) => ({
-    date: d.date.slice(5), // MM-DD keeps the axis compact
-    Service: d.service_revenue,
-    Retail: d.retail_revenue,
-    Commission: d.commission,
-    _total: +(d.service_revenue + d.retail_revenue).toFixed(2),
-  }));
+  const data = daily.map((d) => {
+    const svc = +(d.service_revenue * serviceRate).toFixed(2);
+    const ret = +(d.retail_revenue * retailRate).toFixed(2);
+    const total = +(svc + ret).toFixed(2);
+    return {
+      date: d.date.slice(5),
+      "Service Commission": svc,
+      "Retail Commission": ret,
+      _total: total,
+    };
+  });
 
-  // Dense daily charts skip per-bar labels (tooltip + axis carry the values)
   const showLabels = data.length > 0 && data.length <= MAX_LABELED_BARS;
 
   return (
@@ -60,14 +57,6 @@ export function EmployeeTrendChart({
                 <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                 <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                 <YAxis
-                  yAxisId="revenue"
-                  orientation="left"
-                  tickFormatter={(v) => formatCurrency(Number(v))}
-                  tick={{ fontSize: 11 }}
-                />
-                <YAxis
-                  yAxisId="commission"
-                  orientation="right"
                   tickFormatter={(v) => formatCurrency(Number(v))}
                   tick={{ fontSize: 11 }}
                 />
@@ -75,8 +64,8 @@ export function EmployeeTrendChart({
                   formatter={(v: unknown, name: unknown) => [formatCurrency(Number(v)), String(name)]}
                 />
                 <Legend wrapperStyle={{ paddingTop: 8 }} />
-                <Bar yAxisId="revenue" dataKey="Service" stackId="rev" fill={accentColor} />
-                <Bar yAxisId="revenue" dataKey="Retail" stackId="rev" fill={RETAIL_COLOR} radius={[4, 4, 0, 0]}>
+                <Bar dataKey="Service Commission" stackId="comm" fill={SERVICE_COLOR} />
+                <Bar dataKey="Retail Commission" stackId="comm" fill={RETAIL_COLOR} radius={[4, 4, 0, 0]}>
                   {showLabels && (
                     <LabelList
                       dataKey="_total"
@@ -86,14 +75,6 @@ export function EmployeeTrendChart({
                     />
                   )}
                 </Bar>
-                <Line
-                  yAxisId="commission"
-                  type="monotone"
-                  dataKey="Commission"
-                  stroke={COMMISSION_COLOR}
-                  strokeWidth={2}
-                  dot={{ r: 3, fill: COMMISSION_COLOR }}
-                />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
