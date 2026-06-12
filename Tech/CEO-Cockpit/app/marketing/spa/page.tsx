@@ -82,8 +82,8 @@ function WixSalesCard({ wix, brand }: { wix: WixHookResult; brand: typeof BRAND.
 
   // Last 24 months for monthly chart
   const monthlySlice = monthly.slice(-24);
-  // Last 52 weeks for weekly chart
-  const weeklySlice  = weekly.slice(-52);
+  // Last 20 weeks for weekly chart
+  const weeklySlice  = weekly.slice(-20);
 
   // KPI: most recent full month
   const latestMonth  = monthly[monthly.length - 1];
@@ -279,15 +279,29 @@ function WixSalesCard({ wix, brand }: { wix: WixHookResult; brand: typeof BRAND.
         </div>
       ) : (
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-gray-500 mb-3">
-            Weekly Revenue — Last 52 Weeks
-          </p>
-          <div className="h-[280px]">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-gray-500">
+              Weekly Revenue — Last 20 Weeks vs Same Period Last Year
+            </p>
+            {/* Period YoY summary */}
+            {(() => {
+              const totalCurr = weeklySlice.reduce((s, w) => s + w.current, 0);
+              const totalLy   = weeklySlice.reduce((s, w) => s + w.ly, 0);
+              const pct = totalLy > 0 ? ((totalCurr - totalLy) / totalLy) * 100 : null;
+              return pct !== null ? (
+                <span className={`text-xs font-bold rounded-full px-2.5 py-1 ${pct >= 0 ? "text-emerald-700 bg-emerald-50" : "text-red-600 bg-red-50"}`}>
+                  {pct >= 0 ? "+" : ""}{pct.toFixed(1)}% vs same 20 weeks LY
+                </span>
+              ) : null;
+            })()}
+          </div>
+          <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={weeklySlice}
-                margin={{ top: 12, right: 16, left: 8, bottom: 24 }}
-                barCategoryGap="12%"
+                margin={{ top: 28, right: 16, left: 8, bottom: 28 }}
+                barCategoryGap="18%"
+                barGap={2}
               >
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
                 <XAxis
@@ -295,10 +309,10 @@ function WixSalesCard({ wix, brand }: { wix: WixHookResult; brand: typeof BRAND.
                   tick={{ fontSize: 10, fill: "#6B7280" }}
                   axisLine={false}
                   tickLine={false}
-                  interval={3}
-                  angle={-30}
+                  interval={1}
+                  angle={-35}
                   textAnchor="end"
-                  height={36}
+                  height={40}
                 />
                 <YAxis
                   tickFormatter={(v: number) => fmtK(v)}
@@ -310,16 +324,62 @@ function WixSalesCard({ wix, brand }: { wix: WixHookResult; brand: typeof BRAND.
                 <Tooltip
                   contentStyle={TOOLTIP_STYLE}
                   cursor={{ fill: `${brand.soft}30` }}
-                  formatter={(value: unknown) => [fmtK(Number(value)), "Revenue"]}
+                  formatter={(value: unknown, name: unknown) => [
+                    fmtK(Number(value)),
+                    name === "current" ? "This year" : "Same week LY",
+                  ]}
                   labelFormatter={(label) => `Week of ${String(label)}`}
                 />
-                <Bar dataKey="current" name="Revenue" radius={[2, 2, 0, 0]} maxBarSize={14}>
+                {/* LY bar */}
+                <Bar dataKey="ly" name="ly" radius={[3, 3, 0, 0]} maxBarSize={16}>
+                  {weeklySlice.map((_, i) => (
+                    <Cell key={i} fill={`${brand.soft}70`} />
+                  ))}
+                </Bar>
+                {/* Current bar with YoY delta label above */}
+                <Bar dataKey="current" name="current" radius={[3, 3, 0, 0]} maxBarSize={16}>
                   {weeklySlice.map((_, i) => (
                     <Cell key={i} fill={brand.dark} />
                   ))}
+                  <LabelList
+                    dataKey="yoyPct"
+                    position="top"
+                    content={(props) => {
+                      const { x, y, value } = props as { x: number; y: number; value: number | null };
+                      if (value === null || value === undefined) return null;
+                      const color = value >= 0 ? "#22C55E" : "#EF4444";
+                      return (
+                        <text
+                          x={x}
+                          y={(y as number) - 4}
+                          textAnchor="middle"
+                          fontSize={9}
+                          fontWeight={700}
+                          fill={color}
+                        >
+                          {value >= 0 ? "+" : ""}{value.toFixed(0)}%
+                        </text>
+                      );
+                    }}
+                  />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+          </div>
+          {/* Legend */}
+          <div className="flex items-center gap-4 justify-center mt-1">
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-sm inline-block" style={{ backgroundColor: brand.dark }} />
+              <span className="text-[11px] text-gray-500">This year</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-sm inline-block" style={{ backgroundColor: `${brand.soft}70` }} />
+              <span className="text-[11px] text-gray-500">Same week LY</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-emerald-600">+%</span>
+              <span className="text-[11px] text-gray-500">YoY delta above bar</span>
+            </div>
           </div>
         </div>
       )}
