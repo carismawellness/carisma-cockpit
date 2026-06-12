@@ -48,7 +48,7 @@ import {
 // ════════════════════════════════════════════════════════════════════════════
 
 const REVPAH_TARGET = 35;
-const HC_PCT_TARGET = 35;
+const HC_PCT_TARGET = 40;
 
 const PROD_COLORS = {
   productive: "#A8D4A8",
@@ -117,7 +117,7 @@ function HRMetricCard({ label, value, target, targetValue, currentValue, lowerIs
     const ratio = currentValue! / targetValue!;
     status = lowerIsBetter
       ? ratio <= 1 ? "good" : ratio <= 1.25 ? "warn" : "bad"
-      : ratio >= 0.9 ? "good" : ratio >= 0.7 ? "warn" : "bad";
+      : ratio >= 1 ? "good" : ratio >= 0.9 ? "warn" : "bad";
   }
 
   const styles: Record<Status, { border: string; valueCls: string; bg: string; pill: string; pillText: string }> = {
