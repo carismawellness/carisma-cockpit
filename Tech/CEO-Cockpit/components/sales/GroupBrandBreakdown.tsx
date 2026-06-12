@@ -18,8 +18,12 @@ function fmtK(v: number) {
   return `€${v.toFixed(0)}`;
 }
 
+// Suppress YoY when the LY baseline isn't real (e.g. Slimming launched
+// Feb 2026 — any tiny LY residual produces nonsense like +5,859%).
 function fmtPct(curr: number, ly: number): string | null {
-  if (!ly) return null;
+  if (!ly || ly < 0) return null;
+  if (curr > 0 && ly / curr < 0.05) return null;
+  if (ly < 500) return null;
   const pct = ((curr - ly) / ly) * 100;
   return `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
 }
@@ -44,13 +48,20 @@ export function GroupBrandBreakdown({ period, ly, spaLocations, isFetching }: Pr
   const [spaExpanded, setSpaExpanded] = useState(false);
 
   // Build the chart rows. Collapsed: 3 brand rows. Expanded: 8 Spa hotels + Aes + Slim.
-  // Aes & Slim always carry LY; Spa locations don't (API returns LY only at brand level).
+  // Spa & Aes have real LY. Slimming launched Feb 2026 — its LY is residual noise,
+  // so hasLy is computed dynamically (same thresholds as fmtPct).
+  const hasRealLy = (curr: number, lyVal: number) => {
+    if (!lyVal || lyVal < 0) return false;
+    if (curr > 0 && lyVal / curr < 0.05) return false;
+    if (lyVal < 500) return false;
+    return true;
+  };
   const chartData = useMemo<Row[]>(() => {
     if (!spaExpanded) {
       return [
-        { name: "Spa",        current: period.spa,        ly: ly.spa,         dark: BRAND.spa.dark,         soft: BRAND.spa.soft,        hasLy: true },
-        { name: "Aesthetics", current: period.aesthetics, ly: ly.aesthetics,  dark: BRAND.aesthetics.dark,  soft: BRAND.aesthetics.soft, hasLy: true },
-        { name: "Slimming",   current: period.slimming,   ly: ly.slimming,    dark: BRAND.slimming.dark,    soft: BRAND.slimming.soft,   hasLy: true },
+        { name: "Spa",        current: period.spa,        ly: ly.spa,         dark: BRAND.spa.dark,         soft: BRAND.spa.soft,        hasLy: hasRealLy(period.spa,        ly.spa)        },
+        { name: "Aesthetics", current: period.aesthetics, ly: ly.aesthetics,  dark: BRAND.aesthetics.dark,  soft: BRAND.aesthetics.soft, hasLy: hasRealLy(period.aesthetics, ly.aesthetics) },
+        { name: "Slimming",   current: period.slimming,   ly: ly.slimming,    dark: BRAND.slimming.dark,    soft: BRAND.slimming.soft,   hasLy: hasRealLy(period.slimming,   ly.slimming)   },
       ];
     }
     return [
@@ -62,8 +73,8 @@ export function GroupBrandBreakdown({ period, ly, spaLocations, isFetching }: Pr
         soft:    BRAND.spa.soft,
         hasLy:   false,
       })),
-      { name: "Aesthetics", current: period.aesthetics, ly: ly.aesthetics, dark: BRAND.aesthetics.dark, soft: BRAND.aesthetics.soft, hasLy: true },
-      { name: "Slimming",   current: period.slimming,   ly: ly.slimming,   dark: BRAND.slimming.dark,   soft: BRAND.slimming.soft,   hasLy: true },
+      { name: "Aesthetics", current: period.aesthetics, ly: ly.aesthetics, dark: BRAND.aesthetics.dark, soft: BRAND.aesthetics.soft, hasLy: hasRealLy(period.aesthetics, ly.aesthetics) },
+      { name: "Slimming",   current: period.slimming,   ly: ly.slimming,   dark: BRAND.slimming.dark,   soft: BRAND.slimming.soft,   hasLy: hasRealLy(period.slimming,   ly.slimming)   },
     ];
   }, [spaExpanded, period, ly, spaLocations]);
 

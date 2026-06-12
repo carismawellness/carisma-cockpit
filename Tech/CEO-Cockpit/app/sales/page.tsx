@@ -19,8 +19,15 @@ function fmtK(v: number) {
   return `€${v.toFixed(0)}`;
 }
 
+// Returns YoY % only when the LY baseline is large enough to be meaningful.
+// Slimming opened Feb 2026, so its "LY" row contains a handful of euros at
+// best — dividing by that produces +5,859% and similar nonsense. Suppress
+// the badge entirely when LY < 5% of current OR LY < €500 (absolute floor
+// for the smallest brands).
 function calcYoY(curr: number, ly: number): number | undefined {
-  if (!ly) return undefined;
+  if (!ly || ly < 0) return undefined;
+  if (curr > 0 && ly / curr < 0.05) return undefined;
+  if (ly < 500) return undefined;
   return ((curr - ly) / ly) * 100;
 }
 
@@ -98,7 +105,7 @@ function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
           <SalesKPICard
             label="Slimming Revenue"
             value={isFetching ? "—" : fmtK(period.slimming)}
-            subtitle="Single location"
+            subtitle="Launched Feb 2026 · No LY baseline"
             yoyChange={isFetching ? undefined : yoy.slimming}
             icon={Scale}
           />
