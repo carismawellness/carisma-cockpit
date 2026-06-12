@@ -28,9 +28,10 @@ const BRAND_AOV_DEFAULT: Record<string, number> = {
 // any positive-value match so "model call" never picks up a product AOV.
 const AOV_OVERRIDES: Array<{ keywords: string[]; aov: number }> = [
   // ── Zero-revenue campaign types (awareness / recruitment / internal) ──
-  { keywords: ["model call", "model calls", "recruitment", "gifting"], aov: 0 },
+  { keywords: ["model call", "model calls", "recruitment"], aov: 0 },
 
   // ── Spa ──────────────────────────────────────────────────────────────
+  { keywords: ["gifting", "gift"], aov: 100 },
   { keywords: ["couple", "couples", "romantic"], aov: 249 },
   { keywords: ["hammam"], aov: 129 },
   { keywords: ["spa day", "body ritual", "body treatment", "ritual"], aov: 129 },
