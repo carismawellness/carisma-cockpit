@@ -82,7 +82,7 @@ function GenericTooltip({ active, payload, label }: { active?: boolean; payload?
 }
 
 // ── Shared legend for staff charts ────────────────────────────────────────────
-function StaffLegend({ retailColor }: { retailColor?: string }) {
+function StaffLegend({ retailColor, hideBookings = false }: { retailColor?: string; hideBookings?: boolean }) {
   const barColor = retailColor ?? SLIMMING_GREEN;
   return (
     <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
@@ -90,10 +90,12 @@ function StaffLegend({ retailColor }: { retailColor?: string }) {
         <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: barColor }} />
         Revenue inc-VAT
       </span>
-      <span className="flex items-center gap-1.5">
-        <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: NAVY, opacity: 0.55 }} />
-        Bookings (count scale)
-      </span>
+      {!hideBookings && (
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: NAVY, opacity: 0.55 }} />
+          Bookings (count scale)
+        </span>
+      )}
     </div>
   );
 }
@@ -368,11 +370,10 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                   <LabelList dataKey="k_label" position="insideRight" formatter={(v: unknown) => v ? String(v) : ""} style={{ fontSize: 9, fill: "#fff", fontWeight: 700 }} />
                   <LabelList dataKey="bar_label" position="right" formatter={(v: unknown) => String(v ?? "")} style={{ fontSize: 10, fill: "#374151" }} />
                 </Bar>
-                <Bar dataKey="Bookings" fill={NAVY} radius={[0, 4, 4, 0]} maxBarSize={12} opacity={0.55} />
               </BarChart>
             </ResponsiveContainer>
           )}
-          <StaffLegend retailColor={GOLD} />
+          <StaffLegend retailColor={GOLD} hideBookings />
         </Card>
 
       </div>
