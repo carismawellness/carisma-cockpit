@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
 import { SalesKPICard } from "@/components/sales/SalesKPICard";
@@ -14,12 +14,51 @@ import { FileSpreadsheet } from "lucide-react";
 import { SyncButton } from "@/components/dashboard/SyncButton";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList,
+  Treemap,
 } from "recharts";
 
 function fmtK(v: number): string {
   if (Math.abs(v) >= 1_000_000) return `€${(v / 1_000_000).toFixed(1)}M`;
   if (Math.abs(v) >= 1_000)     return `€${(v / 1_000).toFixed(1)}K`;
   return `€${v.toFixed(0)}`;
+}
+
+// Cell renderer for the service/product treemap. Recharts passes geometry
+// (x/y/width/height) and node data (name, value, fill) to content. We only
+// label cells big enough to fit text — small "long tail" cells stay visual
+// but unlabeled, which is the whole point of replacing the long table.
+interface TreemapCellProps {
+  x?:        number;
+  y?:        number;
+  width?:    number;
+  height?:   number;
+  name?:     string;
+  value?:    number;
+  fill?:     string;
+  depth?:    number;
+  totalRev?: number;
+}
+function TreemapCell(props: TreemapCellProps) {
+  const { x = 0, y = 0, width = 0, height = 0, name = "", value = 0, fill = "#cbd5e1", depth = 1, totalRev = 0 } = props;
+  if (depth === 0) return null; // root container — no rect
+  const pct = totalRev > 0 ? (value / totalRev) * 100 : 0;
+  const showName  = width > 56 && height > 22;
+  const showValue = width > 70 && height > 38;
+  return (
+    <g>
+      <rect x={x} y={y} width={width} height={height} fill={fill} stroke="#ffffff" strokeWidth={2} />
+      {showName && (
+        <text x={x + 6} y={y + 14} fill="#ffffff" fontSize={11} fontWeight={600}>
+          {name.length > Math.floor(width / 7) ? `${name.slice(0, Math.floor(width / 7) - 1)}…` : name}
+        </text>
+      )}
+      {showValue && (
+        <text x={x + 6} y={y + 28} fill="rgba(255,255,255,0.85)" fontSize={10}>
+          {value >= 1000 ? `€${(value / 1000).toFixed(1)}K` : `€${value.toFixed(0)}`} · {pct.toFixed(1)}%
+        </text>
+      )}
+    </g>
+  );
 }
 
 function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
@@ -84,6 +123,23 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
       }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [byService]);
+
+  // Flat treemap input — one rectangle per service, coloured by its nav group.
+  // Recharts Treemap with single-level data is more reliable than the nested
+  // children API; visual grouping comes from shared fill colour.
+  const treemapData = useMemo(() =>
+    byGroup.flatMap(g =>
+      g.services
+        .filter(s => s.revenue_inc > 0)
+        .map(s => ({
+          name: s.service,
+          size: s.revenue_inc,
+          fill: g.color,
+          group: g.group,
+        }))
+    ),
+    [byGroup]
+  );
 
   // Enrich byPerson with salary overlay. Sales surface uses gross (inc-VAT);
   // K% is salary ÷ gross-revenue (display metric, not the EBITDA labour ratio).
@@ -265,80 +321,56 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
         )}
       </Card>
 
-      {/* ── Revenue by Service — grouped by nav category ─────────────── */}
+      {/* ── Revenue by Service — treemap (area = revenue, colour = category) ── */}
       <Card className="p-4 md:p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <h2 className="text-base font-semibold text-foreground">Revenue by Service / Product</h2>
-          <span className="text-xs text-muted-foreground">grouped by website nav category</span>
+        <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
+          <div>
+            <h2 className="text-base font-semibold text-foreground">Revenue by Service / Product</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Each rectangle = one service · Area = revenue share · Colour = category
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground">Total</p>
+            <p className="text-base font-bold tabular-nums">{fmtK(totals.revenue_inc)}</p>
+            <p className="text-[10px] text-muted-foreground tabular-nums">{totals.tx_count.toLocaleString()} bookings</p>
+          </div>
         </div>
+
         {byService.length === 0 ? (
           <p className="text-sm text-muted-foreground py-4 text-center">
             {isFetching || isSyncing ? "Loading…" : "No data for selected period"}
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
-                  <th className="text-left pb-2 font-medium w-[38%]">Service / Product</th>
-                  <th className="text-left pb-2 font-medium">Category</th>
-                  <th className="text-right pb-2 font-medium">Bookings</th>
-                  <th className="text-right pb-2 font-medium">Revenue (inc-VAT)</th>
-                  <th className="text-left pb-2 pl-4 font-medium">Share</th>
-                </tr>
-              </thead>
-              <tbody>
-                {byGroup.map(({ group, color, services, total_revenue, total_count }) => (
-                  <Fragment key={group}>
-                    {/* Group header row */}
-                    <tr className="border-y border-muted bg-muted/20">
-                      <td colSpan={2} className="py-2 pl-2">
-                        <div className="flex items-center gap-2">
-                          <span className="inline-block w-2 h-4 rounded-sm shrink-0" style={{ backgroundColor: color }} />
-                          <span className="text-xs font-bold uppercase tracking-wider" style={{ color }}>{group}</span>
-                        </div>
-                      </td>
-                      <td className="py-2 text-right text-xs text-muted-foreground font-medium pr-0.5 tabular-nums">{total_count}</td>
-                      <td className="py-2 text-right text-xs font-semibold tabular-nums">{fmtK(total_revenue)}</td>
-                      <td className="py-2 pl-4 text-xs text-muted-foreground tabular-nums">
-                        {totals.revenue_inc > 0 ? `${((total_revenue / totals.revenue_inc) * 100).toFixed(1)}%` : ""}
-                      </td>
-                    </tr>
-                    {/* Individual services */}
-                    {services.map(s => (
-                      <tr key={s.service} className="border-b last:border-0 hover:bg-muted/10">
-                        <td className="py-2 pl-5 font-medium">{s.service}</td>
-                        <td className="py-2">
-                          <span className="text-xs text-muted-foreground">{s.nav_category}</span>
-                        </td>
-                        <td className="py-2 text-right text-muted-foreground tabular-nums">{s.tx_count}</td>
-                        <td className="py-2 text-right font-medium tabular-nums">{formatCurrency(s.revenue_inc)}</td>
-                        <td className="py-2 pl-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                              <div
-                                className="h-full rounded-full"
-                                style={{ width: `${s.pct}%`, backgroundColor: color }}
-                              />
-                            </div>
-                            <span className="text-xs text-muted-foreground tabular-nums">{s.pct}%</span>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </Fragment>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 font-semibold">
-                  <td className="pt-2.5" colSpan={2}>Total</td>
-                  <td className="pt-2.5 text-right text-muted-foreground tabular-nums">{totals.tx_count}</td>
-                  <td className="pt-2.5 text-right tabular-nums">{formatCurrency(totals.revenue_inc)}</td>
-                  <td />
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+          <>
+            {/* Category legend strip — subtotals per nav group */}
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-3 text-[11px]">
+              {byGroup.map(({ group, color, total_revenue, total_count }) => {
+                const pct = totals.revenue_inc > 0 ? (total_revenue / totals.revenue_inc) * 100 : 0;
+                return (
+                  <div key={group} className="flex items-center gap-1.5">
+                    <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: color }} />
+                    <span className="font-medium text-foreground">{group}</span>
+                    <span className="text-muted-foreground tabular-nums">
+                      {fmtK(total_revenue)} · {pct.toFixed(1)}% · {total_count} tx
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Treemap */}
+            <ResponsiveContainer width="100%" height={420}>
+              <Treemap
+                data={treemapData}
+                dataKey="size"
+                stroke="#fff"
+                fill="#cbd5e1"
+                content={<TreemapCell totalRev={totals.revenue_inc} />}
+                animationDuration={400}
+              />
+            </ResponsiveContainer>
+          </>
         )}
       </Card>
 
