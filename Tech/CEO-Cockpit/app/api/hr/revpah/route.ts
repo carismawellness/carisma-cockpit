@@ -148,31 +148,12 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // ── Source 2: spa_services_by_employee_daily (spa hotels without shifts) ─
-  const { data: svcRows } = await supabase
-    .from("spa_services_by_employee_daily")
-    .select("location_id, employee_name")
-    .gte("date_of_service", bounds.start)
-    .lte("date_of_service", bounds.end)
-    .not("employee_name", "is", null);
-
-  const therapistSetByLocId = new Map<number, Set<string>>();
-  for (const r of svcRows ?? []) {
-    const locId = r.location_id as number;
-    const name  = String(r.employee_name ?? "").trim();
-    if (!name) continue;
-    if (!therapistSetByLocId.has(locId)) therapistSetByLocId.set(locId, new Set());
-    therapistSetByLocId.get(locId)!.add(name);
-  }
-  for (const [locId, names] of therapistSetByLocId) {
-    const loc = LOCATION_ID_TO_DISPLAY[locId];
-    if (!loc || availHoursByLocation.has(loc)) continue; // already have shifts data
-    const count = names.size;
-    const hours = count * 8 * bounds.workdays;
-    headcountByLocation.set(loc, count);
-    availHoursByLocation.set(loc, hours);
-    denominatorSource.set(loc, "service_records");
-  }
+  // Source 2 (spa_services_by_employee_daily distinct names) removed:
+  // therapist names embed their home hotel (e.g. "kunya-HUGOS") and appear
+  // across multiple location records when covering other sites, inflating
+  // the distinct-name count 2-3x. The Talexio snapshot (Source 4) is more
+  // accurate. When hr_therapist_shifts_monthly is populated for the month
+  // (Source 1), it takes priority over both.
 
   // ── Source 3: slimming — distinct therapists from treatment records ───────
   if (!availHoursByLocation.has("Slimming Centre")) {

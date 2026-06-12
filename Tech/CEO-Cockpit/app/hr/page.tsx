@@ -826,6 +826,102 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════
+          SECTION 1b: Attendance History (collapsible)
+          ══════════════════════════════════════════════════════════════════ */}
+      <div ref={attendanceHistoryRef} className="scroll-mt-4"><Card className="p-3 md:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-1">
+          <h2 className="text-lg font-semibold text-foreground flex items-center">
+            Attendance History
+            {attendanceHistoryQ.isSuccess && attendanceHistoryQ.data.records.length > 0
+              ? <LiveBadge source="supabase" />
+              : null}
+          </h2>
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Filter pills — only shown when expanded */}
+            {attendanceExpanded && (["all", "late", "early"] as AttendanceFilter[]).map((f) => {
+              const label = f === "all" ? "All" : f === "late" ? "Late arrivals" : "Left early";
+              const count = f === "late"
+                ? attendanceHistoryQ.data?.summary.total_late
+                : f === "early"
+                ? attendanceHistoryQ.data?.summary.total_left_early
+                : attendanceHistoryQ.data?.summary.total_rostered;
+              return (
+                <button
+                  key={f}
+                  onClick={() => setAttendanceFilter(f)}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
+                    attendanceFilter === f
+                      ? "bg-slate-800 text-white border-slate-800"
+                      : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
+                  }`}
+                >
+                  {label}
+                  {count != null && (
+                    <span className={`rounded-full px-1.5 py-0.5 leading-none ${
+                      attendanceFilter === f ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                    }`}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+            {/* Collapse / expand toggle */}
+            <button
+              onClick={() => setAttendanceExpanded((v) => !v)}
+              title={attendanceExpanded ? "Minimise" : "Expand"}
+              className="ml-1 rounded-full w-6 h-6 flex items-center justify-center border border-slate-200 bg-white hover:bg-slate-50 text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              {attendanceExpanded ? "−" : "+"}
+            </button>
+          </div>
+        </div>
+
+        {attendanceExpanded && attendanceHistoryQ.isSuccess && (
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            <span className="text-xs text-slate-500 bg-slate-50 rounded-full px-2 py-0.5">
+              {prettyMonth(month)} — {attendanceHistoryQ.data.summary.total_rostered} rostered shifts
+            </span>
+            {attendanceHistoryQ.data.summary.total_absent > 0 && (
+              <span className="bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">
+                {attendanceHistoryQ.data.summary.total_absent} absent
+              </span>
+            )}
+            {attendanceHistoryQ.data.summary.total_late > 0 && (
+              <span className="bg-red-50 text-red-600 rounded-full px-2 py-0.5 font-medium">
+                {attendanceHistoryQ.data.summary.total_late} late arrivals
+              </span>
+            )}
+            {attendanceHistoryQ.data.summary.total_left_early > 0 && (
+              <span className="bg-orange-50 text-orange-600 rounded-full px-2 py-0.5 font-medium">
+                {attendanceHistoryQ.data.summary.total_left_early} left early
+              </span>
+            )}
+          </div>
+        )}
+
+        {attendanceExpanded && (
+          attendanceHistoryQ.isLoading ? (
+            <TableSkeleton rows={8} columns={9} />
+          ) : !attendanceHistoryQ.isSuccess || attendanceHistoryQ.data.records.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center gap-2">
+              <p className="text-sm text-muted-foreground font-medium">No attendance data yet for this period</p>
+              <p className="text-xs text-muted-foreground max-w-sm">
+                Hit <strong>Sync</strong> to pull roster + time logs from Talexio and build the historical record.
+                The nightly cron will keep it up to date automatically after the first sync.
+              </p>
+            </div>
+          ) : (
+            <DataTable
+              columns={attendanceHistoryColumns}
+              data={attendanceHistoryQ.data.records as unknown as Record<string, unknown>[]}
+              pageSize={15}
+            />
+          )
+        )}
+      </Card></div>
+
+      {/* ══════════════════════════════════════════════════════════════════
           SECTION 2: Revenue per Available Hour — by brand
           ══════════════════════════════════════════════════════════════════ */}
       <Card className="p-3 md:p-6">
@@ -918,93 +1014,6 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           })}
         </div>
       </Card>
-
-      {/* ══════════════════════════════════════════════════════════════════
-          SECTION 1b: Longitudinal Attendance History (Supabase-backed)
-          ══════════════════════════════════════════════════════════════════ */}
-      <div ref={attendanceHistoryRef} className="scroll-mt-4"><Card className="p-3 md:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-3 mb-1">
-          <h2 className="text-lg font-semibold text-foreground flex items-center">
-            Attendance History
-            {attendanceHistoryQ.isSuccess && attendanceHistoryQ.data.records.length > 0
-              ? <LiveBadge source="supabase" />
-              : null}
-          </h2>
-          {/* Filter pills */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {(["all", "late", "early"] as AttendanceFilter[]).map((f) => {
-              const label = f === "all" ? "All" : f === "late" ? "Late arrivals" : "Left early";
-              const count = f === "late"
-                ? attendanceHistoryQ.data?.summary.total_late
-                : f === "early"
-                ? attendanceHistoryQ.data?.summary.total_left_early
-                : attendanceHistoryQ.data?.summary.total_rostered;
-              return (
-                <button
-                  key={f}
-                  onClick={() => setAttendanceFilter(f)}
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
-                    attendanceFilter === f
-                      ? "bg-slate-800 text-white border-slate-800"
-                      : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
-                  }`}
-                >
-                  {label}
-                  {count != null && (
-                    <span className={`rounded-full px-1.5 py-0.5 leading-none ${
-                      attendanceFilter === f ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
-                    }`}>
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Period summary chips */}
-        {attendanceHistoryQ.isSuccess && (
-          <div className="flex flex-wrap items-center gap-2 mb-4 text-xs">
-            <span className="text-muted-foreground">
-              {prettyMonth(month)} — {attendanceHistoryQ.data.summary.total_rostered} rostered shifts
-            </span>
-            {attendanceHistoryQ.data.summary.total_absent > 0 && (
-              <span className="bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">
-                {attendanceHistoryQ.data.summary.total_absent} absent
-              </span>
-            )}
-            {attendanceHistoryQ.data.summary.total_late > 0 && (
-              <span className="bg-red-50 text-red-600 rounded-full px-2 py-0.5 font-medium">
-                {attendanceHistoryQ.data.summary.total_late} late arrivals
-              </span>
-            )}
-            {attendanceHistoryQ.data.summary.total_left_early > 0 && (
-              <span className="bg-orange-50 text-orange-600 rounded-full px-2 py-0.5 font-medium">
-                {attendanceHistoryQ.data.summary.total_left_early} left early
-              </span>
-            )}
-          </div>
-        )}
-
-        {attendanceHistoryQ.isLoading ? (
-          <TableSkeleton rows={8} columns={9} />
-        ) : !attendanceHistoryQ.isSuccess || attendanceHistoryQ.data.records.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center gap-2">
-            <p className="text-sm text-muted-foreground font-medium">No attendance data yet for this period</p>
-            <p className="text-xs text-muted-foreground max-w-sm">
-              Hit <strong>Sync</strong> to pull roster + time logs from Talexio and build the historical record.
-              The nightly cron will keep it up to date automatically after the first sync.
-            </p>
-          </div>
-        ) : (
-          <DataTable
-            columns={attendanceHistoryColumns}
-            data={attendanceHistoryQ.data.records as unknown as Record<string, unknown>[]}
-            pageSize={15}
-          />
-        )}
-      </Card></div>
 
       {/* ══════════════════════════════════════════════════════════════════
           SECTION 2: Human Capital %
