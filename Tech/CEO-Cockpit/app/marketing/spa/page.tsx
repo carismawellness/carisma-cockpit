@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { SyncButton } from "@/components/dashboard/SyncButton";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
@@ -11,10 +11,22 @@ import { formatCurrency } from "@/lib/charts/config";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useMetaCampaignsFromDb as useMetaCampaigns, useGoogleCampaignsFromDb as useGoogleCampaigns } from "@/lib/hooks/useAdsCampaigns";
 import { useKlaviyoOverview } from "@/lib/hooks/useKlaviyoOverview";
+import { useWixOrdersStats } from "@/lib/hooks/useWixOrders";
 import { FlowsTable } from "@/components/marketing/FlowsTable";
 import { KeywordRankingsTable } from "@/components/marketing/KeywordRankingsTable";
 import { BRAND } from "@/lib/constants/design-tokens";
 import type { CampaignData } from "@/lib/types/ads";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  LabelList,
+  Cell,
+} from "recharts";
 import {
   MarketingPageHeader,
   HeroKPICard,
@@ -28,6 +40,7 @@ import {
   EmptyState,
   PortfolioTotals,
   EMAIL_BENCHMARKS,
+  TOOLTIP_STYLE,
   getRoasColor,
   getFatigueSummary,
   buildCplChartData,
@@ -42,6 +55,7 @@ import {
   Search,
   Activity,
   AlertTriangle,
+  ShoppingBag,
 } from "lucide-react";
 
 /* ---------- constants ---------- */
@@ -49,6 +63,269 @@ import {
 const B = BRAND.spa;
 const BRAND_COLOR = B.dark;
 const BRAND_FILL  = B.soft;
+
+/* ---------- Wix Sales Chart ---------- */
+
+type WixHookResult = ReturnType<typeof useWixOrdersStats>;
+
+function fmtK(v: number) {
+  if (Math.abs(v) >= 1_000_000) return `€${(v / 1_000_000).toFixed(2)}M`;
+  if (Math.abs(v) >= 1_000)     return `€${(v / 1_000).toFixed(1)}K`;
+  return `€${v.toFixed(0)}`;
+}
+
+function WixSalesCard({ wix, brand }: { wix: WixHookResult; brand: typeof BRAND.spa }) {
+  const [view, setView] = useState<"monthly" | "weekly">("monthly");
+
+  const monthly = wix.data?.monthly ?? [];
+  const weekly  = wix.data?.weekly ?? [];
+
+  // Last 24 months for monthly chart
+  const monthlySlice = monthly.slice(-24);
+  // Last 52 weeks for weekly chart
+  const weeklySlice  = weekly.slice(-52);
+
+  // KPI: most recent full month
+  const latestMonth  = monthly[monthly.length - 1];
+  const prevMonth    = monthly[monthly.length - 2];
+  const momPct = latestMonth && prevMonth && prevMonth.current > 0
+    ? ((latestMonth.current - prevMonth.current) / prevMonth.current) * 100
+    : null;
+
+  // YTD
+  const thisYear = new Date().getFullYear().toString();
+  const ytd = monthly
+    .filter((m) => m.month.startsWith(thisYear))
+    .reduce((s, m) => s + m.current, 0);
+  const lyYtd = monthly
+    .filter((m) => m.month.startsWith(String(Number(thisYear) - 1)))
+    .reduce((s, m) => s + m.current, 0);
+  const ytdYoY = lyYtd > 0 ? ((ytd - lyYtd) / lyYtd) * 100 : null;
+
+  // YoY for latest month
+  const latestYoY = latestMonth?.yoyPct ?? null;
+
+  if (wix.isLoading) {
+    return <ChartSkeleton height={320} />;
+  }
+
+  return (
+    <Card className="p-5 md:p-6 space-y-5">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 mb-0.5">
+            <ShoppingBag className="h-4 w-4" style={{ color: brand.dark }} />
+            <span className="text-sm font-bold text-foreground">Wix Online Sales</span>
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 uppercase tracking-wider">
+              Carisma Spa Store
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">eCommerce orders — paid orders only</p>
+        </div>
+        {/* View toggle */}
+        <div className="flex rounded-lg overflow-hidden border border-border text-xs font-semibold">
+          {(["monthly", "weekly"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className="px-3 py-1.5 transition-colors"
+              style={
+                view === v
+                  ? { backgroundColor: brand.dark, color: "#fff" }
+                  : { backgroundColor: "#fff", color: "#6B7280" }
+              }
+            >
+              {v === "monthly" ? "Monthly" : "Weekly"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* KPI chips */}
+      <div className="flex flex-wrap gap-3">
+        {latestMonth && (
+          <div className="rounded-xl px-3.5 py-2.5 flex flex-col gap-0.5" style={{ backgroundColor: `${brand.soft}30`, border: `1px solid ${brand.soft}` }}>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
+              {latestMonth.label}
+            </span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-xl font-bold tabular-nums" style={{ color: brand.dark }}>
+                {fmtK(latestMonth.current)}
+              </span>
+              <span className="text-xs text-gray-400">{latestMonth.orders} orders</span>
+              {latestYoY !== null && (
+                <span className={`text-[11px] font-bold rounded-full px-1.5 py-0.5 ml-1 ${latestYoY >= 0 ? "text-emerald-700 bg-emerald-50" : "text-red-600 bg-red-50"}`}>
+                  {latestYoY >= 0 ? "+" : ""}{latestYoY.toFixed(1)}% YoY
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="rounded-xl px-3.5 py-2.5 flex flex-col gap-0.5 bg-gray-50 border border-gray-100">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">YTD {thisYear}</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-xl font-bold tabular-nums text-gray-800">{fmtK(ytd)}</span>
+            {ytdYoY !== null && (
+              <span className={`text-[11px] font-bold rounded-full px-1.5 py-0.5 ml-1 ${ytdYoY >= 0 ? "text-emerald-700 bg-emerald-50" : "text-red-600 bg-red-50"}`}>
+                {ytdYoY >= 0 ? "+" : ""}{ytdYoY.toFixed(1)}% vs LY
+              </span>
+            )}
+          </div>
+        </div>
+
+        {momPct !== null && (
+          <div className="rounded-xl px-3.5 py-2.5 flex flex-col gap-0.5 bg-gray-50 border border-gray-100">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">MoM Change</span>
+            <span className={`text-xl font-bold tabular-nums ${momPct >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+              {momPct >= 0 ? "+" : ""}{momPct.toFixed(1)}%
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Chart */}
+      {view === "monthly" ? (
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-gray-500 mb-3">
+            Monthly Revenue — Current Year vs Prior Year
+          </p>
+          <div className="h-[280px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={monthlySlice}
+                margin={{ top: 24, right: 16, left: 8, bottom: 8 }}
+                barCategoryGap="22%"
+                barGap={2}
+              >
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 11, fill: "#6B7280" }}
+                  axisLine={false}
+                  tickLine={false}
+                  interval={monthlySlice.length > 16 ? 1 : 0}
+                  angle={monthlySlice.length > 16 ? -30 : 0}
+                  textAnchor={monthlySlice.length > 16 ? "end" : "middle"}
+                  height={monthlySlice.length > 16 ? 40 : 20}
+                />
+                <YAxis
+                  tickFormatter={(v: number) => fmtK(v)}
+                  tick={{ fontSize: 11, fill: "#9CA3AF" }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={52}
+                />
+                <Tooltip
+                  contentStyle={TOOLTIP_STYLE}
+                  cursor={{ fill: `${brand.soft}30` }}
+                  formatter={(value: unknown, name: unknown) => [
+                    fmtK(Number(value)),
+                    name === "current" ? "This year" : "Last year",
+                  ]}
+                />
+                {/* LY bar — muted */}
+                <Bar dataKey="ly" name="ly" radius={[3, 3, 0, 0]} maxBarSize={18}>
+                  {monthlySlice.map((_, i) => (
+                    <Cell key={i} fill={`${brand.soft}70`} />
+                  ))}
+                </Bar>
+                {/* Current year bar */}
+                <Bar dataKey="current" name="current" radius={[3, 3, 0, 0]} maxBarSize={18}>
+                  {monthlySlice.map((_, i) => (
+                    <Cell key={i} fill={brand.dark} />
+                  ))}
+                  <LabelList
+                    dataKey="yoyPct"
+                    position="top"
+                    content={(props) => {
+                      const { x, y, value } = props as { x: number; y: number; value: number | null };
+                      if (value === null || value === undefined) return null;
+                      const color = value >= 0 ? "#22C55E" : "#EF4444";
+                      return (
+                        <text
+                          x={x}
+                          y={(y as number) - 4}
+                          textAnchor="middle"
+                          fontSize={9}
+                          fontWeight={700}
+                          fill={color}
+                        >
+                          {value >= 0 ? "+" : ""}{value.toFixed(0)}%
+                        </text>
+                      );
+                    }}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          {/* Legend */}
+          <div className="flex items-center gap-4 justify-center mt-2">
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-sm inline-block" style={{ backgroundColor: brand.dark }} />
+              <span className="text-[11px] text-gray-500">Current year</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-sm inline-block" style={{ backgroundColor: `${brand.soft}70` }} />
+              <span className="text-[11px] text-gray-500">Prior year</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-emerald-600">+%</span>
+              <span className="text-[11px] text-gray-500">YoY above bar</span>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-gray-500 mb-3">
+            Weekly Revenue — Last 52 Weeks
+          </p>
+          <div className="h-[280px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={weeklySlice}
+                margin={{ top: 12, right: 16, left: 8, bottom: 24 }}
+                barCategoryGap="12%"
+              >
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 10, fill: "#6B7280" }}
+                  axisLine={false}
+                  tickLine={false}
+                  interval={3}
+                  angle={-30}
+                  textAnchor="end"
+                  height={36}
+                />
+                <YAxis
+                  tickFormatter={(v: number) => fmtK(v)}
+                  tick={{ fontSize: 11, fill: "#9CA3AF" }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={52}
+                />
+                <Tooltip
+                  contentStyle={TOOLTIP_STYLE}
+                  cursor={{ fill: `${brand.soft}30` }}
+                  formatter={(value: unknown) => [fmtK(Number(value)), "Revenue"]}
+                  labelFormatter={(label) => `Week of ${String(label)}`}
+                />
+                <Bar dataKey="current" name="Revenue" radius={[2, 2, 0, 0]} maxBarSize={14}>
+                  {weeklySlice.map((_, i) => (
+                    <Cell key={i} fill={brand.dark} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
 
 /* ---------- content component ---------- */
 
@@ -65,6 +342,7 @@ function SpaMarketingContent({
   const metaQuery = useMetaCampaigns("spa", dateFrom, dateTo);
   const googleQuery = useGoogleCampaigns("spa", dateFrom, dateTo);
   const klaviyo = useKlaviyoOverview({ brand: "spa", dateFrom, dateTo });
+  const wix = useWixOrdersStats();
 
   const metaCampaigns: CampaignData[] = metaQuery.data?.campaigns ?? [];
   const googleCampaigns: CampaignData[] = googleQuery.data?.campaigns ?? [];
@@ -297,6 +575,9 @@ function SpaMarketingContent({
           </div>
         );
       })()}
+
+      {/* ── Section 1b: Wix Online Sales ─────────────────────────────── */}
+      <WixSalesCard wix={wix} brand={B} />
 
       {/* ── Section 2: Meta Ads ──────────────────────────────────────── */}
       <Card className="p-5 md:p-6">
