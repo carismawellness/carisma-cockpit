@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
   const [revenueRes, spaRes, aestheticsRes, crmAgentsRes, ghlCrmRes,
          metaCampaignsRes, googleCampaignsRes, klaviyoRes, klaviyoFlowsRes, talexioHrRes, we360Res,
          googleReviewsRes, diligenceAuditRes, brandStandardsRes, gscRes,
-         attendanceDailyRes, therapistShiftsRes] = await Promise.allSettled([
+         attendanceDailyRes, therapistShiftsRes, wixOrdersRes] = await Promise.allSettled([
     fetch(`${BASE_URL}/api/etl/revenue-refresh`,              { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/zoho-spa-transactions`,        { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/zoho-aesthetics-transactions`, { method: "POST", headers, body: payload }),
@@ -101,6 +101,7 @@ export async function GET(req: NextRequest) {
     fetch(`${BASE_URL}/api/etl/attendance-daily?dateFrom=${attendanceFrom}&dateTo=${attendanceTo}`, { method: "POST", headers }),
     // Therapist shift hours for RevPAH denominator (current month only)
     fetch(`${BASE_URL}/api/etl/therapist-shifts-monthly?month=${currentMonth}`, { method: "POST", headers }),
+    fetch(`${BASE_URL}/api/etl/wix-orders-sync`,              { method: "POST", headers, body: payload }),
   ]);
 
   // Phase 2: lead reconciliation depends on ghl-crm + meta-campaigns completing first
@@ -139,6 +140,7 @@ export async function GET(req: NextRequest) {
     ["gsc_keywords",        gscRes],
     ["attendance_daily",        attendanceDailyRes],
     ["therapist_shifts_monthly", therapistShiftsRes],
+    ["wix_spa_orders",          wixOrdersRes],
     ["lead_reconciliation",     leadReconRes],
   ];
 
