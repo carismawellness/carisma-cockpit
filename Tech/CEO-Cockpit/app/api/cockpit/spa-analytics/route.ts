@@ -288,6 +288,12 @@ interface TherapistRow {
   service_count: number;
 }
 
+interface ServiceRow {
+  name:    string;
+  revenue: number;  // inc-VAT
+  count:   number;
+}
+
 interface ComplimentaryEntry {
   location_id:        number;
   name:               string;
@@ -313,6 +319,8 @@ interface SpaAnalyticsResponse {
   by_therapist: TherapistRow[];
   /** Complimentary breakdown per club (Payment Type === 'Payment Center'). */
   complimentary: ComplimentaryEntry[];
+  /** Top treatments by revenue (inc-VAT), sorted desc, top 20. */
+  by_service: ServiceRow[];
   // Optional. Populated only when the requested date range straddles
   // 2025-01-01 AND part of it falls in a known data-gap window (e.g. the
   // 2023-09 → 2024-12 hole between the historic backfill and live ETL).
@@ -377,6 +385,8 @@ function computeAnalytics(
   const therapistAcc: Record<string, { revenue: number; service_count: number }> = {};
   // Complimentary (Payment Type === "Payment Center"): locId → { comp_revenue, comp_count }
   const complimentaryAcc: Record<number, { comp_revenue: number; comp_count: number }> = {};
+  // Service name → { revenue inc-VAT, count }
+  const serviceAcc: Record<string, { revenue: number; count: number }> = {};
 
   // ── Process services sheet ──────────────────────────────────────────────────
   for (const row of serviceRows) {
@@ -479,6 +489,21 @@ function computeAnalytics(
     if (payType.replace(/\s+/g, " ").trim().toLowerCase() === "payment center") {
       complimentaryAcc[locId].comp_revenue += unitPriceInc;
       complimentaryAcc[locId].comp_count   += 1;
+    }
+
+    // Service name breakdown
+    const svcName = (
+      stripCol(row, "Description") ||
+      stripCol(row, "Service Name") ||
+      stripCol(row, "Service") ||
+      stripCol(row, "Service Description") ||
+      stripCol(row, "Treatment") ||
+      "Unknown"
+    ).trim();
+    if (svcName && svcName !== "Unknown") {
+      if (!serviceAcc[svcName]) serviceAcc[svcName] = { revenue: 0, count: 0 };
+      serviceAcc[svcName].revenue += unitPriceInc;
+      serviceAcc[svcName].count  += 1;
     }
   }
 
@@ -604,6 +629,12 @@ function computeAnalytics(
     }))
     .sort((a, b) => b.revenue - a.revenue);
 
+  // ── Build by_service (top 20 treatments by revenue, inc-VAT) ──────────────
+  const by_service: ServiceRow[] = Object.entries(serviceAcc)
+    .map(([name, v]) => ({ name, revenue: +v.revenue.toFixed(2), count: v.count }))
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 20);
+
   // ── Build complimentary ────────────────────────────────────────────────────
   const complimentary: ComplimentaryEntry[] = Object.entries(SPA_LOCATION_META)
     .map(([idStr, meta]) => {
@@ -637,6 +668,7 @@ function computeAnalytics(
     by_hour_of_day,
     by_therapist,
     complimentary,
+    by_service,
   };
 }
 
@@ -879,6 +911,7 @@ function buildAnalyticsResponse(acc: AccBundle): SpaAnalyticsResponse {
     by_hour_of_day:      [],
     by_therapist:        [],
     complimentary:       [],
+    by_service:          [],
   };
 }
 
@@ -1109,6 +1142,16 @@ function mergeAnalytics(a: SpaAnalyticsResponse, b: SpaAnalyticsResponse): SpaAn
     compMap.set(c.location_id, cur);
   }
 
+  // Merge by_service: sum by name, re-sort descending by revenue, keep top 20.
+  const svcMap = new Map<string, ServiceRow>();
+  for (const s of [...(a.by_service ?? []), ...(b.by_service ?? [])]) {
+    const cur = svcMap.get(s.name) ?? { name: s.name, revenue: 0, count: 0 };
+    cur.revenue = +(cur.revenue + s.revenue).toFixed(2);
+    cur.count  += s.count;
+    svcMap.set(s.name, cur);
+  }
+  const by_service = [...svcMap.values()].sort((x, y) => y.revenue - x.revenue).slice(0, 20);
+
   return {
     staff_combined,
     guest_groups:        [...ggMap.values()].sort((x, y) => x.location_id - y.location_id),
@@ -1119,5 +1162,6 @@ function mergeAnalytics(a: SpaAnalyticsResponse, b: SpaAnalyticsResponse): SpaAn
     by_hour_of_day:      mergedHour,
     by_therapist:        [...thMap.values()].sort((x, y) => y.revenue - x.revenue),
     complimentary:       [...compMap.values()].sort((x, y) => x.location_id - y.location_id),
+    by_service,
   };
 }

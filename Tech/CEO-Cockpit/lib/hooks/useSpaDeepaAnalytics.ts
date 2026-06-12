@@ -75,6 +75,12 @@ export interface ComplimentaryLocation {
   total_count:           number;
 }
 
+export interface ServiceRow {
+  name:    string;
+  revenue: number;  // inc-VAT
+  count:   number;
+}
+
 export interface SpaDeepaAnalyticsResult {
   staff: StaffMember[];
   guestGroups: GuestGroupLocation[];
@@ -85,6 +91,7 @@ export interface SpaDeepaAnalyticsResult {
   byHourOfDay:  HourByLocationPoint[];
   byTherapist:  TherapistRow[];
   complimentary: ComplimentaryLocation[];
+  byService: ServiceRow[];
   isFetching: boolean;
   error: string | null;
 }
@@ -107,6 +114,7 @@ interface ApiResponse {
   by_hour_of_day: HourByLocationPoint[];
   by_therapist:   TherapistRow[];
   complimentary:  ComplimentaryLocation[];
+  by_service:     ServiceRow[];
 }
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
@@ -147,6 +155,7 @@ export function useSpaDeepaAnalytics(dateFrom: Date, dateTo: Date, locationId?: 
     byHourOfDay:        data?.by_hour_of_day      ?? [],
     byTherapist:        data?.by_therapist        ?? [],
     complimentary:      data?.complimentary       ?? [],
+    byService:          data?.by_service          ?? [],
     isFetching,
     error:              error ? (error as Error).message : null,
   };

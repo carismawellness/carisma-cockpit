@@ -4,7 +4,6 @@ import { notFound } from "next/navigation";
 import { useMemo } from "react";
 import { use } from "react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
-import { SalesKPICard } from "@/components/sales/SalesKPICard";
 import { Card } from "@/components/ui/card";
 import { useSpaDeepaAnalytics } from "@/lib/hooks/useSpaDeepaAnalytics";
 import { useIsAdmin } from "@/lib/hooks/useIsAdmin";
@@ -13,8 +12,9 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LabelList, Cell,
   PieChart, Pie, Legend,
+  ReferenceLine,
 } from "recharts";
-import { ArrowLeft, Lock } from "lucide-react";
+import { ArrowLeft, Lock, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import Link from "next/link";
 
 // Rolling window enforced for non-admin users (mirrors API-side constant)
@@ -41,78 +41,296 @@ function fmtShort(v: number): string {
   return `€${Math.round(v)}`;
 }
 
-/* ── SVG Semicircle Gauge ─────────────────────────────────────────────── */
+/* ── Gamified SVG Gauge (i-gaming / casino aesthetic) ─────────────────── */
 
 function polarToCart(angleDeg: number, r: number, cx: number, cy: number) {
   const rad = (angleDeg * Math.PI) / 180;
   return { x: cx + r * Math.cos(rad), y: cy - r * Math.sin(rad) };
 }
 
-function TargetGauge({
+function GamifiedTargetGauge({
   current,
   target,
   color,
-  label,
 }: {
   current: number;
   target: number;
   color: string;
-  label: string;
 }) {
-  const clampedPct = Math.min(Math.max(current / target, 0), 1.1);
-  const pctNum     = Math.round((current / target) * 100);
-  const gaugeColor = pctNum >= 100 ? "#059669" : pctNum >= 75 ? "#D97706" : "#DC2626";
+  const pct        = current / target;
+  const pctNum     = Math.round(pct * 100);
+  const clampedPct = Math.min(Math.max(pct, 0), 1.0);
 
-  // Gauge opens upward (rainbow). Center at bottom of SVG.
-  // cy is the baseline (diameter line); arc goes UP through cy-r.
-  const cx = 150, cy = 140, r = 110, stroke = 22;
+  const isCrushed   = pctNum >= 100;
+  const isAlmost    = pctNum >= 75 && pctNum < 100;
+  const isGood      = pctNum >= 50 && pctNum < 75;
 
-  // Background arc: left (9 o'clock) → right (3 o'clock) going CLOCKWISE through top (12 o'clock).
-  // sweep=1 = clockwise in SVG screen coords = goes upward first. large-arc=1 for 180°.
-  const bgStart = polarToCart(180, r, cx, cy);   // left  (cx-r, cy)
-  const bgEnd   = polarToCart(0,   r, cx, cy);   // right (cx+r, cy)
+  const gaugeColor = isCrushed ? "#F59E0B" : isAlmost ? "#10B981" : isGood ? "#F59E0B" : "#EF4444";
+  const glowColor  = isCrushed ? "#FCD34D" : isAlmost ? "#34D399" : isGood ? "#FCD34D" : "#FCA5A5";
+
+  const subLabel = isCrushed
+    ? "TARGET CRUSHED! 🎯"
+    : isAlmost
+    ? "Almost there! Push now 🔥"
+    : isGood
+    ? "Good momentum — keep going! 💪"
+    : "Time to accelerate! ⚡";
+
+  // Gauge geometry: semicircle opening upward
+  const cx = 200, cy = 185, r = 150, stroke = 28;
+
+  const bgStart = polarToCart(180, r, cx, cy);
+  const bgEnd   = polarToCart(0,   r, cx, cy);
   const bgPath  = `M ${bgStart.x.toFixed(1)} ${bgStart.y.toFixed(1)} A ${r} ${r} 0 1 1 ${bgEnd.x.toFixed(1)} ${bgEnd.y.toFixed(1)}`;
 
-  // Fill arc: from left, sweeping clockwise by (clampedPct * 180°).
-  // End angle in standard math: 180° - clampedPct*180° (180→0 as pct goes 0→1).
-  const clampedFill = Math.min(clampedPct, 0.999); // avoid degenerate 180° case
+  const clampedFill = Math.min(clampedPct, 0.999);
   const fillEndAngle = 180 - clampedFill * 180;
   const fillEnd      = polarToCart(fillEndAngle, r, cx, cy);
   const fillSweepDeg = clampedFill * 180;
-  // For ≤180° clockwise arcs the swept arc is always the "small" one (≤180°), so largeArc=0
-  const largeArc = fillSweepDeg > 180 ? 1 : 0;
+  const largeArc     = fillSweepDeg > 180 ? 1 : 0;
   const fillPath = fillSweepDeg > 0.5
     ? `M ${bgStart.x.toFixed(1)} ${bgStart.y.toFixed(1)} A ${r} ${r} 0 ${largeArc} 1 ${fillEnd.x.toFixed(1)} ${fillEnd.y.toFixed(1)}`
     : null;
 
+  // Milestone markers at 25%, 50%, 75%
+  const milestones = [0.25, 0.5, 0.75];
+
+  // Shimmer keyframe as inline style tag
+  const shimmerStyle = `
+    @keyframes shimmer {
+      0%   { opacity: 0.7; }
+      50%  { opacity: 1;   }
+      100% { opacity: 0.7; }
+    }
+    @keyframes gaugePulse {
+      0%, 100% { filter: url(#glow) brightness(1); }
+      50%       { filter: url(#glow) brightness(1.4); }
+    }
+    .gauge-fill-pulse { animation: gaugePulse 1.5s ease-in-out infinite; }
+    .shimmer-text     { animation: shimmer 2s ease-in-out infinite; }
+  `;
+
   return (
-    <div className="flex flex-col items-center">
-      <svg width="300" height="175" viewBox="0 0 300 175" className="overflow-visible">
-        {/* Background track */}
-        <path d={bgPath} fill="none" stroke="#EDE9E2" strokeWidth={stroke} strokeLinecap="round" />
-        {/* Fill */}
-        {fillPath && (
-          <path d={fillPath} fill="none" stroke={gaugeColor} strokeWidth={stroke} strokeLinecap="round" />
+    <div
+      className="w-full rounded-2xl px-6 py-8"
+      style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)" }}
+    >
+      <style>{shimmerStyle}</style>
+
+      {/* Sub-label / status */}
+      <div className="text-center mb-2">
+        {isCrushed ? (
+          <span
+            className="shimmer-text inline-block text-lg font-extrabold tracking-wider uppercase px-4 py-1 rounded-full"
+            style={{ color: "#F59E0B", textShadow: "0 0 20px #F59E0B88, 0 0 40px #F59E0B44" }}
+          >
+            {subLabel}
+          </span>
+        ) : (
+          <span className="text-sm font-semibold" style={{ color: gaugeColor }}>
+            {subLabel}
+          </span>
         )}
-        {/* Tick at 100% (right end of arc) */}
-        <circle cx={bgEnd.x} cy={bgEnd.y} r={4} fill="#9CA3AF" />
+      </div>
 
-        {/* Center values — positioned in the middle of the semicircle space */}
-        <text x={cx} y={cy - 36} textAnchor="middle" fontSize="26" fontWeight="700" fill="#111827" fontFamily="inherit">
-          {fmtShort(current)}
-        </text>
-        <text x={cx} y={cy - 12} textAnchor="middle" fontSize="11" fill="#6B7280" fontFamily="inherit">
-          of {fmtShort(target)} target
-        </text>
-        <text x={cx} y={cy + 14} textAnchor="middle" fontSize="22" fontWeight="700" fill={gaugeColor} fontFamily="inherit">
-          {pctNum}%
-        </text>
+      {/* SVG Gauge */}
+      <div className="flex justify-center">
+        <svg
+          width="400"
+          height="220"
+          viewBox="0 0 400 220"
+          className="overflow-visible"
+          style={{ maxWidth: "100%" }}
+        >
+          <defs>
+            <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+              <feGaussianBlur stdDeviation="6" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <filter id="glowStrong" x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="10" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
 
-        {/* Arc end-point labels */}
-        <text x={bgStart.x - 8} y={bgStart.y + 16} textAnchor="end" fontSize="10" fill="#9CA3AF" fontFamily="inherit">0%</text>
-        <text x={bgEnd.x + 8} y={bgEnd.y + 16} textAnchor="start" fontSize="10" fill="#9CA3AF" fontFamily="inherit">100%</text>
-      </svg>
-      <p className="text-xs text-gray-400 -mt-1">{label}</p>
+          {/* Background track */}
+          <path
+            d={bgPath}
+            fill="none"
+            stroke="#1e3a5f"
+            strokeWidth={stroke}
+            strokeLinecap="round"
+          />
+
+          {/* Fill arc — with glow */}
+          {fillPath && (
+            <path
+              d={fillPath}
+              fill="none"
+              stroke={gaugeColor}
+              strokeWidth={stroke}
+              strokeLinecap="round"
+              className={isCrushed ? "gauge-fill-pulse" : undefined}
+              style={
+                !isCrushed
+                  ? { filter: "url(#glow)" }
+                  : { filter: "url(#glowStrong)", stroke: glowColor }
+              }
+            />
+          )}
+
+          {/* Milestone rings at 25%, 50%, 75% */}
+          {milestones.map((m) => {
+            const mAngle = 180 - m * 180;
+            const mPt    = polarToCart(mAngle, r, cx, cy);
+            const isPast = clampedPct >= m;
+            return (
+              <circle
+                key={m}
+                cx={mPt.x}
+                cy={mPt.y}
+                r={8}
+                fill={isPast ? gaugeColor : "#334155"}
+                stroke={isPast ? glowColor : "#475569"}
+                strokeWidth={2}
+                style={isPast ? { filter: "url(#glow)" } : undefined}
+              />
+            );
+          })}
+
+          {/* 100% end marker */}
+          <circle
+            cx={bgEnd.x}
+            cy={bgEnd.y}
+            r={6}
+            fill={isCrushed ? "#F59E0B" : "#475569"}
+            style={isCrushed ? { filter: "url(#glow)" } : undefined}
+          />
+
+          {/* Arc endpoint labels */}
+          <text x={bgStart.x - 10} y={bgStart.y + 20} textAnchor="end" fontSize="11" fill="#64748b" fontFamily="inherit">0%</text>
+          <text x={bgEnd.x + 10}   y={bgEnd.y + 20}   textAnchor="start" fontSize="11" fill="#64748b" fontFamily="inherit">100%</text>
+
+          {/* Milestone % labels */}
+          {milestones.map((m) => {
+            const mAngle = 180 - m * 180;
+            const mPt    = polarToCart(mAngle, r + 26, cx, cy);
+            return (
+              <text
+                key={`lbl-${m}`}
+                x={mPt.x}
+                y={mPt.y + 4}
+                textAnchor="middle"
+                fontSize="10"
+                fill="#475569"
+                fontFamily="inherit"
+              >
+                {Math.round(m * 100)}%
+              </text>
+            );
+          })}
+
+          {/* Centre: current value */}
+          <text
+            x={cx}
+            y={cy - 48}
+            textAnchor="middle"
+            fontSize="48"
+            fontWeight="800"
+            fill="#f8fafc"
+            fontFamily="inherit"
+            style={{ letterSpacing: "-1px" }}
+          >
+            {fmtShort(current)}
+          </text>
+
+          {/* Centre: percentage */}
+          <text
+            x={cx}
+            y={cy - 8}
+            textAnchor="middle"
+            fontSize="26"
+            fontWeight="700"
+            fill={gaugeColor}
+            fontFamily="inherit"
+            style={isCrushed ? { filter: "url(#glow)" } : undefined}
+          >
+            {pctNum}%
+          </text>
+
+          {/* Centre: target label */}
+          <text
+            x={cx}
+            y={cy + 18}
+            textAnchor="middle"
+            fontSize="12"
+            fill="#64748b"
+            fontFamily="inherit"
+          >
+            of {fmtShort(target)} target
+          </text>
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+/* ── KPI Bubble Card ──────────────────────────────────────────────────── */
+
+interface KpiCardProps {
+  label:      string;
+  value:      string;
+  subtitle:   string;
+  yoyChange?: number;
+  accentColor: string;
+  borderColor: string;
+  bgColor:     string;
+  icon:        React.ReactNode;
+}
+
+function KpiCard({ label, value, subtitle, yoyChange, accentColor, borderColor, bgColor, icon }: KpiCardProps) {
+  const hasYoy = yoyChange !== undefined;
+  const isUp   = (yoyChange ?? 0) >= 0;
+  const YoyIcon = hasYoy ? (isUp ? TrendingUp : TrendingDown) : Minus;
+
+  return (
+    <div
+      className="rounded-xl p-5 flex flex-col gap-1 relative overflow-hidden"
+      style={{ background: bgColor, borderLeft: `4px solid ${borderColor}` }}
+    >
+      {/* Icon */}
+      <div
+        className="w-9 h-9 rounded-lg flex items-center justify-center mb-1"
+        style={{ background: borderColor + "22" }}
+      >
+        <span style={{ color: accentColor }}>{icon}</span>
+      </div>
+
+      {/* Label */}
+      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
+
+      {/* Value */}
+      <p className="text-2xl font-extrabold" style={{ color: accentColor }}>{value}</p>
+
+      {/* Subtitle */}
+      <p className="text-xs text-gray-400">{subtitle}</p>
+
+      {/* YoY */}
+      {hasYoy && (
+        <div
+          className="flex items-center gap-1 mt-1 text-xs font-semibold"
+          style={{ color: isUp ? "#10B981" : "#EF4444" }}
+        >
+          <YoyIcon className="w-3 h-3" />
+          <span>{isUp ? "+" : ""}{yoyChange}% vs LY</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -150,8 +368,7 @@ function HotelContent({
 }) {
   const analytics = useSpaDeepaAnalytics(dateFrom, dateTo, hotel.locId);
 
-  /* ── Prior-year window for YoY (admins only — non-admins' prior period
-       would fall outside the 6-month cap so YoY is meaningless there) ── */
+  /* ── Prior-year window for YoY ── */
   const priorDateFrom = useMemo(
     () => new Date(dateFrom.getFullYear() - 1, dateFrom.getMonth(), dateFrom.getDate()),
     [dateFrom]
@@ -160,14 +377,13 @@ function HotelContent({
     () => new Date(dateTo.getFullYear() - 1, dateTo.getMonth(), dateTo.getDate()),
     [dateTo]
   );
-  // Pass location_id only for admins — non-admins would hit the API cap anyway
   const priorAnalytics = useSpaDeepaAnalytics(
     priorDateFrom,
     priorDateTo,
     isAdmin ? hotel.locId : undefined
   );
 
-  /* ── KPI totals ───────────────────────────────────────────────────── */
+  /* ── KPI totals ── */
   const kpis = useMemo(() => {
     const serviceEx = analytics.staff.reduce((s, m) => s + m.service_revenue, 0);
     const retailEx  = analytics.staff.reduce((s, m) => s + m.retail_revenue,  0);
@@ -175,12 +391,12 @@ function HotelContent({
     const discount  = analytics.discounts.find(d => d.location_id === hotel.locId);
     const discountEx = discount?.total_discount ?? 0;
 
-    const totalInc   = totalEx   * (1 + VAT_RATE);
-    const serviceInc = serviceEx * (1 + VAT_RATE);
-    const retailInc  = retailEx  * (1 + VAT_RATE);
+    const totalInc    = totalEx   * (1 + VAT_RATE);
+    const serviceInc  = serviceEx * (1 + VAT_RATE);
+    const retailInc   = retailEx  * (1 + VAT_RATE);
     const discountInc = discountEx * (1 + VAT_RATE);
 
-    const retailPct   = totalInc > 0 ? Math.round((retailInc / totalInc)   * 100) : 0;
+    const retailPct   = totalInc > 0 ? Math.round((retailInc  / totalInc) * 100) : 0;
     const discountPct = totalInc > 0 ? Math.round((discountInc / totalInc) * 100) : 0;
 
     // Prior year
@@ -210,7 +426,7 @@ function HotelContent({
     };
   }, [analytics.staff, analytics.discounts, priorAnalytics.staff, priorAnalytics.discounts, hotel.locId]);
 
-  /* ── Guest mix pie ────────────────────────────────────────────────── */
+  /* ── Guest mix pie ── */
   const guestMixData = useMemo(() => {
     const g = analytics.guestGroups.find(gg => gg.location_id === hotel.locId);
     if (!g) return [];
@@ -223,7 +439,7 @@ function HotelContent({
     ];
   }, [analytics.guestGroups, hotel]);
 
-  /* ── Day of week ──────────────────────────────────────────────────── */
+  /* ── Day of week ── */
   const dowData = useMemo(() =>
     [1, 2, 3, 4, 5, 6, 7].map(dow => {
       const pt = analytics.byDayOfWeek.find(p => p.day_of_week === dow);
@@ -235,7 +451,7 @@ function HotelContent({
     [analytics.byDayOfWeek, hotel.locId]
   );
 
-  /* ── Hour of day ──────────────────────────────────────────────────── */
+  /* ── Hour of day ── */
   const hourData = useMemo(() => {
     const allHours = analytics.byHourOfDay
       .filter(h => (h.by_location[hotel.locId] ?? 0) > 0)
@@ -253,7 +469,7 @@ function HotelContent({
     });
   }, [analytics.byHourOfDay, hotel.locId]);
 
-  /* ── Payment types ────────────────────────────────────────────────── */
+  /* ── Payment types ── */
   const paymentData = useMemo(() => {
     const pbl = analytics.paymentByLocation.find(p => p.location_id === hotel.locId);
     if (!pbl) return analytics.paymentTypes.map(p => ({ name: p.type, Revenue: p.revenue * (1 + VAT_RATE) }));
@@ -262,25 +478,39 @@ function HotelContent({
       .sort((a, b) => b.Revenue - a.Revenue);
   }, [analytics.paymentByLocation, analytics.paymentTypes, hotel.locId]);
 
-  /* ── Therapist chart ──────────────────────────────────────────────── */
-  const therapistData = useMemo(() =>
+  /* ── Therapist charts (split service / retail) ── */
+  const serviceTherapistData = useMemo(() =>
     analytics.staff
-      .map(s => {
-        const serviceInc = s.service_revenue * (1 + VAT_RATE);
-        const retailInc  = s.retail_revenue  * (1 + VAT_RATE);
-        const totalInc   = serviceInc + retailInc;
-        const retailPct  = totalInc > 0 ? Math.round((retailInc / totalInc) * 100) : 0;
-        return { name: s.name, serviceInc, retailInc, retailPct, totalInc };
-      })
-      .filter(d => d.totalInc > 0)
-      .sort((a, b) => b.totalInc - a.totalInc)
-      .slice(0, 20),
+      .filter(s => s.service_revenue > 0)
+      .map(s => ({ name: s.name, service: s.service_revenue * (1 + VAT_RATE) }))
+      .sort((a, b) => b.service - a.service)
+      .slice(0, 15),
     [analytics.staff]
+  );
+
+  const retailTherapistData = useMemo(() =>
+    analytics.staff
+      .filter(s => s.retail_revenue > 0)
+      .map(s => ({ name: s.name, retail: s.retail_revenue * (1 + VAT_RATE) }))
+      .sort((a, b) => b.retail - a.retail)
+      .slice(0, 15),
+    [analytics.staff]
+  );
+
+  /* ── Top treatments ── */
+  const topTreatments = useMemo(() =>
+    ((analytics as unknown as { byService?: Array<{ name: string; revenue: number }> }).byService ?? [])
+      .slice(0, 15)
+      .map((s) => ({
+        name: s.name,
+        Revenue: s.revenue,
+      })),
+    [analytics]
   );
 
   const isLoading = analytics.isFetching || priorAnalytics.isFetching;
 
-  /* ── Render ───────────────────────────────────────────────────────── */
+  /* ── Render ── */
   return (
     <>
       {/* Back nav */}
@@ -296,7 +526,7 @@ function HotelContent({
         <span className="text-sm font-semibold" style={{ color: hotel.color }}>{hotel.name}</span>
       </div>
 
-      {/* Data restriction banner — shown when non-admin date range was clamped */}
+      {/* Data restriction banner */}
       {isClamped && (
         <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 mb-4 text-sm">
           <Lock className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
@@ -313,51 +543,64 @@ function HotelContent({
         <div className="text-center py-12 text-gray-400 text-sm">Loading hotel data…</div>
       )}
 
-      {/* ── Target Gauge + KPIs ── */}
+      {/* ── [1] Gamified Target Gauge — full-width hero ── */}
       {!isLoading && (
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-6">
-          <Card className="lg:col-span-2 flex items-center justify-center py-6">
-            <TargetGauge
-              current={kpis.totalInc}
-              target={hotel.monthlyTarget}
-              color={hotel.color}
-              label="vs monthly revenue target"
-            />
-          </Card>
-          <div className="lg:col-span-3 grid grid-cols-2 gap-4">
-            <SalesKPICard
-              label="Total Revenue"
-              value={fmtShort(kpis.totalInc)}
-              subtitle="inc. VAT"
-              yoyChange={isAdmin ? kpis.yoyTotal : undefined}
-              yoyLabel="vs LY"
-            />
-            <SalesKPICard
-              label="Service Revenue"
-              value={fmtShort(kpis.serviceInc)}
-              subtitle={`${Math.round((kpis.serviceInc / (kpis.totalInc || 1)) * 100)}% of total`}
-              yoyChange={isAdmin ? kpis.yoyService : undefined}
-              yoyLabel="vs LY"
-            />
-            <SalesKPICard
-              label="Retail Revenue"
-              value={fmtShort(kpis.retailInc)}
-              subtitle={`${kpis.retailPct}% of total`}
-              yoyChange={isAdmin ? kpis.yoyRetail : undefined}
-              yoyLabel="vs LY"
-            />
-            <SalesKPICard
-              label="Total Discounts"
-              value={fmtShort(kpis.discountInc)}
-              subtitle={`${kpis.discountPct}% of total`}
-              yoyChange={isAdmin ? kpis.yoyDiscount : undefined}
-              yoyLabel="vs LY"
-            />
-          </div>
+        <div className="mb-6">
+          <GamifiedTargetGauge
+            current={kpis.totalInc}
+            target={hotel.monthlyTarget}
+            color={hotel.color}
+          />
         </div>
       )}
 
-      {/* ── Guest Mix + Payment Type ── */}
+      {/* ── [2] KPI Cards — 4-column grid ── */}
+      {!isLoading && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <KpiCard
+            label="Total Revenue"
+            value={fmtShort(kpis.totalInc)}
+            subtitle="inc. VAT"
+            yoyChange={isAdmin ? kpis.yoyTotal : undefined}
+            accentColor="#059669"
+            borderColor="#10B981"
+            bgColor="#f0fdf4"
+            icon={<span className="text-base">💰</span>}
+          />
+          <KpiCard
+            label="Service Revenue"
+            value={fmtShort(kpis.serviceInc)}
+            subtitle={`${Math.round((kpis.serviceInc / (kpis.totalInc || 1)) * 100)}% of total`}
+            yoyChange={isAdmin ? kpis.yoyService : undefined}
+            accentColor="#0284c7"
+            borderColor="#38bdf8"
+            bgColor="#f0f9ff"
+            icon={<span className="text-base">🧴</span>}
+          />
+          <KpiCard
+            label="Retail Revenue"
+            value={fmtShort(kpis.retailInc)}
+            subtitle={`${kpis.retailPct}% of total`}
+            yoyChange={isAdmin ? kpis.yoyRetail : undefined}
+            accentColor="#b45309"
+            borderColor="#F59E0B"
+            bgColor="#fffbeb"
+            icon={<span className="text-base">🛍️</span>}
+          />
+          <KpiCard
+            label="Total Discounts"
+            value={fmtShort(kpis.discountInc)}
+            subtitle={`${kpis.discountPct}% of total`}
+            yoyChange={isAdmin ? kpis.yoyDiscount : undefined}
+            accentColor="#be123c"
+            borderColor="#f43f5e"
+            bgColor="#fff1f2"
+            icon={<span className="text-base">🏷️</span>}
+          />
+        </div>
+      )}
+
+      {/* ── [3] Guest Mix + Payment Types ── */}
       {!isLoading && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
           {/* Guest Mix Pie */}
@@ -419,7 +662,7 @@ function HotelContent({
         </div>
       )}
 
-      {/* ── Day of Week + Hour of Day (side by side) ── */}
+      {/* ── [4] Day of Week + Hour of Day ── */}
       {!isLoading && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
           <Card className="p-5">
@@ -472,82 +715,110 @@ function HotelContent({
         </div>
       )}
 
-      {/* ── Therapist Chart ── */}
-      {!isLoading && therapistData.length > 0 && (
-        <Card className="p-5">
-          <h3 className="text-sm font-semibold text-gray-700 mb-4">Revenue by Therapist</h3>
-          <ResponsiveContainer width="100%" height={Math.max(280, therapistData.length * 34)}>
-            <BarChart
-              data={therapistData}
-              layout="vertical"
-              margin={{ top: 4, right: 100, left: 120, bottom: 4 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#F0EDE8" horizontal={false} />
-              <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => fmtShort(v)} />
-              <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={115} />
-              <Tooltip
-                content={({ active, payload, label }) => {
-                  if (!active || !payload?.length) return null;
-                  const d = therapistData.find(t => t.name === label);
-                  if (!d) return null;
-                  return (
-                    <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs">
-                      <p className="font-semibold text-gray-700 mb-1">{label}</p>
-                      <p style={{ color: "#897B5E" }}>Service: {fmtShort(d.serviceInc)}</p>
-                      <p style={{ color: "#E5C088" }}>Retail: {fmtShort(d.retailInc)} ({d.retailPct}%)</p>
-                      <p className="text-gray-600 font-semibold">Total: {fmtShort(d.totalInc)}</p>
-                    </div>
-                  );
-                }}
-              />
-              {/* Service bar (bottom) */}
-              <Bar dataKey="serviceInc" name="Service" stackId="rev" fill="#897B5E" radius={[0, 0, 0, 0]}>
-              </Bar>
-              {/* Retail bar (top) with % label inside */}
-              <Bar dataKey="retailInc" name="Retail" stackId="rev" fill="#E5C088" radius={[0, 4, 4, 0]}>
-                <LabelList
-                  dataKey="retailPct"
-                  position="insideRight"
-                  content={(lp: unknown) => {
-                    const p = lp as { x?: number; y?: number; width?: number; height?: number; value?: number; index?: number };
-                    const entry = therapistData[p.index ?? 0];
-                    if (!entry || entry.retailInc < 200) return null;
-                    const cx = (p.x ?? 0) + (p.width ?? 0) / 2;
-                    const cy = (p.y ?? 0) + (p.height ?? 0) / 2;
-                    return (
-                      <text key={`rpct-${p.index}`} x={cx} y={cy + 4} textAnchor="middle" fontSize={9} fontWeight={700} fill="#92600A">
-                        {entry.retailPct}%
-                      </text>
-                    );
-                  }}
-                />
-                {/* Total + label on the right edge */}
-                <LabelList
-                  dataKey="totalInc"
-                  position="right"
-                  content={(lp: unknown) => {
-                    const p = lp as { x?: number; y?: number; width?: number; height?: number; value?: number; index?: number };
-                    const entry = therapistData[p.index ?? 0];
-                    if (!entry) return null;
-                    const rx  = (p.x ?? 0) + (p.width ?? 0) + 6;
-                    const cy  = (p.y ?? 0) + (p.height ?? 0) / 2;
-                    return (
-                      <text key={`tot-${p.index}`} x={rx} y={cy + 4} textAnchor="start" fontSize={10} fontWeight={600} fill="#374151">
-                        {fmtShort(entry.totalInc)}
-                      </text>
-                    );
-                  }}
-                />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+      {/* ── [5] Service + Retail by Therapist (side by side) ── */}
+      {!isLoading && (serviceTherapistData.length > 0 || retailTherapistData.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+          {/* Service Revenue by Therapist */}
+          <Card className="p-5">
+            <h3 className="text-sm font-semibold text-gray-700 mb-4">Service Revenue by Therapist</h3>
+            {serviceTherapistData.length === 0 ? (
+              <p className="text-xs text-gray-400 py-8 text-center">No service data for this period</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={Math.max(280, serviceTherapistData.length * 34)}>
+                <BarChart
+                  data={serviceTherapistData}
+                  layout="vertical"
+                  margin={{ top: 4, right: 80, left: 120, bottom: 4 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F0EDE8" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => fmtShort(v)} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={115} />
+                  <Tooltip content={<EurTooltip />} />
+                  <Bar dataKey="service" name="Service" fill={hotel.color} radius={[0, 4, 4, 0]}>
+                    <LabelList
+                      dataKey="service"
+                      position="right"
+                      formatter={(v: unknown) => fmtShort(Number(v))}
+                      style={{ fontSize: 10, fontWeight: 600, fill: "#374151" }}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </Card>
+
+          {/* Retail Revenue by Therapist */}
+          <Card className="p-5">
+            <h3 className="text-sm font-semibold text-gray-700 mb-4">Retail Revenue by Therapist</h3>
+            {retailTherapistData.length === 0 ? (
+              <p className="text-xs text-gray-400 py-8 text-center">No retail data for this period</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={Math.max(280, retailTherapistData.length * 34)}>
+                <BarChart
+                  data={retailTherapistData}
+                  layout="vertical"
+                  margin={{ top: 4, right: 80, left: 120, bottom: 4 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F0EDE8" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => fmtShort(v)} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={115} />
+                  <Tooltip content={<EurTooltip />} />
+                  <ReferenceLine
+                    x={800}
+                    stroke="#059669"
+                    strokeDasharray="4 2"
+                    label={{ value: "€800 target", position: "top", fill: "#059669", fontSize: 10 }}
+                  />
+                  <Bar dataKey="retail" name="Retail" fill="#F59E0B" radius={[0, 4, 4, 0]}>
+                    <LabelList
+                      dataKey="retail"
+                      position="right"
+                      formatter={(v: unknown) => fmtShort(Number(v))}
+                      style={{ fontSize: 10, fontWeight: 600, fill: "#374151" }}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {/* ── [6] Top Treatments by Revenue ── */}
+      {!isLoading && (
+        <Card className="p-5 mb-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-4">Top Treatments by Revenue</h3>
+          {topTreatments.length === 0 ? (
+            <p className="text-xs text-gray-400 py-8 text-center">No treatment data available for this period</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={Math.max(280, topTreatments.length * 34)}>
+              <BarChart
+                data={topTreatments}
+                layout="vertical"
+                margin={{ top: 4, right: 80, left: 180, bottom: 4 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#F0EDE8" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => fmtShort(v)} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={175} />
+                <Tooltip content={<EurTooltip />} />
+                <Bar dataKey="Revenue" fill={hotel.color} radius={[0, 4, 4, 0]}>
+                  <LabelList
+                    dataKey="Revenue"
+                    position="right"
+                    formatter={(v: unknown) => fmtShort(Number(v))}
+                    style={{ fontSize: 10, fontWeight: 600, fill: "#374151" }}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </Card>
       )}
     </>
   );
 }
 
-/* ── Date-gate wrapper (enforces 6-month cap for non-admins) ─────────── */
+/* ── Date-gate wrapper ────────────────────────────────────────────────── */
 
 function HotelDateGate({
   hotel,
