@@ -5,16 +5,12 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 
 export interface RetailTargetMeterProps {
   retailRevenue: number;
-  targetRevenue?: number;  // default 800
-  bonusAmount?: number;    // default 100
+  targetRevenue?: number;
+  bonusAmount?: number;
   accentColor?: string;
   periodLabel?: string;
   dateTo?: Date;
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function formatEur(value: number): string {
   if (!Number.isFinite(value)) return "€0.00";
@@ -26,27 +22,15 @@ function formatEur(value: number): string {
   }).format(value);
 }
 
-/** Returns Tailwind color classes for the progress bar based on percentage */
-function barColorClasses(pct: number): string {
-  if (pct >= 100) return "bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400 animate-pulse";
-  if (pct >= 75)  return "bg-gradient-to-r from-emerald-500 to-green-400";
-  if (pct >= 40)  return "bg-gradient-to-r from-orange-400 to-amber-400";
-  return "bg-gradient-to-r from-red-500 to-red-400";
+function fmtShort(v: number): string {
+  if (v >= 1000) return `€${(v / 1000).toFixed(0)}k`;
+  return `€${Math.round(v)}`;
 }
 
-/** Returns the label color for the percentage text */
-function pctTextColor(pct: number): string {
-  if (pct >= 100) return "text-amber-600";
-  if (pct >= 75)  return "text-emerald-700";
-  if (pct >= 40)  return "text-orange-600";
-  return "text-red-600";
+function polarToCart(angleDeg: number, r: number, cx: number, cy: number) {
+  const rad = (angleDeg * Math.PI) / 180;
+  return { x: cx + r * Math.cos(rad), y: cy - r * Math.sin(rad) };
 }
-
-const MILESTONES = [25, 50, 75, 100];
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 export function RetailTargetMeter({
   retailRevenue,
@@ -55,17 +39,53 @@ export function RetailTargetMeter({
   periodLabel,
   dateTo,
 }: RetailTargetMeterProps) {
-  const rawPct = targetRevenue > 0 ? (retailRevenue / targetRevenue) * 100 : 0;
-  const displayPct = Math.min(rawPct, 100);        // capped at 100 for bar width
-  const unlocked = retailRevenue >= targetRevenue;
-  const remaining = Math.max(0, targetRevenue - retailRevenue);
+  const rawPct      = targetRevenue > 0 ? (retailRevenue / targetRevenue) * 100 : 0;
+  const displayPct  = Math.min(rawPct, 100);
+  const pct         = displayPct / 100;
+  const pctNum      = Math.round(rawPct);
+  const clampedPct  = Math.min(Math.max(pct, 0), 1.0);
+  const unlocked    = retailRevenue >= targetRevenue;
+  const remaining   = Math.max(0, targetRevenue - retailRevenue);
 
-  // Countdown timer
+  const isCrushed = pctNum >= 100;
+  const isAlmost  = pctNum >= 75 && pctNum < 100;
+  const isGood    = pctNum >= 50 && pctNum < 75;
+
+  const gaugeColor = isCrushed ? "#F59E0B" : isAlmost ? "#10B981" : isGood ? "#F59E0B" : "#EF4444";
+  const glowColor  = isCrushed ? "#FCD34D" : isAlmost ? "#34D399" : isGood ? "#FCD34D" : "#FCA5A5";
+
+  const subLabel = isCrushed
+    ? "BONUS UNLOCKED! 🎉"
+    : isAlmost
+    ? "Almost there — push now! 🔥"
+    : isGood
+    ? "Good momentum — keep going! 💪"
+    : "Time to accelerate! ⚡";
+
+  // Gauge geometry: semicircle opening upward, same as hotel gauge
+  const cx = 200, cy = 185, r = 150, stroke = 28;
+
+  const bgStart = polarToCart(180, r, cx, cy);
+  const bgEnd   = polarToCart(0,   r, cx, cy);
+  const bgPath  = `M ${bgStart.x.toFixed(1)} ${bgStart.y.toFixed(1)} A ${r} ${r} 0 1 1 ${bgEnd.x.toFixed(1)} ${bgEnd.y.toFixed(1)}`;
+
+  const clampedFill  = Math.min(clampedPct, 0.999);
+  const fillEndAngle = 180 - clampedFill * 180;
+  const fillEnd      = polarToCart(fillEndAngle, r, cx, cy);
+  const fillSweepDeg = clampedFill * 180;
+  const largeArc     = fillSweepDeg > 180 ? 1 : 0;
+  const fillPath = fillSweepDeg > 0.5
+    ? `M ${bgStart.x.toFixed(1)} ${bgStart.y.toFixed(1)} A ${r} ${r} 0 ${largeArc} 1 ${fillEnd.x.toFixed(1)} ${fillEnd.y.toFixed(1)}`
+    : null;
+
+  const milestoneMarkers = [0.25, 0.5, 0.75];
+
+  // Countdown to month end
   const daysLeft = dateTo
     ? Math.max(0, Math.ceil((dateTo.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
     : null;
 
-  // Milestone celebration
+  // Milestone celebration pop
   const [celebratingMilestone, setCelebratingMilestone] = useState<number | null>(null);
   const prevPctRef = useRef<number | null>(null);
 
@@ -76,14 +96,31 @@ export function RetailTargetMeter({
     }
     const prev = prevPctRef.current;
     prevPctRef.current = displayPct;
-
-    // Check if we just crossed a milestone
-    const crossed = MILESTONES.filter(m => m < 100 && prev < m && displayPct >= m);
+    const crossed = [25, 50, 75].filter((m) => prev < m && displayPct >= m);
     if (crossed.length > 0) {
       setCelebratingMilestone(crossed[crossed.length - 1]);
       setTimeout(() => setCelebratingMilestone(null), 2500);
     }
   }, [displayPct]);
+
+  const cssAnimations = `
+    @keyframes shimmer-rt {
+      0%, 100% { opacity: 0.7; }
+      50%       { opacity: 1;   }
+    }
+    @keyframes gaugePulse-rt {
+      0%, 100% { filter: url(#glow-rt) brightness(1); }
+      50%       { filter: url(#glow-rt) brightness(1.4); }
+    }
+    @keyframes popIn-rt {
+      0%   { opacity: 0; transform: scale(0.8); }
+      60%  { transform: scale(1.05); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+    .gauge-pulse-rt  { animation: gaugePulse-rt 1.5s ease-in-out infinite; }
+    .shimmer-rt      { animation: shimmer-rt 2s ease-in-out infinite; }
+    .pop-in-rt       { animation: popIn-rt 0.4s ease-out; }
+  `;
 
   return (
     <Card className="w-full overflow-hidden">
@@ -103,28 +140,194 @@ export function RetailTargetMeter({
         </CardDescription>
       </CardHeader>
 
-      <CardContent className="space-y-4 pb-5">
-        <style>{`
-          @keyframes popIn {
-            0% { opacity: 0; transform: scale(0.8); }
-            60% { transform: scale(1.05); }
-            100% { opacity: 1; transform: scale(1); }
-          }
-        `}</style>
+      <CardContent className="p-0">
+        <style>{cssAnimations}</style>
 
-        {/* ── Unlocked banner ── */}
-        {unlocked && (
-          <div className="flex items-center justify-center gap-2 rounded-xl border border-amber-400 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-700 shadow-sm animate-pulse"
-               style={{ animationDuration: "2.5s" }}>
-            🎉 {formatEur(bonusAmount)} BONUS UNLOCKED!
+        {/* ── Dark gauge panel ── */}
+        <div
+          className="px-6 py-6"
+          style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)" }}
+        >
+          {/* Status label */}
+          <div className="text-center mb-2">
+            {isCrushed ? (
+              <span
+                className="shimmer-rt inline-block text-base font-extrabold tracking-wider uppercase px-4 py-1 rounded-full"
+                style={{ color: "#F59E0B", textShadow: "0 0 20px #F59E0B88, 0 0 40px #F59E0B44" }}
+              >
+                {subLabel}
+              </span>
+            ) : (
+              <span className="text-sm font-semibold" style={{ color: gaugeColor }}>
+                {subLabel}
+              </span>
+            )}
           </div>
-        )}
 
-        {/* ── Milestone celebration overlay ── */}
+          {/* SVG semicircle gauge */}
+          <div className="flex justify-center">
+            <svg
+              width="400"
+              height="220"
+              viewBox="0 0 400 220"
+              className="overflow-visible"
+              style={{ maxWidth: "100%" }}
+            >
+              <defs>
+                <filter id="glow-rt" x="-40%" y="-40%" width="180%" height="180%">
+                  <feGaussianBlur stdDeviation="6" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+                <filter id="glow-rt-strong" x="-60%" y="-60%" width="220%" height="220%">
+                  <feGaussianBlur stdDeviation="10" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </defs>
+
+              {/* Background track */}
+              <path
+                d={bgPath}
+                fill="none"
+                stroke="#1e3a5f"
+                strokeWidth={stroke}
+                strokeLinecap="round"
+              />
+
+              {/* Fill arc with glow */}
+              {fillPath && (
+                <path
+                  d={fillPath}
+                  fill="none"
+                  stroke={gaugeColor}
+                  strokeWidth={stroke}
+                  strokeLinecap="round"
+                  className={isCrushed ? "gauge-pulse-rt" : undefined}
+                  style={
+                    !isCrushed
+                      ? { filter: "url(#glow-rt)" }
+                      : { filter: "url(#glow-rt-strong)", stroke: glowColor }
+                  }
+                />
+              )}
+
+              {/* Milestone rings at 25 / 50 / 75 % */}
+              {milestoneMarkers.map((m) => {
+                const mAngle = 180 - m * 180;
+                const mPt    = polarToCart(mAngle, r, cx, cy);
+                const isPast = clampedPct >= m;
+                return (
+                  <circle
+                    key={m}
+                    cx={mPt.x}
+                    cy={mPt.y}
+                    r={8}
+                    fill={isPast ? gaugeColor : "#334155"}
+                    stroke={isPast ? glowColor : "#475569"}
+                    strokeWidth={2}
+                    style={isPast ? { filter: "url(#glow-rt)" } : undefined}
+                  />
+                );
+              })}
+
+              {/* 100% end marker */}
+              <circle
+                cx={bgEnd.x}
+                cy={bgEnd.y}
+                r={6}
+                fill={isCrushed ? "#F59E0B" : "#475569"}
+                style={isCrushed ? { filter: "url(#glow-rt)" } : undefined}
+              />
+
+              {/* Endpoint labels */}
+              <text x={bgStart.x - 10} y={bgStart.y + 20} textAnchor="end"   fontSize="11" fill="#64748b" fontFamily="inherit">€0</text>
+              <text x={bgEnd.x   + 10} y={bgEnd.y   + 20} textAnchor="start" fontSize="11" fill="#64748b" fontFamily="inherit">{fmtShort(targetRevenue)}</text>
+
+              {/* Milestone % labels */}
+              {milestoneMarkers.map((m) => {
+                const mAngle = 180 - m * 180;
+                const mPt    = polarToCart(mAngle, r + 26, cx, cy);
+                return (
+                  <text
+                    key={`lbl-${m}`}
+                    x={mPt.x}
+                    y={mPt.y + 4}
+                    textAnchor="middle"
+                    fontSize="10"
+                    fill="#475569"
+                    fontFamily="inherit"
+                  >
+                    {Math.round(m * 100)}%
+                  </text>
+                );
+              })}
+
+              {/* Centre: retail revenue (big) */}
+              <text
+                x={cx}
+                y={cy - 48}
+                textAnchor="middle"
+                fontSize="44"
+                fontWeight="800"
+                fill="#f8fafc"
+                fontFamily="inherit"
+                style={{ letterSpacing: "-1px" }}
+              >
+                {fmtShort(retailRevenue)}
+              </text>
+
+              {/* Centre: percentage */}
+              <text
+                x={cx}
+                y={cy - 8}
+                textAnchor="middle"
+                fontSize="26"
+                fontWeight="700"
+                fill={gaugeColor}
+                fontFamily="inherit"
+                style={isCrushed ? { filter: "url(#glow-rt)" } : undefined}
+              >
+                {pctNum}%
+              </text>
+
+              {/* Centre: "of €800 target" */}
+              <text
+                x={cx}
+                y={cy + 18}
+                textAnchor="middle"
+                fontSize="12"
+                fill="#64748b"
+                fontFamily="inherit"
+              >
+                of {fmtShort(targetRevenue)} target
+              </text>
+            </svg>
+          </div>
+
+          {/* Remaining / earned line */}
+          <p className="text-center text-sm mt-1 font-medium" style={{ color: gaugeColor }}>
+            {unlocked
+              ? `${formatEur(bonusAmount)} bonus earned! 🎉`
+              : `${formatEur(remaining)} to go for your ${formatEur(bonusAmount)} bonus`}
+          </p>
+
+          {/* Countdown */}
+          {!unlocked && daysLeft !== null && daysLeft <= 14 && displayPct >= 50 && (
+            <p className={`text-xs font-semibold text-center mt-1.5 ${daysLeft <= 3 ? "text-red-400" : "text-orange-400"}`}>
+              📅 {daysLeft} day{daysLeft === 1 ? "" : "s"} left to earn your {formatEur(bonusAmount)} bonus
+            </p>
+          )}
+        </div>
+
+        {/* Milestone celebration pop */}
         {celebratingMilestone !== null && (
           <div
-            className="flex items-center justify-center gap-2 rounded-xl border border-emerald-400 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 shadow-sm"
-            style={{ animation: "popIn 0.4s ease-out" }}
+            className="pop-in-rt mx-4 mb-4 mt-3 flex items-center justify-center gap-2 rounded-xl border border-emerald-400 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 shadow-sm"
           >
             {celebratingMilestone === 75 ? "🎯 " : celebratingMilestone === 50 ? "⚡ " : "🌟 "}
             {celebratingMilestone === 75
@@ -134,94 +337,6 @@ export function RetailTargetMeter({
               : "Great start! Keep building!"}
           </div>
         )}
-
-        {/* ── Revenue vs target labels ── */}
-        <div className="flex items-end justify-between px-0.5">
-          <div>
-            <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold mb-0.5">
-              Retail Revenue
-            </p>
-            <p className={`text-2xl font-extrabold tabular-nums ${pctTextColor(rawPct)}`}>
-              {formatEur(retailRevenue)}
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold mb-0.5">
-              Target
-            </p>
-            <p className="text-lg font-bold text-foreground tabular-nums">
-              {formatEur(targetRevenue)}
-            </p>
-          </div>
-        </div>
-
-        {/* ── Progress bar with milestone ticks ── */}
-        <div className="relative">
-          {/* Track */}
-          <div className="h-5 w-full rounded-full bg-muted overflow-hidden">
-            {/* Fill */}
-            <div
-              className={`h-full rounded-full transition-all duration-1000 ease-out ${barColorClasses(rawPct)}`}
-              style={{ width: `${displayPct}%` }}
-            />
-          </div>
-
-          {/* Milestone tick marks — rendered above the track */}
-          <div className="absolute inset-0 pointer-events-none flex items-center">
-            {MILESTONES.map((m) => {
-              const isReached = rawPct >= m;
-              return (
-                <div
-                  key={m}
-                  className="absolute flex flex-col items-center"
-                  style={{ left: `${m}%`, transform: "translateX(-50%)" }}
-                >
-                  {/* Tick line */}
-                  <div
-                    className={`w-0.5 h-5 ${isReached ? "bg-white/70" : "bg-border"}`}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Milestone percentage labels */}
-        <div className="relative h-4">
-          {MILESTONES.map((m) => {
-            const isReached = rawPct >= m;
-            return (
-              <span
-                key={m}
-                className={`absolute text-[10px] font-semibold -translate-x-1/2 transition-colors duration-500 ${
-                  isReached ? pctTextColor(rawPct) : "text-muted-foreground/50"
-                }`}
-                style={{ left: `${m}%` }}
-              >
-                {m}%
-              </span>
-            );
-          })}
-        </div>
-
-        {/* ── Percentage + status line ── */}
-        <div className="flex items-center justify-between">
-          <span className={`text-sm font-bold tabular-nums ${pctTextColor(rawPct)}`}>
-            {rawPct.toFixed(1)}% of target
-          </span>
-          <span className="text-sm text-muted-foreground">
-            {unlocked
-              ? `Bonus earned! 🎉`
-              : `${formatEur(remaining)} to go for your ${formatEur(bonusAmount)} bonus!`}
-          </span>
-        </div>
-
-        {/* ── Month-end countdown ── */}
-        {!unlocked && daysLeft !== null && daysLeft <= 14 && displayPct >= 50 && (
-          <p className={`text-xs font-semibold text-center ${daysLeft <= 3 ? "text-red-600" : "text-orange-600"}`}>
-            📅 {daysLeft} day{daysLeft === 1 ? "" : "s"} left to earn your {formatEur(bonusAmount)} bonus
-          </p>
-        )}
       </CardContent>
     </Card>
   );
@@ -229,6 +344,6 @@ export function RetailTargetMeter({
 
 export function RetailTargetMeterSkeleton() {
   return (
-    <div className="h-44 animate-pulse rounded-xl bg-muted border border-border" />
+    <div className="h-80 animate-pulse rounded-xl bg-muted border border-border" />
   );
 }
