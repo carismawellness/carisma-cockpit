@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { SyncButton } from "@/components/dashboard/SyncButton";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
@@ -444,6 +444,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
 
   const [attendanceFilter, setAttendanceFilter] = useState<AttendanceFilter>("all");
   const [attendanceModalOpen, setAttendanceModalOpen] = useState(false);
+  const attendanceHistoryRef = useRef<HTMLDivElement>(null);
 
   // ── Live data: Talexio ────────────────────────────────────────────────────
   const headcountQ = useTalexioHeadcount();
@@ -633,10 +634,10 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const kpis: HRMetricData[] = [
     {
       label: "Human Capital %",
-      value: payrollComplete ? `${groupHcPct}%` : "N/A",
+      value: groupHcPct > 0 ? `${groupHcPct}%` : "N/A",
       target: `${HC_PCT_TARGET}%`,
       targetValue: HC_PCT_TARGET,
-      currentValue: payrollComplete ? groupHcPct : undefined,
+      currentValue: groupHcPct > 0 ? groupHcPct : undefined,
       lowerIsBetter: true,
       isSample: !payrollComplete,
     },
@@ -766,16 +767,25 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           </span>
           {isAttendanceReal ? <LiveBadge source="talexio" /> : <SampleDataBadge />}
         </div>
-        {/* Late arrivals this period — Supabase-backed, double-click to drill down */}
+        {/* Late / Left early chips — click → scroll to Attendance History; double-click → modal */}
         {(() => {
           const lateCount  = attendanceHistoryQ.data?.summary.total_late ?? 0;
           const earlyCount = attendanceHistoryQ.data?.summary.total_left_early ?? 0;
           const hasData    = attendanceHistoryQ.isSuccess;
+
+          function scrollToAttendance(filter: AttendanceFilter) {
+            setAttendanceFilter(filter);
+            setTimeout(() => {
+              attendanceHistoryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }, 50);
+          }
+
           return (
             <>
               <div
+                onClick={() => scrollToAttendance("late")}
                 onDoubleClick={() => setAttendanceModalOpen(true)}
-                title="Double-click to view attendance issues"
+                title="Click to filter Attendance History · Double-click for modal"
                 className={`flex items-center gap-2 rounded-xl border bg-white px-4 py-2.5 shadow-sm cursor-pointer select-none transition-colors ${lateCount > 0 ? "border-red-200 hover:border-red-400" : "border-slate-200 hover:border-slate-300"}`}
               >
                 <span className={`w-2 h-2 rounded-full shrink-0 ${lateCount > 0 ? "bg-red-400" : "bg-slate-300"}`} />
@@ -783,12 +793,12 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
                 <span className={`text-sm font-semibold ${lateCount > 0 ? "text-red-600" : "text-slate-800"}`}>
                   {hasData ? lateCount : "—"}
                 </span>
-                {hasData && <span className="text-[10px] text-slate-400 hidden sm:inline">double-click</span>}
               </div>
               {(earlyCount > 0 || hasData) && (
                 <div
+                  onClick={() => scrollToAttendance("early")}
                   onDoubleClick={() => setAttendanceModalOpen(true)}
-                  title="Double-click to view attendance issues"
+                  title="Click to filter Attendance History · Double-click for modal"
                   className={`flex items-center gap-2 rounded-xl border bg-white px-4 py-2.5 shadow-sm cursor-pointer select-none transition-colors ${earlyCount > 0 ? "border-orange-200 hover:border-orange-400" : "border-slate-200 hover:border-slate-300"}`}
                 >
                   <span className={`w-2 h-2 rounded-full shrink-0 ${earlyCount > 0 ? "bg-orange-400" : "bg-slate-300"}`} />
@@ -796,7 +806,6 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
                   <span className={`text-sm font-semibold ${earlyCount > 0 ? "text-orange-600" : "text-slate-800"}`}>
                     {hasData ? earlyCount : "—"}
                   </span>
-                  {hasData && <span className="text-[10px] text-slate-400 hidden sm:inline">double-click</span>}
                 </div>
               )}
             </>
@@ -831,7 +840,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
         <p className="text-xs text-muted-foreground mb-5">
           Denominator = therapist-only scheduled hours. Targets are brand-specific (Malta-adjusted benchmarks).
         </p>
-        <div className="space-y-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {(["Spa", "Aesthetics", "Slimming"] as const).map((brand) => {
             const section  = revpahByBrand[brand];
             const locs     = section?.locations ?? [];
@@ -841,23 +850,22 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
             const brandColor = brand === "Spa" ? BRAND.spa.dark : brand === "Aesthetics" ? BRAND.aesthetics.dark : BRAND.slimming.dark;
             const onTrack   = avg >= target * 0.9;
             return (
-              <div key={brand}>
-                {/* Brand row header */}
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: brandColor }} />
-                    <span className="text-sm font-semibold text-slate-700">{brand}</span>
-                    <span className={`text-xs rounded-full px-2 py-0.5 font-medium ${onTrack ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-                      avg {formatCurrency(avg)}/hr · target {formatCurrency(target)}/hr
-                    </span>
-                  </div>
+              <div key={brand} className="flex flex-col">
+                {/* Brand column header */}
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: brandColor }} />
+                  <span className="text-sm font-semibold text-slate-700">{brand}</span>
+                  <span className={`text-xs rounded-full px-2 py-0.5 font-medium ${onTrack ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                    avg {formatCurrency(avg)}/hr
+                  </span>
                 </div>
-                <div style={{ height: Math.max(locs.length * 52 + 40, 120) }}>
+                <p className="text-[11px] text-slate-400 mb-3">target {formatCurrency(target)}/hr</p>
+                <div style={{ height: Math.max(locs.length * 52 + 40, 100) }} className="flex-1">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={locs as unknown as Record<string, unknown>[]} layout="vertical" margin={{ top: 4, right: 100, left: 10, bottom: 4 }}>
+                    <BarChart data={locs as unknown as Record<string, unknown>[]} layout="vertical" margin={{ top: 4, right: 60, left: 4, bottom: 4 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
-                      <XAxis type="number" tickFormatter={(v: number) => `€${v}`} tick={{ fontSize: 11 }} />
-                      <YAxis type="category" dataKey="location" width={130} tick={{ fontSize: 12 }} />
+                      <XAxis type="number" tickFormatter={(v: number) => `€${v}`} tick={{ fontSize: 10 }} />
+                      <YAxis type="category" dataKey="location" width={110} tick={{ fontSize: 11 }} />
                       <Tooltip
                         content={({ active, payload, label }) => {
                           if (!active || !payload?.length) return null;
@@ -879,7 +887,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
                         stroke={TARGET_AMBER}
                         strokeDasharray="6 3"
                         strokeWidth={1.5}
-                        label={{ value: `Target ${formatCurrency(target)}/hr`, position: "right", fill: TARGET_AMBER, fontSize: 11 }}
+                        label={{ value: `€${target}`, position: "insideTopRight", fill: TARGET_AMBER, fontSize: 10 }}
                       />
                       <Bar dataKey="revpah" name="RevPAH">
                         {locs.map((entry) => (
@@ -892,11 +900,11 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
                             const { x, width, y, height, value } = props as Record<string, unknown>;
                             return (
                               <text
-                                x={Number(x) + Number(width) + 6}
+                                x={Number(x) + Number(width) + 5}
                                 y={Number(y) + Number(height) / 2}
                                 dy={4}
                                 textAnchor="start"
-                                fontSize={11}
+                                fontSize={10}
                                 fontWeight={600}
                                 fill={Number(value) >= target ? "#059669" : "#d97706"}
                               >
@@ -918,7 +926,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
       {/* ══════════════════════════════════════════════════════════════════
           SECTION 1b: Longitudinal Attendance History (Supabase-backed)
           ══════════════════════════════════════════════════════════════════ */}
-      <Card className="p-3 md:p-6">
+      <div ref={attendanceHistoryRef} className="scroll-mt-4"><Card className="p-3 md:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3 mb-1">
           <h2 className="text-lg font-semibold text-foreground flex items-center">
             Attendance History
@@ -1000,7 +1008,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
             pageSize={15}
           />
         )}
-      </Card>
+      </Card></div>
 
       {/* ══════════════════════════════════════════════════════════════════
           SECTION 2: Human Capital %
