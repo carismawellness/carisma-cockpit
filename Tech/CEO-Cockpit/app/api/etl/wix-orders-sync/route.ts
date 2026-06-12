@@ -193,4 +193,3 @@ export async function POST(req: NextRequest) {
     log: log.join("\n"),
   });
 }
-# WIX_API_KEY added to Vercel env 2026-06-12
