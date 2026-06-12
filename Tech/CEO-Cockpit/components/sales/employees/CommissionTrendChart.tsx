@@ -26,6 +26,7 @@ export interface CommissionTrendChartProps {
 
 const SERVICE_COLOR = "#6EE7B7"; // emerald-300
 const RETAIL_COLOR = "#FCD34D";  // amber-300
+const BOOKING_COLOR = "#A78BFA"; // violet-400
 const LINE_COLOR = "#F9A825";    // gold — total commission trend line
 
 function fmtEur(v: unknown): string {
@@ -72,6 +73,7 @@ export function CommissionTrendChart({
     name: m.monthLabel,
     Service: +m.service_commission.toFixed(2),
     Retail: +m.retail_commission.toFixed(2),
+    Booking: +(m.booking_commission ?? 0).toFixed(2),
     Total: +m.total_commission.toFixed(2),
   }));
 
@@ -82,7 +84,7 @@ export function CommissionTrendChart({
           Commission History
         </CardTitle>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Last 6 months — service &amp; retail
+          Last 6 months — service, retail &amp; booking
         </p>
       </CardHeader>
       <CardContent>
@@ -123,11 +125,19 @@ export function CommissionTrendChart({
                 isAnimationActive={false}
               />
 
-              {/* Stacked retail bar (top) — carries the LabelList */}
+              {/* Stacked retail bar (middle) */}
               <Bar
                 dataKey="Retail"
                 stackId="commission"
                 fill={RETAIL_COLOR}
+                isAnimationActive={false}
+              />
+
+              {/* Stacked booking bar (top) — carries the LabelList */}
+              <Bar
+                dataKey="Booking"
+                stackId="commission"
+                fill={BOOKING_COLOR}
                 radius={[4, 4, 0, 0]}
                 isAnimationActive={false}
               >

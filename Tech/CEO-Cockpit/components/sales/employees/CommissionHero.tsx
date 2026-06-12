@@ -8,8 +8,10 @@ export interface CommissionHeroProps {
   commissionService: number;
   commissionRetail: number;
   commissionTotal: number;
+  commissionBooking?: number;
   serviceRate: number;
   retailRate: number;
+  bookingRate?: number;
   ratesSet: boolean;
   accentColor?: string;
   periodLabel?: string;
@@ -17,6 +19,7 @@ export interface CommissionHeroProps {
   prevCommissionTotal?: number;
   prevCommissionService?: number;
   prevCommissionRetail?: number;
+  prevCommissionBooking?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -137,14 +140,17 @@ export function CommissionHero({
   commissionService,
   commissionRetail,
   commissionTotal,
+  commissionBooking = 0,
   serviceRate,
   retailRate,
+  bookingRate,
   ratesSet,
   accentColor: _accentColor,
   periodLabel,
   prevCommissionTotal,
   prevCommissionService,
   prevCommissionRetail,
+  prevCommissionBooking,
 }: CommissionHeroProps) {
   const rank = getRank(commissionTotal);
   const motivLine = getMotivationalLine(commissionTotal);
@@ -178,6 +184,11 @@ export function CommissionHero({
                 <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-300">
                   🛍️ {formatRate(retailRate)}
                 </span>
+                {bookingRate !== undefined && bookingRate > 0 && (
+                  <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-300">
+                    📅 {formatRate(bookingRate)}
+                  </span>
+                )}
               </>
             )}
           </div>
@@ -218,8 +229,8 @@ export function CommissionHero({
               </p>
             )}
 
-            {/* Service / Retail sub-cards */}
-            <div className="grid grid-cols-2 gap-3 max-w-md mx-auto">
+            {/* Service / Retail / Booking sub-cards */}
+            <div className="grid grid-cols-3 gap-3 max-w-2xl mx-auto">
               <SplitCard
                 icon="✂️"
                 label="Service Commission"
@@ -231,6 +242,12 @@ export function CommissionHero({
                 label="Retail Commission"
                 amount={commissionRetail}
                 prev={prevCommissionRetail}
+              />
+              <SplitCard
+                icon="📅"
+                label="Booking Commission"
+                amount={commissionBooking}
+                prev={prevCommissionBooking}
               />
             </div>
           </>

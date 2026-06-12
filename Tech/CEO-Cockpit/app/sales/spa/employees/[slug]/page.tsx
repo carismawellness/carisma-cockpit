@@ -1,9 +1,6 @@
 "use client";
 
 // Spa — personal sales-employee dashboard.
-// Commission is the headline metric (CommissionHero), backed by revenue
-// stat cards, the daily trend, service/retail breakdowns and a spa-specific
-// "Revenue by Location" bar chart (stats.brand_extras.by_location).
 
 import { use, useMemo } from "react";
 import Link from "next/link";
@@ -25,10 +22,6 @@ import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { previousPeriod } from "@/lib/utils/period-comparison";
 import { BRAND } from "@/lib/constants/design-tokens";
 import type { EmployeeType } from "@/lib/sales-employees/types";
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, LabelList,
-} from "recharts";
 import { AlertCircle, ChevronLeft, Lock, MapPin } from "lucide-react";
 
 const TYPE_LABELS: Record<EmployeeType, string> = {
@@ -45,12 +38,6 @@ function typeBadgeClass(t: EmployeeType) {
 interface LocationRevenue {
   name: string;
   revenue: number;
-}
-
-function fmtShort(v: number): string {
-  if (Math.abs(v) >= 1_000_000) return `€${(v / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(v) >= 1_000) return `€${(v / 1_000).toFixed(1)}K`;
-  return `€${v.toFixed(0)}`;
 }
 
 function SpaEmployeeContent({
@@ -87,7 +74,7 @@ function SpaEmployeeContent({
   const basisLabel =
     stats?.employee.commission_basis === "inc_vat" ? "inc-VAT" : "ex-VAT";
 
-  // Spa extra: revenue by location (compact horizontal bars)
+  // Spa extra: revenue by location — used for locationId fallback (no chart rendered)
   const byLocation = useMemo<LocationRevenue[]>(() => {
     const raw = (stats?.brand_extras as { by_location?: LocationRevenue[] } | undefined)
       ?.by_location;
@@ -96,6 +83,18 @@ function SpaEmployeeContent({
       .filter((l) => l && typeof l.revenue === "number" && l.revenue > 0)
       .sort((a, b) => b.revenue - a.revenue);
   }, [stats?.brand_extras]);
+
+  // Derive locationId: prefer DB column, fallback to byLocation reverse map
+  const LOCATION_REVERSE: Record<string, number> = {
+    Inter: 1, Hugos: 2, Hyatt: 3, Ramla: 4, Riviera: 5,
+    Odycy: 6, Excelsior: 7, Novotel: 8,
+  };
+  const locationId = useMemo(
+    () =>
+      stats?.employee.location_id ??
+      (byLocation[0]?.name ? (LOCATION_REVERSE[byLocation[0].name] ?? null) : null),
+    [stats?.employee.location_id, byLocation],
+  );
 
   /* ── Not found ─────────────────────────────────────────────────── */
   if (notFound) {
@@ -205,6 +204,7 @@ function SpaEmployeeContent({
             commissionService={stats.totals.commission_service}
             commissionRetail={stats.totals.commission_retail}
             commissionTotal={stats.totals.commission_total}
+            commissionBooking={0}
             serviceRate={stats.rates?.service_rate ?? 0}
             retailRate={stats.rates?.retail_rate ?? 0}
             ratesSet={stats.employee.rates_set}
@@ -213,6 +213,7 @@ function SpaEmployeeContent({
             prevCommissionTotal={prevStats?.totals.commission_total}
             prevCommissionService={prevStats?.totals.commission_service}
             prevCommissionRetail={prevStats?.totals.commission_retail}
+            prevCommissionBooking={0}
           />
 
           {/* Retail target tracker — only for therapists who sell retail */}
@@ -240,55 +241,9 @@ function SpaEmployeeContent({
 
           {/* Google Reviews for this employee's location */}
           <LocationReviewsCard
-            locationId={stats.employee.location_id ?? null}
+            locationId={locationId}
             locationName={locationName}
           />
-
-          {/* Spa extra: revenue by location */}
-          {byLocation.length > 0 && (
-            <Card className="p-4 md:p-6">
-              <h2 className="text-lg font-semibold text-foreground mb-1">Revenue by Location</h2>
-              <p className="text-xs text-muted-foreground mb-5">
-                This employee&apos;s revenue per venue · {basisLabel}
-              </p>
-              <ResponsiveContainer width="100%" height={Math.max(140, byLocation.length * 44)}>
-                <BarChart
-                  layout="vertical"
-                  data={byLocation}
-                  margin={{ top: 4, right: 70, left: 10, bottom: 4 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0ede8" />
-                  <XAxis
-                    type="number"
-                    tickFormatter={(v: number) => fmtShort(v)}
-                    tick={{ fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="name"
-                    width={140}
-                    tick={{ fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip
-                    formatter={(v: unknown) => [fmtShort(Number(v)), "Revenue"]}
-                    contentStyle={{ fontSize: 12 }}
-                  />
-                  <Bar dataKey="revenue" fill={BRAND.spa.soft} radius={[0, 4, 4, 0]} barSize={24}>
-                    <LabelList
-                      dataKey="revenue"
-                      position="right"
-                      formatter={(v: unknown) => fmtShort(Number(v))}
-                      style={{ fontSize: 11, fontWeight: 600, fill: "#374151" }}
-                    />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </Card>
-          )}
         </>
       )}
     </>

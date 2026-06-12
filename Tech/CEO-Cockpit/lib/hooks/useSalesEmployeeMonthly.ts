@@ -14,6 +14,7 @@ export interface MonthlyEmployeeStat {
   total_revenue: number;
   service_commission: number;
   retail_commission: number;
+  booking_commission?: number;
   total_commission: number;
   active_days: number;
 }
