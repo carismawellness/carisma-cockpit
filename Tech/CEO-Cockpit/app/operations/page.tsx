@@ -562,22 +562,6 @@ function OperationsContent({
                     {formatCurrency(diligenceTotals.totalSales)}
                   </td>
                 </tr>
-                {/* Deleted & Cancelled (combined in source report) */}
-                <tr className="border-b border-warm-border/50">
-                  <td className="py-2 px-3 font-medium text-foreground sticky left-0 bg-white z-10">
-                    Deleted &amp; Cancelled <span className="text-xs text-muted-foreground">(&lt;10%)</span>
-                  </td>
-                  {diligence.rows.map((d) => (
-                    <td key={d.slug} className={cn("text-center py-1.5 px-1", heatBg(pctOf(d.deletedCancelled, d.totalSales), DILIGENCE_THRESHOLDS.deletedCancelledPct))}>
-                      <div className="text-xs font-semibold">{Math.round(d.deletedCancelled).toLocaleString()}</div>
-                      <div className="text-[10px] font-bold">{pctOf(d.deletedCancelled, d.totalSales)}%</div>
-                    </td>
-                  ))}
-                  <td className={cn("text-center py-1.5 px-2", heatBg(totPct(diligenceTotals.deletedCancelled), DILIGENCE_THRESHOLDS.deletedCancelledPct))}>
-                    <div className="text-xs font-semibold">{Math.round(diligenceTotals.deletedCancelled).toLocaleString()}</div>
-                    <div className="text-[10px] font-bold">{totPct(diligenceTotals.deletedCancelled)}%</div>
-                  </td>
-                </tr>
                 {/* Complimentary */}
                 <tr className="border-b border-warm-border/50">
                   <td className="py-2 px-3 font-medium text-foreground sticky left-0 bg-white z-10">
@@ -626,9 +610,31 @@ function OperationsContent({
                     <div className="text-[10px] font-bold">{totPct(diligenceTotals.discountedCash)}%</div>
                   </td>
                 </tr>
+                {/* Sample data separator */}
+                <tr>
+                  <td colSpan={diligence.rows.length + 2} className="py-1 px-3 bg-amber-50 border-y border-amber-200">
+                    <span className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide">Sample data — manual entry required</span>
+                  </td>
+                </tr>
+                {/* Deleted & Cancelled (combined in source report) */}
+                <tr className="border-b border-warm-border/50 bg-amber-50/30">
+                  <td className="py-2 px-3 font-medium text-muted-foreground sticky left-0 bg-amber-50/30 z-10">
+                    Deleted &amp; Cancelled <span className="text-xs text-muted-foreground">(&lt;10%)</span>
+                  </td>
+                  {diligence.rows.map((d) => (
+                    <td key={d.slug} className={cn("text-center py-1.5 px-1", heatBg(pctOf(d.deletedCancelled, d.totalSales), DILIGENCE_THRESHOLDS.deletedCancelledPct))}>
+                      <div className="text-xs font-semibold">{Math.round(d.deletedCancelled).toLocaleString()}</div>
+                      <div className="text-[10px] font-bold">{pctOf(d.deletedCancelled, d.totalSales)}%</div>
+                    </td>
+                  ))}
+                  <td className={cn("text-center py-1.5 px-2", heatBg(totPct(diligenceTotals.deletedCancelled), DILIGENCE_THRESHOLDS.deletedCancelledPct))}>
+                    <div className="text-xs font-semibold">{Math.round(diligenceTotals.deletedCancelled).toLocaleString()}</div>
+                    <div className="text-[10px] font-bold">{totPct(diligenceTotals.deletedCancelled)}%</div>
+                  </td>
+                </tr>
                 {/* Unattended */}
-                <tr className="border-b border-warm-border/50">
-                  <td className="py-2 px-3 font-medium text-foreground sticky left-0 bg-white z-10">
+                <tr className="bg-amber-50/30">
+                  <td className="py-2 px-3 font-medium text-muted-foreground sticky left-0 bg-amber-50/30 z-10">
                     Unattended <span className="text-xs text-muted-foreground">(must be 0)</span>
                   </td>
                   {diligence.rows.map((d) => (
