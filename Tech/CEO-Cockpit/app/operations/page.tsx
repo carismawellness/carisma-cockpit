@@ -364,7 +364,7 @@ function OperationsContent({
   // so every location always has a <Bar> registered in the chart.
   const allLocationSlugs = reviews.snapshots.map((s) => s.slug);
 
-  const weeklyStackedData = reviews.weekly.map((w) => {
+  const weeklyStackedData = reviews.weekly.slice(-10).map((w) => {
     const row: Record<string, number | string> = {
       weekLabel: w.weekLabel,
       avgRating: w.avgRating,
@@ -427,7 +427,7 @@ function OperationsContent({
           <h2 className="text-lg font-semibold text-foreground">Reviews Trend</h2>
         </div>
         <p className="text-sm text-muted-foreground mb-4">
-          Weekly net new reviews per location — {totalReviews.toLocaleString()} current total
+          Weekly net new reviews per location (last 10 periods) — {totalReviews.toLocaleString()} current total
           {reviews.snapshotDate ? ` · snapshot ${format(parseISO(reviews.snapshotDate), "d MMM yyyy")}` : ""}
         </p>
 
@@ -449,7 +449,7 @@ function OperationsContent({
                   margin={{ top: 10, right: 10, left: 10, bottom: 5 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="weekLabel" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+                  <XAxis dataKey="weekLabel" tick={{ fontSize: 10 }} interval={0} />
                   <YAxis
                     yAxisId="left"
                     tick={{ fontSize: 11 }}
@@ -475,13 +475,13 @@ function OperationsContent({
                         content={(props: unknown) => {
                           const p = props as { x?: number; y?: number; width?: number; height?: number; value?: unknown };
                           const v = Number(p.value ?? 0);
-                          if (!v || v <= 0 || !p.width || (p.width as number) < 16 || !p.height || (p.height as number) < 12) return <g />;
+                          if (!v || v <= 0 || !p.height || (p.height as number) < 8) return <g />;
                           return (
                             <text
                               x={(p.x ?? 0) + (p.width ?? 0) / 2}
                               y={(p.y ?? 0) + (p.height ?? 0) / 2 + 4}
                               textAnchor="middle"
-                              fontSize={9}
+                              fontSize={8}
                               fontWeight={700}
                               fill="#fff"
                             >
