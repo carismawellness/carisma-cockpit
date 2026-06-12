@@ -1,6 +1,6 @@
 "use client";
 
-import { Banknote, AlertTriangle, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { deltaPct } from "@/lib/utils/period-comparison";
 
@@ -19,6 +19,10 @@ export interface CommissionHeroProps {
   prevCommissionRetail?: number;
 }
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 function formatEur(value: number): string {
   if (!Number.isFinite(value)) return "€0.00";
   return new Intl.NumberFormat("en-MT", {
@@ -33,6 +37,48 @@ function formatRate(rate: number): string {
   return (rate * 100).toLocaleString("en", { maximumFractionDigits: 2 }) + "%";
 }
 
+// ---------------------------------------------------------------------------
+// Rank system
+// ---------------------------------------------------------------------------
+
+interface Rank {
+  emoji: string;
+  label: string;
+  min: number;
+  max: number | null;
+}
+
+const RANKS: Rank[] = [
+  { emoji: "🌱", label: "Rookie",       min: 0,   max: 50   },
+  { emoji: "⭐", label: "Rising Star",  min: 50,  max: 150  },
+  { emoji: "💎", label: "Achiever",     min: 150, max: 400  },
+  { emoji: "🏆", label: "Champion",     min: 400, max: 800  },
+  { emoji: "👑", label: "Legend",       min: 800, max: null },
+];
+
+function getRank(total: number): Rank {
+  for (let i = RANKS.length - 1; i >= 0; i--) {
+    if (total >= RANKS[i].min) return RANKS[i];
+  }
+  return RANKS[0];
+}
+
+function getMotivationalLine(total: number): string {
+  const rank = getRank(total);
+  // Already Legend
+  if (rank.max === null) {
+    return "Absolute Legend — you've hit the top tier! 👑";
+  }
+  const gap = rank.max - total;
+  const nextRank = RANKS.find((r) => r.min === rank.max);
+  if (!nextRank) return "Keep going — every euro counts!";
+  return `${nextRank.emoji} ${nextRank.label} is just ${formatEur(gap)} away — you've got this!`;
+}
+
+// ---------------------------------------------------------------------------
+// DeltaBadge
+// ---------------------------------------------------------------------------
+
 function DeltaBadge({ current, previous }: { current: number; previous: number }) {
   const pct = deltaPct(current, previous);
   if (pct === undefined) return null;
@@ -41,7 +87,9 @@ function DeltaBadge({ current, previous }: { current: number; previous: number }
   return (
     <span
       className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-semibold ml-2 ${
-        up ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700"
+        up
+          ? "bg-emerald-200/60 text-emerald-100 border border-emerald-400/40"
+          : "bg-red-200/30 text-red-200 border border-red-400/30"
       }`}
     >
       <Arrow className="h-3 w-3" />
@@ -51,6 +99,40 @@ function DeltaBadge({ current, previous }: { current: number; previous: number }
   );
 }
 
+// ---------------------------------------------------------------------------
+// Sub-card for service / retail split
+// ---------------------------------------------------------------------------
+
+function SplitCard({
+  icon,
+  label,
+  amount,
+  prev,
+}: {
+  icon: string;
+  label: string;
+  amount: number;
+  prev?: number;
+}) {
+  return (
+    <div className="rounded-xl bg-white/10 border border-white/20 backdrop-blur-sm px-4 py-3 text-center">
+      <p className="text-[11px] font-semibold uppercase tracking-widest text-emerald-200 mb-1">
+        {icon} {label}
+      </p>
+      <div className="inline-flex items-center gap-1 flex-wrap justify-center">
+        <p className="text-xl font-bold text-white tabular-nums">
+          {formatEur(amount)}
+        </p>
+        {prev !== undefined && <DeltaBadge current={amount} previous={prev} />}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
 export function CommissionHero({
   commissionService,
   commissionRetail,
@@ -58,85 +140,103 @@ export function CommissionHero({
   serviceRate,
   retailRate,
   ratesSet,
-  accentColor,
+  accentColor: _accentColor,
   periodLabel,
   prevCommissionTotal,
   prevCommissionService,
   prevCommissionRetail,
 }: CommissionHeroProps) {
+  const rank = getRank(commissionTotal);
+  const motivLine = getMotivationalLine(commissionTotal);
+  const hasTotal = commissionTotal > 0;
+
   return (
-    <Card className="w-full bg-gradient-to-br from-emerald-50 to-green-100 border-emerald-200 shadow-sm overflow-hidden">
-      <div className="px-6 py-6 md:py-8">
-        {/* Header row */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2 text-emerald-700" style={accentColor ? { color: accentColor } : undefined}>
-            <Banknote className="h-5 w-5" />
-            <span className="text-sm font-semibold uppercase tracking-wide">
+    <Card className="w-full overflow-hidden border-0 shadow-xl p-0">
+      {/* Deep emerald gradient hero panel */}
+      <div className="bg-gradient-to-br from-emerald-900 via-emerald-800 to-teal-800 px-6 py-7 md:py-9">
+
+        {/* ── Header row: label + rank badge + rate pills ── */}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-5">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">💰</span>
+            <span className="text-xs font-bold uppercase tracking-widest text-emerald-300">
               Your Commission
             </span>
           </div>
-          {ratesSet && (
-            <div className="flex items-center gap-1.5">
-              <span className="inline-flex items-center rounded-full bg-emerald-100 border border-emerald-200 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
-                Services {formatRate(serviceRate)}
-              </span>
-              <span className="inline-flex items-center rounded-full bg-emerald-100 border border-emerald-200 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
-                Retail {formatRate(retailRate)}
-              </span>
-            </div>
-          )}
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Rank badge */}
+            <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/60 bg-amber-400/15 px-3 py-1 text-xs font-bold text-amber-300 shadow-inner">
+              {rank.emoji} {rank.label}
+            </span>
+
+            {ratesSet && (
+              <>
+                <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-300">
+                  ✂️ {formatRate(serviceRate)}
+                </span>
+                <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-300">
+                  🛍️ {formatRate(retailRate)}
+                </span>
+              </>
+            )}
+          </div>
         </div>
 
+        {/* ── Main content ── */}
         {ratesSet ? (
           <>
-            {/* Big total + delta */}
-            <div className="text-center mb-4">
+            {/* Big total */}
+            <div className="text-center mb-2">
               <div className="inline-flex items-center flex-wrap justify-center gap-1">
-                <span className="text-5xl md:text-6xl font-extrabold text-emerald-700 tracking-tight tabular-nums">
+                <span
+                  className={`text-5xl md:text-6xl font-extrabold text-white tracking-tight tabular-nums ${
+                    hasTotal ? "animate-pulse" : ""
+                  }`}
+                  style={hasTotal ? { animationDuration: "3s" } : undefined}
+                >
                   {formatEur(commissionTotal)}
                 </span>
                 {prevCommissionTotal !== undefined && (
-                  <DeltaBadge current={commissionTotal} previous={prevCommissionTotal} />
+                  <DeltaBadge
+                    current={commissionTotal}
+                    previous={prevCommissionTotal}
+                  />
                 )}
               </div>
             </div>
 
-            {/* Service / retail split */}
-            <div className="grid grid-cols-2 gap-3 max-w-md mx-auto mb-3">
-              <div className="rounded-lg bg-white/60 border border-emerald-100 px-4 py-2.5 text-center">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-600">
-                  Service Commission
-                </p>
-                <div className="inline-flex items-center gap-1 flex-wrap justify-center">
-                  <p className="text-lg font-bold text-emerald-800 tabular-nums">
-                    {formatEur(commissionService)}
-                  </p>
-                  {prevCommissionService !== undefined && (
-                    <DeltaBadge current={commissionService} previous={prevCommissionService} />
-                  )}
-                </div>
-              </div>
-              <div className="rounded-lg bg-white/60 border border-emerald-100 px-4 py-2.5 text-center">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-600">
-                  Retail Commission
-                </p>
-                <div className="inline-flex items-center gap-1 flex-wrap justify-center">
-                  <p className="text-lg font-bold text-emerald-800 tabular-nums">
-                    {formatEur(commissionRetail)}
-                  </p>
-                  {prevCommissionRetail !== undefined && (
-                    <DeltaBadge current={commissionRetail} previous={prevCommissionRetail} />
-                  )}
-                </div>
-              </div>
-            </div>
+            {/* Motivational line */}
+            <p className="text-center text-sm text-emerald-300 mb-5 font-medium">
+              {motivLine}
+            </p>
 
+            {/* Period label */}
             {periodLabel && (
-              <p className="text-center text-sm text-emerald-600">{periodLabel}</p>
+              <p className="text-center text-xs text-emerald-400 mb-4">
+                {periodLabel}
+              </p>
             )}
+
+            {/* Service / Retail sub-cards */}
+            <div className="grid grid-cols-2 gap-3 max-w-md mx-auto">
+              <SplitCard
+                icon="✂️"
+                label="Service Commission"
+                amount={commissionService}
+                prev={prevCommissionService}
+              />
+              <SplitCard
+                icon="🛍️"
+                label="Retail Commission"
+                amount={commissionRetail}
+                prev={prevCommissionRetail}
+              />
+            </div>
           </>
         ) : (
-          <div className="flex items-center justify-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-700">
+          /* Rates not set notice */
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-amber-400/40 bg-amber-400/10 px-4 py-4 text-sm text-amber-300 mt-2">
             <AlertTriangle className="h-4 w-4 flex-shrink-0" />
             <span>
               Commission rates not set — ask an admin to configure your rates in Settings.
@@ -150,6 +250,6 @@ export function CommissionHero({
 
 export function CommissionHeroSkeleton() {
   return (
-    <div className="h-52 animate-pulse rounded-xl bg-emerald-50 border border-emerald-100" />
+    <div className="h-52 animate-pulse rounded-xl bg-emerald-900/40 border border-emerald-800" />
   );
 }

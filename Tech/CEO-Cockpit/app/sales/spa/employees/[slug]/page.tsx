@@ -11,8 +11,13 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
 import { useSalesEmployeeStats } from "@/lib/hooks/useSalesEmployeeStats";
 import { useSalesEmployees } from "@/lib/hooks/useSalesEmployees";
+import { useSalesEmployeeMonthly } from "@/lib/hooks/useSalesEmployeeMonthly";
 import { useIsAdmin } from "@/lib/hooks/useIsAdmin";
 import { CommissionHero, CommissionHeroSkeleton } from "@/components/sales/employees/CommissionHero";
+import { RetailTargetMeter, RetailTargetMeterSkeleton } from "@/components/sales/employees/RetailTargetMeter";
+import { CommissionTrendChart } from "@/components/sales/employees/CommissionTrendChart";
+import { PerformanceCommentary } from "@/components/sales/employees/PerformanceCommentary";
+import { LocationReviewsCard } from "@/components/sales/employees/LocationReviewsCard";
 import { EmployeeStatCards } from "@/components/sales/employees/EmployeeStatCards";
 import { EmployeeTrendChart } from "@/components/sales/employees/EmployeeTrendChart";
 import { EmployeeBreakdownTable } from "@/components/sales/employees/EmployeeBreakdownTable";
@@ -62,6 +67,9 @@ function SpaEmployeeContent({
 
   const { prevFrom, prevTo } = useMemo(() => previousPeriod(dateFrom, dateTo), [dateFrom, dateTo]);
   const { stats: prevStats } = useSalesEmployeeStats("spa", slug, prevFrom, prevTo);
+
+  // 6-month longitudinal data for CommissionTrendChart
+  const { months: monthlyData, isLoading: monthlyLoading } = useSalesEmployeeMonthly("spa", slug);
 
   // The stats payload doesn't carry location_name — look it up in the registry.
   const { employees } = useSalesEmployees("spa");
@@ -163,6 +171,7 @@ function SpaEmployeeContent({
       {isLoading && (
         <>
           <CommissionHeroSkeleton />
+          <RetailTargetMeterSkeleton />
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-4">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="h-24 animate-pulse rounded-xl bg-gray-100" />
@@ -179,6 +188,19 @@ function SpaEmployeeContent({
       {/* ── Dashboard ───────────────────────────────────────────────── */}
       {!isLoading && stats && (
         <>
+          {/* Strategic performance commentary — appears first, sets the tone */}
+          <PerformanceCommentary
+            employeeName={stats.employee.display_name}
+            commissionTotal={stats.totals.commission_total}
+            retailRevenue={stats.totals.retail_revenue}
+            retailTarget={800}
+            totalRevenue={stats.totals.total_revenue}
+            avgTicket={stats.totals.avg_ticket}
+            activeDays={stats.totals.active_days}
+            prevCommissionTotal={prevStats?.totals.commission_total}
+            periodLabel={periodLabel}
+          />
+
           <CommissionHero
             commissionService={stats.totals.commission_service}
             commissionRetail={stats.totals.commission_retail}
@@ -193,6 +215,16 @@ function SpaEmployeeContent({
             prevCommissionRetail={prevStats?.totals.commission_retail}
           />
 
+          {/* Retail target tracker — only for therapists who sell retail */}
+          {(empType === "therapist" || empType === "advisor") && (
+            <RetailTargetMeter
+              retailRevenue={stats.totals.retail_revenue}
+              targetRevenue={800}
+              bonusAmount={100}
+              periodLabel={periodLabel}
+            />
+          )}
+
           <EmployeeStatCards totals={stats.totals} basisLabel={basisLabel} prevTotals={prevStats?.totals} />
 
           <EmployeeTrendChart daily={stats.daily} accentColor={BRAND.spa.soft} />
@@ -202,6 +234,15 @@ function SpaEmployeeContent({
             <EmployeeBreakdownTable title="Top Services" rows={stats.service_breakdown} />
             <EmployeeBreakdownTable title="Top Retail Products" rows={stats.retail_breakdown} />
           </div>
+
+          {/* Month-over-month commission trend */}
+          <CommissionTrendChart months={monthlyData} isLoading={monthlyLoading} />
+
+          {/* Google Reviews for this employee's location */}
+          <LocationReviewsCard
+            locationId={stats.employee.location_id ?? null}
+            locationName={locationName}
+          />
 
           {/* Spa extra: revenue by location */}
           {byLocation.length > 0 && (

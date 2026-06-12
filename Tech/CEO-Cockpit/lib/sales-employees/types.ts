@@ -14,6 +14,7 @@ export interface SalesEmployee {
   display_name: string;
   brand_slug: BrandSlug;
   role: string | null;
+  location_id: number | null;
   location_name: string | null;
   user_email: string | null;
   is_active: boolean;
@@ -98,6 +99,7 @@ export interface EmployeeStatsResponse {
     display_name: string;
     brand_slug: BrandSlug;
     role: string | null;
+    location_id: number | null;
     is_active: boolean;
     commission_basis: CommissionBasis;
     rates_set: boolean;

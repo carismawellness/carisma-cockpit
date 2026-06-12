@@ -324,6 +324,7 @@ export async function GET(req: NextRequest) {
       display_name: employee.display_name,
       brand_slug: employee.brand_slug,
       role: employee.role,
+      location_id: employee.location_id ?? null,
       is_active: employee.is_active,
       commission_basis: employee.commission_basis,
       rates_set: rateRows.length > 0,
