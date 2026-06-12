@@ -22,6 +22,15 @@ export interface CommissionTrendChartProps {
   months: MonthlyEmployeeStat[];
   isLoading: boolean;
   accentColor?: string; // brand accent (e.g. BRAND.spa.soft)
+  currentPreview?: {
+    label: string;      // e.g. "Jun 2026"
+    service: number;
+    retail: number;
+    booking: number;
+    total: number;
+    activeDays: number;  // how many days into the period
+    periodDays: number;  // total days in the period
+  };
 }
 
 const SERVICE_COLOR = "#6EE7B7"; // emerald-300
@@ -66,8 +75,17 @@ function CustomTooltip({
 export function CommissionTrendChart({
   months,
   isLoading,
+  currentPreview,
 }: CommissionTrendChartProps) {
-  const hasData = months.length > 0 && months.some((m) => m.total_commission > 0);
+  const hasData =
+    (months.length > 0 && months.some((m) => m.total_commission > 0)) ||
+    (currentPreview !== undefined && currentPreview.total > 0);
+
+  const projected = currentPreview
+    ? currentPreview.activeDays > 0
+      ? (currentPreview.total / currentPreview.activeDays) * currentPreview.periodDays
+      : currentPreview.total
+    : null;
 
   const chartData = months.map((m) => ({
     name: m.monthLabel,
@@ -77,6 +95,21 @@ export function CommissionTrendChart({
     Total: +m.total_commission.toFixed(2),
   }));
 
+  const fullChartData = currentPreview
+    ? [
+        ...chartData,
+        {
+          name: currentPreview.label + " ▸", // arrow suffix signals "in progress"
+          Service: +currentPreview.service.toFixed(2),
+          Retail: +currentPreview.retail.toFixed(2),
+          Booking: +currentPreview.booking.toFixed(2),
+          Total: +currentPreview.total.toFixed(2),
+          Projected: projected !== null ? +projected.toFixed(2) : undefined,
+          isPreview: true,
+        },
+      ]
+    : chartData;
+
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -85,6 +118,9 @@ export function CommissionTrendChart({
         </CardTitle>
         <p className="text-xs text-muted-foreground mt-0.5">
           Last 6 months — service, retail &amp; booking
+          {currentPreview && (
+            <span className="ml-1 text-slate-400">· {currentPreview.label} in progress</span>
+          )}
         </p>
       </CardHeader>
       <CardContent>
@@ -99,7 +135,7 @@ export function CommissionTrendChart({
         ) : (
           <ResponsiveContainer width="100%" height={240}>
             <ComposedChart
-              data={chartData}
+              data={fullChartData}
               margin={{ top: 24, right: 12, left: 0, bottom: 4 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
@@ -159,6 +195,22 @@ export function CommissionTrendChart({
                 activeDot={{ r: 5 }}
                 legendType="none"
               />
+
+              {/* Projected end-of-month trajectory (dashed, only for current preview) */}
+              {currentPreview && projected !== null && (
+                <Line
+                  dataKey="Projected"
+                  type="monotone"
+                  stroke="#94A3B8"
+                  strokeWidth={2}
+                  strokeDasharray="6 4"
+                  dot={{ r: 4, fill: "#94A3B8", strokeWidth: 0 }}
+                  activeDot={{ r: 5 }}
+                  legendType="none"
+                  isAnimationActive={false}
+                  connectNulls
+                />
+              )}
             </ComposedChart>
           </ResponsiveContainer>
         )}

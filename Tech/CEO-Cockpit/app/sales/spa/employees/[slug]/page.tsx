@@ -18,11 +18,20 @@ import { LocationReviewsCard } from "@/components/sales/employees/LocationReview
 import { EmployeeStatCards } from "@/components/sales/employees/EmployeeStatCards";
 import { EmployeeTrendChart } from "@/components/sales/employees/EmployeeTrendChart";
 import { EmployeeBreakdownTable } from "@/components/sales/employees/EmployeeBreakdownTable";
+import { PaceAlert } from "@/components/sales/employees/PaceAlert";
+import { StreakBadge, StreakTooltip } from "@/components/sales/employees/StreakBadge";
+import { PeerRankBadge } from "@/components/sales/employees/PeerRankBadge";
+import { useEmployeeCoachingTip } from "@/lib/hooks/useEmployeeCoachingTip";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { previousPeriod } from "@/lib/utils/period-comparison";
 import { BRAND } from "@/lib/constants/design-tokens";
 import type { EmployeeType } from "@/lib/sales-employees/types";
 import { AlertCircle, ChevronLeft, Lock, MapPin } from "lucide-react";
+
+function _pad(n: number) { return String(n).padStart(2, "0"); }
+function toDateStr(d: Date) {
+  return `${d.getFullYear()}-${_pad(d.getMonth() + 1)}-${_pad(d.getDate())}`;
+}
 
 const TYPE_LABELS: Record<EmployeeType, string> = {
   therapist:  "Therapist",
@@ -95,6 +104,49 @@ function SpaEmployeeContent({
       (byLocation[0]?.name ? (LOCATION_REVERSE[byLocation[0].name] ?? null) : null),
     [stats?.employee.location_id, byLocation],
   );
+
+  // Total days in the selected period (for PaceAlert pace calculation)
+  const periodDays = useMemo(() => {
+    const diff = dateTo.getTime() - dateFrom.getTime();
+    return Math.max(1, Math.ceil(diff / (1000 * 60 * 60 * 24)) + 1);
+  }, [dateFrom, dateTo]);
+
+  // All-time best commission from 6-month history + current period
+  const allTimeBestCommission = useMemo(() => {
+    const all = [...monthlyData.map((m) => m.total_commission)];
+    if (stats) all.push(stats.totals.commission_total);
+    return all.length > 0 ? Math.max(...all) : 0;
+  }, [monthlyData, stats]);
+
+  // Current period partial data for CommissionTrendChart trajectory bar
+  const currentPreview = useMemo(() => {
+    if (!stats) return undefined;
+    const label = new Intl.DateTimeFormat("en-MT", { month: "short", year: "numeric" })
+      .format(dateTo);
+    return {
+      label,
+      service: stats.totals.commission_service,
+      retail: stats.totals.commission_retail,
+      booking: 0,
+      total: stats.totals.commission_total,
+      activeDays: stats.totals.active_days,
+      periodDays,
+    };
+  }, [stats, dateTo, periodDays]);
+
+  // Daily AI coaching tip from Claude Haiku (cached per day in Supabase)
+  const tipParams = stats ? {
+    slug,
+    brand: "spa",
+    from: toDateStr(dateFrom),
+    to: toDateStr(dateTo),
+    commissionTotal: stats.totals.commission_total,
+    retailRevenue: stats.totals.retail_revenue,
+    avgTicket: stats.totals.avg_ticket,
+    activeDays: stats.totals.active_days,
+    prevCommissionTotal: prevStats?.totals.commission_total,
+  } : null;
+  const { data: aiTip } = useEmployeeCoachingTip(tipParams);
 
   /* ── Not found ─────────────────────────────────────────────────── */
   if (notFound) {
@@ -187,7 +239,7 @@ function SpaEmployeeContent({
       {/* ── Dashboard ───────────────────────────────────────────────── */}
       {!isLoading && stats && (
         <>
-          {/* Strategic performance commentary — appears first, sets the tone */}
+          {/* Strategic performance commentary (+ daily AI coaching insight) */}
           <PerformanceCommentary
             employeeName={stats.employee.display_name}
             commissionTotal={stats.totals.commission_total}
@@ -198,6 +250,7 @@ function SpaEmployeeContent({
             activeDays={stats.totals.active_days}
             prevCommissionTotal={prevStats?.totals.commission_total}
             periodLabel={periodLabel}
+            aiTip={aiTip ?? undefined}
           />
 
           <CommissionHero
@@ -214,16 +267,41 @@ function SpaEmployeeContent({
             prevCommissionService={prevStats?.totals.commission_service}
             prevCommissionRetail={prevStats?.totals.commission_retail}
             prevCommissionBooking={0}
+            allTimeBestCommission={allTimeBestCommission}
+          />
+
+          {/* Peer rank badge (anonymous — shows position among all spa therapists) */}
+          <div className="flex justify-end -mt-2">
+            <PeerRankBadge brand="spa" slug={slug} dateFrom={dateFrom} dateTo={dateTo} />
+          </div>
+
+          {/* Catch-up pace alert — shown when behind last period's trajectory */}
+          <PaceAlert
+            commissionTotal={stats.totals.commission_total}
+            prevCommissionTotal={prevStats?.totals.commission_total}
+            activeDays={stats.totals.active_days}
+            periodDays={periodDays}
+            avgTicketEur={stats.totals.avg_ticket}
+            serviceRate={stats.rates?.service_rate ?? 0.03}
           />
 
           {/* Retail target tracker — only for therapists who sell retail */}
           {(empType === "therapist" || empType === "advisor") && (
-            <RetailTargetMeter
-              retailRevenue={stats.totals.retail_revenue}
-              targetRevenue={800}
-              bonusAmount={100}
-              periodLabel={periodLabel}
-            />
+            <>
+              <RetailTargetMeter
+                retailRevenue={stats.totals.retail_revenue}
+                targetRevenue={800}
+                bonusAmount={100}
+                periodLabel={periodLabel}
+                dateTo={dateTo}
+              />
+              {!monthlyLoading && (
+                <div className="flex flex-col items-start gap-0.5 px-1">
+                  <StreakBadge months={monthlyData} retailTarget={800} />
+                  <StreakTooltip months={monthlyData} retailTarget={800} />
+                </div>
+              )}
+            </>
           )}
 
           <EmployeeStatCards totals={stats.totals} basisLabel={basisLabel} prevTotals={prevStats?.totals} />
@@ -236,8 +314,12 @@ function SpaEmployeeContent({
             <EmployeeBreakdownTable title="Top Retail Products" rows={stats.retail_breakdown} />
           </div>
 
-          {/* Month-over-month commission trend */}
-          <CommissionTrendChart months={monthlyData} isLoading={monthlyLoading} />
+          {/* Month-over-month commission trend with current period trajectory */}
+          <CommissionTrendChart
+            months={monthlyData}
+            isLoading={monthlyLoading}
+            currentPreview={currentPreview}
+          />
 
           {/* Google Reviews for this employee's location */}
           <LocationReviewsCard

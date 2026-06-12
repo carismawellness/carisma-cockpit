@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect, useRef } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 
 export interface RetailTargetMeterProps {
@@ -8,6 +9,7 @@ export interface RetailTargetMeterProps {
   bonusAmount?: number;    // default 100
   accentColor?: string;
   periodLabel?: string;
+  dateTo?: Date;
 }
 
 // ---------------------------------------------------------------------------
@@ -51,11 +53,37 @@ export function RetailTargetMeter({
   targetRevenue = 800,
   bonusAmount = 100,
   periodLabel,
+  dateTo,
 }: RetailTargetMeterProps) {
   const rawPct = targetRevenue > 0 ? (retailRevenue / targetRevenue) * 100 : 0;
   const displayPct = Math.min(rawPct, 100);        // capped at 100 for bar width
   const unlocked = retailRevenue >= targetRevenue;
   const remaining = Math.max(0, targetRevenue - retailRevenue);
+
+  // Countdown timer
+  const daysLeft = dateTo
+    ? Math.max(0, Math.ceil((dateTo.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    : null;
+
+  // Milestone celebration
+  const [celebratingMilestone, setCelebratingMilestone] = useState<number | null>(null);
+  const prevPctRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (prevPctRef.current === null) {
+      prevPctRef.current = displayPct;
+      return;
+    }
+    const prev = prevPctRef.current;
+    prevPctRef.current = displayPct;
+
+    // Check if we just crossed a milestone
+    const crossed = MILESTONES.filter(m => m < 100 && prev < m && displayPct >= m);
+    if (crossed.length > 0) {
+      setCelebratingMilestone(crossed[crossed.length - 1]);
+      setTimeout(() => setCelebratingMilestone(null), 2500);
+    }
+  }, [displayPct]);
 
   return (
     <Card className="w-full overflow-hidden">
@@ -76,12 +104,34 @@ export function RetailTargetMeter({
       </CardHeader>
 
       <CardContent className="space-y-4 pb-5">
+        <style>{`
+          @keyframes popIn {
+            0% { opacity: 0; transform: scale(0.8); }
+            60% { transform: scale(1.05); }
+            100% { opacity: 1; transform: scale(1); }
+          }
+        `}</style>
 
         {/* ── Unlocked banner ── */}
         {unlocked && (
           <div className="flex items-center justify-center gap-2 rounded-xl border border-amber-400 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-700 shadow-sm animate-pulse"
                style={{ animationDuration: "2.5s" }}>
             🎉 {formatEur(bonusAmount)} BONUS UNLOCKED!
+          </div>
+        )}
+
+        {/* ── Milestone celebration overlay ── */}
+        {celebratingMilestone !== null && (
+          <div
+            className="flex items-center justify-center gap-2 rounded-xl border border-emerald-400 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 shadow-sm"
+            style={{ animation: "popIn 0.4s ease-out" }}
+          >
+            {celebratingMilestone === 75 ? "🎯 " : celebratingMilestone === 50 ? "⚡ " : "🌟 "}
+            {celebratingMilestone === 75
+              ? "Almost there! €100 bonus within reach!"
+              : celebratingMilestone === 50
+              ? "Halfway there! Keep the momentum going!"
+              : "Great start! Keep building!"}
           </div>
         )}
 
@@ -165,6 +215,13 @@ export function RetailTargetMeter({
               : `${formatEur(remaining)} to go for your ${formatEur(bonusAmount)} bonus!`}
           </span>
         </div>
+
+        {/* ── Month-end countdown ── */}
+        {!unlocked && daysLeft !== null && daysLeft <= 14 && displayPct >= 50 && (
+          <p className={`text-xs font-semibold text-center ${daysLeft <= 3 ? "text-red-600" : "text-orange-600"}`}>
+            📅 {daysLeft} day{daysLeft === 1 ? "" : "s"} left to earn your {formatEur(bonusAmount)} bonus
+          </p>
+        )}
       </CardContent>
     </Card>
   );

@@ -1,8 +1,30 @@
 "use client";
 
+import { useState, useEffect, useRef } from "react";
 import { AlertTriangle, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { deltaPct } from "@/lib/utils/period-comparison";
+
+function useCountUp(target: number, duration = 1200): number {
+  const [value, setValue] = useState(0);
+  const rafRef = useRef<number>(0);
+  const startRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    startRef.current = null;
+    const step = (ts: number) => {
+      if (startRef.current === null) startRef.current = ts;
+      const progress = Math.min((ts - startRef.current) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+      setValue(target * eased);
+      if (progress < 1) rafRef.current = requestAnimationFrame(step);
+    };
+    rafRef.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [target, duration]);
+
+  return value;
+}
 
 export interface CommissionHeroProps {
   commissionService: number;
@@ -20,6 +42,7 @@ export interface CommissionHeroProps {
   prevCommissionService?: number;
   prevCommissionRetail?: number;
   prevCommissionBooking?: number;
+  allTimeBestCommission?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,6 +87,11 @@ function getRank(total: number): Rank {
     if (total >= RANKS[i].min) return RANKS[i];
   }
   return RANKS[0];
+}
+
+function getRankProgress(total: number, rank: Rank): number {
+  if (rank.max === null) return 1;
+  return Math.min((total - rank.min) / (rank.max - rank.min), 1);
 }
 
 function getMotivationalLine(total: number): string {
@@ -151,10 +179,11 @@ export function CommissionHero({
   prevCommissionService,
   prevCommissionRetail,
   prevCommissionBooking,
+  allTimeBestCommission,
 }: CommissionHeroProps) {
   const rank = getRank(commissionTotal);
   const motivLine = getMotivationalLine(commissionTotal);
-  const hasTotal = commissionTotal > 0;
+  const animatedTotal = useCountUp(commissionTotal);
 
   return (
     <Card className="w-full overflow-hidden border-0 shadow-xl p-0">
@@ -171,10 +200,25 @@ export function CommissionHero({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Rank badge */}
-            <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/60 bg-amber-400/15 px-3 py-1 text-xs font-bold text-amber-300 shadow-inner">
-              {rank.emoji} {rank.label}
-            </span>
+            {/* Rank badge with progress ring */}
+            <div className="relative inline-flex items-center justify-center">
+              <svg width="44" height="44" className="absolute -inset-0.5" style={{ transform: "rotate(-90deg)" }}>
+                <circle cx="22" cy="22" r="19" fill="none" stroke="#92400e" strokeWidth="2.5" opacity="0.25" />
+                <circle
+                  cx="22" cy="22" r="19"
+                  fill="none"
+                  stroke="#FBBF24"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeDasharray={String(2 * Math.PI * 19)}
+                  strokeDashoffset={String(2 * Math.PI * 19 * (1 - getRankProgress(commissionTotal, rank)))}
+                  style={{ transition: "stroke-dashoffset 1.5s ease-out" }}
+                />
+              </svg>
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/60 bg-amber-400/15 px-3 py-1 text-xs font-bold text-amber-300 shadow-inner relative z-10">
+                {rank.emoji} {rank.label}
+              </span>
+            </div>
 
             {ratesSet && (
               <>
@@ -200,13 +244,8 @@ export function CommissionHero({
             {/* Big total */}
             <div className="text-center mb-2">
               <div className="inline-flex items-center flex-wrap justify-center gap-1">
-                <span
-                  className={`text-5xl md:text-6xl font-extrabold text-white tracking-tight tabular-nums ${
-                    hasTotal ? "animate-pulse" : ""
-                  }`}
-                  style={hasTotal ? { animationDuration: "3s" } : undefined}
-                >
-                  {formatEur(commissionTotal)}
+                <span className="text-5xl md:text-6xl font-extrabold text-white tracking-tight tabular-nums">
+                  {formatEur(animatedTotal)}
                 </span>
                 {prevCommissionTotal !== undefined && (
                   <DeltaBadge
@@ -218,9 +257,22 @@ export function CommissionHero({
             </div>
 
             {/* Motivational line */}
-            <p className="text-center text-sm text-emerald-300 mb-5 font-medium">
+            <p className="text-center text-sm text-emerald-300 mb-2 font-medium">
               {motivLine}
             </p>
+
+            {/* Personal best: new record or near-miss */}
+            {allTimeBestCommission !== undefined && allTimeBestCommission > 0 && (
+              commissionTotal >= allTimeBestCommission ? (
+                <p className="text-center text-xs font-bold text-amber-300 bg-amber-400/20 rounded-full px-3 py-1 mx-auto w-fit mb-3">
+                  🏆 New Personal Best!
+                </p>
+              ) : (allTimeBestCommission - commissionTotal) / allTimeBestCommission <= 0.15 ? (
+                <p className="text-center text-xs text-amber-300 mb-3">
+                  Just {formatEur(allTimeBestCommission - commissionTotal)} from your personal best!
+                </p>
+              ) : <div className="mb-3" />
+            )}
 
             {/* Period label */}
             {periodLabel && (

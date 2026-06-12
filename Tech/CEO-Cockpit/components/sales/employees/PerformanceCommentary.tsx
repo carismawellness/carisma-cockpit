@@ -16,6 +16,7 @@ export interface PerformanceCommentaryProps {
   activeDays: number;
   prevCommissionTotal?: number;
   periodLabel: string;
+  aiTip?: string;           // Claude-generated daily coaching insight
 }
 
 function firstName(name: string): string {
@@ -121,6 +122,7 @@ export function PerformanceCommentary({
   activeDays,
   prevCommissionTotal,
   periodLabel,
+  aiTip,
 }: PerformanceCommentaryProps) {
   const first = firstName(employeeName);
   const bullets = buildBullets({
@@ -149,6 +151,14 @@ export function PerformanceCommentary({
               {bullet.text}
             </li>
           ))}
+          {aiTip && (
+            <li className="text-sm leading-snug text-amber-900 border-t border-amber-200 pt-3 mt-1">
+              {aiTip}
+              <span className="ml-1.5 text-[10px] text-amber-500 font-semibold uppercase tracking-wide">
+                AI insight
+              </span>
+            </li>
+          )}
         </ul>
         {periodLabel && (
           <p className="mt-4 text-[11px] text-amber-600 font-medium">
