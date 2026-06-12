@@ -371,7 +371,8 @@ function OperationsContent({
       totalReviews: w.totalReviews,
     };
     for (const loc of w.locations) {
-      row[loc.slug] = loc.newReviews > 0 ? loc.newReviews : 0;
+      row[loc.slug] = loc.totalCount;                     // cumulative — bar height
+      row[`${loc.slug}_delta`] = loc.newReviews > 0 ? loc.newReviews : 0; // delta — label
     }
     return row;
   });
@@ -457,7 +458,8 @@ function OperationsContent({
                   />
                   <Tooltip
                     formatter={(value: unknown, name: unknown) => {
-                      return [String(Number(value)), `+reviews (${String(name)})`];
+                      const slug = String(name);
+                      return [Number(value).toLocaleString(), slug];
                     }}
                   />
                   {allLocationSlugs.map((slug) => (
@@ -470,7 +472,7 @@ function OperationsContent({
                       fillOpacity={0.85}
                     >
                       <LabelList
-                        dataKey={slug}
+                        dataKey={`${slug}_delta`}
                         position="inside"
                         content={(props: unknown) => {
                           const p = props as { x?: number; y?: number; width?: number; height?: number; value?: unknown };

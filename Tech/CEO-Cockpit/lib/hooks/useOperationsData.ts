@@ -68,7 +68,8 @@ export interface WeeklyReviewSummary {
   locations: {
     slug: string;
     name: string;
-    newReviews: number; // net new vs the previous week snapshot (>=0)
+    newReviews: number;  // delta vs previous ETL run (for labels)
+    totalCount: number;  // cumulative total at this week (for bar height)
   }[];
 }
 
@@ -201,7 +202,7 @@ export function useGoogleReviews(dateTo: Date) {
           // Reviews can only increase — clamp any decrease to 0
           const newReviews = prevRev !== null ? Math.max(0, rev - prevRev) : 0;
           const info = byId.get(locId);
-          if (info) locations.push({ slug: info.slug, name: info.name, newReviews });
+          if (info) locations.push({ slug: info.slug, name: info.name, newReviews, totalCount: rev });
         }
 
         locations.sort((a, b) => b.newReviews - a.newReviews);
