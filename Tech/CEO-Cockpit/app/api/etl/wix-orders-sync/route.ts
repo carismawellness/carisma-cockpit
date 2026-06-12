@@ -33,7 +33,7 @@ interface WixLineItem {
 
 interface WixOrder {
   id: string;
-  number: number;
+  number: number | string;
   createdDate: string;
   updatedDate?: string;
   status: string;
@@ -58,10 +58,14 @@ async function fetchOrdersPage(
   dateTo: string,
   cursor?: string,
 ): Promise<{ orders: WixOrder[]; nextCursor?: string }> {
+  // Wix requires $and for date range — combined { $gte, $lte } in one object is rejected
   const body: Record<string, unknown> = {
     search: {
       filter: {
-        createdDate: { $gte: `${dateFrom}T00:00:00.000Z`, $lte: `${dateTo}T23:59:59.999Z` },
+        $and: [
+          { createdDate: { $gte: `${dateFrom}T00:00:00.000Z` } },
+          { createdDate: { $lte: `${dateTo}T23:59:59.999Z` } },
+        ],
       },
       sort: [{ fieldName: "createdDate", order: "DESC" }],
       cursorPaging: { limit: PAGE_SIZE, ...(cursor ? { cursor } : {}) },
@@ -117,7 +121,7 @@ function toSupabaseRow(o: WixOrder) {
 
   return {
     wix_order_id: o.id,
-    order_number: o.number,
+    order_number: typeof o.number === "string" ? parseInt(o.number, 10) : o.number,
     created_date: createdAt.toISOString().slice(0, 10),
     created_at: o.createdDate,
     updated_at: o.updatedDate ?? null,
@@ -160,27 +164,32 @@ export async function POST(req: NextRequest) {
   let totalFetched = 0;
   let totalUpserted = 0;
 
-  let cursor: string | undefined;
-  do {
-    const { orders, nextCursor } = await fetchOrdersPage(
-      apiKey, WIX_SPA_SITE_ID, dateFrom, dateTo, cursor,
-    );
-    cursor = nextCursor;
-    totalFetched += orders.length;
+  try {
+    let cursor: string | undefined;
+    do {
+      const { orders, nextCursor } = await fetchOrdersPage(
+        apiKey, WIX_SPA_SITE_ID, dateFrom, dateTo, cursor,
+      );
+      cursor = nextCursor;
+      totalFetched += orders.length;
 
-    if (orders.length === 0) break;
+      if (orders.length === 0) break;
 
-    const rows = orders.map(toSupabaseRow);
-    const { error } = await supabase
-      .from("wix_spa_orders")
-      .upsert(rows, { onConflict: "wix_order_id" });
+      const rows = orders.map(toSupabaseRow);
+      const { error } = await supabase
+        .from("wix_spa_orders")
+        .upsert(rows, { onConflict: "wix_order_id" });
 
-    if (error) {
-      log.push(`Upsert error: ${error.message}`);
-    } else {
-      totalUpserted += rows.length;
-    }
-  } while (cursor);
+      if (error) {
+        log.push(`Upsert error: ${error.message}`);
+      } else {
+        totalUpserted += rows.length;
+      }
+    } while (cursor);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg, date_from: dateFrom, date_to: dateTo }, { status: 500 });
+  }
 
   log.push(`Fetched ${totalFetched} orders, upserted ${totalUpserted} (${dateFrom} → ${dateTo})`);
 
