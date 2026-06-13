@@ -64,6 +64,9 @@ const BRAND_EBITDA_COLORS = {
 
 interface GroupChartPoint {
   label:            string;
+  // Stacked-bar segments — clamped to 0 because Recharts can't render a
+  // negative value into a positive stack. The tooltip MUST read the *_raw
+  // fields below, never these, or losses will display as €0.
   spa_ebitda:       number;
   aes_ebitda:       number;
   slim_ebitda:      number;
@@ -71,7 +74,10 @@ interface GroupChartPoint {
   aes_lbl:          string;
   slim_lbl:         string;
   group_ebitda_pct: number;
-  // tooltip
+  // tooltip — raw (signed) values, never clamped
+  spa_ebitda_raw:   number;
+  aes_ebitda_raw:   number;
+  slim_ebitda_raw:  number;
   spa_revenue:      number;
   spa_ebitda_pct:   number;
   aes_revenue:      number;
@@ -101,9 +107,9 @@ function GroupEbitdaTooltip({
   };
 
   const rows: { color: string; label: string; ebitda: number; pct: number; rev: number }[] = [
-    { color: BRAND_EBITDA_COLORS.spa,  label: "Spa",        ebitda: pt.spa_ebitda,  pct: pt.spa_ebitda_pct,  rev: pt.spa_revenue  },
-    { color: BRAND_EBITDA_COLORS.aes,  label: "Aesthetics", ebitda: pt.aes_ebitda,  pct: pt.aes_ebitda_pct,  rev: pt.aes_revenue  },
-    { color: BRAND_EBITDA_COLORS.slim, label: "Slimming",   ebitda: pt.slim_ebitda, pct: pt.slim_ebitda_pct, rev: pt.slim_revenue },
+    { color: BRAND_EBITDA_COLORS.spa,  label: "Spa",        ebitda: pt.spa_ebitda_raw,  pct: pt.spa_ebitda_pct,  rev: pt.spa_revenue  },
+    { color: BRAND_EBITDA_COLORS.aes,  label: "Aesthetics", ebitda: pt.aes_ebitda_raw,  pct: pt.aes_ebitda_pct,  rev: pt.aes_revenue  },
+    { color: BRAND_EBITDA_COLORS.slim, label: "Slimming",   ebitda: pt.slim_ebitda_raw, pct: pt.slim_ebitda_pct, rev: pt.slim_revenue },
   ];
 
   return (
@@ -629,6 +635,9 @@ function LongitudinalContent({
         spa_ebitda:       Math.max(0, spaEbitda),
         aes_ebitda:       Math.max(0, aesEbitda),
         slim_ebitda:      Math.max(0, slimEbitda),
+        spa_ebitda_raw:   spaEbitda,
+        aes_ebitda_raw:   aesEbitda,
+        slim_ebitda_raw:  slimEbitda,
         spa_lbl:          segLbl(spaEbitda,  spa.revenue,  spa.ebitda_pct),
         aes_lbl:          segLbl(aesEbitda,  aes.revenue,  aes.ebitda_pct),
         slim_lbl:         segLbl(slimEbitda, slim.revenue, slim.ebitda_pct),
