@@ -112,7 +112,6 @@ function SlimmingMarketingContent({
       ),
     },
     { key: "cpl", label: "CPL", align: "right" as const, sortable: true, render: (v: unknown) => `€${(v as number).toFixed(1)}` },
-    { key: "dailyBudget", label: "Daily Budget", align: "right" as const, render: (v: unknown) => formatCurrency(v as number) },
     { key: "totalSpend", label: "Total Spend", align: "right" as const, sortable: true, render: (v: unknown) => formatCurrency(v as number) },
     { key: "totalLeads", label: "Total Leads", align: "right" as const, sortable: true },
     { key: "costPerShow", label: "CP Show", align: "right" as const, sortable: true, render: (_v: unknown, row: Record<string, unknown>) => { const spend = row.totalSpend as number; const leads = row.totalLeads as number; return leads > 0 ? `€${(spend / (leads * 0.75)).toFixed(1)}` : "—"; } },
@@ -120,7 +119,7 @@ function SlimmingMarketingContent({
     { key: "ctr", label: "CTR", align: "right" as const, sortable: true, render: (v: unknown) => `${(v as number).toFixed(1)}%` },
     { key: "cpm", label: "CPM", align: "right" as const, render: (v: unknown) => `€${(v as number).toFixed(1)}` },
     { key: "frequency", label: "Freq", align: "right" as const, render: (v: unknown) => (v as number).toFixed(1) },
-    { key: "attributedRevenue", label: "Attributed Rev", align: "right" as const, sortable: true, render: (v: unknown) => formatCurrency(v as number) },
+    { key: "attributedRevenue", label: "Exp. Revenue", align: "right" as const, sortable: true, render: (v: unknown) => formatCurrency(v as number) },
   ];
 
   const metaTotalAttributed = metaCampaigns.reduce((s, c) => s + c.attributedRevenue, 0);

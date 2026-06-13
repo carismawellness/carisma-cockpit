@@ -517,12 +517,6 @@ function SpaMarketingContent({
       ),
     },
     { key: "cpl", label: "CPL", align: "right" as const, sortable: true, render: (v: unknown) => `€${(v as number).toFixed(1)}` },
-    {
-      key: "dailyBudget",
-      label: "Daily Budget",
-      align: "right" as const,
-      render: (v: unknown) => (v as number) > 0 ? formatCurrency(v as number) : "—",
-    },
     { key: "totalSpend", label: "Total Spend", align: "right" as const, sortable: true, render: (v: unknown) => formatCurrency(v as number) },
     { key: "totalLeads", label: "Total Leads", align: "right" as const, sortable: true },
     { key: "ctr", label: "CTR", align: "right" as const, sortable: true, render: (v: unknown) => `${(v as number).toFixed(1)}%` },
@@ -530,7 +524,7 @@ function SpaMarketingContent({
     { key: "frequency", label: "Freq", align: "right" as const, render: (v: unknown) => (v as number).toFixed(1) },
     {
       key: "attributedRevenue",
-      label: "Attributed Rev",
+      label: "Exp. Revenue",
       align: "right" as const,
       sortable: true,
       render: (v: unknown) => (v as number) > 0 ? formatCurrency(v as number) : "—",
@@ -597,7 +591,7 @@ function SpaMarketingContent({
     { key: "totalLeads", label: "Leads", align: "right" as const, sortable: true },
     { key: "totalSpend", label: "Spend", align: "right" as const, sortable: true, render: (v: unknown) => formatCurrency(v as number) },
     { key: "cpl", label: "CPL", align: "right" as const, sortable: true, render: (v: unknown) => `€${(v as number).toFixed(1)}` },
-    { key: "attributedRevenue", label: "Revenue", align: "right" as const, sortable: true, render: (v: unknown) => formatCurrency(v as number) },
+    { key: "attributedRevenue", label: "Exp. Revenue", align: "right" as const, sortable: true, render: (v: unknown) => formatCurrency(v as number) },
     {
       key: "roas",
       label: "ROAS",

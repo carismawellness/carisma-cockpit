@@ -135,7 +135,6 @@ export async function GET(req: NextRequest) {
       campaign:          agg.name,
       campaignId,
       cpl:               agg.conversions > 0 ? Math.round((agg.spend / agg.conversions) * 100) / 100 : 0,
-      dailyBudget:       0,
       totalSpend:        Math.round(agg.spend * 100) / 100,
       totalLeads:        Math.round(agg.conversions),
       ctr:               n > 0 ? Math.round((agg.ctrSum / n) * 100) / 100 : 0,

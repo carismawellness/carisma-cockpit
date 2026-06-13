@@ -3,7 +3,6 @@ export interface CampaignData {
   campaign: string;
   campaignId: string;
   cpl: number;
-  dailyBudget: number;
   totalSpend: number;
   totalLeads: number;
   ctr: number;

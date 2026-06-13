@@ -3,36 +3,20 @@
  *
  * Reads from meta_campaigns_daily (Supabase) and returns AdsApiResponse.
  * Aggregates daily rows by campaign_id for the requested date range.
- * Uses peak_ctr stored by the ETL for accurate creative fatigue scoring.
+ *
+ * Expected revenue uses the same formula as the Funnel dashboard:
+ *   leads × (GHL lead conversion rate) × AOV per campaign type
+ * This ensures the Profitability Matrix on the marketing pages is consistent
+ * with the Funnel's "Exp. Revenue" figures for the same period.
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import type { AdsApiResponse, BrandSlug, CampaignData } from "@/lib/types/ads";
+import { computeLeadConversion } from "@/lib/funnel/lead-conversion";
+import { resolveAov } from "@/lib/funnel/aov";
 
 const VALID_BRANDS = new Set<string>(["spa", "aesthetics", "slimming"]);
-
-function sbUrl(table: string): string {
-  const base = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  return `${base}/rest/v1/${table}`;
-}
-
-function sbHeaders(): Record<string, string> {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  return {
-    apikey:        key,
-    Authorization: `Bearer ${key}`,
-    Accept:        "application/json",
-  };
-}
-
-async function getBrandId(slug: string): Promise<string | null> {
-  const res = await fetch(`${sbUrl("brands")}?slug=eq.${slug}&select=id`, {
-    headers: sbHeaders(),
-  });
-  if (!res.ok) return null;
-  const rows = await res.json() as { id: string }[];
-  return rows[0]?.id ?? null;
-}
 
 const EMPTY: AdsApiResponse = {
   campaigns: [],
@@ -41,7 +25,7 @@ const EMPTY: AdsApiResponse = {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
-  const brand   = searchParams.get("brand") as BrandSlug | null;
+  const brand    = searchParams.get("brand") as BrandSlug | null;
   const dateFrom = searchParams.get("from") ?? "2026-01-01";
   const dateTo   = searchParams.get("to")   ?? new Date().toISOString().slice(0, 10);
 
@@ -49,43 +33,52 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ...EMPTY, error: "Invalid brand" }, { status: 400 });
   }
 
-  const brandId = await getBrandId(brand);
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  // Brand ID lookup
+  const { data: brandRows } = await supabase
+    .from("brands")
+    .select("id")
+    .eq("slug", brand)
+    .single();
+  const brandId: number | null = (brandRows as { id: number } | null)?.id ?? null;
+
   if (!brandId) {
     return NextResponse.json({ ...EMPTY, error: `Brand '${brand}' not found` }, { status: 404 });
   }
 
-  const qs = new URLSearchParams({
-    brand_id: `eq.${brandId}`,
-    date:     `gte.${dateFrom}`,
-    select:   "campaign_id,campaign_name,spend,impressions,clicks,leads,cpl,ctr_pct,cpm,frequency,attributed_revenue,peak_ctr",
-  });
-  qs.append("date", `lte.${dateTo}`);
+  // Fetch campaign daily rows
+  const { data: rows, error } = await supabase
+    .from("meta_campaigns_daily")
+    .select("campaign_id,campaign_name,spend,impressions,clicks,leads,cpl,ctr_pct,cpm,frequency,peak_ctr")
+    .eq("brand_id", brandId)
+    .gte("date", dateFrom)
+    .lte("date", dateTo);
 
-  const res = await fetch(`${sbUrl("meta_campaigns_daily")}?${qs}`, {
-    headers: sbHeaders(),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    return NextResponse.json({ ...EMPTY, error: `Supabase: ${err}` }, { status: 502 });
+  if (error) {
+    return NextResponse.json({ ...EMPTY, error: `Supabase: ${error.message}` }, { status: 502 });
   }
 
-  type DbRow = {
-    campaign_id:        string;
-    campaign_name:      string;
-    spend:              number;
-    impressions:        number;
-    clicks:             number;
-    leads:              number;
-    cpl:                number | null;
-    ctr_pct:            number | null;
-    cpm:                number | null;
-    frequency:          number | null;
-    attributed_revenue: number | null;
-    peak_ctr:           number | null;
-  };
+  // Conversion rate — same formula used by the Funnel campaign-drilldown
+  const leadConv = await computeLeadConversion(supabase, brandId, dateFrom, dateTo);
+  const convRate = leadConv.ratePct !== null ? leadConv.ratePct / 100 : 0;
 
-  const rows = await res.json() as DbRow[];
+  type DbRow = {
+    campaign_id:   string;
+    campaign_name: string;
+    spend:         number;
+    impressions:   number;
+    clicks:        number;
+    leads:         number;
+    cpl:           number | null;
+    ctr_pct:       number | null;
+    cpm:           number | null;
+    frequency:     number | null;
+    peak_ctr:      number | null;
+  };
 
   // Aggregate by campaign_id
   const map = new Map<string, {
@@ -94,23 +87,20 @@ export async function GET(req: NextRequest) {
     impressions: number;
     clicks:      number;
     leads:       number;
-    revenue:     number;
     peakCtr:     number;
-    // Weighted sums for rate fields
     ctrSum:      number;
     cpmSum:      number;
     freqSum:     number;
     dayCount:    number;
   }>();
 
-  for (const r of rows) {
+  for (const r of (rows ?? []) as DbRow[]) {
     const existing = map.get(r.campaign_id);
     if (existing) {
       existing.spend       += r.spend ?? 0;
       existing.impressions += r.impressions ?? 0;
       existing.clicks      += r.clicks ?? 0;
       existing.leads       += r.leads ?? 0;
-      existing.revenue     += r.attributed_revenue ?? 0;
       existing.peakCtr      = Math.max(existing.peakCtr, r.peak_ctr ?? 0);
       existing.ctrSum      += r.ctr_pct ?? 0;
       existing.cpmSum      += r.cpm ?? 0;
@@ -123,7 +113,6 @@ export async function GET(req: NextRequest) {
         impressions: r.impressions ?? 0,
         clicks:      r.clicks ?? 0,
         leads:       r.leads ?? 0,
-        revenue:     r.attributed_revenue ?? 0,
         peakCtr:     r.peak_ctr ?? 0,
         ctrSum:      r.ctr_pct ?? 0,
         cpmSum:      r.cpm ?? 0,
@@ -136,22 +125,23 @@ export async function GET(req: NextRequest) {
   const campaigns: CampaignData[] = [];
   for (const [campaignId, agg] of map) {
     const n = agg.dayCount;
+    const aov = resolveAov(brand, agg.name);
+    // Expected revenue = same formula as Funnel dashboard (leads × convRate × AOV)
+    const expectedRevenue = Math.round(agg.leads * convRate * aov * 100) / 100;
     campaigns.push({
-      campaign:        agg.name,
+      campaign:          agg.name,
       campaignId,
-      cpl:             agg.leads > 0 ? Math.round((agg.spend / agg.leads) * 100) / 100 : 0,
-      dailyBudget:     0, // not stored in DB
-      totalSpend:      Math.round(agg.spend * 100) / 100,
-      totalLeads:      agg.leads,
-      ctr:             n > 0 ? Math.round((agg.ctrSum / n) * 100) / 100 : 0,
-      cpm:             n > 0 ? Math.round((agg.cpmSum / n) * 100) / 100 : 0,
-      frequency:       n > 0 ? Math.round((agg.freqSum / n) * 10) / 10 : 0,
-      attributedRevenue: Math.round(agg.revenue * 100) / 100,
-      peakCtr:         Math.round(agg.peakCtr * 100) / 100,
+      cpl:               agg.leads > 0 ? Math.round((agg.spend / agg.leads) * 100) / 100 : 0,
+      totalSpend:        Math.round(agg.spend * 100) / 100,
+      totalLeads:        agg.leads,
+      ctr:               n > 0 ? Math.round((agg.ctrSum / n) * 100) / 100 : 0,
+      cpm:               n > 0 ? Math.round((agg.cpmSum / n) * 100) / 100 : 0,
+      frequency:         n > 0 ? Math.round((agg.freqSum / n) * 10) / 10 : 0,
+      attributedRevenue: expectedRevenue,
+      peakCtr:           Math.round(agg.peakCtr * 100) / 100,
     });
   }
 
-  // Sort by spend descending
   campaigns.sort((a, b) => b.totalSpend - a.totalSpend);
 
   const totals = campaigns.reduce(

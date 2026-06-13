@@ -11,50 +11,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { computeLeadConversion } from "@/lib/funnel/lead-conversion";
+import { resolveAov, BRAND_AOV_DEFAULT, AOV_OVERRIDES } from "@/lib/funnel/aov";
 
 export const dynamic = "force-dynamic";
 
 const BRAND_SLUGS = ["spa", "aesthetics", "slimming"] as const;
 
-// Default AOV per brand (€) — sourced from carismaspa.com, carismaaesthetics.com, carismaslimming.com (Jun 2026)
-const BRAND_AOV_DEFAULT: Record<string, number> = {
-  spa: 129,  // Spa Deluxe / mid-tier spa day package
-  aesthetics: 179,  // 1–2 area botox; most common aesthetic treatment
-  slimming: 199,  // Standardised entry package (Fat Freeze / EMSculpt Starter)
-};
-
-// Keyword → AOV overrides (checked against lowercased campaign name).
-// IMPORTANT: zero-AOV entries must come first — they short-circuit before
-// any positive-value match so "model call" never picks up a product AOV.
-const AOV_OVERRIDES: Array<{ keywords: string[]; aov: number }> = [
-  // ── Zero-revenue campaign types (awareness / recruitment / internal) ──
-  { keywords: ["model call", "model calls", "recruitment"], aov: 0 },
-
-  // ── Spa ──────────────────────────────────────────────────────────────
-  { keywords: ["gifting", "gift"], aov: 100 },
-  { keywords: ["couple", "couples", "romantic"], aov: 249 },
-  { keywords: ["hammam"], aov: 129 },
-  { keywords: ["spa day", "body ritual", "body treatment", "ritual"], aov: 129 },
-  { keywords: ["massage"], aov: 99 },
-
-  // ── Aesthetics ────────────────────────────────────────────────────────
-  { keywords: ["snatch jawline", "jawline"], aov: 269 },   // keep existing default
-  { keywords: ["lip and glow", "lip"], aov: 200 },
-  { keywords: ["hydrafacial"], aov: 100 },
-  { keywords: ["hair regrowth"], aov: 250 },
-  { keywords: ["facelift", "face lift", "face-lift"], aov: 250 },
-  { keywords: ["dr. kendra", "dr kendra", "kendra"], aov: 250 },
-  { keywords: ["filler", "dermal filler"], aov: 269 },
-  { keywords: ["botox", "wrinkle", "anti-wrinkle", "injectable"], aov: 179 },
-  { keywords: ["facial", "peel", "skin", "microneedling"], aov: 149 },
-  { keywords: ["laser", "ipl", "laser hair removal", "hair removal"], aov: 199 },
-
-  // ── Slimming ──────────────────────────────────────────────────────────
-  { keywords: ["risk reversal", "menopause", "after babies", "pain solution"], aov: 250 },
-  { keywords: ["fat freeze", "coolsculpt", "cryolipolysis"], aov: 199 },
-  { keywords: ["emsculpt", "hifu", "body sculpt", "velashape", "cavitation"], aov: 199 },
-  { keywords: ["weight loss", "slimming plan", "glp", "ozempic", "mounjaro"], aov: 350 },
-];
+// Re-exported from shared lib for backwards compat — all callers should use @/lib/funnel/aov
+export { BRAND_AOV_DEFAULT, AOV_OVERRIDES, resolveAov };
 
 // Fallback SDR agents per brand if crm_agent_mapping table is empty
 const FALLBACK_BRAND_AGENTS: Record<string, string[]> = {
@@ -62,14 +26,6 @@ const FALLBACK_BRAND_AGENTS: Record<string, string[]> = {
   aesthetics: ["april"],
   slimming:   ["dorianne", "queenee"],
 };
-
-function resolveAov(brandSlug: string, campaignName: string): number {
-  const lower = campaignName.toLowerCase();
-  for (const { keywords, aov } of AOV_OVERRIDES) {
-    if (keywords.some(k => lower.includes(k))) return aov; // 0 is a valid override
-  }
-  return BRAND_AOV_DEFAULT[brandSlug] ?? 300;
-}
 
 export type DrilldownCampaign = {
   campaignName: string;
