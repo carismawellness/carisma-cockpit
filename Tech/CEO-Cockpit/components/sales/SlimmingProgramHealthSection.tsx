@@ -34,6 +34,7 @@ import {
   ResponsiveContainer,
   Cell,
   ReferenceLine,
+  LabelList,
 } from "recharts";
 
 // ── Format helpers ────────────────────────────────────────────────────────────
@@ -343,7 +344,7 @@ function DistributionChart({ clients }: { clients: WeightClient[] }) {
       <BarChart
         data={data}
         layout="vertical"
-        margin={{ top: 4, right: 48, left: 88, bottom: 4 }}
+        margin={{ top: 4, right: 90, left: 88, bottom: 4 }}
       >
         <CartesianGrid strokeDasharray="3 3" horizontal={false} />
         <XAxis
@@ -369,6 +370,12 @@ function DistributionChart({ clients }: { clients: WeightClient[] }) {
           {data.map((entry, idx) => (
             <Cell key={`cell-${idx}`} fill={entry.color} />
           ))}
+          <LabelList
+            dataKey="count"
+            position="right"
+            style={{ fontSize: 12, fontWeight: 700, fill: "#1f2937" }}
+            formatter={(v: unknown) => `${v} clients`}
+          />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -397,8 +404,8 @@ function WeeklyTrendChart() {
   }
 
   return (
-    <ResponsiveContainer width="100%" height={260}>
-      <LineChart data={chartData} margin={{ top: 16, right: 24, left: 0, bottom: 0 }}>
+    <ResponsiveContainer width="100%" height={280}>
+      <LineChart data={chartData} margin={{ top: 28, right: 24, left: 0, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} />
         <XAxis
           dataKey="weekLabel"
@@ -434,7 +441,14 @@ function WeeklyTrendChart() {
           activeDot={{ r: 6 }}
           connectNulls={false}
           name="losingPct"
-        />
+        >
+          <LabelList
+            dataKey="losingPct"
+            position="top"
+            style={{ fontSize: 10, fontWeight: 700, fill: "#059669" }}
+            formatter={(v: unknown) => (v != null ? `${Number(v)}%` : "")}
+          />
+        </Line>
       </LineChart>
     </ResponsiveContainer>
   );
