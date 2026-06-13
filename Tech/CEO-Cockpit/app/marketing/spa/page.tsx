@@ -15,6 +15,7 @@ import { useWixOrdersStats } from "@/lib/hooks/useWixOrders";
 import { isNonRevenueCampaign } from "@/lib/funnel/aov";
 import { FlowsTable } from "@/components/marketing/FlowsTable";
 import { KeywordRankingsTable } from "@/components/marketing/KeywordRankingsTable";
+import { SpendComparisonTable } from "@/components/marketing/SpendComparisonTable";
 import { BRAND } from "@/lib/constants/design-tokens";
 import type { CampaignData } from "@/lib/types/ads";
 import {
@@ -793,6 +794,9 @@ function SpaMarketingContent({
 
       {/* ── Section 1b: Wix Online Sales ─────────────────────────────── */}
       <WixSalesCard wix={wix} brand={B} />
+
+      {/* ── Section 1c: Ad Spend Comparison (TY vs LY) ───────────────── */}
+      <SpendComparisonTable brand="spa" dateFrom={dateFrom} dateTo={dateTo} />
 
       {/* ── Section 2: Meta Ads ──────────────────────────────────────── */}
       <Card className="p-5 md:p-6">
