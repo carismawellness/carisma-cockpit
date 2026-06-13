@@ -5,9 +5,14 @@ import { fetchLatestSuccesses, computeStaleness } from "@/lib/etl/staleness";
 
 export const maxDuration = 300;
 
-const BASE_URL = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : "http://localhost:3000";
+// VERCEL_PROJECT_PRODUCTION_URL = stable production alias (e.g. carisma-support-u2vb.vercel.app)
+// VERCEL_URL = deployment-specific URL (changes on every push — wrong for sub-fetch calls)
+const BASE_URL =
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : null) ??
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ??
+  "http://localhost:3000";
 
 export async function GET(req: NextRequest) {
   // Auth: when CRON_SECRET is set, Vercel sends it as `Authorization: Bearer`
