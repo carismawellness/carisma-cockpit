@@ -197,7 +197,8 @@ export async function POST(req: NextRequest) {
     );
 
     for (const emp of shiftData.selectedEmployees ?? []) {
-      const loc = empToLocation.get(emp.id) ?? "Spa";
+      const loc = empToLocation.get(emp.id);
+      if (!loc) continue; // skip employees whose org unit didn't resolve to a known location
       const bucket = byLocation.get(loc) ?? { hours: 0, names: new Set() };
 
       for (const s of emp.workShifts ?? []) {
