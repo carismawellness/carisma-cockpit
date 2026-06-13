@@ -56,15 +56,22 @@ const tooltipFmt = (v: unknown, name: unknown): [string, string] =>
   [typeof v === "number" ? fmtK(v) : String(v ?? ""), String(name ?? "")];
 
 // ── Custom tooltips ───────────────────────────────────────────────────────────
-function StaffTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; fill: string }>; label?: string }) {
+function StaffTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; fill: string; payload?: { revenue_gross?: number; salary_cost?: number; k_label?: string | null; Bookings?: number } }>; label?: string }) {
   if (!active || !payload?.length) return null;
-  const inc  = payload.find(p => p.name === "Revenue inc-VAT")?.value ?? 0;
-  const bk   = payload.find(p => p.name === "Bookings")?.value ?? 0;
+  // Pull canonical fields off the row payload (not the per-segment value),
+  // so the tooltip reflects gross revenue even when the visible "revenue_net_inc"
+  // stack segment is 0 (K% > 100% case — e.g. Brunna in retail).
+  const row    = payload[0]?.payload ?? {};
+  const gross  = row.revenue_gross ?? 0;
+  const salary = row.salary_cost   ?? 0;
+  const kLabel = row.k_label;
   return (
     <div className="bg-white border rounded-lg shadow-lg p-3 text-xs space-y-1">
       <p className="font-semibold text-sm">{label}</p>
-      <p style={{ color: BRAND.slimming.dark }}>Revenue inc-VAT: {fmtK(inc)}</p>
-      <p style={{ color: NAVY }}>Bookings: {bk}</p>
+      <p style={{ color: BRAND.slimming.dark }}>Revenue inc-VAT: {fmtK(gross)}</p>
+      {salary > 0 && (
+        <p style={{ color: NAVY }}>Salary cost: {fmtK(salary)}{kLabel ? ` · K%=${kLabel}` : ""}</p>
+      )}
     </div>
   );
 }
@@ -128,6 +135,9 @@ const SLM_GROUP_COLORS: Record<string, string> = {
 };
 
 // Slimming sales surface uses GROSS (paid, inc-VAT). K% = salary / gross.
+// revenue_gross is preserved on the row so the tooltip can show the real
+// number — `revenue_net_inc` is the stacked-bar segment and goes to 0 when
+// salary outpaces revenue (K% > 100%), which would otherwise read as "€0".
 function enrichWithSalary(
   staff: string,
   revenue_gross: number,
@@ -138,6 +148,7 @@ function enrichWithSalary(
   const k_pct = salary > 0 && revenue_gross > 0 ? +(salary / revenue_gross * 100).toFixed(0) : null;
   const revStr = revenue_gross >= 1000 ? `€${(revenue_gross / 1000).toFixed(1)}K` : `€${revenue_gross}`;
   return {
+    revenue_gross,
     salary_cost,
     revenue_net_inc: Math.max(0, revenue_gross - salary_cost),
     k_label: k_pct != null ? `${k_pct}%` : null as string | null,
@@ -334,16 +345,30 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                 <XAxis type="number" tickFormatter={fmtK} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="name" width={68} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
                 <Tooltip content={<StaffTooltip />} />
-                <Bar dataKey="revenue_net_inc" stackId="rev" fill={SLIMMING_GREEN} radius={[0, 0, 0, 0]} maxBarSize={28} name="Revenue inc-VAT" />
+                <Bar dataKey="revenue_net_inc" stackId="rev" fill={SLIMMING_GREEN} radius={[0, 0, 0, 0]} maxBarSize={28} name="Revenue inc-VAT">
+                  {/* Fallback label for rows with no salary (salary_cost = 0):
+                      the bar_label list on the salary bar doesn't render when its
+                      value is 0, so this paints the gross on the revenue bar instead. */}
+                  <LabelList
+                    dataKey="bar_label"
+                    content={({ x, y, width, height, value, index }) => {
+                      if (index == null) return null;
+                      const row = regularChartData[index];
+                      if (!row || (row.salary_cost ?? 0) > 0) return null;
+                      const cx = (Number(x) || 0) + (Number(width) || 0) + 4;
+                      const cy = (Number(y) || 0) + (Number(height) || 0) / 2 + 3;
+                      return <text x={cx} y={cy} fontSize={10} fill="#374151">{String(value ?? "")}</text>;
+                    }}
+                  />
+                </Bar>
                 <Bar dataKey="salary_cost" stackId="rev" fill={SALARY_BLUE} radius={[0, 4, 4, 0]} maxBarSize={28} name="Salary cost">
                   <LabelList dataKey="k_label" position="insideRight" formatter={(v: unknown) => v ? String(v) : ""} style={{ fontSize: 9, fill: "#fff", fontWeight: 700 }} />
                   <LabelList dataKey="bar_label" position="right" formatter={(v: unknown) => String(v ?? "")} style={{ fontSize: 10, fill: "#374151" }} />
                 </Bar>
-                <Bar dataKey="Bookings" fill={NAVY} radius={[0, 4, 4, 0]} maxBarSize={12} opacity={0.55} />
               </BarChart>
             </ResponsiveContainer>
           )}
-          <StaffLegend />
+          <StaffLegend hideBookings />
         </Card>
 
         {/* Retail staff */}
@@ -365,7 +390,19 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
                 <XAxis type="number" tickFormatter={fmtK} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="name" width={68} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
                 <Tooltip content={<StaffTooltip />} />
-                <Bar dataKey="revenue_net_inc" stackId="rev" fill={GOLD} radius={[0, 0, 0, 0]} maxBarSize={28} name="Revenue inc-VAT" />
+                <Bar dataKey="revenue_net_inc" stackId="rev" fill={GOLD} radius={[0, 0, 0, 0]} maxBarSize={28} name="Revenue inc-VAT">
+                  <LabelList
+                    dataKey="bar_label"
+                    content={({ x, y, width, height, value, index }) => {
+                      if (index == null) return null;
+                      const row = retailChartData[index];
+                      if (!row || (row.salary_cost ?? 0) > 0) return null;
+                      const cx = (Number(x) || 0) + (Number(width) || 0) + 4;
+                      const cy = (Number(y) || 0) + (Number(height) || 0) / 2 + 3;
+                      return <text x={cx} y={cy} fontSize={10} fill="#374151">{String(value ?? "")}</text>;
+                    }}
+                  />
+                </Bar>
                 <Bar dataKey="salary_cost" stackId="rev" fill={SALARY_BLUE} radius={[0, 4, 4, 0]} maxBarSize={28} name="Salary cost">
                   <LabelList dataKey="k_label" position="insideRight" formatter={(v: unknown) => v ? String(v) : ""} style={{ fontSize: 9, fill: "#fff", fontWeight: 700 }} />
                   <LabelList dataKey="bar_label" position="right" formatter={(v: unknown) => String(v ?? "")} style={{ fontSize: 10, fill: "#374151" }} />

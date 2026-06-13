@@ -289,7 +289,23 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
               />
               {hasCostData ? (
                 <>
-                  <Bar dataKey="revenue_net" stackId="rev" fill={BRAND.aesthetics.soft} radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="revenue_net" stackId="rev" fill={BRAND.aesthetics.soft} radius={[0, 0, 0, 0]}>
+                    {/* Fallback label for employees with no salary record:
+                        salary_cost is 0 so the LabelList on the salary bar
+                        skips rendering. Print bar_label at the end of the
+                        revenue bar in that case. */}
+                    <LabelList
+                      dataKey="bar_label"
+                      content={({ x, y, width, height, value, index }) => {
+                        if (index == null) return null;
+                        const row = byPersonEnriched[index];
+                        if (!row || (row.salary_cost ?? 0) > 0) return null;
+                        const cx = (Number(x) || 0) + (Number(width) || 0) + 6;
+                        const cy = (Number(y) || 0) + (Number(height) || 0) / 2 + 4;
+                        return <text x={cx} y={cy} fontSize={11} fill="#111827" fontWeight={600}>{String(value ?? "")}</text>;
+                      }}
+                    />
+                  </Bar>
                   <Bar dataKey="salary_cost" stackId="rev" fill="#4a7fa5" radius={[0, 4, 4, 0]}>
                     <LabelList
                       dataKey="k_label"
