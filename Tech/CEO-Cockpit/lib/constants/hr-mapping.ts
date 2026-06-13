@@ -81,6 +81,7 @@ export function normaliseLocation(raw: string | null | undefined): string | null
     "ramla bay":       "Ramla Bay",
     "sunny coast":     "Odycy",
     sunnycoast:        "Odycy",
+    riveira:           "Riviera",   // Talexio typo seen in therapist org-unit data
     aesthetics:        "Aesthetics Centre",
     "aesthetics clinic": "Aesthetics Centre",
     aesthtics:         "Aesthetics Centre",
