@@ -5,7 +5,7 @@
 // service/retail breakdowns and the aesthetics-specific Payment Mix chart.
 // Data: GET /api/sales/employee-stats via useSalesEmployeeStats.
 
-import { use, useMemo } from "react";
+import { use, useMemo, useState } from "react";
 import Link from "next/link";
 import type { EmployeeType } from "@/lib/sales-employees/types";
 import { previousPeriod } from "@/lib/utils/period-comparison";
@@ -15,15 +15,18 @@ import {
   CommissionHero,
   CommissionHeroSkeleton,
 } from "@/components/sales/employees/CommissionHero";
+import { RetailTargetMeter, RetailTargetMeterSkeleton } from "@/components/sales/employees/RetailTargetMeter";
+import { StreakBadge, StreakTooltip } from "@/components/sales/employees/StreakBadge";
 import { EmployeeStatCards } from "@/components/sales/employees/EmployeeStatCards";
 import { EmployeeTrendChart } from "@/components/sales/employees/EmployeeTrendChart";
 import { EmployeeBreakdownTable } from "@/components/sales/employees/EmployeeBreakdownTable";
 import { useSalesEmployeeStats } from "@/lib/hooks/useSalesEmployeeStats";
+import { useSalesEmployeeMonthly } from "@/lib/hooks/useSalesEmployeeMonthly";
 import { useIsAdmin } from "@/lib/hooks/useIsAdmin";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { BRAND } from "@/lib/constants/design-tokens";
 import { formatCurrency } from "@/lib/charts/config";
-import { ChevronLeft, Lock, ShoppingBag } from "lucide-react";
+import { Calendar, ChevronLeft, ChevronRight, Lock, ShoppingBag } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList,
 } from "recharts";
@@ -120,6 +123,9 @@ function EmployeeDashboardContent({
   const { prevFrom, prevTo } = useMemo(() => previousPeriod(dateFrom, dateTo), [dateFrom, dateTo]);
   const { stats: prevStats } = useSalesEmployeeStats("aesthetics", slug, prevFrom, prevTo);
 
+  // 6-month longitudinal data for StreakBadge
+  const { months: monthlyData, isLoading: monthlyLoading } = useSalesEmployeeMonthly("aesthetics", slug);
+
   const periodLabel = formatDateRangeLabel(dateFrom, dateTo);
   const basisLabel =
     stats?.employee.commission_basis === "inc_vat" ? "inc-VAT" : "ex-VAT";
@@ -127,12 +133,25 @@ function EmployeeDashboardContent({
     ((stats?.brand_extras?.payment_mix as PaymentMixEntry[] | undefined) ?? []);
   const empType: EmployeeType = (stats?.employee.employee_type as EmployeeType | undefined) ?? "therapist";
 
+  // Retail tier bonus: €100 per €800 earned in retail sales this period
+  const RETAIL_TIER_SIZE  = 800;
+  const RETAIL_BONUS_EACH = 100;
+  const bonusEarned     = stats     ? Math.floor(stats.totals.retail_revenue     / RETAIL_TIER_SIZE) * RETAIL_BONUS_EACH : 0;
+  const prevBonusEarned = prevStats  ? Math.floor(prevStats.totals.retail_revenue  / RETAIL_TIER_SIZE) * RETAIL_BONUS_EACH : 0;
+
+  // All-time best commission (includes bonus) from 6-month history + current period
+  const allTimeBestCommission = useMemo(() => {
+    const all = [...monthlyData.map((m) => m.total_commission)];
+    if (stats) all.push(stats.totals.commission_total + bonusEarned);
+    return all.length > 0 ? Math.max(...all) : 0;
+  }, [monthlyData, stats, bonusEarned]);
+
   // ── Not found ──────────────────────────────────────────────────────────────
   if (notFound) {
     return (
       <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 py-16 text-center">
         <p className="text-sm text-muted-foreground mb-2">
-          No aesthetics employee found for “{slug}”.
+          No aesthetics employee found for "{slug}".
         </p>
         <Link
           href="/sales/aesthetics/employees"
@@ -191,6 +210,7 @@ function EmployeeDashboardContent({
       {isLoading && (
         <>
           <CommissionHeroSkeleton />
+          <RetailTargetMeterSkeleton />
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-4">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="h-24 animate-pulse rounded-xl bg-gray-100" />
@@ -211,6 +231,7 @@ function EmployeeDashboardContent({
             commissionService={stats.totals.commission_service}
             commissionRetail={stats.totals.commission_retail}
             commissionTotal={stats.totals.commission_total}
+            commissionBonus={bonusEarned}
             serviceRate={stats.rates?.service_rate ?? 0}
             retailRate={stats.rates?.retail_rate ?? 0}
             ratesSet={stats.employee.rates_set}
@@ -219,11 +240,36 @@ function EmployeeDashboardContent({
             prevCommissionTotal={prevStats?.totals.commission_total}
             prevCommissionService={prevStats?.totals.commission_service}
             prevCommissionRetail={prevStats?.totals.commission_retail}
+            prevCommissionBonus={prevBonusEarned}
+            allTimeBestCommission={allTimeBestCommission}
           />
+
+          {/* Retail target tracker — only for therapists/advisors who sell retail */}
+          {(empType === "therapist" || empType === "advisor") && (
+            <>
+              <RetailTargetMeter
+                retailRevenue={stats.totals.retail_revenue}
+                targetRevenue={800}
+                bonusAmount={100}
+                periodLabel={periodLabel}
+                dateTo={dateTo}
+              />
+              {!monthlyLoading && (
+                <div className="flex flex-col items-start gap-0.5 px-1">
+                  <StreakBadge months={monthlyData} retailTarget={800} />
+                  <StreakTooltip months={monthlyData} retailTarget={800} />
+                </div>
+              )}
+            </>
+          )}
 
           <EmployeeStatCards totals={stats.totals} basisLabel={basisLabel} prevTotals={prevStats?.totals} />
 
-          <EmployeeTrendChart daily={stats.daily} accentColor={ACCENT} />
+          <EmployeeTrendChart
+            daily={stats.daily}
+            serviceRate={stats.rates?.service_rate ?? 0}
+            retailRate={stats.rates?.retail_rate ?? 0}
+          />
 
           {/* Breakdowns — retail is keyword-classified for aesthetics and may be sparse */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -308,10 +354,95 @@ export default function AestheticsEmployeePage({
 }) {
   const { slug } = use(params);
 
+  const today = new Date();
+  const [selectedYear, setSelectedYear] = useState(today.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(today.getMonth() + 1);
+
+  const { dateFrom, dateTo } = useMemo(() => {
+    const from = new Date(selectedYear, selectedMonth - 1, 1);
+    const isCurrentMonth =
+      selectedYear === today.getFullYear() && selectedMonth === (today.getMonth() + 1);
+    const to = isCurrentMonth
+      ? new Date(today.getFullYear(), today.getMonth(), today.getDate())
+      : new Date(selectedYear, selectedMonth, 0);
+    return { dateFrom: from, dateTo: to };
+  }, [selectedYear, selectedMonth]);
+
+  function goPrev() {
+    if (selectedMonth === 1) {
+      setSelectedYear((y) => y - 1);
+      setSelectedMonth(12);
+    } else {
+      setSelectedMonth((m) => m - 1);
+    }
+  }
+
+  function goNext() {
+    const now = new Date();
+    const nextYear  = selectedMonth === 12 ? selectedYear + 1 : selectedYear;
+    const nextMonth = selectedMonth === 12 ? 1 : selectedMonth + 1;
+    if (nextYear > now.getFullYear() || (nextYear === now.getFullYear() && nextMonth > now.getMonth() + 1)) return;
+    setSelectedYear(nextYear);
+    setSelectedMonth(nextMonth);
+  }
+
+  const isCurrentMonth =
+    selectedYear === today.getFullYear() && selectedMonth === (today.getMonth() + 1);
+
+  const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+  function goToCurrentMonth() {
+    const now = new Date();
+    setSelectedYear(now.getFullYear());
+    setSelectedMonth(now.getMonth() + 1);
+  }
+
   return (
-    <DashboardShell>
-      {({ dateFrom, dateTo }) => (
-        <AestheticsEmployeeDateGate slug={slug} rawDateFrom={dateFrom} dateTo={dateTo} />
+    <DashboardShell hideDatePicker>
+      {() => (
+        <>
+          {/* Month selector */}
+          <div className="flex flex-col items-center gap-1.5 py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Viewing data for
+            </p>
+            <div className="inline-flex items-center gap-1 rounded-2xl border border-border bg-card shadow-md px-2 py-1.5">
+              <button
+                type="button"
+                onClick={goPrev}
+                className="rounded-xl h-9 w-9 flex items-center justify-center hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                aria-label="Previous month"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <div className="flex items-center gap-2 px-3">
+                <Calendar className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                <span className="text-base font-bold text-foreground min-w-[160px] text-center tracking-tight">
+                  {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={goNext}
+                disabled={isCurrentMonth}
+                className="rounded-xl h-9 w-9 flex items-center justify-center hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed"
+                aria-label="Next month"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </div>
+            {!isCurrentMonth && (
+              <button
+                type="button"
+                onClick={goToCurrentMonth}
+                className="text-xs text-primary font-medium underline-offset-2 hover:underline"
+              >
+                Back to current month
+              </button>
+            )}
+          </div>
+          <AestheticsEmployeeDateGate slug={slug} rawDateFrom={dateFrom} dateTo={dateTo} />
+        </>
       )}
     </DashboardShell>
   );
