@@ -470,6 +470,24 @@ export function SlimmingProgramHealthSection({
         />
       </SalesKPIGrid>
 
+      {/* ── Distribution chart (headline KPI) ───────────────────────────── */}
+      {clientsWithData.length > 0 && (
+        <Card className="p-4 md:p-5 border-2 border-border">
+          <div className="flex items-baseline justify-between mb-1">
+            <h3 className="text-base font-semibold text-foreground">
+              Outcome Distribution
+            </h3>
+            <span className="text-xs text-muted-foreground">
+              {clientsWithData.length} clients with data · point-in-time snapshot
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mb-4">
+            Where every client sits right now across weight outcome buckets
+          </p>
+          <DistributionChart clients={clientsWithData} />
+        </Card>
+      )}
+
       {/* ── Needs Attention (call list) ───────────────────────────────────── */}
       <Card className="p-4 md:p-5">
         <div className="flex items-center gap-2 mb-1">
@@ -503,19 +521,6 @@ export function SlimmingProgramHealthSection({
         </p>
         <NeedsAttentionTable items={notLosingWeight} />
       </Card>
-
-      {/* ── Distribution chart ────────────────────────────────────────────── */}
-      {clientsWithData.length > 0 && (
-        <Card className="p-4 md:p-5">
-          <h3 className="text-base font-semibold text-foreground mb-1">
-            Weight Loss Distribution
-          </h3>
-          <p className="text-xs text-muted-foreground mb-4">
-            All {clientsWithData.length} clients with data across outcome buckets
-          </p>
-          <DistributionChart clients={clientsWithData} />
-        </Card>
-      )}
 
       {/* ── Full progress table ───────────────────────────────────────────── */}
       <Card className="p-4 md:p-5">
