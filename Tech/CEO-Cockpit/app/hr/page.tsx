@@ -445,7 +445,8 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const [attendanceFilter, setAttendanceFilter] = useState<AttendanceFilter>("all");
   const [attendanceModalOpen, setAttendanceModalOpen] = useState(false);
   const [clockedInModalOpen, setClockedInModalOpen] = useState(false);
-  const [attendanceExpanded, setAttendanceExpanded] = useState(true);
+  const [attendanceExpanded, setAttendanceExpanded] = useState(false);
+  const [modalIssueFilter, setModalIssueFilter] = useState<"late" | "early">("late");
   const attendanceHistoryRef = useRef<HTMLDivElement>(null);
 
   // ── Live data: Talexio ────────────────────────────────────────────────────
@@ -459,8 +460,11 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
 
   // ── Longitudinal attendance from Supabase ────────────────────────────────
   const attendanceHistoryQ = useAttendance(fromISO, toISO, attendanceFilter);
-  // Issues query: late OR left early — drives chip counts + modal
+  // Issues query: late OR left early — drives chip counts
   const attendanceIssuesQ  = useAttendance(fromISO, toISO, "issues");
+  // Per-filter modal queries (cached separately)
+  const attendanceLateQ    = useAttendance(fromISO, toISO, "late");
+  const attendanceEarlyQ   = useAttendance(fromISO, toISO, "early");
 
   // ── Live data: Supabase-backed HR financials ──────────────────────────────
   const financialsQ = useHRFinancials(month);
@@ -781,7 +785,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           return (
             <>
               <div
-                onClick={() => setAttendanceModalOpen(true)}
+                onClick={() => { setModalIssueFilter("late"); setAttendanceModalOpen(true); }}
                 title="Click to see who's late this period"
                 className={`flex items-center gap-2 rounded-xl border bg-white px-4 py-2.5 shadow-sm cursor-pointer select-none transition-colors ${lateCount > 0 ? "border-red-200 hover:border-red-400" : "border-slate-200 hover:border-slate-300"}`}
               >
@@ -793,7 +797,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
               </div>
               {(earlyCount > 0 || hasData) && (
                 <div
-                  onClick={() => setAttendanceModalOpen(true)}
+                  onClick={() => { setModalIssueFilter("early"); setAttendanceModalOpen(true); }}
                   title="Click to see who left early this period"
                   className={`flex items-center gap-2 rounded-xl border bg-white px-4 py-2.5 shadow-sm cursor-pointer select-none transition-colors ${earlyCount > 0 ? "border-orange-200 hover:border-orange-400" : "border-slate-200 hover:border-slate-300"}`}
                 >
@@ -1290,68 +1294,67 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           ATTENDANCE ISSUES MODAL (late arrivals + early departures)
           Opened by clicking either the Late or Left Early chip above.
           ══════════════════════════════════════════════════════════════════ */}
-      {attendanceModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-center pt-12 pb-8 px-4 bg-black/50 backdrop-blur-sm"
-          onClick={() => setAttendanceModalOpen(false)}
-          onKeyDown={(e) => e.key === "Escape" && setAttendanceModalOpen(false)}
-        >
+      {attendanceModalOpen && (() => {
+        const isLateModal  = modalIssueFilter === "late";
+        const modalQ       = isLateModal ? attendanceLateQ : attendanceEarlyQ;
+        const modalTitle   = isLateModal ? "Late Arrivals" : "Left Early";
+        const modalCount   = isLateModal
+          ? modalQ.data?.summary.total_late
+          : modalQ.data?.summary.total_left_early;
+        const badgeCls     = isLateModal
+          ? "bg-red-50 text-red-600"
+          : "bg-orange-50 text-orange-600";
+        return (
           <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden"
-            style={{ maxHeight: "calc(100vh - 6rem)" }}
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-50 flex items-start justify-center pt-12 pb-8 px-4 bg-black/50 backdrop-blur-sm"
+            onClick={() => setAttendanceModalOpen(false)}
+            onKeyDown={(e) => e.key === "Escape" && setAttendanceModalOpen(false)}
           >
-            {/* Modal header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">Attendance Issues</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {fromISO} → {toISO} · Late arrivals &amp; early departures · from Supabase
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                {attendanceIssuesQ.isSuccess && (
-                  <div className="flex items-center gap-2 text-xs text-slate-500">
-                    {attendanceIssuesQ.data.summary.total_late > 0 && (
-                      <span className="bg-red-50 text-red-600 rounded-full px-2.5 py-1 font-medium">
-                        {attendanceIssuesQ.data.summary.total_late} late
-                      </span>
-                    )}
-                    {attendanceIssuesQ.data.summary.total_left_early > 0 && (
-                      <span className="bg-orange-50 text-orange-600 rounded-full px-2.5 py-1 font-medium">
-                        {attendanceIssuesQ.data.summary.total_left_early} left early
-                      </span>
-                    )}
-                  </div>
-                )}
-                <button
-                  onClick={() => setAttendanceModalOpen(false)}
-                  className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors text-lg font-light"
-                >
-                  ×
-                </button>
-              </div>
-            </div>
-            {/* Modal body */}
-            <div className="overflow-auto flex-1 p-4">
-              {attendanceIssuesQ.isLoading ? (
-                <TableSkeleton rows={10} columns={9} />
-              ) : !attendanceIssuesQ.isSuccess || attendanceIssuesQ.data.records.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 text-center gap-2">
-                  <p className="text-sm text-muted-foreground font-medium">No attendance issues found for this period</p>
-                  <p className="text-xs text-muted-foreground">Hit Sync to refresh data from Talexio.</p>
+            <div
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden"
+              style={{ maxHeight: "calc(100vh - 6rem)" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">{modalTitle}</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {fromISO} → {toISO} · from Supabase
+                  </p>
                 </div>
-              ) : (
-                <DataTable
-                  columns={attendanceHistoryColumns}
-                  data={attendanceIssuesQ.data.records as unknown as Record<string, unknown>[]}
-                  pageSize={20}
-                />
-              )}
+                <div className="flex items-center gap-3">
+                  {modalQ.isSuccess && modalCount != null && (
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${badgeCls}`}>
+                      {modalCount} {isLateModal ? "late" : "left early"}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => setAttendanceModalOpen(false)}
+                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors text-lg font-light"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+              <div className="overflow-auto flex-1 p-4">
+                {modalQ.isLoading ? (
+                  <TableSkeleton rows={10} columns={9} />
+                ) : !modalQ.isSuccess || modalQ.data.records.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center gap-2">
+                    <p className="text-sm text-muted-foreground font-medium">No {isLateModal ? "late arrivals" : "early departures"} for this period</p>
+                  </div>
+                ) : (
+                  <DataTable
+                    columns={attendanceHistoryColumns}
+                    data={modalQ.data.records as unknown as Record<string, unknown>[]}
+                    pageSize={20}
+                  />
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </>
   );
 }
