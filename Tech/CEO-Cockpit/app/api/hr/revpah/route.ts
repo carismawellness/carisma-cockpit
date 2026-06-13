@@ -29,7 +29,7 @@ export const maxDuration = 60;
 const BRAND_TARGETS: Record<string, number> = {
   Spa:         35,
   Aesthetics:  70,
-  Slimming:    55,
+  Slimming:    35,
 };
 
 interface MonthBounds {

@@ -246,7 +246,7 @@ const REVPAH_FALLBACK: Array<{ location: string; revpah: number; revenue: number
 const REVPAH_BY_BRAND_FALLBACK = {
   Spa:        { locations: REVPAH_FALLBACK.filter((r) => r.brand === "Spa"),        avgRevPAH: 36.6, target: 35 },
   Aesthetics: { locations: REVPAH_FALLBACK.filter((r) => r.brand === "Aesthetics"), avgRevPAH: 68.4, target: 70 },
-  Slimming:   { locations: REVPAH_FALLBACK.filter((r) => r.brand === "Slimming"),   avgRevPAH: 44.2, target: 55 },
+  Slimming:   { locations: REVPAH_FALLBACK.filter((r) => r.brand === "Slimming"),   avgRevPAH: 44.2, target: 35 },
 };
 
 const TOTAL_REVENUE_FALLBACK = 285500;
