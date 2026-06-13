@@ -25,7 +25,7 @@ import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { previousPeriod } from "@/lib/utils/period-comparison";
 import { BRAND } from "@/lib/constants/design-tokens";
 import type { EmployeeType } from "@/lib/sales-employees/types";
-import { AlertCircle, ChevronLeft, ChevronRight, Lock, MapPin } from "lucide-react";
+import { AlertCircle, Calendar, ChevronLeft, ChevronRight, Lock, MapPin } from "lucide-react";
 
 function _pad(n: number) { return String(n).padStart(2, "0"); }
 function toDateStr(d: Date) {
@@ -397,34 +397,57 @@ export default function SpaEmployeePage({
   const isCurrentMonth =
     selectedYear === today.getFullYear() && selectedMonth === (today.getMonth() + 1);
 
-  const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+  function goToCurrentMonth() {
+    const now = new Date();
+    setSelectedYear(now.getFullYear());
+    setSelectedMonth(now.getMonth() + 1);
+  }
 
   return (
     <DashboardShell hideDatePicker>
       {() => (
         <>
           {/* Month selector */}
-          <div className="flex items-center gap-3 justify-center pt-2">
-            <button
-              type="button"
-              onClick={goPrev}
-              className="rounded-full h-8 w-8 flex items-center justify-center border border-warm-border bg-background hover:bg-muted/30 transition-colors text-muted-foreground hover:text-foreground"
-              aria-label="Previous month"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <span className="text-sm font-semibold text-foreground min-w-[90px] text-center">
-              {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
-            </span>
-            <button
-              type="button"
-              onClick={goNext}
-              disabled={isCurrentMonth}
-              className="rounded-full h-8 w-8 flex items-center justify-center border border-warm-border bg-background hover:bg-muted/30 transition-colors text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
-              aria-label="Next month"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
+          <div className="flex flex-col items-center gap-1.5 py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Viewing data for
+            </p>
+            <div className="inline-flex items-center gap-1 rounded-2xl border border-border bg-card shadow-md px-2 py-1.5">
+              <button
+                type="button"
+                onClick={goPrev}
+                className="rounded-xl h-9 w-9 flex items-center justify-center hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                aria-label="Previous month"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <div className="flex items-center gap-2 px-3">
+                <Calendar className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                <span className="text-base font-bold text-foreground min-w-[160px] text-center tracking-tight">
+                  {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={goNext}
+                disabled={isCurrentMonth}
+                className="rounded-xl h-9 w-9 flex items-center justify-center hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed"
+                aria-label="Next month"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </div>
+            {!isCurrentMonth && (
+              <button
+                type="button"
+                onClick={goToCurrentMonth}
+                className="text-xs text-primary font-medium underline-offset-2 hover:underline"
+              >
+                Back to current month
+              </button>
+            )}
           </div>
           <SpaEmployeeDateGate slug={slug} rawDateFrom={dateFrom} dateTo={dateTo} />
         </>
