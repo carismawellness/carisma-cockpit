@@ -626,7 +626,8 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
     [productivityData],
   );
 
-  const revenuePerEmployee = resolvedHeadcount > 0 ? Math.round(totalRevenue / resolvedHeadcount) : 0;
+  const displayHeadcount = isFinancialsReal ? financialsQ.data!.totalHeadcount : resolvedHeadcount;
+  const revenuePerEmployee = displayHeadcount > 0 ? Math.round(totalRevenue / displayHeadcount) : 0;
 
   // Roster-based on-time %: (rostered individuals who arrived on time) / (all rostered individuals).
   // Absent rostered employees count against the %, not just those who showed up.
@@ -647,9 +648,24 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
       lowerIsBetter: true,
       isSample: !payrollComplete,
     },
-    { label: "Monthly Gross Payroll", value: formatCurrency(payrollData.latestGross) },
-    { label: "Avg Cost / Employee",   value: formatCurrency(payrollData.avgCostPerEmployee) },
-    { label: "Active Employees",      value: String(resolvedHeadcount) },
+    {
+      label: "Monthly Gross Payroll",
+      value: isFinancialsReal
+        ? formatCurrency(financialsQ.data!.totalPayroll)
+        : formatCurrency(payrollData.latestGross),
+      isSample: !isFinancialsReal || !payrollComplete,
+    },
+    {
+      label: "Avg Cost / Employee",
+      value: isFinancialsReal && financialsQ.data!.totalHeadcount > 0
+        ? formatCurrency(financialsQ.data!.totalPayroll / financialsQ.data!.totalHeadcount)
+        : formatCurrency(payrollData.avgCostPerEmployee),
+      isSample: !isFinancialsReal || !payrollComplete,
+    },
+    {
+      label: "Active Employees",
+      value: String(isFinancialsReal ? financialsQ.data!.totalHeadcount : resolvedHeadcount),
+    },
     {
       label: "On-Time %",
       value: `${onTimePct}%`,
@@ -702,8 +718,8 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   })();
 
   const subtitle = useMemo(() => {
-    return `${prettyMonth(month)} — ${resolvedHeadcount} active employees`;
-  }, [month, resolvedHeadcount]);
+    return `${prettyMonth(month)} — ${displayHeadcount} active employees`;
+  }, [month, displayHeadcount]);
 
   // ── Unused-import guard ───────────────────────────────────────────────────
   void activeEmployees;
