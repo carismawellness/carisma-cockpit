@@ -75,10 +75,11 @@ function fmtK(v: number) {
 }
 
 function WixSalesCard({ wix, brand }: { wix: WixHookResult; brand: typeof BRAND.spa }) {
-  const [view, setView] = useState<"monthly" | "weekly">("monthly");
+  const [view, setView] = useState<"daily" | "weekly" | "monthly">("weekly");
 
   const monthly = wix.data?.monthly ?? [];
   const weekly  = wix.data?.weekly ?? [];
+  const daily   = wix.data?.daily ?? [];
 
   // Last 24 months for monthly chart
   const monthlySlice = monthly.slice(-24);
@@ -125,18 +126,18 @@ function WixSalesCard({ wix, brand }: { wix: WixHookResult; brand: typeof BRAND.
         </div>
         {/* View toggle */}
         <div className="flex rounded-lg overflow-hidden border border-border text-xs font-semibold">
-          {(["monthly", "weekly"] as const).map((v) => (
+          {(["daily", "weekly", "monthly"] as const).map((v) => (
             <button
               key={v}
               onClick={() => setView(v)}
-              className="px-3 py-1.5 transition-colors"
+              className="px-3 py-1.5 transition-colors capitalize"
               style={
                 view === v
                   ? { backgroundColor: brand.dark, color: "#fff" }
                   : { backgroundColor: "#fff", color: "#6B7280" }
               }
             >
-              {v === "monthly" ? "Monthly" : "Weekly"}
+              {v.charAt(0).toUpperCase() + v.slice(1)}
             </button>
           ))}
         </div>
@@ -186,7 +187,83 @@ function WixSalesCard({ wix, brand }: { wix: WixHookResult; brand: typeof BRAND.
       </div>
 
       {/* Chart */}
-      {view === "monthly" ? (
+      {view === "daily" ? (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-gray-500">
+              Daily Revenue — Last 90 Days vs Same Day Last Year
+            </p>
+            {(() => {
+              const totalCurr = daily.reduce((s, d) => s + d.current, 0);
+              const totalLy   = daily.reduce((s, d) => s + d.ly, 0);
+              const pct = totalLy > 0 ? ((totalCurr - totalLy) / totalLy) * 100 : null;
+              return pct !== null ? (
+                <span className={`text-xs font-bold rounded-full px-2.5 py-1 ${pct >= 0 ? "text-emerald-700 bg-emerald-50" : "text-red-600 bg-red-50"}`}>
+                  {pct >= 0 ? "+" : ""}{pct.toFixed(1)}% vs same 90 days LY
+                </span>
+              ) : null;
+            })()}
+          </div>
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={daily}
+                margin={{ top: 28, right: 16, left: 8, bottom: 28 }}
+                barCategoryGap="15%"
+                barGap={1}
+              >
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 9, fill: "#6B7280" }}
+                  axisLine={false}
+                  tickLine={false}
+                  interval={6}
+                  angle={-35}
+                  textAnchor="end"
+                  height={40}
+                />
+                <YAxis
+                  tickFormatter={(v: number) => fmtK(v)}
+                  tick={{ fontSize: 11, fill: "#9CA3AF" }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={52}
+                />
+                <Tooltip
+                  contentStyle={TOOLTIP_STYLE}
+                  cursor={{ fill: `${brand.soft}30` }}
+                  formatter={(value: unknown, name: unknown) => [
+                    fmtK(Number(value)),
+                    name === "current" ? "This year" : "Same day LY",
+                  ]}
+                  labelFormatter={(label) => String(label)}
+                />
+                <Bar dataKey="ly" name="ly" radius={[2, 2, 0, 0]} maxBarSize={8}>
+                  {daily.map((_, i) => (
+                    <Cell key={i} fill={`${brand.soft}70`} />
+                  ))}
+                </Bar>
+                <Bar dataKey="current" name="current" radius={[2, 2, 0, 0]} maxBarSize={8}>
+                  {daily.map((_, i) => (
+                    <Cell key={i} fill={brand.dark} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex items-center gap-4 justify-center mt-1">
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-sm inline-block" style={{ backgroundColor: brand.dark }} />
+              <span className="text-[11px] text-gray-500">This year</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-sm inline-block" style={{ backgroundColor: `${brand.soft}70` }} />
+              <span className="text-[11px] text-gray-500">Same day LY</span>
+            </div>
+          </div>
+        </div>
+      ) : view === "monthly" ? (
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-gray-500 mb-3">
             Monthly Revenue — Current Year vs Prior Year

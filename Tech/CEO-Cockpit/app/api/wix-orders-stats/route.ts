@@ -104,5 +104,51 @@ export async function GET() {
     };
   });
 
-  return NextResponse.json({ monthly, weekly });
+  // Build daily series — last 90 days, with same day LY
+  const today = new Date();
+  const day90 = new Date(today);
+  day90.setDate(today.getDate() - 90);
+  const day90Str = day90.toISOString().slice(0, 10);
+
+  // byDate already from rows — just filter to last 90 days
+  const byDate = new Map<string, { total: number; orders: number }>();
+  for (const row of rows) {
+    if (row.created_date < day90Str) continue;
+    const existing = byDate.get(row.created_date) ?? { total: 0, orders: 0 };
+    byDate.set(row.created_date, {
+      total: existing.total + (Number(row.total) || 0),
+      orders: existing.orders + 1,
+    });
+  }
+
+  const sortedDays = Array.from(byDate.entries()).sort(([a], [b]) => a.localeCompare(b));
+
+  const daily = sortedDays.map(([date, { total, orders }]) => {
+    const lyDate = new Date(date);
+    lyDate.setFullYear(lyDate.getFullYear() - 1);
+    const lyKey = lyDate.toISOString().slice(0, 10);
+    const lyEntry = rows
+      .filter((r) => r.created_date === lyKey)
+      .reduce(
+        (acc, r) => ({ total: acc.total + Number(r.total), orders: acc.orders + 1 }),
+        { total: 0, orders: 0 },
+      );
+    const lyTotal = lyEntry.total;
+    const yoyPct = lyTotal > 0 ? ((total - lyTotal) / lyTotal) * 100 : null;
+
+    const d = new Date(date);
+    const label = d.toLocaleString("en-US", { month: "short", day: "numeric" });
+
+    return {
+      date,
+      label,
+      current: Math.round(total * 100) / 100,
+      ly: Math.round(lyTotal * 100) / 100,
+      orders,
+      lyOrders: lyEntry.orders,
+      yoyPct: yoyPct !== null ? Math.round(yoyPct * 10) / 10 : null,
+    };
+  });
+
+  return NextResponse.json({ monthly, weekly, daily });
 }

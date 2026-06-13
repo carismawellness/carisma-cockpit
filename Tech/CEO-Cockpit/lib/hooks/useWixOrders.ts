@@ -21,9 +21,20 @@ export interface WixWeeklyPoint {
   yoyPct: number | null;
 }
 
+export interface WixDailyPoint {
+  date: string;
+  label: string;
+  current: number;
+  ly: number;
+  orders: number;
+  lyOrders: number;
+  yoyPct: number | null;
+}
+
 export interface WixOrdersStats {
   monthly: WixMonthlyPoint[];
   weekly: WixWeeklyPoint[];
+  daily: WixDailyPoint[];
 }
 
 export function useWixOrdersStats() {
