@@ -147,9 +147,12 @@ export async function computeDiligenceMetrics(): Promise<{
       if (discountPct > 0) bucket.discCash += unitPrice;
     }
 
-    // Complimentary: "Payment Center" is the CSV export label for what the
-    // Lapis POS UI calls "Open Account" — confirmed by QC, May 2026.
-    if (payType === "Payment Center" || payType === "Open Account") {
+    // Complimentary: "Payment Center" rows only.
+    // QC verified this matches the Accounting Master figures exactly (May 2026).
+    // "Open Account" rows also exist but accounting does NOT include them in
+    // the complimentary total — they represent a separate internal billing
+    // category not yet tracked in the diligence audit.
+    if (payType === "Payment Center") {
       bucket.comp += unitPrice;
     }
   }
