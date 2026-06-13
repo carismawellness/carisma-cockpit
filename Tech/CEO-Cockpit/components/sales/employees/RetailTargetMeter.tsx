@@ -5,8 +5,8 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 
 export interface RetailTargetMeterProps {
   retailRevenue: number;
-  targetRevenue?: number;
-  bonusAmount?: number;
+  targetRevenue?: number;  // size of each tier — default €800
+  bonusAmount?: number;    // bonus unlocked per tier — default €100
   accentColor?: string;
   periodLabel?: string;
   dateTo?: Date;
@@ -23,7 +23,10 @@ function formatEur(value: number): string {
 }
 
 function fmtShort(v: number): string {
-  if (v >= 1000) return `€${(v / 1000).toFixed(0)}k`;
+  if (v >= 1000) {
+    const k = v / 1000;
+    return `€${Number.isInteger(k) ? k.toFixed(0) : k.toFixed(1)}k`;
+  }
   return `€${Math.round(v)}`;
 }
 
@@ -39,37 +42,40 @@ export function RetailTargetMeter({
   periodLabel,
   dateTo,
 }: RetailTargetMeterProps) {
-  const rawPct      = targetRevenue > 0 ? (retailRevenue / targetRevenue) * 100 : 0;
-  const displayPct  = Math.min(rawPct, 100);
-  const pct         = displayPct / 100;
-  const pctNum      = Math.round(rawPct);
-  const clampedPct  = Math.min(Math.max(pct, 0), 1.0);
-  const unlocked    = retailRevenue >= targetRevenue;
-  const remaining   = Math.max(0, targetRevenue - retailRevenue);
+  const tierSize     = targetRevenue;
+  const bonusPerTier = bonusAmount;
 
-  const isCrushed = pctNum >= 100;
-  const isAlmost  = pctNum >= 75 && pctNum < 100;
-  const isGood    = pctNum >= 50 && pctNum < 75;
+  // Infinite escalating tier math
+  const completedTiers   = Math.floor(retailRevenue / tierSize);
+  const currentTierStart = completedTiers * tierSize;
+  const currentTierEnd   = currentTierStart + tierSize;
+  const progressInTier   = (retailRevenue - currentTierStart) / tierSize; // 0.0 → <1.0
+  const totalBonusEarned = completedTiers * bonusPerTier;
+  const remaining        = currentTierEnd - retailRevenue;
+  const currentTierNum   = completedTiers + 1; // 1-indexed for display
 
-  const gaugeColor = isCrushed ? "#F59E0B" : isAlmost ? "#10B981" : isGood ? "#F59E0B" : "#EF4444";
-  const glowColor  = isCrushed ? "#FCD34D" : isAlmost ? "#34D399" : isGood ? "#FCD34D" : "#FCA5A5";
+  const pctNum      = Math.round(progressInTier * 100);
+  const clampedFill = Math.min(Math.max(progressInTier, 0), 0.999);
 
-  const subLabel = isCrushed
-    ? "BONUS UNLOCKED! 🎉"
-    : isAlmost
+  const isAlmost = pctNum >= 75;
+  const isGood   = pctNum >= 50 && pctNum < 75;
+
+  const gaugeColor = isAlmost ? "#10B981" : isGood ? "#F59E0B" : "#EF4444";
+  const glowColor  = isAlmost ? "#34D399" : isGood ? "#FCD34D" : "#FCA5A5";
+
+  const subLabel = isAlmost
     ? "Almost there — push now! 🔥"
     : isGood
     ? "Good momentum — keep going! 💪"
     : "Time to accelerate! ⚡";
 
-  // Gauge geometry: semicircle opening upward, same as hotel gauge
+  // Gauge geometry
   const cx = 200, cy = 185, r = 150, stroke = 28;
 
   const bgStart = polarToCart(180, r, cx, cy);
   const bgEnd   = polarToCart(0,   r, cx, cy);
   const bgPath  = `M ${bgStart.x.toFixed(1)} ${bgStart.y.toFixed(1)} A ${r} ${r} 0 1 1 ${bgEnd.x.toFixed(1)} ${bgEnd.y.toFixed(1)}`;
 
-  const clampedFill  = Math.min(clampedPct, 0.999);
   const fillEndAngle = 180 - clampedFill * 180;
   const fillEnd      = polarToCart(fillEndAngle, r, cx, cy);
   const fillSweepDeg = clampedFill * 180;
@@ -85,42 +91,57 @@ export function RetailTargetMeter({
     ? Math.max(0, Math.ceil((dateTo.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
     : null;
 
-  // Milestone celebration pop
+  // Detect tier completion → celebration banner
+  const [celebratingTier, setCelebratingTier] = useState<number | null>(null);
+  const prevTiersRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (prevTiersRef.current === null) {
+      prevTiersRef.current = completedTiers;
+      return;
+    }
+    if (completedTiers > prevTiersRef.current) {
+      setCelebratingTier(completedTiers);
+      setTimeout(() => setCelebratingTier(null), 3500);
+    }
+    prevTiersRef.current = completedTiers;
+  }, [completedTiers]);
+
+  // Detect milestone % crossings within current tier
   const [celebratingMilestone, setCelebratingMilestone] = useState<number | null>(null);
   const prevPctRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (prevPctRef.current === null) {
-      prevPctRef.current = displayPct;
+      prevPctRef.current = pctNum;
       return;
     }
     const prev = prevPctRef.current;
-    prevPctRef.current = displayPct;
-    const crossed = [25, 50, 75].filter((m) => prev < m && displayPct >= m);
-    if (crossed.length > 0) {
+    prevPctRef.current = pctNum;
+    const crossed = [25, 50, 75].filter((m) => prev < m && pctNum >= m);
+    if (crossed.length > 0 && celebratingTier === null) {
       setCelebratingMilestone(crossed[crossed.length - 1]);
       setTimeout(() => setCelebratingMilestone(null), 2500);
     }
-  }, [displayPct]);
+  }, [pctNum, celebratingTier]);
 
   const cssAnimations = `
     @keyframes shimmer-rt {
       0%, 100% { opacity: 0.7; }
       50%       { opacity: 1;   }
     }
-    @keyframes gaugePulse-rt {
-      0%, 100% { filter: url(#glow-rt) brightness(1); }
-      50%       { filter: url(#glow-rt) brightness(1.4); }
-    }
     @keyframes popIn-rt {
       0%   { opacity: 0; transform: scale(0.8); }
       60%  { transform: scale(1.05); }
       100% { opacity: 1; transform: scale(1); }
     }
-    .gauge-pulse-rt  { animation: gaugePulse-rt 1.5s ease-in-out infinite; }
-    .shimmer-rt      { animation: shimmer-rt 2s ease-in-out infinite; }
-    .pop-in-rt       { animation: popIn-rt 0.4s ease-out; }
+    .shimmer-rt { animation: shimmer-rt 2s ease-in-out infinite; }
+    .pop-in-rt  { animation: popIn-rt 0.4s ease-out; }
   `;
+
+  // Show at most 5 filled tier dots + 1 in-progress dot
+  const dotsToShow  = Math.min(completedTiers, 5);
+  const hasMoreTiers = completedTiers > 5;
 
   return (
     <Card className="w-full overflow-hidden">
@@ -130,14 +151,45 @@ export function RetailTargetMeter({
             <span>🛍️</span>
             <span>Retail Target</span>
           </CardTitle>
-          {periodLabel && (
-            <span className="text-xs text-muted-foreground">{periodLabel}</span>
-          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            {periodLabel && (
+              <span className="text-xs text-muted-foreground">{periodLabel}</span>
+            )}
+            <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-700">
+              Tier {currentTierNum}
+            </span>
+            {totalBonusEarned > 0 && (
+              <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-700">
+                💰 {formatEur(totalBonusEarned)} earned
+              </span>
+            )}
+          </div>
         </div>
         <CardDescription>
-          Reach {formatEur(targetRevenue)} in retail sales to unlock a{" "}
-          <span className="font-semibold text-amber-600">{formatEur(bonusAmount)} bonus</span>
+          Earn {formatEur(remaining)} more to unlock your next{" "}
+          <span className="font-semibold text-amber-600">{formatEur(bonusPerTier)} bonus</span>
+          {" "}— the more you sell, the more you earn!
         </CardDescription>
+
+        {/* Tier progress dots */}
+        {completedTiers > 0 && (
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            {Array.from({ length: dotsToShow }, (_, i) => (
+              <div
+                key={i}
+                className="rounded-full"
+                style={{ width: 10, height: 10, background: "#F59E0B", boxShadow: "0 0 5px #F59E0B99" }}
+              />
+            ))}
+            {hasMoreTiers && (
+              <span className="text-xs font-bold text-amber-600">+{completedTiers - 5}</span>
+            )}
+            <div className="rounded-full bg-gray-200" style={{ width: 8, height: 8 }} />
+            <span className="text-[10px] text-muted-foreground ml-0.5">
+              {completedTiers} bonus{completedTiers !== 1 ? "es" : ""} unlocked
+            </span>
+          </div>
+        )}
       </CardHeader>
 
       <CardContent className="p-0">
@@ -148,14 +200,14 @@ export function RetailTargetMeter({
           className="px-6 py-6"
           style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)" }}
         >
-          {/* Status label */}
+          {/* Status label / tier celebration */}
           <div className="text-center mb-2">
-            {isCrushed ? (
+            {celebratingTier !== null ? (
               <span
                 className="shimmer-rt inline-block text-base font-extrabold tracking-wider uppercase px-4 py-1 rounded-full"
                 style={{ color: "#F59E0B", textShadow: "0 0 20px #F59E0B88, 0 0 40px #F59E0B44" }}
               >
-                {subLabel}
+                🎉 TIER {celebratingTier} COMPLETE! +{formatEur(bonusPerTier)}
               </span>
             ) : (
               <span className="text-sm font-semibold" style={{ color: gaugeColor }}>
@@ -199,7 +251,7 @@ export function RetailTargetMeter({
                 strokeLinecap="round"
               />
 
-              {/* Fill arc with glow */}
+              {/* Fill arc */}
               {fillPath && (
                 <path
                   d={fillPath}
@@ -207,12 +259,7 @@ export function RetailTargetMeter({
                   stroke={gaugeColor}
                   strokeWidth={stroke}
                   strokeLinecap="round"
-                  className={isCrushed ? "gauge-pulse-rt" : undefined}
-                  style={
-                    !isCrushed
-                      ? { filter: "url(#glow-rt)" }
-                      : { filter: "url(#glow-rt-strong)", stroke: glowColor }
-                  }
+                  style={{ filter: "url(#glow-rt)" }}
                 />
               )}
 
@@ -220,7 +267,7 @@ export function RetailTargetMeter({
               {milestoneMarkers.map((m) => {
                 const mAngle = 180 - m * 180;
                 const mPt    = polarToCart(mAngle, r, cx, cy);
-                const isPast = clampedPct >= m;
+                const isPast = progressInTier >= m;
                 return (
                   <circle
                     key={m}
@@ -236,17 +283,11 @@ export function RetailTargetMeter({
               })}
 
               {/* 100% end marker */}
-              <circle
-                cx={bgEnd.x}
-                cy={bgEnd.y}
-                r={6}
-                fill={isCrushed ? "#F59E0B" : "#475569"}
-                style={isCrushed ? { filter: "url(#glow-rt)" } : undefined}
-              />
+              <circle cx={bgEnd.x} cy={bgEnd.y} r={6} fill="#475569" />
 
-              {/* Endpoint labels */}
-              <text x={bgStart.x - 10} y={bgStart.y + 20} textAnchor="end"   fontSize="11" fill="#64748b" fontFamily="inherit">€0</text>
-              <text x={bgEnd.x   + 10} y={bgEnd.y   + 20} textAnchor="start" fontSize="11" fill="#64748b" fontFamily="inherit">{fmtShort(targetRevenue)}</text>
+              {/* Endpoint labels — show current tier window */}
+              <text x={bgStart.x - 10} y={bgStart.y + 20} textAnchor="end"   fontSize="11" fill="#64748b" fontFamily="inherit">{fmtShort(currentTierStart)}</text>
+              <text x={bgEnd.x   + 10} y={bgEnd.y   + 20} textAnchor="start" fontSize="11" fill="#64748b" fontFamily="inherit">{fmtShort(currentTierEnd)}</text>
 
               {/* Milestone % labels */}
               {milestoneMarkers.map((m) => {
@@ -267,7 +308,7 @@ export function RetailTargetMeter({
                 );
               })}
 
-              {/* Centre: retail revenue (big) */}
+              {/* Centre: total retail revenue (big) */}
               <text
                 x={cx}
                 y={cy - 48}
@@ -281,7 +322,7 @@ export function RetailTargetMeter({
                 {fmtShort(retailRevenue)}
               </text>
 
-              {/* Centre: percentage */}
+              {/* Centre: tier progress % */}
               <text
                 x={cx}
                 y={cy - 8}
@@ -290,12 +331,11 @@ export function RetailTargetMeter({
                 fontWeight="700"
                 fill={gaugeColor}
                 fontFamily="inherit"
-                style={isCrushed ? { filter: "url(#glow-rt)" } : undefined}
               >
                 {pctNum}%
               </text>
 
-              {/* Centre: "of €800 target" */}
+              {/* Centre: tier context */}
               <text
                 x={cx}
                 y={cy + 18}
@@ -304,37 +344,47 @@ export function RetailTargetMeter({
                 fill="#64748b"
                 fontFamily="inherit"
               >
-                of {fmtShort(targetRevenue)} target
+                of {fmtShort(currentTierEnd)} target
               </text>
             </svg>
           </div>
 
-          {/* Remaining / earned line */}
+          {/* Remaining line */}
           <p className="text-center text-sm mt-1 font-medium" style={{ color: gaugeColor }}>
-            {unlocked
-              ? `${formatEur(bonusAmount)} bonus earned! 🎉`
-              : `${formatEur(remaining)} to go for your ${formatEur(bonusAmount)} bonus`}
+            {formatEur(remaining)} to go for your next {formatEur(bonusPerTier)} bonus
           </p>
 
+          {/* Total earned display */}
+          {totalBonusEarned > 0 && (
+            <p className="text-center text-xs mt-1.5 font-semibold text-amber-400">
+              🏆 {formatEur(totalBonusEarned)} total bonus earned this period
+            </p>
+          )}
+
           {/* Countdown */}
-          {!unlocked && daysLeft !== null && daysLeft <= 14 && displayPct >= 50 && (
+          {daysLeft !== null && daysLeft <= 14 && pctNum >= 50 && (
             <p className={`text-xs font-semibold text-center mt-1.5 ${daysLeft <= 3 ? "text-red-400" : "text-orange-400"}`}>
-              📅 {daysLeft} day{daysLeft === 1 ? "" : "s"} left to earn your {formatEur(bonusAmount)} bonus
+              📅 {daysLeft} day{daysLeft === 1 ? "" : "s"} left to earn your next {formatEur(bonusPerTier)} bonus
             </p>
           )}
         </div>
 
+        {/* Tier complete celebration pop */}
+        {celebratingTier !== null && (
+          <div className="pop-in-rt mx-4 mb-4 mt-3 flex items-center justify-center gap-2 rounded-xl border border-amber-400 bg-amber-50 px-4 py-2.5 text-sm font-bold text-amber-700 shadow-sm">
+            🎉 Tier {celebratingTier} complete! {formatEur(bonusPerTier)} bonus unlocked
+            {totalBonusEarned > 0 && <> — {formatEur(totalBonusEarned)} earned total!</>}
+          </div>
+        )}
+
         {/* Milestone celebration pop */}
         {celebratingMilestone !== null && (
-          <div
-            className="pop-in-rt mx-4 mb-4 mt-3 flex items-center justify-center gap-2 rounded-xl border border-emerald-400 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 shadow-sm"
-          >
-            {celebratingMilestone === 75 ? "🎯 " : celebratingMilestone === 50 ? "⚡ " : "🌟 "}
+          <div className="pop-in-rt mx-4 mb-4 mt-3 flex items-center justify-center gap-2 rounded-xl border border-emerald-400 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 shadow-sm">
             {celebratingMilestone === 75
-              ? "Almost there! €100 bonus within reach!"
+              ? "🎯 Almost there! Next bonus within reach!"
               : celebratingMilestone === 50
-              ? "Halfway there! Keep the momentum going!"
-              : "Great start! Keep building!"}
+              ? "⚡ Halfway there! Keep the momentum going!"
+              : "🌟 Great start! Keep building!"}
           </div>
         )}
       </CardContent>
