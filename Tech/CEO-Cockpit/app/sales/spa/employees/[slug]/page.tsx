@@ -110,12 +110,18 @@ function SpaEmployeeContent({
     return Math.max(1, Math.ceil(diff / (1000 * 60 * 60 * 24)) + 1);
   }, [dateFrom, dateTo]);
 
-  // All-time best commission from 6-month history + current period
+  // Retail tier bonus: €100 per €800 earned in retail sales this period
+  const RETAIL_TIER_SIZE   = 800;
+  const RETAIL_BONUS_EACH  = 100;
+  const bonusEarned     = stats  ? Math.floor(stats.totals.retail_revenue  / RETAIL_TIER_SIZE) * RETAIL_BONUS_EACH : 0;
+  const prevBonusEarned = prevStats ? Math.floor(prevStats.totals.retail_revenue / RETAIL_TIER_SIZE) * RETAIL_BONUS_EACH : 0;
+
+  // All-time best commission from 6-month history + current period (includes bonus)
   const allTimeBestCommission = useMemo(() => {
     const all = [...monthlyData.map((m) => m.total_commission)];
-    if (stats) all.push(stats.totals.commission_total);
+    if (stats) all.push(stats.totals.commission_total + bonusEarned);
     return all.length > 0 ? Math.max(...all) : 0;
-  }, [monthlyData, stats]);
+  }, [monthlyData, stats, bonusEarned]);
 
   // Daily AI coaching tip from Claude Haiku (cached per day in Supabase)
   const tipParams = stats ? {
@@ -241,6 +247,7 @@ function SpaEmployeeContent({
             commissionRetail={stats.totals.commission_retail}
             commissionTotal={stats.totals.commission_total}
             commissionBooking={0}
+            commissionBonus={bonusEarned}
             serviceRate={stats.rates?.service_rate ?? 0}
             retailRate={stats.rates?.retail_rate ?? 0}
             ratesSet={stats.employee.rates_set}
@@ -250,6 +257,7 @@ function SpaEmployeeContent({
             prevCommissionService={prevStats?.totals.commission_service}
             prevCommissionRetail={prevStats?.totals.commission_retail}
             prevCommissionBooking={0}
+            prevCommissionBonus={prevBonusEarned}
             allTimeBestCommission={allTimeBestCommission}
           />
 

@@ -31,6 +31,8 @@ export interface CommissionHeroProps {
   commissionRetail: number;
   commissionTotal: number;
   commissionBooking?: number;
+  /** Retail tier bonuses earned this period (e.g. €100 per €800 tier hit) */
+  commissionBonus?: number;
   serviceRate: number;
   retailRate: number;
   bookingRate?: number;
@@ -42,6 +44,7 @@ export interface CommissionHeroProps {
   prevCommissionService?: number;
   prevCommissionRetail?: number;
   prevCommissionBooking?: number;
+  prevCommissionBonus?: number;
   allTimeBestCommission?: number;
 }
 
@@ -126,6 +129,7 @@ export function CommissionHero({
   commissionRetail,
   commissionTotal,
   commissionBooking = 0,
+  commissionBonus = 0,
   serviceRate,
   retailRate,
   bookingRate,
@@ -136,9 +140,17 @@ export function CommissionHero({
   prevCommissionService,
   prevCommissionRetail,
   prevCommissionBooking,
+  prevCommissionBonus = 0,
   allTimeBestCommission,
 }: CommissionHeroProps) {
-  const animatedTotal = useCountUp(commissionTotal);
+  // Bonus is additive on top of the DB-computed commission total
+  const grandTotal = commissionTotal + commissionBonus;
+  const prevGrandTotal =
+    prevCommissionTotal !== undefined
+      ? prevCommissionTotal + prevCommissionBonus
+      : undefined;
+
+  const animatedTotal = useCountUp(grandTotal);
 
   return (
     <Card className="w-full overflow-hidden border-0 shadow-xl p-0">
@@ -176,16 +188,16 @@ export function CommissionHero({
         {/* ── Main content ── */}
         {ratesSet ? (
           <>
-            {/* Big total */}
+            {/* Big total — includes retail tier bonuses */}
             <div className="text-center mb-2">
               <div className="inline-flex items-center flex-wrap justify-center gap-1">
                 <span className="text-5xl md:text-6xl font-extrabold text-white tracking-tight tabular-nums">
                   {formatEur(animatedTotal)}
                 </span>
-                {prevCommissionTotal !== undefined && (
+                {prevGrandTotal !== undefined && (
                   <DeltaBadge
-                    current={commissionTotal}
-                    previous={prevCommissionTotal}
+                    current={grandTotal}
+                    previous={prevGrandTotal}
                   />
                 )}
               </div>
@@ -193,13 +205,13 @@ export function CommissionHero({
 
             {/* Personal best: new record or near-miss */}
             {allTimeBestCommission !== undefined && allTimeBestCommission > 0 && (
-              commissionTotal >= allTimeBestCommission ? (
+              grandTotal >= allTimeBestCommission ? (
                 <p className="text-center text-xs font-bold text-amber-300 bg-amber-400/20 rounded-full px-3 py-1 mx-auto w-fit mb-3">
                   🏆 New Personal Best!
                 </p>
-              ) : (allTimeBestCommission - commissionTotal) / allTimeBestCommission <= 0.15 ? (
+              ) : (allTimeBestCommission - grandTotal) / allTimeBestCommission <= 0.15 ? (
                 <p className="text-center text-xs text-amber-300 mb-3">
-                  Just {formatEur(allTimeBestCommission - commissionTotal)} from your personal best!
+                  Just {formatEur(allTimeBestCommission - grandTotal)} from your personal best!
                 </p>
               ) : <div className="mb-3" />
             )}
@@ -211,8 +223,8 @@ export function CommissionHero({
               </p>
             )}
 
-            {/* Service / Retail / Booking sub-cards */}
-            <div className="grid grid-cols-3 gap-3 max-w-2xl mx-auto">
+            {/* Commission breakdown sub-cards — 4 cols when retail bonus is earned */}
+            <div className={`grid gap-3 max-w-2xl mx-auto ${commissionBonus > 0 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"}`}>
               <SplitCard
                 icon="💆"
                 label="Service Commission"
@@ -231,6 +243,14 @@ export function CommissionHero({
                 amount={commissionBooking}
                 prev={prevCommissionBooking}
               />
+              {commissionBonus > 0 && (
+                <SplitCard
+                  icon="🎁"
+                  label="Retail Bonus"
+                  amount={commissionBonus}
+                  prev={prevCommissionBonus > 0 ? prevCommissionBonus : undefined}
+                />
+              )}
             </div>
           </>
         ) : (
