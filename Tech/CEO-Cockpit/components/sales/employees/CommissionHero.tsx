@@ -158,7 +158,7 @@ export function CommissionHero({
             {ratesSet && (
               <>
                 <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-300">
-                  ✂️ {formatRate(serviceRate)}
+                  💆 {formatRate(serviceRate)}
                 </span>
                 <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-300">
                   🛍️ {formatRate(retailRate)}
@@ -214,7 +214,7 @@ export function CommissionHero({
             {/* Service / Retail / Booking sub-cards */}
             <div className="grid grid-cols-3 gap-3 max-w-2xl mx-auto">
               <SplitCard
-                icon="✂️"
+                icon="💆"
                 label="Service Commission"
                 amount={commissionService}
                 prev={prevCommissionService}
