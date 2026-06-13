@@ -14,7 +14,10 @@ import {
 import { Card } from "@/components/ui/card";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useSpaRevenue } from "@/lib/hooks/useSpaRevenue";
+import { useSpaServicesMix } from "@/lib/hooks/useSpaServicesMix";
 import { useSpaDeepaAnalytics } from "@/lib/hooks/useSpaDeepaAnalytics";
+import { ServiceTreemap } from "@/components/sales/ServiceTreemap";
+import { CheckCircle2, AlertTriangle as AlertTriangleIcon } from "lucide-react";
 import { useSalaryRoster } from "@/lib/hooks/useSalaryRoster";
 import { BRAND, YOY_BADGE } from "@/lib/constants/design-tokens";
 import {
@@ -56,6 +59,7 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
     useSpaRevenue(dateFrom, dateTo);
 
   const analytics = useSpaDeepaAnalytics(dateFrom, dateTo);
+  const servicesMix = useSpaServicesMix(dateFrom, dateTo);
 
   // Prior-year window for YoY badges
   const priorDateFrom = useMemo(
@@ -453,6 +457,45 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
           <SpaHourOfDayChart data={analytics.byHourOfDay} />
         </div>
       )}
+
+      {/* Revenue by Service / Product — treemap (area = revenue, colour = category) */}
+      <ServiceTreemap
+        title="Revenue by Service / Product"
+        subtitle="Each rectangle = one service · Area = revenue share · Colour = category · Source: Cockpit Service-Spa tab via spa_services_by_employee_daily"
+        byGroup={servicesMix.byGroup.map(g => ({
+          group: g.group,
+          color: g.color,
+          total_revenue: g.total_revenue,
+          total_count: g.total_count,
+          services: g.services.map(s => ({
+            service:   s.service,
+            revenue:   s.revenue,
+            tx_count:  s.tx_count,
+            nav_group: s.nav_group,
+          })),
+        }))}
+        totalRevenue={servicesMix.totals.revenue}
+        totalCount={servicesMix.totals.tx_count}
+        loading={servicesMix.isLoading || servicesMix.isFetching}
+        qcLine={(() => {
+          const qc = servicesMix.qc;
+          if (!qc) return null;
+          const tone =
+            qc.status === "ok"   ? { bg: "bg-emerald-50", fg: "text-emerald-700", Icon: CheckCircle2, label: "Matches canonical total" }
+            : qc.status === "warn" ? { bg: "bg-amber-50",  fg: "text-amber-800",   Icon: AlertTriangleIcon, label: "Drift vs canonical" }
+            :                         { bg: "bg-red-50",    fg: "text-red-800",     Icon: AlertTriangleIcon, label: "Out of sync" };
+          const Icon = tone.Icon;
+          const fmtK = (v: number) => Math.abs(v) >= 1000 ? `€${(v / 1000).toFixed(1)}K` : `€${v.toFixed(0)}`;
+          return (
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${tone.bg} ${tone.fg}`}
+              title={`Canonical (spa_revenue_daily.services): ${fmtK(qc.canonical_services_revenue)} · Treemap (spa_services_by_employee_daily × 1.18): ${fmtK(servicesMix.totals.revenue)} · Δ ${qc.delta >= 0 ? "+" : ""}${fmtK(qc.delta)} (${qc.delta_pct}%)`}
+            >
+              <Icon className="h-2.5 w-2.5" /> {tone.label} · {qc.delta_pct}%
+            </span>
+          );
+        })()}
+      />
 
       {/* Therapist utilization — full width so the full Column-G employee list
           fits without truncation. (Was previously paired with AOV; AOV now

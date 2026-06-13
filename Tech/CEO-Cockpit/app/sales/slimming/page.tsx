@@ -1,15 +1,17 @@
 "use client";
 
-import { Fragment, useMemo } from "react";
+import { useMemo } from "react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
 import { SalesKPICard } from "@/components/sales/SalesKPICard";
 import { SalesKPIGrid } from "@/components/sales/SalesKPIGrid";
 import { SlimmingProgramHealthSection } from "@/components/sales/SlimmingProgramHealthSection";
+import { ServiceTreemap } from "@/components/sales/ServiceTreemap";
 import { useSlimmingSales } from "@/lib/hooks/useSlimmingSales";
 import { useSlimmingTreatments } from "@/lib/hooks/useSlimmingTreatments";
 import { useSalaryRoster } from "@/lib/hooks/useSalaryRoster";
 import { BRAND } from "@/lib/constants/design-tokens";
+import { CheckCircle2, AlertTriangle as AlertTriangleIcon } from "lucide-react";
 import { FileSpreadsheet } from "lucide-react";
 import { SyncButton } from "@/components/dashboard/SyncButton";
 import {
@@ -480,105 +482,45 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
         )}
       </Card>
 
-      {/* ── Revenue by Service / Product — grouped by nav category ─── */}
-      <Card className="p-4 md:p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <h2 className="text-base font-semibold text-foreground">Revenue by Service / Product</h2>
-          <span className="text-xs text-muted-foreground">grouped by website nav category · AOV = avg per booking</span>
-        </div>
-        {byService.length === 0 ? (
-          <EmptyState isLoading={isLoading} />
-        ) : (
-          <div className="space-y-4">
-            {/* Group AOV summary chips */}
-            <div className="flex flex-wrap gap-3">
-              {byGroup.map(({ group, color, total_revenue, total_count }) => {
-                const groupAov = total_count > 0 ? Math.round(total_revenue / total_count) : 0;
-                const sharePct = totals.revenue_paid > 0 ? ((total_revenue / totals.revenue_paid) * 100).toFixed(0) : "0";
-                return (
-                  <div key={group} className="flex items-center gap-2 rounded-lg border px-3 py-2 bg-card/50 min-w-[140px]">
-                    <span className="inline-block w-2 h-8 rounded-sm shrink-0" style={{ backgroundColor: color }} />
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wide" style={{ color }}>{group}</p>
-                      <p className="text-sm font-semibold tabular-nums">{fmtK(total_revenue)} <span className="text-muted-foreground font-normal text-xs">({sharePct}%)</span></p>
-                      <p className="text-xs text-muted-foreground">{fmtK(groupAov)} AOV · {total_count} bkgs</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Service detail table — zero-revenue rows hidden */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
-                    <th className="text-left pb-2 font-medium w-[36%]">Service / Product</th>
-                    <th className="text-left pb-2 font-medium">Category</th>
-                    <th className="text-right pb-2 font-medium">Bookings</th>
-                    <th className="text-right pb-2 font-medium">AOV</th>
-                    <th className="text-right pb-2 font-medium">Revenue (inc-VAT)</th>
-                    <th className="text-left pb-2 pl-4 font-medium">Share</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {byGroup.map(({ group, color, services, total_revenue, total_count }) => {
-                    const visibleServices = services.filter(s => s.revenue_paid > 0);
-                    if (visibleServices.length === 0) return null;
-                    const groupAov = total_count > 0 ? Math.round(total_revenue / total_count) : 0;
-                    return (
-                      <Fragment key={group}>
-                        <tr className="border-y border-muted bg-muted/20">
-                          <td colSpan={2} className="py-2 pl-2">
-                            <div className="flex items-center gap-2">
-                              <span className="inline-block w-2 h-4 rounded-sm shrink-0" style={{ backgroundColor: color }} />
-                              <span className="text-xs font-bold uppercase tracking-wider" style={{ color }}>{group}</span>
-                            </div>
-                          </td>
-                          <td className="py-2 text-right text-xs text-muted-foreground font-medium pr-0.5 tabular-nums">{total_count}</td>
-                          <td className="py-2 text-right text-xs font-semibold tabular-nums">{fmtK(groupAov)}</td>
-                          <td className="py-2 text-right text-xs font-semibold tabular-nums">{fmtK(total_revenue)}</td>
-                          <td className="py-2 pl-4 text-xs text-muted-foreground tabular-nums">
-                            {totals.revenue_paid > 0 ? `${((total_revenue / totals.revenue_paid) * 100).toFixed(1)}%` : ""}
-                          </td>
-                        </tr>
-                        {visibleServices.map(s => (
-                          <tr key={s.service} className="border-b last:border-0 hover:bg-muted/10">
-                            <td className="py-2 pl-5 font-medium">{s.service}</td>
-                            <td className="py-2">
-                              <span className="text-xs text-muted-foreground">{s.nav_category}</span>
-                            </td>
-                            <td className="py-2 text-right text-muted-foreground tabular-nums">{s.tx_count}</td>
-                            <td className="py-2 text-right text-muted-foreground tabular-nums">{fmtK(s.aov)}</td>
-                            <td className="py-2 text-right font-medium tabular-nums">{fmtK(s.revenue_paid)}</td>
-                            <td className="py-2 pl-4">
-                              <div className="flex items-center gap-2">
-                                <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                                  <div className="h-full rounded-full" style={{ width: `${s.pct}%`, backgroundColor: color }} />
-                                </div>
-                                <span className="text-xs text-muted-foreground tabular-nums">{s.pct}%</span>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 font-semibold">
-                    <td className="pt-2.5" colSpan={2}>Total</td>
-                    <td className="pt-2.5 text-right text-muted-foreground tabular-nums">{totals.tx_count}</td>
-                    <td className="pt-2.5 text-right text-muted-foreground tabular-nums">{fmtK(totals.revenue_paid > 0 && totals.tx_count > 0 ? Math.round(totals.revenue_paid / totals.tx_count) : 0)}</td>
-                    <td className="pt-2.5 text-right tabular-nums">{fmtK(totals.revenue_paid)}</td>
-                    <td />
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
-        )}
-      </Card>
+      {/* ── Revenue by Service / Product — treemap (area = revenue, colour = category) ─── */}
+      <ServiceTreemap
+        title="Revenue by Service / Product"
+        subtitle="Each rectangle = one service · Area = revenue share · Colour = website nav category"
+        byGroup={byGroup.map(g => ({
+          group:         g.group,
+          color:         g.color,
+          total_revenue: g.total_revenue,
+          total_count:   g.total_count,
+          services:      g.services
+            .filter(s => s.revenue_paid > 0)
+            .map(s => ({
+              service:   s.service,
+              revenue:   s.revenue_paid,
+              tx_count:  s.tx_count,
+              nav_group: g.group,
+            })),
+        }))}
+        totalRevenue={totals.revenue_paid}
+        totalCount={totals.tx_count}
+        loading={isLoading}
+        qcLine={(() => {
+          // QC: byGroup totals must sum to totals.revenue_paid (both come from
+          // the same useSlimmingSales hook, so any drift is an internal bug).
+          const sum   = byGroup.reduce((s, g) => s + g.total_revenue, 0);
+          const delta = sum - totals.revenue_paid;
+          const pct   = totals.revenue_paid > 0 ? (Math.abs(delta) / totals.revenue_paid) * 100 : 0;
+          const ok    = pct <= 0.5;
+          const Icon  = ok ? CheckCircle2 : AlertTriangleIcon;
+          return (
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${ok ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}
+              title={`Treemap groups sum: €${Math.round(sum)} · Brand total: €${Math.round(totals.revenue_paid)} · Δ ${delta >= 0 ? "+" : ""}€${Math.round(delta)} (${pct.toFixed(2)}%)`}
+            >
+              <Icon className="h-2.5 w-2.5" /> {ok ? "Matches brand total" : `Drift ${pct.toFixed(1)}%`}
+            </span>
+          );
+        })()}
+      />
 
       {/* ═══════════════════════════════════════════════════════════
           Tx Slimming section — from the Treatments (Tx) tab
