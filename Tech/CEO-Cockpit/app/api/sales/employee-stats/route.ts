@@ -124,17 +124,22 @@ export async function GET(req: NextRequest) {
 
   const { data: rateData, error: rateErr } = await db
     .from("sales_employee_commission_rates")
-    .select("id, employee_id, service_rate, retail_rate, effective_from")
+    .select("id, employee_id, service_rate, retail_rate, booking_rate, spa_total_rate, effective_from")
     .eq("employee_id", employee.id)
     .order("effective_from", { ascending: false });
   if (rateErr) return NextResponse.json({ error: rateErr.message }, { status: 500 });
-  const rateRows: CommissionRate[] = (rateData ?? []).map((r) => ({
-    id: r.id,
-    employee_id: r.employee_id,
-    service_rate: Number(r.service_rate),
-    retail_rate: Number(r.retail_rate),
-    effective_from: r.effective_from,
-  }));
+  const rateRows: CommissionRate[] = (rateData ?? []).map((r) => {
+    const row = r as Record<string, unknown>;
+    return {
+      id: Number(row.id),
+      employee_id: Number(row.employee_id),
+      service_rate: Number(row.service_rate ?? 0),
+      retail_rate: Number(row.retail_rate ?? 0),
+      booking_rate: Number(row.booking_rate ?? 0),
+      spa_total_rate: Number(row.spa_total_rate ?? 0),
+      effective_from: String(row.effective_from ?? ""),
+    };
+  });
 
   // Names this employee answers to in revenue data
   const names = new Set<string>([normalizeName(employee.display_name)]);
@@ -334,6 +339,8 @@ export async function GET(req: NextRequest) {
       ? {
           service_rate: periodRate.service_rate,
           retail_rate: periodRate.retail_rate,
+          booking_rate: periodRate.booking_rate ?? 0,
+          spa_total_rate: periodRate.spa_total_rate ?? 0,
           effective_from: periodRate.effective_from,
         }
       : null,

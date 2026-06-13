@@ -29,9 +29,11 @@ export interface SalesEmployee {
 export interface CommissionRate {
   id: number;
   employee_id?: number;
-  service_rate: number; // 0.06 = 6%
-  retail_rate: number;  // 0.10 = 10%
-  effective_from: string; // YYYY-MM-DD
+  service_rate: number;    // 0.06 = 6%
+  retail_rate: number;     // 0.10 = 10%
+  booking_rate?: number;   // 0.03 = 3%  (col V — rebook; not yet computed in engine)
+  spa_total_rate?: number; // 0.015 = 1.5% (col S — management only)
+  effective_from: string;  // YYYY-MM-DD
 }
 
 export interface SalesEmployeeWithRates extends SalesEmployee {
@@ -105,7 +107,13 @@ export interface EmployeeStatsResponse {
     rates_set: boolean;
     employee_type: EmployeeType;
   };
-  rates: { service_rate: number; retail_rate: number; effective_from: string } | null;
+  rates: {
+    service_rate: number;
+    retail_rate: number;
+    booking_rate: number;
+    spa_total_rate: number;
+    effective_from: string;
+  } | null;
   totals: EmployeeStatsTotals;
   daily: EmployeeDailyStat[];
   service_breakdown: BreakdownRow[];

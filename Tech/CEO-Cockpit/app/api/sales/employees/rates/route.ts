@@ -42,8 +42,12 @@ export async function POST(req: NextRequest) {
   }
   const serviceRate = Number(body.service_rate ?? 0);
   const retailRate = Number(body.retail_rate ?? 0);
+  const bookingRate = Number(body.booking_rate ?? 0);
+  const spaTotalRate = Number(body.spa_total_rate ?? 0);
   if (!Number.isFinite(serviceRate) || serviceRate < 0 || serviceRate > 1 ||
-      !Number.isFinite(retailRate) || retailRate < 0 || retailRate > 1) {
+      !Number.isFinite(retailRate) || retailRate < 0 || retailRate > 1 ||
+      !Number.isFinite(bookingRate) || bookingRate < 0 || bookingRate > 1 ||
+      !Number.isFinite(spaTotalRate) || spaTotalRate < 0 || spaTotalRate > 1) {
     return NextResponse.json(
       { error: "Rates must be fractions between 0 and 1 (0.06 = 6%)" },
       { status: 400 },
@@ -58,11 +62,13 @@ export async function POST(req: NextRequest) {
         employee_id: employeeId,
         service_rate: serviceRate,
         retail_rate: retailRate,
+        booking_rate: bookingRate,
+        spa_total_rate: spaTotalRate,
         effective_from: effectiveFrom,
       },
       { onConflict: "employee_id,effective_from" },
     )
-    .select("id, employee_id, service_rate, retail_rate, effective_from")
+    .select("id, employee_id, service_rate, retail_rate, booking_rate, spa_total_rate, effective_from")
     .single();
 
   if (error) {
@@ -71,11 +77,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status });
   }
 
+  const d = data as Record<string, unknown>;
   return NextResponse.json({
     rate: {
       ...data,
-      service_rate: Number(data.service_rate),
-      retail_rate: Number(data.retail_rate),
+      service_rate: Number(d.service_rate),
+      retail_rate: Number(d.retail_rate),
+      booking_rate: Number(d.booking_rate ?? 0),
+      spa_total_rate: Number(d.spa_total_rate ?? 0),
     },
   });
 }

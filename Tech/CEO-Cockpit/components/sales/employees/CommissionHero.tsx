@@ -36,6 +36,10 @@ export interface CommissionHeroProps {
   serviceRate: number;
   retailRate: number;
   bookingRate?: number;
+  /** Spa total commission rate (management only) */
+  spaTotalRate?: number;
+  /** Management employees show "Spa Total" label and hide Booking card */
+  employeeType?: "therapist" | "advisor" | "management";
   ratesSet: boolean;
   accentColor?: string;
   periodLabel?: string;
@@ -133,6 +137,8 @@ export function CommissionHero({
   serviceRate,
   retailRate,
   bookingRate,
+  spaTotalRate,
+  employeeType,
   ratesSet,
   accentColor: _accentColor,
   periodLabel,
@@ -143,6 +149,7 @@ export function CommissionHero({
   prevCommissionBonus = 0,
   allTimeBestCommission,
 }: CommissionHeroProps) {
+  const isManagement = employeeType === "management";
   // Bonus is additive on top of the DB-computed commission total
   const grandTotal = commissionTotal + commissionBonus;
   const prevGrandTotal =
@@ -169,13 +176,21 @@ export function CommissionHero({
           <div className="flex items-center gap-2 flex-wrap">
             {ratesSet && (
               <>
-                <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-300">
-                  💆 {formatRate(serviceRate)}
-                </span>
+                {isManagement ? (
+                  spaTotalRate !== undefined && spaTotalRate > 0 && (
+                    <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-300">
+                      📊 {formatRate(spaTotalRate)}
+                    </span>
+                  )
+                ) : (
+                  <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-300">
+                    💆 {formatRate(serviceRate)}
+                  </span>
+                )}
                 <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-300">
                   🛍️ {formatRate(retailRate)}
                 </span>
-                {bookingRate !== undefined && bookingRate > 0 && (
+                {!isManagement && bookingRate !== undefined && bookingRate > 0 && (
                   <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-300">
                     📅 {formatRate(bookingRate)}
                   </span>
@@ -223,11 +238,15 @@ export function CommissionHero({
               </p>
             )}
 
-            {/* Commission breakdown sub-cards — 4 cols when retail bonus is earned */}
-            <div className={`grid gap-3 max-w-2xl mx-auto ${commissionBonus > 0 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"}`}>
+            {/* Commission breakdown sub-cards */}
+            <div className={`grid gap-3 max-w-2xl mx-auto ${
+              isManagement
+                ? commissionBonus > 0 ? "grid-cols-3" : "grid-cols-2"
+                : commissionBonus > 0 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"
+            }`}>
               <SplitCard
-                icon="💆"
-                label="Service Commission"
+                icon={isManagement ? "📊" : "💆"}
+                label={isManagement ? "Spa Total Commission" : "Service Commission"}
                 amount={commissionService}
                 prev={prevCommissionService}
               />
@@ -237,12 +256,14 @@ export function CommissionHero({
                 amount={commissionRetail}
                 prev={prevCommissionRetail}
               />
-              <SplitCard
-                icon="📅"
-                label="Booking Commission"
-                amount={commissionBooking}
-                prev={prevCommissionBooking}
-              />
+              {!isManagement && (
+                <SplitCard
+                  icon="📅"
+                  label="Booking Commission"
+                  amount={commissionBooking}
+                  prev={prevCommissionBooking}
+                />
+              )}
               {commissionBonus > 0 && (
                 <SplitCard
                   icon="🎁"

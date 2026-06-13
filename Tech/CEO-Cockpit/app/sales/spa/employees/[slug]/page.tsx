@@ -250,6 +250,9 @@ function SpaEmployeeContent({
             commissionBonus={bonusEarned}
             serviceRate={stats.rates?.service_rate ?? 0}
             retailRate={stats.rates?.retail_rate ?? 0}
+            bookingRate={stats.rates?.booking_rate ?? 0}
+            spaTotalRate={stats.rates?.spa_total_rate ?? 0}
+            employeeType={empType}
             ratesSet={stats.employee.rates_set}
             accentColor={BRAND.spa.soft}
             periodLabel={periodLabel}

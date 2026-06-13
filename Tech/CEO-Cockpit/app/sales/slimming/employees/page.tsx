@@ -6,13 +6,13 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { useSalesEmployees } from "@/lib/hooks/useSalesEmployees";
 import type { EmployeeType, SalesEmployeeWithRates } from "@/lib/sales-employees/types";
 import { BRAND } from "@/lib/constants/design-tokens";
-import { AlertTriangle, BadgePercent, ChevronDown, ChevronRight, Settings, Users } from "lucide-react";
+import { AlertTriangle, BadgePercent, ChevronRight, Settings, Users } from "lucide-react";
 import { Card } from "@/components/ui/card";
 
 const SLIMMING_GREEN = BRAND.slimming.dark; // text colors, icons
 const SLIMMING_SOFT  = BRAND.slimming.soft; // fills, backgrounds, borders
 
-type TypeFilter = "all" | EmployeeType;
+type TypeFilter = "all" | EmployeeType | "inactive";
 
 const TYPE_LABELS: Record<EmployeeType, string> = {
   therapist:  "Therapists",
@@ -96,6 +96,7 @@ function TypeFilterTabs({
     { key: "therapist",  label: `Therapists (${counts.therapist})` },
     { key: "advisor",    label: `Advisors & Reception (${counts.advisor})` },
     { key: "management", label: `Management (${counts.management})` },
+    ...(counts.inactive > 0 ? [{ key: "inactive" as TypeFilter, label: `Inactive (${counts.inactive})` }] : []),
   ];
   return (
     <div className="flex flex-wrap gap-1">
@@ -125,7 +126,6 @@ function TypeFilterTabs({
 function SlimmingEmployeesContent() {
   const { employees, isLoading, isError, error, migrationMissing } = useSalesEmployees("slimming");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
-  const [showInactive, setShowInactive] = useState(false);
 
   const getType = (e: SalesEmployeeWithRates): EmployeeType =>
     (e as SalesEmployeeWithRates & { employee_type?: EmployeeType }).employee_type ?? "therapist";
@@ -138,12 +138,14 @@ function SlimmingEmployeesContent() {
     therapist:  active.filter((e) => getType(e) === "therapist").length,
     advisor:    active.filter((e) => getType(e) === "advisor").length,
     management: active.filter((e) => getType(e) === "management").length,
-  }), [active]);
+    inactive:   inactive.length,
+  }), [active, inactive]);
 
-  const visibleActive = useMemo(
-    () => typeFilter === "all" ? active : active.filter((e) => getType(e) === typeFilter),
-    [active, typeFilter],
-  );
+  const visible = useMemo(() => {
+    if (typeFilter === "inactive") return inactive;
+    if (typeFilter === "all") return active;
+    return active.filter((e) => getType(e) === typeFilter);
+  }, [active, inactive, typeFilter]);
 
   return (
     <>
@@ -193,39 +195,19 @@ function SlimmingEmployeesContent() {
         </div>
       )}
 
-      {!isLoading && active.length > 0 && (
+      {!isLoading && (active.length > 0 || inactive.length > 0) && (
         <>
           <TypeFilterTabs counts={counts} value={typeFilter} onChange={setTypeFilter} />
-          {visibleActive.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No active employees in this category.</p>
+          {visible.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No employees in this category.</p>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {visibleActive.map((e) => (
+            <div className={`grid grid-cols-1 md:grid-cols-2 gap-3${typeFilter === "inactive" ? " opacity-70" : ""}`}>
+              {visible.map((e) => (
                 <EmployeeCard key={e.slug} employee={e} />
               ))}
             </div>
           )}
         </>
-      )}
-
-      {!isLoading && inactive.length > 0 && (
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowInactive((s) => !s)}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-          >
-            {showInactive ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            Inactive employees ({inactive.length})
-          </button>
-          {showInactive && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 opacity-70">
-              {inactive.map((e) => (
-                <EmployeeCard key={e.slug} employee={e} />
-              ))}
-            </div>
-          )}
-        </div>
       )}
     </>
   );

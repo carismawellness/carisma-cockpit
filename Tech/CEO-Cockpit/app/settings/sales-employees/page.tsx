@@ -37,6 +37,7 @@ import {
 import type {
   BrandSlug,
   CommissionBasis,
+  EmployeeType,
   SalesEmployeeWithRates,
   UnmappedName,
 } from "@/lib/sales-employees/types";
@@ -1016,6 +1017,22 @@ function BrandPanel({ brand }: { brand: BrandSlug }) {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [rowError, setRowError] = useState("");
 
+  // Type filter
+  type TypeFilter = "all" | EmployeeType | "inactive";
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+
+  const getType = (e: SalesEmployeeWithRates): EmployeeType =>
+    (e as SalesEmployeeWithRates & { employee_type?: EmployeeType }).employee_type ?? "therapist";
+
+  const activeEmps   = useMemo(() => employees.filter((e) => e.is_active), [employees]);
+  const inactiveEmps = useMemo(() => employees.filter((e) => !e.is_active), [employees]);
+
+  const filteredEmployees = useMemo(() => {
+    if (typeFilter === "inactive") return inactiveEmps;
+    if (typeFilter === "all") return employees;
+    return activeEmps.filter((e) => getType(e) === typeFilter);
+  }, [employees, activeEmps, inactiveEmps, typeFilter]);
+
   // Keep dialog targets fresh after react-query refetches (e.g. rate upsert)
   const liveRatesFor = ratesFor ? employees.find((e) => e.id === ratesFor.id) ?? ratesFor : null;
   const liveInviteFor = inviteFor ? employees.find((e) => e.id === inviteFor.id) ?? inviteFor : null;
@@ -1089,6 +1106,36 @@ function BrandPanel({ brand }: { brand: BrandSlug }) {
 
       {rowError && <p className="text-xs text-red-500">{rowError}</p>}
 
+      {/* Type filter pills */}
+      {!isLoading && !isError && employees.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {(
+            [
+              { key: "all" as TypeFilter,        label: `All (${employees.length})` },
+              { key: "therapist" as TypeFilter,  label: `Therapists (${activeEmps.filter((e) => getType(e) === "therapist").length})` },
+              { key: "advisor" as TypeFilter,    label: `Advisors & Reception (${activeEmps.filter((e) => getType(e) === "advisor").length})` },
+              { key: "management" as TypeFilter, label: `Management (${activeEmps.filter((e) => getType(e) === "management").length})` },
+              ...(inactiveEmps.length > 0 ? [{ key: "inactive" as TypeFilter, label: `Inactive (${inactiveEmps.length})` }] : []),
+            ] as { key: TypeFilter; label: string }[]
+          ).map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTypeFilter(t.key)}
+              className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                typeFilter === t.key
+                  ? t.key === "inactive"
+                    ? "border-slate-400 bg-slate-500 text-white"
+                    : "border-gold bg-gold text-white"
+                  : "border-warm-border bg-white text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Employee table */}
       {isLoading ? (
         <div className="flex items-center justify-center py-16">
@@ -1103,6 +1150,10 @@ function BrandPanel({ brand }: { brand: BrandSlug }) {
         <Card className="p-8 text-center text-sm text-muted-foreground">
           No {BRANDS.find((b) => b.value === brand)?.label} employees yet. Add one manually or use
           the unmapped names panel below to create them from revenue data.
+        </Card>
+      ) : filteredEmployees.length === 0 ? (
+        <Card className="p-8 text-center text-sm text-muted-foreground">
+          No employees in this category.
         </Card>
       ) : (
         <Card className="p-0 overflow-x-auto">
@@ -1120,7 +1171,7 @@ function BrandPanel({ brand }: { brand: BrandSlug }) {
               </tr>
             </thead>
             <tbody>
-              {employees.map((emp, idx) => (
+              {filteredEmployees.map((emp, idx) => (
                 <tr
                   key={emp.id}
                   className={cn(
