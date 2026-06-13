@@ -12,6 +12,7 @@ import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useMetaCampaignsFromDb as useMetaCampaigns, useGoogleCampaignsFromDb as useGoogleCampaigns } from "@/lib/hooks/useAdsCampaigns";
 import { useKlaviyoOverview } from "@/lib/hooks/useKlaviyoOverview";
 import { useWixOrdersStats } from "@/lib/hooks/useWixOrders";
+import { isNonRevenueCampaign } from "@/lib/funnel/aov";
 import { FlowsTable } from "@/components/marketing/FlowsTable";
 import { KeywordRankingsTable } from "@/components/marketing/KeywordRankingsTable";
 import { BRAND } from "@/lib/constants/design-tokens";
@@ -636,6 +637,7 @@ function SpaMarketingContent({
       ...googleCampaigns.map((c) => ({ ...c, channel: "Google" as const })),
     ];
     return allCampaigns
+      .filter((c) => !isNonRevenueCampaign("spa", c.campaign))
       .map((c) => {
         const roas = c.totalSpend > 0 ? c.attributedRevenue / c.totalSpend : 0;
         const profit = c.attributedRevenue - c.totalSpend;

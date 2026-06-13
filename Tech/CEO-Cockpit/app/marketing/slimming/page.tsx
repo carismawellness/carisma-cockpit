@@ -12,6 +12,7 @@ import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useMetaCampaignsFromDb as useMetaCampaigns, useGoogleCampaignsFromDb as useGoogleCampaigns } from "@/lib/hooks/useAdsCampaigns";
 import { useKlaviyoOverview } from "@/lib/hooks/useKlaviyoOverview";
 import { FlowsTable } from "@/components/marketing/FlowsTable";
+import { isNonRevenueCampaign } from "@/lib/funnel/aov";
 import { KeywordRankingsTable } from "@/components/marketing/KeywordRankingsTable";
 import { BRAND } from "@/lib/constants/design-tokens";
 import type { CampaignData } from "@/lib/types/ads";
@@ -141,6 +142,7 @@ function SlimmingMarketingContent({
   /* ---------- Profitability Matrix ---------- */
   const profitabilityData = useMemo(() => {
     const toRow = (c: CampaignData, channel: "Meta" | "Google") => {
+      // (non-revenue campaigns already filtered before calling toRow)
       const roas = c.totalSpend > 0 ? c.attributedRevenue / c.totalSpend : 0;
       const profit = c.attributedRevenue - c.totalSpend;
       const costPerShow = c.totalLeads > 0 ? c.totalSpend / (c.totalLeads * 0.75) : 0;
@@ -149,8 +151,8 @@ function SlimmingMarketingContent({
       return { campaign: c.campaign, channel, totalLeads: c.totalLeads, totalSpend: c.totalSpend, cpl: c.cpl, costPerShow, costPerResult, attributedRevenue: c.attributedRevenue, roas, profit, recommendation };
     };
     return [
-      ...metaCampaigns.map((c) => toRow(c, "Meta")),
-      ...googleCampaigns.map((c) => toRow(c, "Google")),
+      ...metaCampaigns.filter((c) => !isNonRevenueCampaign("slimming", c.campaign)).map((c) => toRow(c, "Meta")),
+      ...googleCampaigns.filter((c) => !isNonRevenueCampaign("slimming", c.campaign)).map((c) => toRow(c, "Google")),
     ].sort((a, b) => b.profit - a.profit);
   }, [metaCampaigns, googleCampaigns]);
 

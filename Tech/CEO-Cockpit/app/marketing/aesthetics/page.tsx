@@ -12,6 +12,7 @@ import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useMetaCampaignsFromDb as useMetaCampaigns, useGoogleCampaignsFromDb as useGoogleCampaigns } from "@/lib/hooks/useAdsCampaigns";
 import { useKlaviyoOverview } from "@/lib/hooks/useKlaviyoOverview";
 import { FlowsTable } from "@/components/marketing/FlowsTable";
+import { isNonRevenueCampaign } from "@/lib/funnel/aov";
 import { KeywordRankingsTable } from "@/components/marketing/KeywordRankingsTable";
 import { BRAND } from "@/lib/constants/design-tokens";
 import type { CampaignData } from "@/lib/types/ads";
@@ -125,6 +126,7 @@ function AestheticsMarketingContent({
     if (!allCampaigns.length) return [];
 
     return allCampaigns
+      .filter((c) => !isNonRevenueCampaign("aesthetics", c.campaign))
       .map((c) => {
         const attributedRevenue = c.attributedRevenue;
         const roas = c.totalSpend > 0 ? attributedRevenue / c.totalSpend : 0;

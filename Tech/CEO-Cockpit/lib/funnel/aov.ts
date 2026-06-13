@@ -44,3 +44,12 @@ export function resolveAov(brandSlug: string, campaignName: string): number {
   }
   return BRAND_AOV_DEFAULT[brandSlug] ?? 300;
 }
+
+/**
+ * Returns true for cost-centre campaigns (model calls, recruitment, store visits)
+ * that should be excluded from Profitability Matrix and revenue totals.
+ * Defined by any AOV_OVERRIDE entry with aov === 0.
+ */
+export function isNonRevenueCampaign(brandSlug: string, campaignName: string): boolean {
+  return resolveAov(brandSlug, campaignName) === 0;
+}
