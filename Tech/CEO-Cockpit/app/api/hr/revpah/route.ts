@@ -27,7 +27,7 @@ export const maxDuration = 60;
 
 // ── Brand-specific RevPAH targets (Malta-adjusted) ───────────────────────────
 const BRAND_TARGETS: Record<string, number> = {
-  Spa:         35,
+  Spa:         50,
   Aesthetics:  70,
   Slimming:    35,
 };
