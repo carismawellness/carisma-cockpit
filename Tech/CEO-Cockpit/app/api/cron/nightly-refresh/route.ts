@@ -104,10 +104,13 @@ export async function GET(req: NextRequest) {
     fetch(`${BASE_URL}/api/etl/wix-orders-sync`,              { method: "POST", headers, body: payload }),
   ]);
 
-  // Phase 2: lead reconciliation depends on ghl-crm + meta-campaigns completing first
+  // Phase 2: runs after Phase 1 completes.
+  // - lead-reconciliation depends on ghl-crm + meta-campaigns
+  // - diligence-metrics overwrites cash/discounted_cash/complimentary rows created by diligence-audit
   const reconPayload = JSON.stringify({ date_from: fmt(mktFrom), date_to: fmt(now) });
-  const [leadReconRes] = await Promise.allSettled([
+  const [leadReconRes, diligenceMetricsRes] = await Promise.allSettled([
     fetch(`${BASE_URL}/api/etl/lead-reconciliation`, { method: "POST", headers, body: reconPayload }),
+    fetch(`${BASE_URL}/api/etl/diligence-metrics`,   { method: "POST", headers }),
   ]);
 
   const outcome = (r: PromiseSettledResult<Response>) =>
@@ -142,6 +145,7 @@ export async function GET(req: NextRequest) {
     ["therapist_shifts_monthly", therapistShiftsRes],
     ["wix_spa_orders",          wixOrdersRes],
     ["lead_reconciliation",     leadReconRes],
+    ["diligence_metrics",       diligenceMetricsRes],
   ];
 
   // ── Consolidated failure alerting (never breaks the cron) ──────────────────
