@@ -184,11 +184,22 @@ export async function GET(req: NextRequest) {
   }
 
   // ── Source 4: Talexio snapshot fallback for anything still missing ────────
-  const { data: snap } = await supabase
+  // Prefer historical snapshot (on or before month end) for accurate past headcount.
+  let { data: snap } = await supabase
     .from("hr_talexio_daily_snapshot")
     .select("location_name, active_headcount, snapshot_date")
+    .lte("snapshot_date", bounds.end)
     .order("snapshot_date", { ascending: false })
     .limit(200);
+
+  if (!snap || snap.length === 0) {
+    const { data: snapFallback } = await supabase
+      .from("hr_talexio_daily_snapshot")
+      .select("location_name, active_headcount, snapshot_date")
+      .order("snapshot_date", { ascending: false })
+      .limit(200);
+    snap = snapFallback;
+  }
 
   for (const r of snap ?? []) {
     const loc = r.location_name as string;

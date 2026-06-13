@@ -86,6 +86,13 @@ export async function GET(req: NextRequest) {
   const supabase = await createServerSupabaseClient();
   const pad = (n: number) => String(n).padStart(2, "0");
 
+  // ── Partial-month detection ───────────────────────────────────────────────
+  const now = new Date();
+  const currentMonthStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+  const isCurrentMonth = monthParam === currentMonthStr;
+  const totalDaysInMonth = new Date(bounds.year, bounds.month, 0).getDate();
+  const elapsedDays = isCurrentMonth ? now.getDate() : totalDaysInMonth;
+
   // ── Payroll ────────────────────────────────────────────────────────────────
   // Source 1: transactions_raw wages (Zoho-booked cash salaries)
   const { data: wageTxns, error: wageErr } = await supabase
@@ -131,9 +138,7 @@ export async function GET(req: NextRequest) {
     if (s.month === bounds.monthStart) {
       suppCurrentByVenue.set(venue, (suppCurrentByVenue.get(venue) ?? 0) + amount);
     } else {
-      // Keep only the most recent prior month per venue
       const existing = suppFallbackByVenue.get(venue);
-      // suppData is not sorted, so track by comparing month strings
       const existingMonth = suppData?.find(
         (r) => String(r.spa_slug) === venue && r.month !== bounds.monthStart
       )?.month;
@@ -143,24 +148,89 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Combine: txn wages + current supplements; fallback to prior supplements when both zero
+  // Source 3: prior-month transactions_raw wages for extrapolation.
+  // When Zoho hasn't synced the current month yet (or historical data is
+  // missing), carry forward the most recent known monthly wages and prorate
+  // to the elapsed portion of the queried month.
+  const priorWindowStart = (() => {
+    const d = new Date(bounds.year, bounds.month - 4, 1); // 3 months before queried month
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`;
+  })();
+  const { data: priorWageTxns } = await supabase
+    .from("transactions_raw")
+    .select("venue, amount, date")
+    .eq("ebitda_line", "wages")
+    .gte("date", priorWindowStart)
+    .lt("date", bounds.start);
+
+  const priorWagesByVenueMonth = new Map<string, Map<string, number>>();
+  for (const t of priorWageTxns ?? []) {
+    const venue = String(t.venue ?? "").trim();
+    if (!venue) continue;
+    const monthKey = String(t.date).slice(0, 7);
+    if (!priorWagesByVenueMonth.has(venue)) priorWagesByVenueMonth.set(venue, new Map());
+    const m = priorWagesByVenueMonth.get(venue)!;
+    m.set(monthKey, (m.get(monthKey) ?? 0) + Number(t.amount ?? 0));
+  }
+
+  interface PriorWage { amount: number; month: string }
+  const priorWageFallbackByVenue = new Map<string, PriorWage>();
+  for (const [venue, monthMap] of priorWagesByVenueMonth) {
+    const sorted = Array.from(monthMap.keys()).sort().reverse();
+    for (const m of sorted) {
+      const amt = monthMap.get(m) ?? 0;
+      if (amt > 0) { priorWageFallbackByVenue.set(venue, { amount: amt, month: m }); break; }
+    }
+  }
+
+  // ── Combine all payroll sources ───────────────────────────────────────────
   const allVenues = new Set([
     ...txnByVenue.keys(),
     ...suppCurrentByVenue.keys(),
     ...suppFallbackByVenue.keys(),
+    ...priorWageFallbackByVenue.keys(),
   ]);
 
   const payrollByLocation = new Map<string, number>();
+  const extrapolatedLocations = new Set<string>();
+
   for (const venue of allVenues) {
-    const txn = txnByVenue.get(venue) ?? 0;
+    const txn     = txnByVenue.get(venue) ?? 0;
     const suppCur = suppCurrentByVenue.get(venue) ?? 0;
     const combined = txn + suppCur;
-    const amount = combined > 0 ? combined : (suppFallbackByVenue.get(venue) ?? 0);
-    if (amount <= 0) continue;
 
+    let amount: number;
+    let isVenueExtrapolated = false;
+
+    if (combined > 0) {
+      amount = combined;
+    } else {
+      // Prefer full prior-month wages over supplement-only fallback
+      const prior = priorWageFallbackByVenue.get(venue);
+      if (prior && prior.amount > 0) {
+        if (isCurrentMonth) {
+          // Pro-rate: last known monthly wages × (days elapsed / days in that month)
+          const priorMonthDays = new Date(
+            parseInt(prior.month.slice(0, 4)),
+            parseInt(prior.month.slice(5, 7)),
+            0,
+          ).getDate();
+          amount = prior.amount * (elapsedDays / priorMonthDays);
+        } else {
+          amount = prior.amount; // historical gap — full month proxy
+        }
+        isVenueExtrapolated = true;
+      } else {
+        amount = suppFallbackByVenue.get(venue) ?? 0;
+        if (amount > 0) isVenueExtrapolated = true;
+      }
+    }
+
+    if (amount <= 0) continue;
     const location = VENUE_SLUG_TO_LOCATION[venue];
     if (!location) continue;
     payrollByLocation.set(location, (payrollByLocation.get(location) ?? 0) + amount);
+    if (isVenueExtrapolated) extrapolatedLocations.add(location);
   }
 
   // ── Revenue ────────────────────────────────────────────────────────────────
@@ -226,14 +296,29 @@ export async function GET(req: NextRequest) {
     revenueByLocation.set("Slimming Centre", (revenueByLocation.get("Slimming Centre") ?? 0) + slmTotal);
   }
 
-  // ── Headcount: most recent snapshot per location (no date upper bound) ──────
-  // ETL may have first run after the requested month; restricting to snapshot_date
-  // <= month_end would return 0 rows for past months.
-  const { data: headcountRows } = await supabase
+  // ── Headcount: historical-first snapshot ─────────────────────────────────
+  // Prefer the most recent snapshot ON OR BEFORE month end so we use the
+  // actual headcount from that period, not today's. Falls back to the latest
+  // available snapshot when no historical rows exist (e.g. months before the
+  // nightly ETL started running).
+  let { data: headcountRows } = await supabase
     .from("hr_talexio_daily_snapshot")
     .select("location_name, active_headcount, snapshot_date")
+    .lte("snapshot_date", bounds.end)
     .order("snapshot_date", { ascending: false })
     .limit(200);
+
+  if (!headcountRows || headcountRows.length === 0) {
+    const { data: fallbackRows } = await supabase
+      .from("hr_talexio_daily_snapshot")
+      .select("location_name, active_headcount, snapshot_date")
+      .order("snapshot_date", { ascending: false })
+      .limit(200);
+    headcountRows = fallbackRows;
+  }
+
+  const headcountSnapshotDate = headcountRows?.[0]?.snapshot_date as string | null ?? null;
+  const headcountIsHistorical = !!headcountSnapshotDate && headcountSnapshotDate <= bounds.end;
 
   const headcountByLocation = new Map<string, number>();
   for (const r of headcountRows ?? []) {
@@ -307,14 +392,20 @@ export async function GET(req: NextRequest) {
   const payrollPerHead = totalHeadcount > 0 ? totalPayroll / totalHeadcount : 0;
   const payrollComplete = totalHeadcount === 0 || payrollPerHead >= 500;
 
+  const payrollExtrapolated = extrapolatedLocations.size > 0;
+
   return NextResponse.json({
     month: monthParam,
     byLocation,
     byBusinessUnit,
-    totalRevenue:    +totalRevenue.toFixed(2),
-    totalPayroll:    +totalPayroll.toFixed(2),
+    totalRevenue:         +totalRevenue.toFixed(2),
+    totalPayroll:         +totalPayroll.toFixed(2),
     totalHeadcount,
     payrollComplete,
-    groupHcPct:      totalRevenue > 0 ? +((totalPayroll / totalRevenue) * 100).toFixed(1) : 0,
+    payrollExtrapolated,
+    extrapolatedLocations: Array.from(extrapolatedLocations),
+    headcountIsHistorical,
+    headcountSnapshotDate,
+    groupHcPct:           totalRevenue > 0 ? +((totalPayroll / totalRevenue) * 100).toFixed(1) : 0,
   });
 }

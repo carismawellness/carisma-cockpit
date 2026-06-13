@@ -32,6 +32,12 @@ export interface HRFinancialsResponse {
   totalHeadcount: number;
   /** false when per-employee payroll < €500 — likely Zoho wages not yet synced */
   payrollComplete: boolean;
+  /** true when any venue's wages were extrapolated from the prior month */
+  payrollExtrapolated: boolean;
+  extrapolatedLocations: string[];
+  /** true when headcount comes from a snapshot within the queried month range */
+  headcountIsHistorical: boolean;
+  headcountSnapshotDate: string | null;
   groupHcPct: number;
   byLocation: HRLocationFinancial[];
   byBusinessUnit: HRBusinessUnitFinancial[];

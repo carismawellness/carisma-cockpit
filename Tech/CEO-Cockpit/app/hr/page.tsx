@@ -106,9 +106,11 @@ interface HRMetricData {
   /** True when the metric improves by going lower (e.g. HC% vs revenue). */
   lowerIsBetter?: boolean;
   isSample?: boolean;
+  /** True when the value was extrapolated from prior-month data (not missing, just estimated). */
+  isEstimated?: boolean;
 }
 
-function HRMetricCard({ label, value, target, targetValue, currentValue, lowerIsBetter = false, isSample = false }: HRMetricData) {
+function HRMetricCard({ label, value, target, targetValue, currentValue, lowerIsBetter = false, isSample = false, isEstimated = false }: HRMetricData) {
   const hasTarget = targetValue != null && currentValue != null && targetValue > 0;
 
   type Status = "good" | "warn" | "bad" | "neutral";
@@ -134,6 +136,8 @@ function HRMetricCard({ label, value, target, targetValue, currentValue, lowerIs
         <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider leading-tight">{label}</p>
         {isSample ? (
           <span className="shrink-0 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-1.5 py-0.5 leading-none">Sample</span>
+        ) : isEstimated ? (
+          <span className="shrink-0 text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-full px-1.5 py-0.5 leading-none">est.</span>
         ) : status !== "neutral" ? (
           <span className={`shrink-0 text-[10px] font-semibold border rounded-full px-1.5 py-0.5 leading-none ${s.pill}`}>{s.pillText}</span>
         ) : null}
@@ -646,21 +650,24 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
       targetValue: HC_PCT_TARGET,
       currentValue: groupHcPct > 0 ? groupHcPct : undefined,
       lowerIsBetter: true,
-      isSample: !payrollComplete,
+      isSample: !isFinancialsReal,
+      isEstimated: isFinancialsReal && (financialsQ.data!.payrollExtrapolated || !payrollComplete),
     },
     {
       label: "Monthly Gross Payroll",
       value: isFinancialsReal
         ? formatCurrency(financialsQ.data!.totalPayroll)
         : formatCurrency(payrollData.latestGross),
-      isSample: !isFinancialsReal || !payrollComplete,
+      isSample: !isFinancialsReal,
+      isEstimated: isFinancialsReal && (financialsQ.data!.payrollExtrapolated || !payrollComplete),
     },
     {
       label: "Avg Cost / Employee",
       value: isFinancialsReal && financialsQ.data!.totalHeadcount > 0
         ? formatCurrency(financialsQ.data!.totalPayroll / financialsQ.data!.totalHeadcount)
         : formatCurrency(payrollData.avgCostPerEmployee),
-      isSample: !isFinancialsReal || !payrollComplete,
+      isSample: !isFinancialsReal,
+      isEstimated: isFinancialsReal && (financialsQ.data!.payrollExtrapolated || !payrollComplete),
     },
     {
       label: "Active Employees",
