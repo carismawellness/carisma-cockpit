@@ -226,7 +226,7 @@ const PAYROLL_FALLBACK = {
   locationData: [] as { name: string; gross: number; headcount: number; avgCost: number }[],
 };
 
-const REVPAH_FALLBACK = [
+const REVPAH_FALLBACK: Array<{ location: string; revpah: number; revenue: number; brand: string; headcount?: number; availableHours?: number; denomSource?: string }> = [
   { location: "Hugos",             revpah: 48.20, revenue: 52400,  brand: "Spa" },
   { location: "Hyatt",             revpah: 43.80, revenue: 41200,  brand: "Spa" },
   { location: "InterContinental",  revpah: 39.50, revenue: 58700,  brand: "Spa" },
@@ -945,94 +945,151 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           SECTION 2: Revenue per Available Hour — by brand
           ══════════════════════════════════════════════════════════════════ */}
       <Card className="p-3 md:p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
-          Revenue per Available Treatment Hour
-          {isRevPAHReal ? <LiveBadge source="supabase" /> : <SampleDataBadge />}
-        </h2>
-        <p className="text-xs text-muted-foreground mb-5">
-          Denominator = therapist-only scheduled hours. Targets are brand-specific (Malta-adjusted benchmarks).
+        <div className="flex items-start justify-between gap-3 mb-1">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-1">
+            Revenue per Available Treatment Hour
+            {isRevPAHReal ? <LiveBadge source="supabase" /> : <SampleDataBadge />}
+          </h2>
+        </div>
+        <p className="text-xs text-muted-foreground mb-4">
+          Revenue ÷ therapist-only scheduled hours. Brand targets are Malta-adjusted benchmarks.
         </p>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        {/* Partial-month notice */}
+        {revpahQ.data?.isPartialMonth && (
+          <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 mb-5 text-xs text-blue-700">
+            <span className="shrink-0">📅</span>
+            <span>
+              Month in progress — hours scaled to <strong>{revpahQ.data.elapsedDays} of {revpahQ.data.totalDays} days</strong> for a fair comparison. Numbers update nightly.
+            </span>
+          </div>
+        )}
+
+        {/* Brand score cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           {(["Spa", "Aesthetics", "Slimming"] as const).map((brand) => {
-            const section  = revpahByBrand[brand];
-            const locs     = section?.locations ?? [];
-            const target   = section?.target ?? 35;
-            const avg      = section?.avgRevPAH ?? 0;
-            if (locs.length === 0) return null;
+            const section    = revpahByBrand[brand];
+            const locs       = section?.locations ?? [];
+            const target     = section?.target ?? 35;
+            const avg        = section?.avgRevPAH ?? 0;
+            const onTrack    = avg >= target && avg > 0;
+            const pct        = target > 0 ? Math.min((avg / target) * 100, 200) : 0;
+            const therapists = locs.reduce((a, r) => a + (r.headcount ?? 0), 0);
             const brandColor = brand === "Spa" ? BRAND.spa.dark : brand === "Aesthetics" ? BRAND.aesthetics.dark : BRAND.slimming.dark;
-            const onTrack   = avg >= target;
+
             return (
-              <div key={brand} className="flex flex-col">
-                {/* Brand column header */}
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: brandColor }} />
-                  <span className="text-sm font-semibold text-slate-700">{brand}</span>
-                  <span className={`text-xs rounded-full px-2 py-0.5 font-medium ${onTrack ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-                    avg {formatCurrency(avg)}/hr
-                  </span>
+              <div
+                key={brand}
+                className={`rounded-xl border p-4 ${
+                  avg === 0
+                    ? "border-slate-100 bg-slate-50/50"
+                    : onTrack
+                    ? "border-emerald-100 bg-emerald-50/30"
+                    : "border-amber-100 bg-amber-50/20"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: brandColor }} />
+                    <span className="text-sm font-semibold text-slate-700">{brand}</span>
+                  </div>
+                  {avg > 0 && (
+                    <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                      onTrack
+                        ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                        : "bg-amber-50 border-amber-200 text-amber-700"
+                    }`}>
+                      {onTrack ? "On Track" : "Below Target"}
+                    </span>
+                  )}
                 </div>
-                <p className="text-[11px] text-slate-400 mb-3">target {formatCurrency(target)}/hr</p>
-                <div style={{ height: Math.max(locs.length * 52 + 40, 100) }} className="flex-1">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={locs as unknown as Record<string, unknown>[]} layout="vertical" margin={{ top: 4, right: 60, left: 4, bottom: 4 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
-                      <XAxis type="number" tickFormatter={(v: number) => `€${v}`} tick={{ fontSize: 10 }} />
-                      <YAxis type="category" dataKey="location" width={110} tick={{ fontSize: 11 }} />
-                      <Tooltip
-                        content={({ active, payload, label }) => {
-                          if (!active || !payload?.length) return null;
-                          const row = payload[0]?.payload as { revpah: number; revenue: number; headcount?: number; availableHours?: number; denomSource?: string };
-                          return (
-                            <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs space-y-1">
-                              <p className="font-semibold text-slate-800">{label}</p>
-                              <p><span className="text-slate-500">RevPAH:</span> <span className="font-bold text-slate-900">{formatCurrency(row.revpah)}/hr</span></p>
-                              <p><span className="text-slate-500">Revenue:</span> <span className="font-semibold">{formatCurrency(row.revenue)}</span></p>
-                              {row.headcount != null && <p><span className="text-slate-500">Therapists:</span> <span className="font-semibold">{row.headcount}</span></p>}
-                              {row.availableHours != null && <p><span className="text-slate-500">Avail hrs:</span> <span className="font-semibold">{row.availableHours.toLocaleString()}h</span></p>}
-                              {row.denomSource && <p><span className="text-slate-400 italic">Source: {row.denomSource}</span></p>}
-                            </div>
-                          );
-                        }}
-                      />
-                      <ReferenceLine
-                        x={target}
-                        stroke={TARGET_AMBER}
-                        strokeDasharray="6 3"
-                        strokeWidth={1.5}
-                        label={{ value: `€${target}`, position: "insideTopRight", fill: TARGET_AMBER, fontSize: 10 }}
-                      />
-                      <Bar dataKey="revpah" name="RevPAH">
-                        {locs.map((entry) => (
-                          <Cell key={entry.location} fill={locationColor(entry.location)} />
-                        ))}
-                        <LabelList
-                          dataKey="revpah"
-                          position="right"
-                          content={(props) => {
-                            const { x, width, y, height, value } = props as Record<string, unknown>;
-                            return (
-                              <text
-                                x={Number(x) + Number(width) + 5}
-                                y={Number(y) + Number(height) / 2}
-                                dy={4}
-                                textAnchor="start"
-                                fontSize={10}
-                                fontWeight={600}
-                                fill={Number(value) >= target ? "#059669" : "#d97706"}
-                              >
-                                €{Number(value).toFixed(1)}
-                              </text>
-                            );
-                          }}
-                        />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+
+                <div className="flex items-end gap-1 mb-3">
+                  <span className={`text-3xl font-bold leading-none ${
+                    avg === 0 ? "text-slate-400" : onTrack ? "text-emerald-700" : "text-amber-700"
+                  }`}>
+                    {avg > 0 ? formatCurrency(avg) : "N/A"}
+                  </span>
+                  {avg > 0 && <span className="text-sm text-slate-400 mb-0.5">/hr</span>}
+                </div>
+
+                {/* Progress bar toward target */}
+                <div className="h-1.5 rounded-full bg-slate-100 mb-2 overflow-hidden">
+                  <div
+                    className={`h-1.5 rounded-full transition-all duration-500 ${
+                      onTrack ? "bg-emerald-400" : avg > 0 ? "bg-amber-400" : "bg-slate-200"
+                    }`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] text-slate-400">
+                    Target: <span className="font-medium">{formatCurrency(target)}/hr</span>
+                  </p>
+                  {locs.length > 0 && (
+                    <p className="text-[11px] text-slate-400">
+                      {locs.length} location{locs.length !== 1 ? "s" : ""}
+                      {therapists > 0 ? ` · ${therapists} therapists` : ""}
+                    </p>
+                  )}
                 </div>
               </div>
             );
           })}
         </div>
+
+        {/* Per-location breakdown — collapsible */}
+        {(["Spa", "Aesthetics", "Slimming"] as const).filter((b) => (revpahByBrand[b]?.locations?.length ?? 0) > 0).map((brand) => {
+          const section = revpahByBrand[brand];
+          const locs    = section?.locations ?? [];
+          const target  = section?.target ?? 35;
+
+          return (
+            <div key={brand} className="mb-4 last:mb-0">
+              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">{brand} — by location</p>
+              <div className="space-y-1.5">
+                {locs.map((row) => {
+                  const barPct = target > 0 ? Math.min((row.revpah / target) * 100, 150) : 0;
+                  const hit    = row.revpah >= target;
+                  return (
+                    <div key={row.location} className="flex items-center gap-3">
+                      <span className="text-[11px] text-slate-600 w-[130px] shrink-0 truncate">{row.location}</span>
+                      <div className="flex-1 h-5 bg-slate-50 rounded overflow-hidden border border-slate-100 relative">
+                        <div
+                          className={`h-full rounded transition-all duration-300 ${hit ? "bg-emerald-100" : "bg-amber-100"}`}
+                          style={{ width: `${barPct}%` }}
+                        />
+                        {/* Target line */}
+                        <div
+                          className="absolute top-0 bottom-0 w-px bg-amber-400"
+                          style={{ left: `${Math.min((target / (target * 1.5)) * 100, 100)}%` }}
+                        />
+                      </div>
+                      <span className={`text-[11px] font-semibold w-14 text-right shrink-0 ${hit ? "text-emerald-700" : "text-amber-700"}`}>
+                        {row.revpah > 0 ? `€${row.revpah.toFixed(1)}` : "—"}
+                      </span>
+                      {row.denomSource === "snapshot" && (
+                        <span title="Denominator estimated from headcount snapshot" className="text-[10px] text-slate-400">est.</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Audit / data trail footer */}
+        {isRevPAHReal && (
+          <div className="mt-4 pt-4 border-t border-slate-100">
+            <p className="text-[10px] text-slate-400">
+              Denominator source: <span className="font-medium">therapist shift schedule (Talexio)</span> for months with ETL data, fallback to headcount snapshot × 8h × workdays.
+              Avg RevPAH is revenue-weighted across all locations in the brand.
+              {revpahQ.data?.isPartialMonth && ` Hours scaled to ${revpahQ.data.elapsedDays}/${revpahQ.data.totalDays} days elapsed.`}
+            </p>
+          </div>
+        )}
       </Card>
 
       {/* ══════════════════════════════════════════════════════════════════

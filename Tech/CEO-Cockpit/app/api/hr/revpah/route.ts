@@ -73,6 +73,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "month must be YYYY-MM" }, { status: 400 });
   }
 
+  // ── Partial-month detection ───────────────────────────────────────────────
+  // When querying the current in-progress month, the therapist-shifts ETL
+  // has stored the FULL month's scheduled hours, but only partial revenue
+  // exists. Scale hours by (elapsed days / total days) so RevPAH is comparable
+  // to a completed month instead of being artificially deflated.
+  const now = new Date();
+  const currentMonthStr = currentMonthYYYYMM();
+  const isPartialMonth = month === currentMonthStr;
+  const totalDays = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const elapsedDays = isPartialMonth ? Math.min(now.getDate(), totalDays) : totalDays;
+  const partialFactor = isPartialMonth ? elapsedDays / totalDays : 1;
+
   const supabase = getAdminClient();
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -140,7 +152,8 @@ export async function GET(req: NextRequest) {
 
   for (const r of therapistShifts ?? []) {
     const loc   = r.location_name as string;
-    const hours = Number(r.total_scheduled_hours ?? 0);
+    // Scale full-month hours to elapsed days when month is in progress
+    const hours = Number(r.total_scheduled_hours ?? 0) * partialFactor;
     if (hours > 0) {
       availHoursByLocation.set(loc, hours);
       headcountByLocation.set(loc, Number(r.therapist_count ?? 0));
@@ -234,22 +247,26 @@ export async function GET(req: NextRequest) {
   }
 
   for (const brand of brandNames) {
-    const locs   = byBrand[brand].locations;
-    const valid  = locs.map((r) => r.revpah).filter((v): v is number => v !== null);
-    byBrand[brand].avgRevPAH =
-      valid.length > 0
-        ? +(valid.reduce((a, b) => a + b, 0) / valid.length).toFixed(2)
-        : 0;
+    const locs = byBrand[brand].locations;
+    // Revenue-weighted average: totalRevenue / totalHours across all locations
+    // in the brand. Simple mean of per-location ratios gives equal weight to
+    // low-volume locations, producing misleading results.
+    const totalBrandRev = locs.reduce((a, r) => a + r.revenue, 0);
+    const totalBrandHrs = locs.reduce((a, r) => a + r.availHours, 0);
+    byBrand[brand].avgRevPAH = totalBrandHrs > 0
+      ? +(totalBrandRev / totalBrandHrs).toFixed(2)
+      : 0;
   }
 
-  const allValid = rows.map((r) => r.revpah).filter((v): v is number => v !== null);
-  const avgRevPAH =
-    allValid.length > 0
-      ? +(allValid.reduce((a, b) => a + b, 0) / allValid.length).toFixed(2)
-      : 0;
+  const totalAllRev = rows.reduce((a, r) => a + r.revenue, 0);
+  const totalAllHrs = rows.reduce((a, r) => a + r.availHours, 0);
+  const avgRevPAH   = totalAllHrs > 0 ? +(totalAllRev / totalAllHrs).toFixed(2) : 0;
 
   return NextResponse.json({
     month,
+    isPartialMonth,
+    elapsedDays,
+    totalDays,
     byBrand: {
       Spa: {
         locations:  byBrand.Spa.locations.map(locRow),

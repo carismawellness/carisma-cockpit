@@ -167,11 +167,18 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // Build employee_id → location map
+  // Build employee_id → location map. Skip employees with unrecognised org
+  // units — a "Spa" catch-all row with €0 revenue dragged the brand average
+  // down by ~€6/hr when 5 therapists were bucketed there.
   const empToLocation = new Map<string, string>();
+  const unmatchedUnits = new Map<string, string>(); // unit name → employee name
   for (const e of therapists) {
     const unit = e.currentPositionSimple?.organisationUnit?.name ?? null;
-    const loc = normaliseLocation(unit) ?? "Spa";
+    const loc = normaliseLocation(unit);
+    if (!loc) {
+      if (unit) unmatchedUnits.set(unit, e.fullName);
+      continue;
+    }
     empToLocation.set(e.id, loc);
   }
 
@@ -230,6 +237,9 @@ export async function POST(req: NextRequest) {
     status: "ok",
     month: monthParam,
     therapists_found: therapists.length,
+    therapists_matched: empToLocation.size,
+    therapists_skipped: unmatchedUnits.size,
+    unmatched_units: Object.fromEntries(unmatchedUnits),
     locations: rows.map((r) => ({
       location:   r.location_name,
       therapists: r.therapist_count,

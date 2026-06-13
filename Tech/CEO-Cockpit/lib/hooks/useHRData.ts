@@ -78,6 +78,10 @@ export interface HRRevPAHResponse {
     Aesthetics: RevPAHBrandSection;
     Slimming:   RevPAHBrandSection;
   };
+  /** True when queried month is still in progress — hours scaled to elapsed days */
+  isPartialMonth?: boolean;
+  elapsedDays?: number;
+  totalDays?: number;
 }
 
 export function useHRRevPAH(month: string) {
