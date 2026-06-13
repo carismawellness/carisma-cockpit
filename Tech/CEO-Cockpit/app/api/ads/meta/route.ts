@@ -100,7 +100,6 @@ function transformInsights(
       campaign: row.campaign_name ?? "Unknown",
       campaignId: row.campaign_id ?? "",
       cpl: Math.round(cpl * 100) / 100,
-      dailyBudget: dayCount > 0 ? Math.round((spend / dayCount) * 100) / 100 : 0,
       totalSpend: Math.round(spend * 100) / 100,
       totalLeads: leads,
       ctr: Math.round(ctr * 100) / 100,
@@ -188,7 +187,6 @@ export async function GET(req: NextRequest) {
 
     const insights: MetaInsight[] = json.data ?? [];
 
-    // Calculate day count for dailyBudget estimation
     const from = dateFrom ? new Date(dateFrom) : new Date("2026-01-01");
     const to = dateTo ? new Date(dateTo) : new Date();
     const dayCount = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / 86400000));

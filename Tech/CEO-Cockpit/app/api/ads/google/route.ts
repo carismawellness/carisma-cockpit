@@ -75,7 +75,6 @@ function transformRows(rows: GoogleAdsRow[], dayCount: number): CampaignData[] {
         campaign: r.campaign?.name ?? "Unknown",
         campaignId: r.campaign?.id ?? "",
         cpl: Math.round(cpl * 100) / 100,
-        dailyBudget: dayCount > 0 ? Math.round((spend / dayCount) * 100) / 100 : 0,
         totalSpend: Math.round(spend * 100) / 100,
         totalLeads: Math.round(conversions),
         ctr: Math.round(ctr * 10) / 10,
