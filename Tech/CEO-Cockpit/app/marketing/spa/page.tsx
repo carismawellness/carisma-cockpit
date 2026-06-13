@@ -26,6 +26,8 @@ import {
   ResponsiveContainer,
   LabelList,
   Cell,
+  ReferenceLine,
+  ReferenceArea,
 } from "recharts";
 import {
   MarketingPageHeader,
@@ -355,110 +357,190 @@ function WixSalesCard({ wix, brand }: { wix: WixHookResult; brand: typeof BRAND.
           </div>
         </div>
       ) : (
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-gray-500">
-              Weekly Revenue — Last 20 Weeks vs Same Period Last Year
-            </p>
-            {/* Period YoY summary */}
-            {(() => {
-              const totalCurr = weeklySlice.reduce((s, w) => s + w.current, 0);
-              const totalLy   = weeklySlice.reduce((s, w) => s + w.ly, 0);
-              const pct = totalLy > 0 ? ((totalCurr - totalLy) / totalLy) * 100 : null;
-              return pct !== null ? (
-                <span className={`text-xs font-bold rounded-full px-2.5 py-1 ${pct >= 0 ? "text-emerald-700 bg-emerald-50" : "text-red-600 bg-red-50"}`}>
-                  {pct >= 0 ? "+" : ""}{pct.toFixed(1)}% vs same 20 weeks LY
-                </span>
-              ) : null;
-            })()}
-          </div>
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={weeklySlice}
-                margin={{ top: 28, right: 16, left: 8, bottom: 28 }}
-                barCategoryGap="18%"
-                barGap={2}
-              >
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 10, fill: "#6B7280" }}
-                  axisLine={false}
-                  tickLine={false}
-                  interval={1}
-                  angle={-35}
-                  textAnchor="end"
-                  height={40}
-                />
-                <YAxis
-                  tickFormatter={(v: number) => fmtK(v)}
-                  tick={{ fontSize: 11, fill: "#9CA3AF" }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={52}
-                />
-                <Tooltip
-                  contentStyle={TOOLTIP_STYLE}
-                  cursor={{ fill: `${brand.soft}30` }}
-                  formatter={(value: unknown, name: unknown) => [
-                    fmtK(Number(value)),
-                    name === "current" ? "This year" : "Same week LY",
-                  ]}
-                  labelFormatter={(label) => `Week of ${String(label)}`}
-                />
-                {/* LY bar */}
-                <Bar dataKey="ly" name="ly" radius={[3, 3, 0, 0]} maxBarSize={16}>
-                  {weeklySlice.map((_, i) => (
-                    <Cell key={i} fill={`${brand.soft}70`} />
-                  ))}
-                </Bar>
-                {/* Current bar with YoY delta label above */}
-                <Bar dataKey="current" name="current" radius={[3, 3, 0, 0]} maxBarSize={16}>
-                  {weeklySlice.map((_, i) => (
-                    <Cell key={i} fill={brand.dark} />
-                  ))}
-                  <LabelList
-                    dataKey="yoyPct"
-                    position="top"
-                    content={(props) => {
-                      const { x, y, value } = props as { x: number; y: number; value: number | null };
-                      if (value === null || value === undefined) return null;
-                      const color = value >= 0 ? "#22C55E" : "#EF4444";
-                      return (
-                        <text
-                          x={x}
-                          y={(y as number) - 4}
-                          textAnchor="middle"
-                          fontSize={9}
-                          fontWeight={700}
-                          fill={color}
-                        >
-                          {value >= 0 ? "+" : ""}{value.toFixed(0)}%
-                        </text>
-                      );
-                    }}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          {/* Legend */}
-          <div className="flex items-center gap-4 justify-center mt-1">
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-sm inline-block" style={{ backgroundColor: brand.dark }} />
-              <span className="text-[11px] text-gray-500">This year</span>
+        (() => {
+          // Build 6-week LY forecast beyond last actual data week
+          const lastWeek = weeklySlice[weeklySlice.length - 1];
+          const forecastWeeks = lastWeek
+            ? Array.from({ length: 6 }, (_, i) => {
+                const nd = new Date(lastWeek.weekStart);
+                nd.setDate(nd.getDate() + (i + 1) * 7);
+                const lyDate = new Date(nd);
+                lyDate.setDate(lyDate.getDate() - 364);
+                const lyKey = lyDate.toISOString().slice(0, 10);
+                const lyEntry = weekly.find((w) => w.weekStart === lyKey);
+                return {
+                  weekStart: nd.toISOString().slice(0, 10),
+                  label: nd.toLocaleString("en-US", { month: "short", day: "numeric" }),
+                  current: null as number | null,
+                  ly: lyEntry?.current ?? 0,
+                  yoyPct: null as number | null,
+                  isForecast: true,
+                };
+              })
+            : [];
+
+          const weeklyChartData = [
+            ...weeklySlice.map((w) => ({ ...w, isForecast: false as boolean })),
+            ...forecastWeeks,
+          ];
+
+          const totalCurr = weeklySlice.reduce((s, w) => s + w.current, 0);
+          const totalLy   = weeklySlice.reduce((s, w) => s + w.ly, 0);
+          const periodPct = totalLy > 0 ? ((totalCurr - totalLy) / totalLy) * 100 : null;
+
+          return (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-gray-500">
+                  Weekly Revenue — Last 20 Weeks + 6-Week LY Forecast
+                </p>
+                {periodPct !== null && (
+                  <span className={`text-xs font-bold rounded-full px-2.5 py-1 ${periodPct >= 0 ? "text-emerald-700 bg-emerald-50" : "text-red-600 bg-red-50"}`}>
+                    {periodPct >= 0 ? "+" : ""}{periodPct.toFixed(1)}% vs same 20 weeks LY
+                  </span>
+                )}
+              </div>
+              <div className="h-[340px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={weeklyChartData}
+                    margin={{ top: 54, right: 16, left: 8, bottom: 36 }}
+                    barCategoryGap="18%"
+                    barGap={2}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
+                    {/* Subtle blue background on forecast zone */}
+                    {forecastWeeks.length > 0 && forecastWeeks[0] && (
+                      <ReferenceArea
+                        x1={forecastWeeks[0].label}
+                        x2={forecastWeeks[forecastWeeks.length - 1]?.label}
+                        fill="#3B82F6"
+                        fillOpacity={0.04}
+                        strokeOpacity={0}
+                      />
+                    )}
+                    {/* Divider line between history and forecast */}
+                    {lastWeek && (
+                      <ReferenceLine
+                        x={lastWeek.label}
+                        stroke="#CBD5E1"
+                        strokeDasharray="4 2"
+                        strokeWidth={1.5}
+                        label={{ value: "Forecast ▶", position: "insideTopRight", fontSize: 9, fill: "#3B82F6", dy: -8 }}
+                      />
+                    )}
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 9, fill: "#6B7280" }}
+                      axisLine={false}
+                      tickLine={false}
+                      interval={0}
+                      angle={-40}
+                      textAnchor="end"
+                      height={44}
+                    />
+                    <YAxis
+                      tickFormatter={(v: number) => fmtK(v)}
+                      tick={{ fontSize: 11, fill: "#9CA3AF" }}
+                      axisLine={false}
+                      tickLine={false}
+                      width={52}
+                    />
+                    <Tooltip
+                      contentStyle={TOOLTIP_STYLE}
+                      cursor={{ fill: `${brand.soft}30` }}
+                      formatter={(value: unknown, name: unknown, props: { payload?: { isForecast?: boolean } }) => {
+                        const isForecast = props?.payload?.isForecast;
+                        if (name === "current") return [fmtK(Number(value)), "This year"];
+                        return [fmtK(Number(value)), isForecast ? "LY Forecast" : "Same week LY"];
+                      }}
+                      labelFormatter={(label) => `Week of ${String(label)}`}
+                    />
+                    {/* LY / forecast bar */}
+                    <Bar dataKey="ly" name="ly" radius={[3, 3, 0, 0]} maxBarSize={16}>
+                      {weeklyChartData.map((d, i) => (
+                        <Cell
+                          key={i}
+                          fill={d.isForecast ? "#93C5FD" : `${brand.soft}70`}
+                          fillOpacity={d.isForecast ? 0.7 : 1}
+                        />
+                      ))}
+                      {/* Show LY value above forecast bars only */}
+                      <LabelList
+                        dataKey="ly"
+                        position="top"
+                        content={(props) => {
+                          const { x, y, value, index } = props as { x: number; y: number; value: number | null; index?: number };
+                          const item = weeklyChartData[index ?? -1];
+                          if (!item?.isForecast || !value) return null;
+                          return (
+                            <text x={Number(x)} y={Number(y) - 4} textAnchor="middle" fontSize={8} fontWeight={700} fill="#3B82F6">
+                              {fmtK(Number(value))}
+                            </text>
+                          );
+                        }}
+                      />
+                    </Bar>
+                    {/* Current year bar with € value + YoY% stacked above */}
+                    <Bar dataKey="current" name="current" radius={[3, 3, 0, 0]} maxBarSize={16}>
+                      {weeklyChartData.map((d, i) => (
+                        <Cell key={i} fill={d.isForecast ? "transparent" : brand.dark} />
+                      ))}
+                      {/* € value just above bar */}
+                      <LabelList
+                        dataKey="current"
+                        position="top"
+                        content={(props) => {
+                          const { x, y, value } = props as { x: number; y: number; value: number | null };
+                          if (!value) return null;
+                          return (
+                            <text x={Number(x)} y={Number(y) - 6} textAnchor="middle" fontSize={8} fontWeight={700} fill={brand.dark}>
+                              {fmtK(Number(value))}
+                            </text>
+                          );
+                        }}
+                      />
+                      {/* YoY% further above */}
+                      <LabelList
+                        dataKey="yoyPct"
+                        position="top"
+                        content={(props) => {
+                          const { x, y, value } = props as { x: number; y: number; value: number | null };
+                          if (value === null || value === undefined) return null;
+                          const color = value >= 0 ? "#22C55E" : "#EF4444";
+                          return (
+                            <text x={Number(x)} y={Number(y) - 20} textAnchor="middle" fontSize={8} fontWeight={700} fill={color}>
+                              {value >= 0 ? "+" : ""}{value.toFixed(0)}%
+                            </text>
+                          );
+                        }}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              {/* Legend */}
+              <div className="flex flex-wrap items-center gap-4 justify-center mt-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-sm inline-block" style={{ backgroundColor: brand.dark }} />
+                  <span className="text-[11px] text-gray-500">This year</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-sm inline-block" style={{ backgroundColor: `${brand.soft}70` }} />
+                  <span className="text-[11px] text-gray-500">Same week LY</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-sm inline-block bg-blue-300 opacity-70" />
+                  <span className="text-[11px] text-gray-500">LY Forecast (next 6 wks)</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-emerald-600">+%</span>
+                  <span className="text-[11px] text-gray-500">YoY above bar</span>
+                </div>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-sm inline-block" style={{ backgroundColor: `${brand.soft}70` }} />
-              <span className="text-[11px] text-gray-500">Same week LY</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-bold text-emerald-600">+%</span>
-              <span className="text-[11px] text-gray-500">YoY delta above bar</span>
-            </div>
-          </div>
-        </div>
+          );
+        })()
       )}
     </Card>
   );
