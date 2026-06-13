@@ -9,6 +9,8 @@ export type WeightStatus = "on_track" | "plateau" | "gaining" | "no_baseline" | 
 
 export interface WeightClient {
   name: string;
+  /** ISO date string YYYY-MM-DD — when the client's program began. */
+  programStart: string | null;
   startWeight: number | null;
   currentWeight: number | null;
   /** Positive = good (client lost weight). Negative = bad (client gained). */
@@ -18,6 +20,30 @@ export interface WeightClient {
   weeksLogged: number;
   trend: WeightTrend;
   status: WeightStatus;
+}
+
+// ── Weekly trend (chronological) ─────────────────────────────────────────────
+
+export interface WeeklyTrendPoint {
+  /** ISO date of the Monday starting this calendar week. */
+  weekStart: string;
+  /** Human-readable label, e.g. "3 Mar" */
+  weekLabel: string;
+  /** Total clients who had a valid weigh-in this week. */
+  weighed: number;
+  /** Weighed clients whose weight dropped vs prior reading. */
+  losing: number;
+  /** Weighed clients whose weight rose vs prior reading. */
+  gaining: number;
+  /** Weighed clients whose weight was unchanged (±0.15 kg). */
+  plateau: number;
+  /** losing / weighed × 100, rounded to 1 dp. Null if nobody weighed. */
+  losingPct: number | null;
+}
+
+export interface SlimmingWeightTrendData {
+  asOf: string;
+  weeks: WeeklyTrendPoint[];
 }
 
 export interface SlimmingWeightSummary {

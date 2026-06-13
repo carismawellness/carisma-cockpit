@@ -12,6 +12,7 @@ import { SalesKPICard } from "@/components/sales/SalesKPICard";
 import { SalesKPIGrid } from "@/components/sales/SalesKPIGrid";
 import { KPIGridSkeleton, TableSkeleton } from "@/components/ui/skeleton";
 import { useSlimmingWeight } from "@/lib/hooks/useSlimmingWeight";
+import { useSlimmingWeightTrend } from "@/lib/hooks/useSlimmingWeightTrend";
 import type { WeightClient } from "@/lib/types/slimming-weight";
 import {
   ArrowUpDown,
@@ -24,12 +25,15 @@ import {
 import {
   BarChart,
   Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
   Cell,
+  ReferenceLine,
 } from "recharts";
 
 // ── Format helpers ────────────────────────────────────────────────────────────
@@ -371,6 +375,71 @@ function DistributionChart({ clients }: { clients: WeightClient[] }) {
   );
 }
 
+// ── Weekly % losing trend chart ───────────────────────────────────────────────
+
+function WeeklyTrendChart() {
+  const { data, isFetching } = useSlimmingWeightTrend();
+
+  if (isFetching && !data) {
+    return <div className="h-[260px] animate-pulse bg-muted/20 rounded" />;
+  }
+
+  const weeks = data?.weeks ?? [];
+  // Only show weeks where at least 1 client was weighed
+  const chartData = weeks.filter(w => w.weighed > 0);
+
+  if (chartData.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground py-6 text-center">
+        No weekly data yet — fill in Program Start dates and weekly weights to see the trend.
+      </p>
+    );
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={260}>
+      <LineChart data={chartData} margin={{ top: 16, right: 24, left: 0, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+        <XAxis
+          dataKey="weekLabel"
+          tick={{ fontSize: 11 }}
+          axisLine={false}
+          tickLine={false}
+          interval="preserveStartEnd"
+        />
+        <YAxis
+          domain={[0, 100]}
+          tickFormatter={(v: number) => `${v}%`}
+          tick={{ fontSize: 11 }}
+          axisLine={false}
+          tickLine={false}
+          width={36}
+        />
+        <Tooltip
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          formatter={(value: unknown, _name: unknown, entry: any) => {
+            const weighed = (entry?.payload?.weighed as number | undefined) ?? 0;
+            return [`${Number(value).toFixed(1)}% (${weighed} weighed)`, "Losing weight"];
+          }}
+          contentStyle={{ fontSize: 12 }}
+        />
+        {/* 50% reference — majority losing is the target */}
+        <ReferenceLine y={50} stroke="#e5e7eb" strokeDasharray="4 4" />
+        <Line
+          type="monotone"
+          dataKey="losingPct"
+          stroke="#059669"
+          strokeWidth={2.5}
+          dot={{ r: 4, fill: "#059669", strokeWidth: 0 }}
+          activeDot={{ r: 6 }}
+          connectNulls={false}
+          name="losingPct"
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
 // ── Main exported section ─────────────────────────────────────────────────────
 
 export function SlimmingProgramHealthSection({
@@ -487,6 +556,21 @@ export function SlimmingProgramHealthSection({
           <DistributionChart clients={clientsWithData} />
         </Card>
       )}
+
+      {/* ── Weekly % losing trend ────────────────────────────────────────── */}
+      <Card className="p-4 md:p-5">
+        <div className="flex items-baseline justify-between mb-1">
+          <h3 className="text-base font-semibold text-foreground">
+            % Clients Losing Weight — Week by Week
+          </h3>
+          <span className="text-xs text-muted-foreground">chronological · per calendar week</span>
+        </div>
+        <p className="text-xs text-muted-foreground mb-4">
+          Of clients who were weighed each week, what % showed a weight drop vs their prior reading.
+          Dashed line = 50% target.
+        </p>
+        <WeeklyTrendChart />
+      </Card>
 
       {/* ── Needs Attention (call list) ───────────────────────────────────── */}
       <Card className="p-4 md:p-5">

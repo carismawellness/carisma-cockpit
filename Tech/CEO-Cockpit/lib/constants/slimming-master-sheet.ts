@@ -13,11 +13,19 @@ export const SLIMMING_MASTER_SHEET_ID =
 
 export const SLIMMING_MASTER_TABS = {
   /**
-   * Weekly weight readings per client.
-   * Columns: Name | Starting weight | 1 week | 2 week | … | 24 week
-   * Data convention: 0 = missed weigh-in (treat as null), "No tanita" = no baseline reading.
+   * Legacy weight record tab — no date anchoring.
+   * @deprecated Use WEIGHT_TRACKER instead.
    */
   WEIGHT_RECORD: { gid: "1147187129", name: "Clients weight record" },
+
+  /**
+   * Redesigned weight tracker — canonical data source for the Cockpit.
+   * Columns: Name | Program Start (DD/MM/YYYY) | Starting weight | 1 week | 2 week | … | 24 week
+   * Data convention: 0 = missed weigh-in (null), "No tanita" = no baseline, blank = not yet due.
+   * Program Start anchors each client's weekly readings to real calendar dates:
+   *   weigh-in date for week N = Program Start + N × 7 days
+   */
+  WEIGHT_TRACKER: { gid: "998904193", name: "Weight tracker" },
 } as const;
 
 export function slimmingMasterCsvUrl(gid: string): string {

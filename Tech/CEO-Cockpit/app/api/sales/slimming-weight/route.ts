@@ -1,13 +1,13 @@
 // app/api/sales/slimming-weight/route.ts
 //
-// Reads weekly weight readings for every Slimming client directly from the
-// "Clients weight record" tab of the Carisma Slimming Master Google Sheet,
-// then computes progress metrics and a "call list" of clients not losing weight.
+// Reads weekly weight readings for every Slimming client from the
+// redesigned "Weight tracker" tab of the Carisma Slimming Master Google Sheet.
 //
-// Sheet format (columns A–Z):
+// Sheet format (columns A–AA after redesign):
 //   A: Name
-//   B: Starting weight  (kg, or "No tanita" / empty if no baseline)
-//   C: 1 week  …  Z: 24 week  (kg readings; "0" means missed weigh-in)
+//   B: Program Start  (DD/MM/YYYY — when the client's program began)
+//   C: Starting weight  (kg, or "No tanita" / empty if no baseline)
+//   D: 1 week  …  AA: 24 week  (kg readings; "0" means missed weigh-in)
 //
 // Zero-auth fetch — sheet must be shared as "Anyone with the link can view".
 
@@ -30,6 +30,23 @@ const WEEK_COUNT = 24;
 const ON_TRACK_THRESHOLD  =  0.3;   // % — must have lost at least this much
 const GAINING_THRESHOLD   = -0.3;   // % — below this is "gaining"
 const TREND_MIN_DELTA_KG  =  0.15;  // kg change to register as movement
+
+// ── Date parser (DD/MM/YYYY → YYYY-MM-DD) ────────────────────────────────────
+
+function parseDateDMY(raw: string): string | null {
+  const s = (raw ?? "").trim();
+  if (!s) return null;
+  // DD/MM/YYYY or DD-MM-YYYY
+  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) {
+    const [, d, mo, y] = m;
+    const iso = `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    return isNaN(Date.parse(iso)) ? null : iso;
+  }
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  return null;
+}
 
 // ── Weight parser ─────────────────────────────────────────────────────────────
 
@@ -74,7 +91,7 @@ function computeStatus(
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 export async function GET() {
-  const csvUrl = slimmingMasterCsvUrl(SLIMMING_MASTER_TABS.WEIGHT_RECORD.gid);
+  const csvUrl = slimmingMasterCsvUrl(SLIMMING_MASTER_TABS.WEIGHT_TRACKER.gid);
 
   let text: string;
   try {
@@ -113,12 +130,13 @@ export async function GET() {
   }
   const headers = rows[headerIdx].map(h => h.trim().toLowerCase());
 
-  const nameIdx  = headers.indexOf("name");
-  const startIdx = headers.indexOf("starting weight");
+  const nameIdx    = headers.indexOf("name");
+  const progIdx    = headers.indexOf("program start");   // new column B
+  const startIdx   = headers.indexOf("starting weight"); // now column C
 
   if (nameIdx === -1 || startIdx === -1) {
     return NextResponse.json(
-      { error: `Required columns not found. Got: ${headers.slice(0, 6).join(", ")}` },
+      { error: `Required columns not found. Got: ${headers.slice(0, 8).join(", ")}` },
       { status: 502 },
     );
   }
@@ -139,7 +157,8 @@ export async function GET() {
     if (!rawName || rawName.toLowerCase() === "name" || rawName.length < 2) continue;
     if (rawName.toLowerCase() === "x") continue;
 
-    const startWeight = parseWeight(row[startIdx] ?? "");
+    const programStart = progIdx >= 0 ? parseDateDMY(row[progIdx] ?? "") : null;
+    const startWeight  = parseWeight(row[startIdx] ?? "");
 
     const weeklyReadings: (number | null)[] = weekIdxs.map(idx =>
       idx >= 0 ? parseWeight(row[idx] ?? "") : null,
@@ -161,6 +180,7 @@ export async function GET() {
 
     const client: WeightClient = {
       name: rawName,
+      programStart,
       startWeight,
       currentWeight,
       weightLost,
