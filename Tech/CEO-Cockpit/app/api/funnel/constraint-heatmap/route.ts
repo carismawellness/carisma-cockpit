@@ -3,12 +3,22 @@
  *
  * Metric sources:
  *   total_revenue       — brand revenue table, gross sales (Cockpit datasheet via ETL)
- *   total_leads         — Meta meta_campaigns_daily: SUM(leads)
+ *   total_leads         — meta_leads + google_leads (cross-channel total)
+ *   meta_leads          — meta_campaigns_daily: SUM(leads)
+ *                         IMPORTANT: includes ALL Meta campaigns (active + paused).
+ *                         Paused campaigns can still carry attributed leads within the
+ *                         7-day click / 1-day view window. This is why this number may
+ *                         be higher than Meta Ads Manager when Ads Manager is filtered
+ *                         to "Active campaigns only". Both numbers are correct — they
+ *                         count different things. The cockpit number is more complete.
+ *   google_leads        — google_campaigns_daily: SUM(conversions)
+ *                         Google does not distinguish lead form conversions from other
+ *                         conversion types; this is a proxy for Google-sourced leads.
  *   total_bookings      — crm_agent_daily: SUM(total_booked) for SDR agents
  *                         (includes outbound + inbound + chat from each SDR sheet)
  *   total_meta_bookings — crm_agent_daily: SUM(other_booked) for SDR agents
  *                         (outbound-only — bookings from SDRs dialling Meta leads)
- *   daily_leads         — Meta leads / calendar days in range
+ *   daily_leads         — total_leads (Meta + Google) / calendar days in range
  *   leads_per_agent     — daily_leads / active SDR count in period
  *   roas                — total_revenue / total_spend (blended)
  *   cpl                 — Meta spend / Meta leads
@@ -40,7 +50,12 @@ const FALLBACK_SDR_AGENTS: Record<BrandSlug, string[]> = {
 
 export type BrandHeatmapMetrics = {
   total_revenue:       number | null;
+  /** Cross-channel total: meta_leads + google_leads */
   total_leads:         number | null;
+  /** Meta campaigns only (active + paused). Use this for Meta-specific CPL. */
+  meta_leads:          number | null;
+  /** Google conversions (proxy for Google-sourced leads). */
+  google_leads:        number | null;
   total_bookings:      number | null;
   total_meta_bookings: number | null;
   daily_leads:         number | null;
@@ -64,7 +79,8 @@ export type ConstraintHeatmapResponse = {
 };
 
 const EMPTY_METRICS: BrandHeatmapMetrics = {
-  total_revenue: null, total_leads: null, total_bookings: null, total_meta_bookings: null,
+  total_revenue: null, total_leads: null, meta_leads: null, google_leads: null,
+  total_bookings: null, total_meta_bookings: null,
   daily_leads: null, leads_per_agent: null,
   roas: null, cpl: null,
   booking_efficiency: null, deposit_rate: null,
@@ -122,6 +138,11 @@ export async function GET(req: NextRequest) {
     const sdrs = brandSdrAgents[slug];
 
     // ── 1. Meta: leads, spend, ad_refresh ────────────────────────────────────
+    // Fetches ALL Meta campaigns for the brand and date range — active AND paused.
+    // Paused campaigns can still have attributed leads via the 7d-click / 1d-view
+    // window, so they are intentionally included for an accurate total. This is why
+    // the cockpit may show more leads than Meta Ads Manager when Ads Manager is
+    // filtered to "Active campaigns only".
     const { data: metaRows } = await supabase
       .from("meta_campaigns_daily")
       .select("campaign_id, spend, leads, date")
@@ -134,8 +155,23 @@ export async function GET(req: NextRequest) {
 
     const metaSpend  = (metaRows ?? []).reduce((s: number, r: MetaRow) => s + (r.spend ?? 0), 0);
     const metaLeads  = (metaRows ?? []).reduce((s: number, r: MetaRow) => s + (r.leads ?? 0), 0);
+
+    // ── 1b. Google: leads (conversions) ──────────────────────────────────────
+    // Google does not have a "leads" column — conversions is the closest proxy.
+    // For brands using Google Lead Form Ads, conversions = lead form submissions.
+    const { data: googleLeadRows } = await supabase
+      .from("google_campaigns_daily")
+      .select("conversions")
+      .eq("brand_id", brandId)
+      .gte("date", from)
+      .lte("date", to);
+
+    type GLeadRow = { conversions: number | null };
+    const googleLeads = (googleLeadRows ?? []).reduce((s: number, r: GLeadRow) => s + (r.conversions ?? 0), 0);
+
+    const totalLeads = metaLeads + googleLeads;
     const cpl        = metaLeads > 0 ? Math.round((metaSpend / metaLeads) * 100) / 100 : null;
-    const daily_leads = metaLeads > 0 ? Math.round((metaLeads / daysInRange) * 10) / 10 : null;
+    const daily_leads = totalLeads > 0 ? Math.round((totalLeads / daysInRange) * 10) / 10 : null;
 
     const firstSeen = new Map<string, string>();
     for (const r of (metaRows ?? []) as MetaRow[]) {
@@ -254,7 +290,9 @@ export async function GET(req: NextRequest) {
 
     return [slug, {
       total_revenue,
-      total_leads:         metaLeads > 0 ? metaLeads : null,
+      total_leads:         totalLeads > 0 ? totalLeads : null,
+      meta_leads:          metaLeads > 0 ? metaLeads : null,
+      google_leads:        googleLeads > 0 ? googleLeads : null,
       total_bookings:      totalBooked > 0 ? totalBooked : null,
       total_meta_bookings: metaBooked > 0 ? metaBooked : null,
       daily_leads,

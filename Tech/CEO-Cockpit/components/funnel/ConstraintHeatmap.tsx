@@ -58,9 +58,17 @@ function buildRows(brands: Record<string, BrandHeatmapMetrics>): { main: AnyRow[
       )),
     },
     {
-      metric: "Total Leads", benchmark: null,
+      metric: "Meta Leads", benchmark: null,
       cells: BRANDS.map(b => cell(
-        brands[b]?.total_leads,
+        brands[b]?.meta_leads,
+        n => n.toLocaleString(),
+        () => "green",
+      )),
+    },
+    {
+      metric: "Google Leads", benchmark: null,
+      cells: BRANDS.map(b => cell(
+        brands[b]?.google_leads,
         n => n.toLocaleString(),
         () => "green",
       )),
@@ -290,6 +298,9 @@ export function ConstraintHeatmap({ dateFrom, dateTo }: Props) {
           </span>
         ))}
       </div>
+      <p className="mt-2 text-[10px] text-muted-foreground/70 leading-relaxed">
+        Meta Leads = all campaigns (active + paused) via 7d-click / 1d-view attribution window — may be higher than Meta Ads Manager when filtered to active campaigns only. Google Leads = conversions from Google campaigns.
+      </p>
     </Card>
   );
 }
