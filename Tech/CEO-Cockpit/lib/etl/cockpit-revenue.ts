@@ -32,7 +32,7 @@ const BRAND_MAP: Record<string, string> = {
 // ── CSV fetch (public Cockpit sheet) ────────────────────────────────────────────
 
 async function fetchCockpitCsv(gid: string): Promise<Record<string, string>[]> {
-  const url  = `https://docs.google.com/spreadsheets/d/${COCKPIT_SHEET_ID}/export?format=csv&gid=${gid}`;
+  const url  = `https://docs.google.com/spreadsheets/d/${COCKPIT_SHEET_ID}/gviz/tq?tqx=out:csv&gid=${gid}`;
   const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) throw new Error(`Cockpit Datasheet fetch failed: ${resp.status} — check sheet is shared as "Anyone with the link can view"`);
   const text = await resp.text();

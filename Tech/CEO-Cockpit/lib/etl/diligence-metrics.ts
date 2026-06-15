@@ -93,7 +93,7 @@ export async function computeDiligenceMetrics(): Promise<{
 }> {
   const warnings: string[] = [];
 
-  const url = `https://docs.google.com/spreadsheets/d/${COCKPIT_SHEET_ID}/export?format=csv&gid=${SERVICE_GID}`;
+  const url = `https://docs.google.com/spreadsheets/d/${COCKPIT_SHEET_ID}/gviz/tq?tqx=out:csv&gid=${SERVICE_GID}`;
   const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) {
     throw new Error(
