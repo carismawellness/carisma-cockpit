@@ -1,7 +1,11 @@
 import { deleteWhere, insertRows } from "./supabase-etl";
-import { parseCSV } from "./csv";
+import { parseCSV, assertCockpitHeaders } from "./csv";
 import { cockpitCsvUrl, COCKPIT_TABS } from "../constants/cockpit-sheets";
 import { ETLLogger } from "./etl-logger";
+
+// Trailing spaces on header cells (see sheet quirks below) are preserved as-is;
+// assertCockpitHeaders trims when comparing, so list the canonical (untrimmed) form.
+const REQUIRED_HEADERS = ["Date", "VAT Exclusive Amount", "Point of Sales", "Brand"] as const;
 
 // Spa retail (product) sales attributed to the selling employee.
 // Source: Cockpit "Retail - Spa" tab (gid 1170650850).
@@ -33,15 +37,15 @@ async function fetchCockpitCsv(): Promise<Record<string, string>[]> {
   const text = await resp.text();
   const rows = parseCSV(text);
   if (rows.length < 2) return [];
-  // Cockpit sheets prefix data with a title row like "Product data is from…".
-  // Find the first row with ≥3 non-empty cells — that's the real header row.
+  // Guard against silent failures (wrong-tab / merged-title-row gviz quirks).
+  assertCockpitHeaders(rows, COCKPIT_TABS.SPA_RETAIL.name, REQUIRED_HEADERS);
+  // With cockpitCsvUrl's &range=A2:ZZ the title row is already skipped, so
+  // row 0 IS the header row. We keep the legacy fallback for safety.
   let headerIdx = 0;
   for (let i = 0; i < Math.min(rows.length, 5); i++) {
     const nonEmpty = rows[i].filter(c => c.trim()).length;
     if (nonEmpty >= 3) { headerIdx = i; break; }
   }
-  // Preserve original header case so `stripCol` exact-name lookup works;
-  // tolerate trailing spaces via the `${key} ` fallback inside stripCol.
   const headers = rows[headerIdx];
   return rows.slice(headerIdx + 1).map(cells =>
     Object.fromEntries(headers.map((h, i) => [h.trim(), (cells[i] ?? "").trim()]))

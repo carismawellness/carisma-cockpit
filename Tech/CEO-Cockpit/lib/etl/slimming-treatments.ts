@@ -1,6 +1,9 @@
 import { deleteWhere, insertRows } from "./supabase-etl";
+import { assertCockpitHeaders } from "./csv";
 import { cockpitCsvUrl, COCKPIT_TABS } from "../constants/cockpit-sheets";
 import { ETLLogger } from "./etl-logger";
+
+const REQUIRED_HEADERS = ["Date", "Client", "Treatment", "Price", "Therapist"] as const;
 
 const VAT_RATE = 0.18;
 
@@ -28,6 +31,10 @@ async function fetchCockpitCsv(): Promise<Record<string, string>[]> {
   const text = await resp.text();
   const lines = text.split("\n").filter(l => l.trim());
   if (lines.length < 2) return [];
+  // Guard against silent failures (wrong-tab / merged-title-row gviz quirks).
+  // Use the shared assertion against the parsed header row.
+  const parsedFirstRows = lines.slice(0, 5).map(parseCSVRow);
+  assertCockpitHeaders(parsedFirstRows, COCKPIT_TABS.SLM_TRANSACTIONS.name, REQUIRED_HEADERS);
   let headerIdx = 0;
   for (let i = 0; i < Math.min(lines.length, 5); i++) {
     if (parseCSVRow(lines[i]).filter(c => c.trim()).length >= 3) { headerIdx = i; break; }

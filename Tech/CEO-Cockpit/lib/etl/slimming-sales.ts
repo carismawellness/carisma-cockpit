@@ -1,7 +1,9 @@
 import { deleteWhere, insertRows } from "./supabase-etl";
-import { parseCSV } from "./csv";
+import { parseCSV, assertCockpitHeaders } from "./csv";
 import { cockpitCsvUrl, COCKPIT_TABS } from "../constants/cockpit-sheets";
 import { ETLLogger } from "./etl-logger";
+
+const REQUIRED_HEADERS = ["Date", "Client", "Full price", "Paid", "Employee"] as const;
 
 const VAT_RATE = 0.18;
 
@@ -14,6 +16,7 @@ async function fetchCockpitCsv(): Promise<Record<string, string>[]> {
   const text = await resp.text();
   const rows = parseCSV(text);
   if (rows.length < 2) return [];
+  assertCockpitHeaders(rows, COCKPIT_TABS.SLM_SALES.name, REQUIRED_HEADERS);
   let headerIdx = 0;
   for (let i = 0; i < Math.min(rows.length, 5); i++) {
     if (rows[i].filter(c => c.trim()).length >= 3) { headerIdx = i; break; }
