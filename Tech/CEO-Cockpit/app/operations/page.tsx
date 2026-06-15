@@ -39,6 +39,7 @@ import {
   Star,
   ClipboardCheck,
   UserSearch,
+  AlertTriangle,
 } from "lucide-react";
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -662,6 +663,7 @@ function OperationsContent({
         barName="Facility %"
         trend={facilityTrend.data ?? []}
         emptyMessage="No facility standards data for the selected period."
+        dateFrom={dateFrom}
       />
 
       {/* ═══════ MYSTERY GUEST STANDARDS BY LOCATION ═════════════════ */}
@@ -674,6 +676,7 @@ function OperationsContent({
         barName="Mystery Guest %"
         trend={mysteryTrend.data ?? []}
         emptyMessage="No mystery guest data for the selected period."
+        dateFrom={dateFrom}
       />
 
     </>
@@ -693,6 +696,7 @@ function StandardsCard({
   barName,
   trend,
   emptyMessage,
+  dateFrom,
 }: {
   title: string;
   icon: React.ReactNode;
@@ -702,8 +706,16 @@ function StandardsCard({
   barName: string;
   trend: MonthlyStandardScore[];
   emptyMessage: string;
+  dateFrom?: Date;
 }) {
   const hasTrend = trend.length >= 2;
+
+  // Detect fallback: shown month is older than the selected period start,
+  // meaning no data existed in range and we fell back to the latest available.
+  const selectedFromMonth = dateFrom
+    ? `${dateFrom.getFullYear()}-${String(dateFrom.getMonth() + 1).padStart(2, "0")}-01`
+    : null;
+  const isFallback = !!(selectedFromMonth && month && month < selectedFromMonth);
 
   return (
     <Card className="p-3 md:p-6">
@@ -711,9 +723,17 @@ function StandardsCard({
         {icon}
         <h2 className="text-lg font-semibold text-foreground">{title}</h2>
       </div>
-      <p className="text-sm text-muted-foreground mb-4">
+      <p className="text-sm text-muted-foreground mb-3">
         {monthLabel(month)} · {aggregate}% — green &ge;85%, amber 60-84%, red &lt;60%
       </p>
+      {isFallback && (
+        <div className="flex items-center gap-1.5 mb-4 px-2.5 py-1.5 bg-amber-50 border border-amber-200 rounded-md">
+          <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+          <p className="text-xs text-amber-700">
+            Latest available data — no assessments recorded for the selected period.
+          </p>
+        </div>
+      )}
 
       {/* Trend line — monthly aggregate */}
       {hasTrend && (
