@@ -1,5 +1,5 @@
 import { deleteWhere, insertRows } from "./supabase-etl";
-import { parseCSV, assertCockpitHeaders } from "./csv";
+import { parseCSV, assertCockpitHeaders, assertNonZeroOutput } from "./csv";
 import { cockpitCsvUrl, COCKPIT_TABS } from "../constants/cockpit-sheets";
 import { ETLLogger } from "./etl-logger";
 
@@ -195,5 +195,13 @@ async function runSpaRetailByEmployeeInner(
   }
 
   log.push(`Done — ${totalRows} total rows across ${buckets.size} month(s).`);
+
+  assertNonZeroOutput(
+    allRows.length,
+    totalRows,
+    COCKPIT_TABS.SPA_RETAIL.name,
+    `empty_employee=${skipEmployee} bad_date=${skipBadDate} bad_amount=${skipBadAmount} out_of_range=${skipOutOfRange}`,
+  );
+
   return { rowsInserted: totalRows, log };
 }

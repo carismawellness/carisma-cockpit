@@ -1,5 +1,5 @@
 import { deleteWhere, insertRows } from "./supabase-etl";
-import { parseCSV, assertCockpitHeaders } from "./csv";
+import { parseCSV, assertCockpitHeaders, assertNonZeroOutput } from "./csv";
 import { cockpitCsvUrl, COCKPIT_TABS } from "../constants/cockpit-sheets";
 import { ETLLogger } from "./etl-logger";
 
@@ -192,5 +192,14 @@ async function runSpaServicesByEmployeeInner(
   }
 
   log.push(`Done — ${totalRows} total rows across ${buckets.size} month(s).`);
+
+  // Backstop: a non-trivial CSV that yields 0 inserts is a structural bug.
+  assertNonZeroOutput(
+    allRows.length,
+    totalRows,
+    COCKPIT_TABS.SPA_SERVICES.name,
+    `status=${skipStatus} carisma_sales=${skipCarisma} empty_employee=${skipEmployee} bad_date=${skipBadDate} unknown_location=${skipUnknownLoc} bad_price=${skipBadPrice} out_of_range=${skipOutOfRange}`,
+  );
+
   return { rowsInserted: totalRows, log };
 }

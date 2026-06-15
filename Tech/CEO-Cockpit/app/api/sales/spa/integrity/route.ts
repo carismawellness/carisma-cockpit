@@ -117,7 +117,19 @@ const OK_PCT   = 0.5;   // ≤ 0.5% drift = ✓
 const WARN_PCT = 5;     // > OK_PCT, ≤ this = ⚠ when stored > source (or stale ETL)
 const STALE_ETL_HOURS = 36;
 
-function classify(diff: number, diffPct: number, etlAgeHours: number | null): Status {
+function classify(
+  diff:        number,
+  diffPct:     number,
+  etlAgeHours: number | null,
+  source:      number,
+  stored:      number,
+): Status {
+  // ANTI-TAUTOLOGY: source=0 AND stored=0 looks like 0% drift but is the
+  // exact silent-failure mode that bit us on 2026-06-15. Both sides "agreed"
+  // at €0 because both were broken the same way. Flag it loudly instead of
+  // returning the misleading green ✓.
+  if (source === 0 && stored === 0) return "error";
+
   const abs = Math.abs(diffPct);
   if (abs <= OK_PCT) return "ok";
 
@@ -219,7 +231,7 @@ export async function GET(req: NextRequest) {
       const diffPct = src > 0 ? (Math.abs(diff) / src) * 100 : (stored > 0 ? 100 : 0);
       return {
         name,
-        status: classify(diff, diffPct, etlAgeHours),
+        status: classify(diff, diffPct, etlAgeHours, src, stored),
         source_total: Math.round(src),
         stored_total: Math.round(stored),
         diff:         Math.round(diff),
@@ -261,8 +273,13 @@ export async function GET(req: NextRequest) {
 
     const annotateDir = (c: Check) => {
       if (c.status === "ok") return;
-      if (c.diff > 0)        c.note = `Sheet has €${Math.round(Math.abs(c.diff)).toLocaleString()} more than Supabase — likely fresh rows pending the next ETL (last ETL ${etlAgeStr}).`;
-      if (c.diff < 0)        c.note = `Supabase has €${Math.round(Math.abs(c.diff)).toLocaleString()} more than the sheet — possible sheet edit or deletion since last ETL (${etlAgeStr}).`;
+      // Anti-tautology case — both sides at €0 is the silent-failure mode.
+      if (c.source_total === 0 && c.stored_total === 0) {
+        c.note = `Both the live sheet and Supabase show €0 for this window. That's almost never a real outcome — likely a parser/ETL regression dropping every row, or a wrong date filter. Check the latest etl_sync_log entries.`;
+        return;
+      }
+      if (c.diff > 0) c.note = `Sheet has €${Math.round(Math.abs(c.diff)).toLocaleString()} more than Supabase — likely fresh rows pending the next ETL (last ETL ${etlAgeStr}).`;
+      if (c.diff < 0) c.note = `Supabase has €${Math.round(Math.abs(c.diff)).toLocaleString()} more than the sheet — possible sheet edit or deletion since last ETL (${etlAgeStr}).`;
     };
     [servicesCheck, retailCheck, totalCheck].forEach(annotateDir);
 

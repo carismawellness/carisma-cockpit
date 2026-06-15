@@ -1,5 +1,5 @@
 import { deleteWhere, insertRows } from "./supabase-etl";
-import { assertCockpitHeaders } from "./csv";
+import { assertCockpitHeaders, assertNonZeroOutput } from "./csv";
 import { cockpitCsvUrl, COCKPIT_TABS } from "../constants/cockpit-sheets";
 import { ETLLogger } from "./etl-logger";
 
@@ -170,5 +170,13 @@ async function runSlimmingTreatmentsInner(
   }
 
   log.push(`Done — ${totalRows} total rows across ${buckets.size} month(s).`);
+
+  assertNonZeroOutput(
+    allRows.length,
+    totalRows,
+    COCKPIT_TABS.SLM_TRANSACTIONS.name,
+    "all rows skipped via inline continue — check date format, price column, summary regex",
+  );
+
   return { rowsInserted: totalRows, log };
 }

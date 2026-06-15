@@ -74,3 +74,37 @@ export function assertCockpitHeaders(
     );
   }
 }
+
+/**
+ * Throws if an ETL parsed N CSV rows but produced 0 valid output rows.
+ *
+ * This is the second backstop (after assertCockpitHeaders): even if the
+ * headers look right, a downstream filter regression — wrong date format,
+ * renamed status value, location-map miss — could silently drop every
+ * row. Without this guard the sync logs as "success: 0 rows" and the
+ * dashboard shows €0 with no error banner.
+ *
+ * Call AFTER parsing + filtering + insertion. The threshold of 50
+ * is a fuzz to avoid false-positives on tabs that legitimately have only
+ * a handful of rows in a given window (a single test day on a fresh
+ * sheet, etc.).
+ *
+ * @param sourceRowCount  rows present in the parsed CSV
+ * @param outputRowCount  rows actually inserted (sum across all months/days)
+ * @param tabName         for the error message
+ * @param skipSummary     human-readable breakdown of why rows were skipped
+ */
+export function assertNonZeroOutput(
+  sourceRowCount: number,
+  outputRowCount: number,
+  tabName:        string,
+  skipSummary:    string,
+): void {
+  if (sourceRowCount < 50) return;       // small data set — could legitimately be empty after filter
+  if (outputRowCount > 0)  return;       // some rows came through — OK
+  throw new Error(
+    `ETL "${tabName}": parsed ${sourceRowCount} CSV rows but produced 0 valid output rows. ` +
+    `Every row was filtered out — likely a schema regression, date-format change, or stale ` +
+    `location/employee map. Skip breakdown: ${skipSummary}.`,
+  );
+}

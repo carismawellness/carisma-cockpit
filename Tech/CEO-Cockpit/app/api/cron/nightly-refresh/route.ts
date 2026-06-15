@@ -44,6 +44,24 @@ export async function GET(req: NextRequest) {
     console.error("[Cron] token canary crashed (continuing):", err);
   }
 
+  // Phase 0.5: Cockpit Datasheet schema health-check — verifies every tab
+  // is reachable and has the canonical header row. Catches Google quirks
+  // (XLSX-export 400, gviz-gid ignored, title-row merged into headers,
+  // tab renamed, sharing revoked) BEFORE the ETL silently writes 0 rows.
+  // Logs only — never throws — so a flaky check can't block the ETLs.
+  try {
+    const healthRes = await fetch(`${BASE_URL}/api/health/cockpit`);
+    if (!healthRes.ok) {
+      const body = await healthRes.json().catch(() => ({}));
+      const failing = Array.isArray(body.failing_tabs) ? body.failing_tabs.join(", ") : "unknown";
+      console.error(`[Cron] Cockpit health check FAILED — tabs: [${failing}]. ETLs will likely produce 0 rows.`, body);
+    } else {
+      console.log("[Cron] Cockpit health check passed.");
+    }
+  } catch (err) {
+    console.error("[Cron] Cockpit health check crashed (continuing):", err);
+  }
+
   const now = new Date();
   // First day of 2 months ago
   const from = new Date(now.getFullYear(), now.getMonth() - 2, 1);
