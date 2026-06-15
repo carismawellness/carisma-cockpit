@@ -104,6 +104,48 @@ export function useHRRevPAH(month: string) {
   });
 }
 
+// ── Employee movement (weekly joiners/leavers) ───────────────────────────────
+
+export interface EmployeeMovementWeek {
+  weekStart:    string;
+  weekEnd:      string;
+  label:        string;
+  joiners:      number;
+  leavers:      number;
+  net:          number;
+  total:        number;
+  joinerNames:  string[];
+  leaverNames:  string[];
+  dateSource:   string;
+}
+
+export interface EmployeeMovementSummary {
+  currentTotal:  number;
+  totalJoiners:  number;
+  totalLeavers:  number;
+  netMovement:   number;
+}
+
+export interface HREmployeeMovementResponse {
+  weeks:    EmployeeMovementWeek[];
+  summary:  EmployeeMovementSummary;
+  rowCount: number;
+}
+
+export function useHREmployeeMovement(numWeeks = 26) {
+  return useQuery<HREmployeeMovementResponse>({
+    queryKey: ["hr-employee-movement", numWeeks],
+    queryFn: async () => {
+      const res = await fetch(`/api/hr/employee-movement?weeks=${numWeeks}`);
+      if (!res.ok) throw new Error(`Failed to fetch employee movement: ${res.status}`);
+      return res.json();
+    },
+    staleTime: 60 * 60 * 1000,
+    gcTime:    2 * 60 * 60 * 1000,
+    retry: false,
+  });
+}
+
 // ── We360 productivity leaderboard (per-employee, date range) ───────────────
 
 export interface We360ProductivityRow {

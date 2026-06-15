@@ -20,7 +20,8 @@ import {
   useTalexioPayslips,
   useTalexioShiftsRange,
 } from "@/lib/hooks/useTalexio";
-import { useHRFinancials, useHRRevPAH, useWe360Productivity } from "@/lib/hooks/useHRData";
+import { useHRFinancials, useHRRevPAH, useWe360Productivity, useHREmployeeMovement } from "@/lib/hooks/useHRData";
+import { normaliseLocation, LOCATION_TO_BRAND } from "@/lib/constants/hr-mapping";
 import { useAttendance, type AttendanceFilter } from "@/lib/hooks/useAttendance";
 import {
   getActiveEmployees,
@@ -41,6 +42,11 @@ import {
   ReferenceLine,
   Cell,
   LabelList,
+  PieChart,
+  Pie,
+  Legend,
+  ComposedChart,
+  Line,
 } from "recharts";
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -49,6 +55,25 @@ import {
 
 const REVPAH_TARGET = 35;
 const HC_PCT_TARGET = 40;
+
+// ── Staff composition classification ─────────────────────────────────────────
+const MANAGEMENT_KW  = ["manager", "director", "head of", "supervisor", "general manager", "operations manager", "hr manager", "executive", "chief"];
+const THERAPIST_KW   = ["therapist", "beautician", "massage", "beauty", "esthetician", "aesthetician", "slimming specialist", "body contouring", "wellness therapist", "treatment"];
+const INTERN_KW      = ["intern", "student", "trainee", "apprentice"];
+const RECEPTION_KW   = ["receptionist", "advisor", "wellness advisor", "guest", "front desk", "concierge", "host", "reception", "customer service"];
+const PART_TIME_KW   = ["part time", "part-time", "p/t", "pt therapist"];
+
+type RoleKey = "management" | "fullTimeTherapist" | "partTimeTherapist" | "intern" | "receptionAdvisor" | "hq" | "other";
+
+const ROLE_META: Record<RoleKey, { label: string; color: string }> = {
+  management:         { label: "Management",            color: "#6366f1" },
+  fullTimeTherapist:  { label: "Full-time Therapists",  color: "#10b981" },
+  partTimeTherapist:  { label: "Part-time Therapists",  color: "#06b6d4" },
+  intern:             { label: "Intern/Student",         color: "#f59e0b" },
+  receptionAdvisor:   { label: "Reception & Advisors",  color: "#3b82f6" },
+  hq:                 { label: "HQ & Admin",             color: "#8b5cf6" },
+  other:              { label: "Other",                  color: "#94a3b8" },
+};
 
 const PROD_COLORS = {
   productive: "#A8D4A8",
@@ -471,9 +496,10 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const attendanceEarlyQ   = useAttendance(fromISO, toISO, "early");
 
   // ── Live data: Supabase-backed HR financials ──────────────────────────────
-  const financialsQ = useHRFinancials(month);
-  const revpahQ = useHRRevPAH(month);
-  const we360Q = useWe360Productivity(fromISO, toISO);
+  const financialsQ  = useHRFinancials(month);
+  const revpahQ      = useHRRevPAH(month);
+  const we360Q       = useWe360Productivity(fromISO, toISO);
+  const movementQ    = useHREmployeeMovement(26);
 
   // ── Talexio-derived views (memoized) ──────────────────────────────────────
   const activeEmployees = useMemo(
@@ -633,6 +659,49 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const displayHeadcount = isFinancialsReal ? financialsQ.data!.totalHeadcount : resolvedHeadcount;
   const revenuePerEmployee = displayHeadcount > 0 ? Math.round(totalRevenue / displayHeadcount) : 0;
 
+  // ── Staff composition (classified from headcountQ) ────────────────────────
+  const staffComposition = useMemo(() => {
+    const employees = headcountQ.data?.employees ?? [];
+    const active = employees.filter((e) => !e.isTerminated && !e.currentPositionSimple?.isEnded);
+
+    const counts: Record<RoleKey, number> = {
+      management: 0, fullTimeTherapist: 0, partTimeTherapist: 0,
+      intern: 0, receptionAdvisor: 0, hq: 0, other: 0,
+    };
+    const brandCounts = { spa: 0, aesthetics: 0, slimming: 0, hq: 0 };
+
+    for (const emp of active) {
+      const pos     = (emp.currentPositionSimple?.position?.name ?? "").toLowerCase();
+      const orgUnit = emp.currentPositionSimple?.organisationUnit?.name ?? "";
+      const loc     = normaliseLocation(orgUnit);
+      const brand   = loc ? (LOCATION_TO_BRAND[loc] ?? "Spa") : "Spa";
+
+      if (brand === "HQ")          { counts.hq++;         brandCounts.hq++; continue; }
+      if (brand === "Aesthetics")  { brandCounts.aesthetics++; }
+      else if (brand === "Slimming") { brandCounts.slimming++; }
+      else                           { brandCounts.spa++; }
+
+      const isIntern    = INTERN_KW.some((k) => pos.includes(k));
+      const isTherapist = THERAPIST_KW.some((k) => pos.includes(k));
+      const isPartTime  = PART_TIME_KW.some((k) => pos.includes(k));
+      const isMgmt      = MANAGEMENT_KW.some((k) => pos.includes(k));
+      const isReception = RECEPTION_KW.some((k) => pos.includes(k));
+
+      if (isIntern)         counts.intern++;
+      else if (isTherapist) isPartTime ? counts.partTimeTherapist++ : counts.fullTimeTherapist++;
+      else if (isMgmt)      counts.management++;
+      else if (isReception) counts.receptionAdvisor++;
+      else                  counts.other++;
+    }
+
+    const total = active.length;
+    const roleData = (Object.keys(counts) as RoleKey[])
+      .map((key) => ({ key, count: counts[key], ...ROLE_META[key] }))
+      .filter((r) => r.count > 0);
+
+    return { total, roleData, brandCounts };
+  }, [headcountQ.data]);
+
   // Roster-based on-time %: (rostered individuals who arrived on time) / (all rostered individuals).
   // Absent rostered employees count against the %, not just those who showed up.
   const onTimePct = periodSummary?.onTimePct ?? (
@@ -753,10 +822,12 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ start_date: fromISO, end_date: toISO }),
                 }),
+                fetch("/api/etl/employee-movement-weekly", { method: "POST" }),
               ]);
               await Promise.all([
                 queryClient.invalidateQueries({ queryKey: ["talexio"] }),
                 queryClient.invalidateQueries({ queryKey: ["attendance"] }),
+                queryClient.invalidateQueries({ queryKey: ["hr-employee-movement"] }),
                 queryClient.invalidateQueries({ queryKey: ["we360-productivity"] }),
               ]);
             }}
@@ -782,6 +853,81 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           ))}
         </div>
       )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          SECTION: Net Employee Movement (KPI bubbles + trend chart)
+          ══════════════════════════════════════════════════════════════════ */}
+      {(() => {
+        const mv = movementQ.data;
+        const s  = mv?.summary;
+        const hasData = mv && mv.weeks.length > 0;
+        return (
+          <Card className="p-3 md:p-6">
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                  Net Employee Movement
+                  {hasData ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs text-green-700 bg-green-50 rounded-full px-2.5 py-0.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />Live from Talexio
+                    </span>
+                  ) : movementQ.isLoading ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 rounded-full px-2.5 py-0.5 animate-pulse">Loading…</span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 rounded-full px-2.5 py-0.5">Backfill needed</span>
+                  )}
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">Weekly joiners &amp; leavers — last 26 weeks</p>
+              </div>
+            </div>
+
+            {/* KPI chips */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+              {[
+                { label: "Active Employees",  value: s?.currentTotal ?? displayHeadcount, color: "text-slate-900" },
+                { label: "Net Movement",       value: s ? (s.netMovement >= 0 ? `+${s.netMovement}` : String(s.netMovement)) : "—", color: s && s.netMovement > 0 ? "text-emerald-700" : s && s.netMovement < 0 ? "text-red-700" : "text-slate-900" },
+                { label: "Joiners (26 wks)",   value: s ? `+${s.totalJoiners}` : "—", color: "text-emerald-700" },
+                { label: "Leavers (26 wks)",   value: s ? `-${s.totalLeavers}` : "—", color: "text-red-600" },
+              ].map((chip) => (
+                <div key={chip.label} className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">{chip.label}</p>
+                  <p className={`text-2xl font-bold ${chip.color}`}>{chip.value}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Movement chart */}
+            {hasData ? (
+              <ResponsiveContainer width="100%" height={200}>
+                <ComposedChart data={mv.weeks} margin={{ top: 8, right: 50, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" />
+                  <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+                  <YAxis yAxisId="left" tick={{ fontSize: 10 }} width={25} allowDecimals={false} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} width={35} domain={["auto", "auto"]} />
+                  <Tooltip labelFormatter={(label: unknown) => `Week of ${label}`} />
+                  <Legend />
+                  <ReferenceLine yAxisId="left" y={0} stroke="#e2e8f0" />
+                  <Bar yAxisId="left" dataKey="joiners" name="Joiners" fill="#10b981" radius={[2,2,0,0]}>
+                    <LabelList dataKey="joiners" position="top" style={{ fontSize: 9, fill: "#065f46" }} formatter={(v: unknown) => v ? `+${v}` : ""} />
+                  </Bar>
+                  <Bar yAxisId="left" dataKey="leavers" name="Leavers" fill="#ef4444" radius={[2,2,0,0]}>
+                    <LabelList dataKey="leavers" position="top" style={{ fontSize: 9, fill: "#991b1b" }} formatter={(v: unknown) => v ? `-${v}` : ""} />
+                  </Bar>
+                  <Line yAxisId="right" type="monotone" dataKey="total" name="Total headcount" stroke="#6366f1" strokeWidth={2} dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 gap-3 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                <p className="text-sm font-medium text-slate-600">No movement data yet</p>
+                <p className="text-xs text-slate-400 max-w-sm">
+                  Run the ETL backfill to populate this chart:<br />
+                  <code className="bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-600">POST /api/etl/employee-movement-weekly</code>
+                </p>
+              </div>
+            )}
+          </Card>
+        );
+      })()}
 
       {/* ══════════════════════════════════════════════════════════════════
           SECTION 1: Attendance snapshot chips (compact)
@@ -1097,6 +1243,97 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
             </p>
           </div>
         )}
+      </Card>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          SECTION: Staff Composition
+          ══════════════════════════════════════════════════════════════════ */}
+      <Card className="p-3 md:p-6">
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+              Staff Composition
+              {headcountQ.isSuccess ? (
+                <span className="inline-flex items-center gap-1.5 text-xs text-green-700 bg-green-50 rounded-full px-2.5 py-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />Live from Talexio
+                </span>
+              ) : <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 rounded-full px-2.5 py-0.5 animate-pulse">Loading…</span>}
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{staffComposition.total} active employees · by role and brand</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Donut chart — role breakdown */}
+          <div>
+            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">By Role</p>
+            {staffComposition.total > 0 ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie
+                    data={staffComposition.roleData}
+                    dataKey="count"
+                    nameKey="label"
+                    cx="50%" cy="50%"
+                    innerRadius={55}
+                    outerRadius={85}
+                    paddingAngle={2}
+                  >
+                    {staffComposition.roleData.map((entry) => (
+                      <Cell key={entry.key} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(v: unknown) => [`${v} staff`]} />
+                  <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[220px] flex items-center justify-center bg-slate-50 rounded-xl">
+                <p className="text-sm text-slate-400">No data</p>
+              </div>
+            )}
+          </div>
+
+          {/* Breakdown list — role + brand */}
+          <div className="space-y-5">
+            <div>
+              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Role breakdown</p>
+              <div className="space-y-2">
+                {staffComposition.roleData.map((r) => (
+                  <div key={r.key} className="flex items-center gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: r.color }} />
+                    <span className="text-sm text-slate-700 flex-1">{r.label}</span>
+                    <span className="text-sm font-bold text-slate-900 w-8 text-right">{r.count}</span>
+                    <span className="text-[11px] text-slate-400 w-8 text-right">
+                      {staffComposition.total > 0 ? `${Math.round((r.count / staffComposition.total) * 100)}%` : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">By brand / department</p>
+              <div className="space-y-2">
+                {[
+                  { label: "Spa Hotels",    value: staffComposition.brandCounts.spa,        color: "#10b981" },
+                  { label: "Aesthetics",    value: staffComposition.brandCounts.aesthetics,  color: "#ec4899" },
+                  { label: "Slimming",      value: staffComposition.brandCounts.slimming,    color: "#f97316" },
+                  { label: "HQ & Support",  value: staffComposition.brandCounts.hq,          color: "#8b5cf6" },
+                ].filter((b) => b.value > 0).map((b) => (
+                  <div key={b.label} className="flex items-center gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: b.color }} />
+                    <span className="text-sm text-slate-700 flex-1">{b.label}</span>
+                    <span className="text-sm font-bold text-slate-900 w-8 text-right">{b.value}</span>
+                    <span className="text-[11px] text-slate-400 w-8 text-right">
+                      {staffComposition.total > 0 ? `${Math.round((b.value / staffComposition.total) * 100)}%` : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       </Card>
 
       {/* ══════════════════════════════════════════════════════════════════
