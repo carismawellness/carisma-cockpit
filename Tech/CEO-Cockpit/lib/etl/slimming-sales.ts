@@ -8,7 +8,7 @@ const VAT_RATE = 0.18;
 // ── CSV helpers ───────────────────────────────────────────────────────────────
 
 async function fetchCockpitCsv(): Promise<Record<string, string>[]> {
-  const url = cockpitCsvUrl(COCKPIT_TABS.SLM_SALES.gid);
+  const url = cockpitCsvUrl(COCKPIT_TABS.SLM_SALES.name);
   const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) throw new Error(`Cockpit Datasheet fetch failed: ${resp.status}`);
   const text = await resp.text();

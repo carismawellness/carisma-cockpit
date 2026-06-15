@@ -25,9 +25,10 @@
  */
 
 import { parseCSV } from "./csv";
-import { COCKPIT_SHEET_ID, COCKPIT_TABS } from "../constants/cockpit-sheets";
+import { cockpitCsvUrl, COCKPIT_TABS } from "../constants/cockpit-sheets";
 
-const SERVICE_GID = COCKPIT_TABS.SPA_SERVICES.gid;
+// Tab NAME (gviz on uploaded-XLSX files ignores gid).
+const SERVICE_TAB = COCKPIT_TABS.SPA_SERVICES.name;
 
 // Sales Point (uppercased) → location_id — must match cockpit-revenue.ts
 const LOCATION_MAP: Record<string, number> = {
@@ -93,7 +94,7 @@ export async function computeDiligenceMetrics(): Promise<{
 }> {
   const warnings: string[] = [];
 
-  const url = `https://docs.google.com/spreadsheets/d/${COCKPIT_SHEET_ID}/gviz/tq?tqx=out:csv&gid=${SERVICE_GID}`;
+  const url = cockpitCsvUrl(SERVICE_TAB);
   const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) {
     throw new Error(

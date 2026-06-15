@@ -1,10 +1,12 @@
 import { ZohoBooksClient } from "./zoho-client";
 import { upsert, select } from "./supabase-etl";
 import { ETLLogger } from "./etl-logger";
-import { COCKPIT_SHEET_ID, COCKPIT_TABS } from "../constants/cockpit-sheets";
+import { COCKPIT_TABS, cockpitCsvUrl } from "../constants/cockpit-sheets";
 
-const SERVICE_GID  = COCKPIT_TABS.SPA_SERVICES.gid;
-const PRODUCT_GID  = COCKPIT_TABS.SPA_RETAIL.gid;
+// Tab NAMEs (gviz on uploaded-XLSX files ignores gid). Var names kept as
+// *_GID for diff hygiene with the rest of the file.
+const SERVICE_GID  = COCKPIT_TABS.SPA_SERVICES.name;
+const PRODUCT_GID  = COCKPIT_TABS.SPA_RETAIL.name;
 const VAT_RATE     = 0.18;
 
 const COCKPIT_SPA_LOCATION_MAP: Record<string, number> = {
@@ -30,8 +32,8 @@ const BRAND_MAP: Record<string, string> = {
 
 // ── CSV fetch (public Cockpit sheet) ────────────────────────────────────────────
 
-async function fetchCockpitCsv(gid: string): Promise<Record<string, string>[]> {
-  const url  = `https://docs.google.com/spreadsheets/d/${COCKPIT_SHEET_ID}/gviz/tq?tqx=out:csv&gid=${gid}`;
+async function fetchCockpitCsv(tabName: string): Promise<Record<string, string>[]> {
+  const url  = cockpitCsvUrl(tabName);
   const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) throw new Error(`Cockpit Datasheet fetch failed: ${resp.status} — check sheet is shared as "Anyone with the link can view"`);
   const text  = await resp.text();

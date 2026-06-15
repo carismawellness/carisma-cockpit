@@ -188,8 +188,8 @@ export async function GET(req: NextRequest) {
   try {
     // Fetch both slimming tabs in parallel
     const [salesRows, txRows] = await Promise.all([
-      fetchCockpitCsv(COCKPIT_TABS.SLM_SALES.gid),
-      fetchCockpitCsv(COCKPIT_TABS.SLM_TRANSACTIONS.gid),
+      fetchCockpitCsv(COCKPIT_TABS.SLM_SALES.name),
+      fetchCockpitCsv(COCKPIT_TABS.SLM_TRANSACTIONS.name),
     ]);
     const result = computeAnalytics(salesRows, txRows, dateFrom, dateTo);
     return NextResponse.json(result);

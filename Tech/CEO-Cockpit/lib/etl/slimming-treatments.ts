@@ -22,7 +22,7 @@ function parseCSVRow(line: string): string[] {
 }
 
 async function fetchCockpitCsv(): Promise<Record<string, string>[]> {
-  const url = cockpitCsvUrl(COCKPIT_TABS.SLM_TRANSACTIONS.gid);
+  const url = cockpitCsvUrl(COCKPIT_TABS.SLM_TRANSACTIONS.name);
   const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) throw new Error(`Cockpit Datasheet fetch failed: ${resp.status}`);
   const text = await resp.text();

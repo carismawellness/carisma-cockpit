@@ -158,8 +158,8 @@ export async function GET(req: NextRequest) {
 
     // ── Source A: live Cockpit Service-Spa CSV ───────────────────────────
     const [servicesCsv, retailCsv] = await Promise.all([
-      fetchCockpitCsv(COCKPIT_TABS.SPA_SERVICES.gid),
-      fetchCockpitCsv(COCKPIT_TABS.SPA_RETAIL.gid),
+      fetchCockpitCsv(COCKPIT_TABS.SPA_SERVICES.name),
+      fetchCockpitCsv(COCKPIT_TABS.SPA_RETAIL.name),
     ]);
 
     let sourceServicesTotal = 0;

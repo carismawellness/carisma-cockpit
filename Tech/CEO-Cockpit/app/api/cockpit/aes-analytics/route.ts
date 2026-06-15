@@ -181,7 +181,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const rows = await fetchCockpitCsv(COCKPIT_TABS.AESTHETICS.gid);
+    const rows = await fetchCockpitCsv(COCKPIT_TABS.AESTHETICS.name);
     const result = computeAnalytics(rows, dateFrom, dateTo);
     return NextResponse.json(result);
   } catch (err) {

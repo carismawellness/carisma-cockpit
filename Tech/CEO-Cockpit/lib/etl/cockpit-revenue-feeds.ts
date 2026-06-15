@@ -12,10 +12,11 @@ import { ZohoBooksClient } from "./zoho-client";
 
 // ── Cockpit CSV (public Google Sheet, no auth) ────────────────────────────────
 
-const COCKPIT_SHEET_ID = "195RvbNuZd-oNL-rziKC3Wz6ndy0cDA_a";
-const COCKPIT_SERVICE_GID = "683143306";
-const COCKPIT_PRODUCT_GID = "1271322967";
-const COCKPIT_VAT_RATE = 0.18;
+// Address tabs by NAME (not gid) — gviz on uploaded-XLSX files ignores gid
+// and would silently return the first tab regardless of which is requested.
+const COCKPIT_SERVICE_TAB = "Service - Spa";
+const COCKPIT_PRODUCT_TAB = "Retail - Spa";
+const COCKPIT_VAT_RATE    = 0.18;
 
 // Zoho CoA accounts that cockpit-revenue.ts (Path A → spa_revenue_monthly, the
 // AUTHORITATIVE Cockpit dashboard source) folds into SPA net revenue alongside
@@ -59,8 +60,8 @@ function parseCSVRow(line: string): string[] {
   return cells;
 }
 
-async function fetchCockpitCsv(gid: string): Promise<Record<string, string>[]> {
-  const url  = `https://docs.google.com/spreadsheets/d/${COCKPIT_SHEET_ID}/gviz/tq?tqx=out:csv&gid=${gid}`;
+async function fetchCockpitCsv(tabName: string): Promise<Record<string, string>[]> {
+  const url  = `https://docs.google.com/spreadsheets/d/195RvbNuZd-oNL-rziKC3Wz6ndy0cDA_a/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}&range=A2:ZZ`;
   const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) throw new Error(`Cockpit Datasheet fetch failed: ${resp.status}`);
   const text  = await resp.text();
@@ -252,7 +253,7 @@ export async function loadSpaCockpitRevenue(
 
   // Services CSV: "Service Date", "Sales Point", "Unit Price" (inc-VAT),
   // "Status" — only Given / Unplanned count.
-  const svcRows = await fetchCockpitCsv(COCKPIT_SERVICE_GID);
+  const svcRows = await fetchCockpitCsv(COCKPIT_SERVICE_TAB);
   for (const row of svcRows) {
     const status = stripCol(row, "Status");
     if (status !== "Given" && status !== "Unplanned") continue;
@@ -275,7 +276,7 @@ export async function loadSpaCockpitRevenue(
   }
 
   // Products CSV: "Date", "Point of Sales", "VAT Exclusive Amount".
-  const prodRows = await fetchCockpitCsv(COCKPIT_PRODUCT_GID);
+  const prodRows = await fetchCockpitCsv(COCKPIT_PRODUCT_TAB);
   for (const row of prodRows) {
     const iso = parseCockpitDateIso(stripCol(row, "Date"));
     if (!iso) continue;

@@ -27,7 +27,7 @@ const SPA_LOC_MAP: Record<string, number> = {
 // ── CSV helpers ───────────────────────────────────────────────────────────────
 
 async function fetchCockpitCsv(): Promise<Record<string, string>[]> {
-  const url  = cockpitCsvUrl(COCKPIT_TABS.SPA_RETAIL.gid);
+  const url  = cockpitCsvUrl(COCKPIT_TABS.SPA_RETAIL.name);
   const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) throw new Error(`Cockpit Datasheet fetch failed: ${resp.status} — check sheet is shared as "Anyone with the link can view"`);
   const text = await resp.text();

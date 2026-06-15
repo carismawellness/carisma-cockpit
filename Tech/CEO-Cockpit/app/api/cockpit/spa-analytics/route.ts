@@ -14,8 +14,10 @@ export const maxDuration = 30;
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const SERVICE_GID = COCKPIT_TABS.SPA_SERVICES.gid;
-const PRODUCT_GID = COCKPIT_TABS.SPA_RETAIL.gid;
+// Tab NAMEs (not gids) — gviz on uploaded-XLSX files ignores gid and always
+// returns the first tab. cockpitCsvUrl() builds URLs with &sheet=NAME.
+const SERVICE_GID = COCKPIT_TABS.SPA_SERVICES.name;
+const PRODUCT_GID = COCKPIT_TABS.SPA_RETAIL.name;
 const VAT_RATE    = 0.18;
 
 const COCKPIT_SPA_LOCATION_MAP: Record<string, number> = {
