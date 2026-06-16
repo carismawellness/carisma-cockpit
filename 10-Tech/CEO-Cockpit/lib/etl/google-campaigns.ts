@@ -172,7 +172,7 @@ async function fetchCampaignRows(
 
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`Google Ads API (${cleanId}) ${res.status}: ${text.slice(0, 300)}`);
+    throw new Error(`Google Ads API (${cleanId}) ${res.status}: ${text.slice(0, 2000)}`);
   }
 
   const json = JSON.parse(text) as unknown;
