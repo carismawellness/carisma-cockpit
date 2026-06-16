@@ -100,10 +100,15 @@ function parseCurrency(val: string): number {
   return parseFloat(v) || 0;
 }
 
+const PG_INT_MAX = 2_147_483_647; // PostgreSQL integer max (2^31 - 1)
+
 function parseInteger(val: string): number {
   const v = val.replace(/[^\d]/g, "");
   if (!v) return 0;
-  return parseInt(v, 10) || 0;
+  const n = parseInt(v, 10) || 0;
+  // Guard against corrupted cells (e.g. a phone number accidentally in a dial-count cell).
+  // Values above PG_INT_MAX would cause "out of range for type integer" upsert errors.
+  return Math.min(n, PG_INT_MAX);
 }
 
 function parsePercent(val: string): number {

@@ -55,8 +55,10 @@ const BRAND_LABEL_COLOR: Record<AgentBrand, string> = {
   SLIMMING:   BRAND.slimming.dark,
 };
 
-const SLIMMING_BAR_COLOR = BRAND.slimming.dark; // text/axis labels only
-const SLIMMING_BAR_FILL  = BRAND.slimming.soft;  // bar fill + legend swatch
+const SLIMMING_BAR_COLOR = BRAND.slimming.dark; // text/axis labels
+// Use dark for bar fill — soft (#CCD8C3) is the same as the panel background,
+// which makes bars invisible. Dark (#486A42) contrasts against the panel.
+const SLIMMING_BAR_FILL  = BRAND.slimming.dark;
 
 // ── Data shaping ──────────────────────────────────────────────────────────────
 
