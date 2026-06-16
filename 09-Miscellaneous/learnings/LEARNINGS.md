@@ -53,7 +53,23 @@ Entry format:
 
 **Rule:** **ALWAYS** verify the relevant OAuth refresh token works before claiming an ETL change is "live" (call the ETL endpoint, check for `invalid_grant`). The Vercel `GOOGLE_SHEETS_REFRESH_TOKEN` for the Cockpit project expires/revokes silently — re-auth flow lives at `~/.go-google-mcp/`.
 
-**Distilled to:** Root `CLAUDE.md` Active Rules (sheet-ETL QC), and Tech/CEO-Cockpit/`CLAUDE.md` (post-fix re-sync requirement, Google token re-auth).
+**Distilled to:** Root `CLAUDE.md` Active Rules (sheet-ETL QC), and 10-Tech/CEO-Cockpit/`CLAUDE.md` (post-fix re-sync requirement, Google token re-auth).
+
+### 2026-06-16 — Google Ads rootDirectory mismatch caused all ETL fixes to silently fail
+
+**What happened:** The CEO-Cockpit Google Ads ETL showed ~7× lower spend than Google Ads Manager (Spa: €70.8 vs $491.43, Aesthetics: €12.1 vs $125.58). Three separate fixes were applied over a full session — v21 API upgrade, MCC header removal, frankfurter URL fix, USD→EUR currency detection — yet every ETL call still returned wrong numbers.
+
+**Root cause:** `.vercel/project.json` has `"rootDirectory": "Tech/CEO-Cockpit"` but the local filesystem has `10-Tech/CEO-Cockpit/` (the directory was renamed). All code changes went to `10-Tech/CEO-Cockpit/` while Vercel kept building the old code from `Tech/CEO-Cockpit/` in the GitHub repo. Nothing deployed. The deployed code ran v20 (deprecated per-account by Google), used `api.frankfurter.app` (301 redirect, so FX calls silently fell back to 0.92 — but even that didn't fire because currency detection was missing), and stored raw USD values as EUR in Supabase.
+
+**Rule:** **ALWAYS** verify which directory Vercel is building from before applying any ETL fix — check `.vercel/project.json` `rootDirectory` and confirm it matches the local path of the file you're editing. A successful git push ≠ a successful deploy if the build root is a different directory.
+
+**Rule:** **ALWAYS** confirm the new code is actually live after deploy by checking for a unique marker in the ETL log response (e.g., `[etl] using https://...v21`). If the marker is absent, the old code is running.
+
+**Rule:** **NEVER** assume `api.frankfurter.app` works — it returns a 301 redirect that Vercel edge functions may not follow. Use `api.frankfurter.dev/v1/latest?from=USD&to=EUR` directly.
+
+**Rule:** **ALWAYS** include `customer.currency_code` in every Google Ads GAQL SELECT and apply USD→EUR conversion before storing to Supabase. Spa (5355967868) and Aesthetics (6561523786) are USD accounts; Slimming (2186664413) is EUR.
+
+**Distilled to:** Root `CLAUDE.md` Active Rules.
 
 ---
 
@@ -117,3 +133,5 @@ _No entries yet._
 | Date | Entry | Category | Distilled To |
 |------|-------|----------|-------------|
 | 2026-03-01 | System initialized | Setup | All CLAUDE.md files |
+| 2026-06-10 | Sheet-driven ETL header QC | Universal | Root CLAUDE.md |
+| 2026-06-16 | Google Ads rootDirectory mismatch + v21 + FX conversion | Universal | Root CLAUDE.md |

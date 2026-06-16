@@ -90,6 +90,9 @@ Cross-pollination: If a brand-specific learning applies universally, promote it 
 - **ALWAYS** read every source-sheet tab's header row before wiring or modifying a sheet-backed ETL — because cell-index assumptions silently produce plausible-looking but wrong numbers (e.g., "Total Sales" column being written into `total_bookings` rendered Juliana as 25,251 bookings for months). Example: `mcp__google-workspace__sheets_read_values <SheetId>!<Tab>!A1:Z2` for each tab, then document the verified column→field map in the route file.
 - **ALWAYS** after fixing a column-mapping bug in an ETL, force a full re-sync (TRUNCATE the target table or run with a wide date window) — because `UPSERT on conflict (key, date)` won't overwrite rows the new ETL no longer visits, so stale rows persist invisibly. Example: bad: hit Re-Sync only; good: `TRUNCATE crm_agent_daily;` then trigger ETL.
 - **ALWAYS** verify the relevant OAuth refresh token works before claiming an ETL change is "live" — because Vercel env-var tokens (especially `GOOGLE_SHEETS_REFRESH_TOKEN`) expire/revoke silently. Example: `curl -X POST .../api/etl/<name>` and check for `invalid_grant` before reporting success.
+- **ALWAYS** check `.vercel/project.json` `rootDirectory` before editing any Cockpit file — the Vercel build root (`Tech/CEO-Cockpit`) can differ from the local directory (`10-Tech/CEO-Cockpit`). Changes to the wrong path never deploy. Confirm new code is live by checking for a unique log marker in the ETL response.
+- **ALWAYS** include `customer.currency_code` in Google Ads GAQL SELECT and apply USD→EUR FX before storing to Supabase — Spa (5355967868) and Aesthetics (6561523786) are USD accounts. Use `api.frankfurter.dev/v1/latest?from=USD&to=EUR` (not `api.frankfurter.app` which returns a 301 redirect that Vercel may not follow).
+- **NEVER** assume Google Ads API version compatibility across all accounts — Google deprecates versions per-account on a rolling basis. Always use the latest stable version (`v21` as of Jun 2026) without a `login-customer-id` MCC header for direct-access accounts.
 
 ## File Structure
 
@@ -112,8 +115,7 @@ Cross-pollination: If a brand-specific learning applies universally, promote it 
   meetings/          # Processed meeting notes
   Workflows/         # Markdown SOPs defining what to do and how
 Config/              # Brand definitions, offers, KPIs, naming conventions, templates
-Docs/                # Documentation and plans
-Tech/                # Technical projects (CarismaSoft, CEO-Cockpit)
+10-Tech/             # All technical projects (CEO-Cockpit, CarismaSoft, Life-Cockpit, CRM, slimming-website, apps-script) + Docs/ (plans & documentation)
 Tests/               # Test files
 Tools/               # Python scripts for deterministic execution
 .tmp/                # Temporary files. Regenerated as needed.
