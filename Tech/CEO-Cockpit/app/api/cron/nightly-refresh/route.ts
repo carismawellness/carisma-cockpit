@@ -128,11 +128,14 @@ export async function GET(req: NextRequest) {
   ]);
 
   // Phase 2: runs after Phase 1 completes.
-  // - lead-reconciliation depends on ghl-crm + meta-campaigns
+  // - lead-reconciliation is intentionally EXCLUDED: ghl-crm (Phase 1) already writes
+  //   crm_lead_reconciliation with leads_meta = GHL contacts attributed to Meta (Facebook UTM).
+  //   Running lead-reconciliation after ghl-crm would overwrite leads_meta with
+  //   meta_campaigns_daily.leads (action_type="lead" = Meta native lead form submissions),
+  //   which is always 0 for Carisma because they run click-to-WhatsApp/website campaigns,
+  //   not Meta native lead forms. The result was Meta Leads always showing 0 in the widget.
   // - diligence-metrics overwrites cash/discounted_cash/complimentary rows created by diligence-audit
-  const reconPayload = JSON.stringify({ date_from: fmt(mktFrom), date_to: fmt(now) });
-  const [leadReconRes, diligenceMetricsRes] = await Promise.allSettled([
-    fetch(`${BASE_URL}/api/etl/lead-reconciliation`, { method: "POST", headers, body: reconPayload }),
+  const [diligenceMetricsRes] = await Promise.allSettled([
     fetch(`${BASE_URL}/api/etl/diligence-metrics`,   { method: "POST", headers }),
   ]);
 
@@ -167,7 +170,6 @@ export async function GET(req: NextRequest) {
     ["attendance_daily",        attendanceDailyRes],
     ["therapist_shifts_monthly", therapistShiftsRes],
     ["wix_spa_orders",          wixOrdersRes],
-    ["lead_reconciliation",     leadReconRes],
     ["diligence_metrics",       diligenceMetricsRes],
   ];
 
