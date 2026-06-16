@@ -1,11 +1,13 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { useKPIData } from "@/lib/hooks/useKPIData";
 import { useLookups } from "@/lib/hooks/useLookups";
 import { LeadReconRow } from "@/lib/types/crm";
 import { isExcludedCrmDate } from "@/lib/constants/excluded-dates";
 import { BRAND } from "@/lib/constants/design-tokens";
+import { toLocalDateStr } from "@/lib/utils/dates";
 
 // Canonical brand palette — `soft` for fills/borders (CRM bar, left-border),
 // `soft` for the Meta companion bar to visually pair it with the brand.
@@ -79,6 +81,9 @@ export function LeadReconciliation({
   dateTo: Date;
   brandFilter: string | null;
 }) {
+  const from = toLocalDateStr(dateFrom);
+  const to   = toLocalDateStr(dateTo);
+
   const { brandMap } = useLookups();
 
   const { data, loading } = useKPIData<LeadReconRow>({
@@ -86,6 +91,19 @@ export function LeadReconciliation({
     dateFrom,
     dateTo,
     brandFilter,
+  });
+
+  // Active Pipeline: unique opportunities that had any stage change in the period.
+  // This matches GHL's "Last Stage Change Date" filter — use this number when
+  // comparing the Cockpit against a GHL pipeline view filtered by that date.
+  const { data: activePipelineData } = useQuery({
+    queryKey: ["active-pipeline", from, to],
+    queryFn: async () => {
+      const res = await fetch(`/api/crm/active-pipeline?from=${from}&to=${to}`);
+      if (!res.ok) throw new Error(`active-pipeline ${res.status}`);
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000,
   });
 
   if (loading) {
@@ -146,6 +164,8 @@ export function LeadReconciliation({
           const delta = t.crmLeads - t.metaLeads;
           const max = Math.max(t.crmLeads, t.metaLeads, 1);
 
+          const activePipelineCount: number = activePipelineData?.brands?.[brand.slug]?.active_opps ?? null;
+
           return (
             <Card
               key={brand.slug}
@@ -163,10 +183,15 @@ export function LeadReconciliation({
                 </span>
               </div>
 
+              {/* ── New Leads section (creation date) ── */}
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">
+                New Leads · created this period
+              </p>
+
               {/* Sync ring / percentage */}
-              <div className="flex items-center gap-4 mb-4">
-                <div className="relative w-16 h-16 flex-shrink-0">
-                  <svg viewBox="0 0 36 36" className="w-16 h-16 -rotate-90">
+              <div className="flex items-center gap-4 mb-3">
+                <div className="relative w-14 h-14 flex-shrink-0">
+                  <svg viewBox="0 0 36 36" className="w-14 h-14 -rotate-90">
                     <path
                       d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                       fill="none"
@@ -182,7 +207,7 @@ export function LeadReconciliation({
                       strokeLinecap="round"
                     />
                   </svg>
-                  <span className={`absolute inset-0 flex items-center justify-center text-sm font-bold ${syncTextColor(pct)}`}>
+                  <span className={`absolute inset-0 flex items-center justify-center text-xs font-bold ${syncTextColor(pct)}`}>
                     {pct.toFixed(0)}%
                   </span>
                 </div>
@@ -194,7 +219,7 @@ export function LeadReconciliation({
               </div>
 
               {/* Bar comparison */}
-              <div className="space-y-2">
+              <div className="space-y-2 mb-4">
                 <div>
                   <div className="flex justify-between text-xs mb-1">
                     <span className="text-text-secondary">CRM Leads</span>
@@ -202,7 +227,7 @@ export function LeadReconciliation({
                       {t.crmLeads.toLocaleString()}
                     </span>
                   </div>
-                  <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
                       style={{
@@ -219,7 +244,7 @@ export function LeadReconciliation({
                       {t.metaLeads.toLocaleString()}
                     </span>
                   </div>
-                  <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
                       style={{
@@ -228,6 +253,21 @@ export function LeadReconciliation({
                       }}
                     />
                   </div>
+                </div>
+              </div>
+
+              {/* ── Active Pipeline section (last stage change date) ── */}
+              <div className="pt-3 border-t border-dashed border-gray-200">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">
+                  Active Pipeline · stage moved this period
+                </p>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-2xl font-bold tabular-nums" style={{ color: BRAND_DARK[brand.slug] }}>
+                    {activePipelineCount !== null ? activePipelineCount.toLocaleString() : "—"}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground leading-tight text-right max-w-[120px]">
+                    unique opps<br />compare in GHL:<br />"Last Stage Change Date"
+                  </span>
                 </div>
               </div>
             </Card>
