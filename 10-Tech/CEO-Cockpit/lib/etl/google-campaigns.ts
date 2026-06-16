@@ -115,9 +115,11 @@ interface GoogleAdsRow {
 }
 
 // Fetch live USD→EUR rate; falls back to a reasonable approximation.
+// Note: api.frankfurter.app now redirects to api.frankfurter.dev/v1 — use the canonical URL directly.
 async function getUsdToEurRate(): Promise<number> {
   try {
-    const res = await fetch("https://api.frankfurter.app/latest?from=USD&to=EUR");
+    const res = await fetch("https://api.frankfurter.dev/v1/latest?from=USD&to=EUR");
+    if (!res.ok) return 0.92;
     const data = await res.json() as { rates?: { EUR?: number } };
     return data.rates?.EUR ?? 0.92;
   } catch {
@@ -257,9 +259,7 @@ async function runGoogleCampaignsEtlInner(opts: {
       // Detect account currency from first row (all rows share the same customer).
       const accountCurrency = rawRows[0]?.customer?.currencyCode ?? "EUR";
       const fxRate = accountCurrency === "USD" ? usdToEur : 1.0;
-      if (accountCurrency === "USD") {
-        log.push(`[${slug}] account currency is USD — converting to EUR at rate ${fxRate.toFixed(4)}`);
-      }
+      log.push(`[${slug}] currency=${accountCurrency} fxRate=${fxRate.toFixed(4)} rows=${rawRows.length}`);
 
       const rows: Record<string, unknown>[] = [];
 

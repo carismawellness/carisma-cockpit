@@ -60,7 +60,8 @@ interface GoogleAdsRow {
 
 async function getUsdToEurRate(): Promise<number> {
   try {
-    const res = await fetch("https://api.frankfurter.app/latest?from=USD&to=EUR");
+    const res = await fetch("https://api.frankfurter.dev/v1/latest?from=USD&to=EUR");
+    if (!res.ok) return 0.92;
     const data = await res.json() as { rates?: { EUR?: number } };
     return data.rates?.EUR ?? 0.92;
   } catch {
