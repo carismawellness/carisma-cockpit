@@ -20,7 +20,7 @@
 import { upsert, selectRaw } from "@/lib/etl/supabase-etl";
 import { ETLLogger } from "@/lib/etl/etl-logger";
 
-const GOOGLE_ADS_BASE = "https://googleads.googleapis.com/v20";
+const GOOGLE_ADS_BASE = "https://googleads.googleapis.com/v21";
 
 const CUSTOMER_IDS: Record<string, string | undefined> = {
   spa:        process.env.GOOGLE_ADS_SPA_CUSTOMER_ID,
@@ -32,9 +32,10 @@ const BRAND_SLUGS = ["spa", "aesthetics", "slimming"] as const;
 type BrandSlug = typeof BRAND_SLUGS[number];
 
 async function getAccessToken(): Promise<string> {
-  const clientId     = process.env.GOOGLE_ADS_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET;
-  const refreshToken = process.env.GOOGLE_ADS_REFRESH_TOKEN;
+  // .trim() strips trailing \n that Vercel CLI may append when pulling/storing env vars.
+  const clientId     = process.env.GOOGLE_ADS_CLIENT_ID?.replace(/\n/g, "").trim();
+  const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET?.replace(/\n/g, "").trim();
+  const refreshToken = process.env.GOOGLE_ADS_REFRESH_TOKEN?.replace(/\n/g, "").trim();
 
   if (!clientId || !clientSecret || !refreshToken) {
     throw new Error("Google Ads OAuth credentials not configured");
@@ -95,6 +96,9 @@ interface GoogleAdsRow {
     name?:   string;
     status?: string;
   };
+  customer?: {
+    currencyCode?: string; // e.g. "USD" or "EUR" — account billing currency
+  };
   metrics?: {
     costMicros?:          string;
     impressions?:         string;
@@ -108,6 +112,19 @@ interface GoogleAdsRow {
   segments?: {
     date?: string;
   };
+}
+
+// Fetch live USD→EUR rate; falls back to a reasonable approximation.
+// Note: api.frankfurter.app now redirects to api.frankfurter.dev/v1 — use the canonical URL directly.
+async function getUsdToEurRate(): Promise<number> {
+  try {
+    const res = await fetch("https://api.frankfurter.dev/v1/latest?from=USD&to=EUR");
+    if (!res.ok) return 0.92;
+    const data = await res.json() as { rates?: { EUR?: number } };
+    return data.rates?.EUR ?? 0.92;
+  } catch {
+    return 0.92;
+  }
 }
 
 async function fetchCampaignRows(
@@ -127,6 +144,7 @@ async function fetchCampaignRows(
       campaign.id,
       campaign.name,
       campaign.status,
+      customer.currency_code,
       metrics.cost_micros,
       metrics.impressions,
       metrics.clicks,
@@ -144,16 +162,16 @@ async function fetchCampaignRows(
   const res = await fetch(url, {
     method:  "POST",
     headers: {
-      Authorization:    `Bearer ${accessToken}`,
+      Authorization:     `Bearer ${accessToken}`,
       "developer-token": devToken,
-      "Content-Type":   "application/json",
+      "Content-Type":    "application/json",
     },
     body: JSON.stringify({ query }),
   });
 
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`Google Ads API (${cleanId}) ${res.status}: ${text.slice(0, 300)}`);
+    throw new Error(`Google Ads API (${cleanId}) ${res.status}: ${text.slice(0, 2000)}`);
   }
 
   const json = JSON.parse(text) as unknown;
@@ -214,11 +232,16 @@ async function runGoogleCampaignsEtlInner(opts: {
     new Date(dateFrom).getTime() - 7 * 86_400_000,
   ).toISOString().slice(0, 10);
 
-  const log: string[] = [];
+  // Fetch exchange rate once per ETL run (reused across all USD accounts).
+  const usdToEur = await getUsdToEurRate();
+
+  const log: string[] = [`[etl] using ${GOOGLE_ADS_BASE}`];
   let totalUpserted = 0;
 
   for (const slug of brandsToProcess) {
-    const customerId = CUSTOMER_IDS[slug];
+    const rawId = CUSTOMER_IDS[slug];
+    // Defensive: Vercel CLI sometimes appends a literal "\n" to env var values.
+    const customerId = rawId?.replace(/\n/g, "").trim();
     if (!customerId) {
       log.push(`[${slug}] GOOGLE_ADS_${slug === "aesthetics" ? "AES" : slug.toUpperCase()}_CUSTOMER_ID not set — skipped`);
       continue;
@@ -227,25 +250,31 @@ async function runGoogleCampaignsEtlInner(opts: {
     try {
       const brandId = await getBrandId(slug);
 
-      log.push(`[${slug}] fetching campaign rows ${dateFrom}→${dateTo}`);
+      log.push(`[${slug}] fetching campaign rows ${dateFrom}→${dateTo} (customer: ${customerId})`);
       const [rawRows, peakCtrMap] = await Promise.all([
         fetchCampaignRows(customerId, accessToken, dateFrom, dateTo),
         fetchPeakCtrMap(brandId, sevenDaysAgo),
       ]);
+
+      // Detect account currency from first row (all rows share the same customer).
+      const accountCurrency = rawRows[0]?.customer?.currencyCode ?? "EUR";
+      const fxRate = accountCurrency === "USD" ? usdToEur : 1.0;
+      log.push(`[${slug}] currency=${accountCurrency} fxRate=${fxRate.toFixed(4)} rows=${rawRows.length}`);
 
       const rows: Record<string, unknown>[] = [];
 
       for (const r of rawRows) {
         if (r.campaign?.status === "REMOVED") continue;
 
-        const spend           = (parseInt(r.metrics?.costMicros ?? "0", 10)) / 1_000_000;
+        const rawSpend        = (parseInt(r.metrics?.costMicros ?? "0", 10)) / 1_000_000;
+        const spend           = rawSpend * fxRate; // always stored in EUR
         const impressions     = parseInt(r.metrics?.impressions ?? "0", 10);
         const clicks          = parseInt(r.metrics?.clicks ?? "0", 10);
         const conversions     = r.metrics?.conversions ?? 0;
-        const conversionValue = r.metrics?.allConversionsValue ?? 0;
+        const conversionValue = (r.metrics?.allConversionsValue ?? 0) * fxRate;
         const ctrPct          = (r.metrics?.ctr ?? 0) * 100; // Google returns decimal
-        const cpc             = (r.metrics?.averageCpc ?? 0) / 1_000_000;
-        const cpm             = (r.metrics?.averageCpm ?? 0) / 1_000_000;
+        const cpc             = ((r.metrics?.averageCpc ?? 0) / 1_000_000) * fxRate;
+        const cpm             = ((r.metrics?.averageCpm ?? 0) / 1_000_000) * fxRate;
         const campaignId      = r.campaign?.id ?? "";
         const date            = r.segments?.date ?? dateFrom;
 

@@ -15,9 +15,10 @@ function getCustomerId(brand: BrandSlug): string {
 }
 
 async function getAccessToken(): Promise<string> {
-  const clientId = process.env.GOOGLE_ADS_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET;
-  const refreshToken = process.env.GOOGLE_ADS_REFRESH_TOKEN;
+  // .trim() strips trailing \n that Vercel CLI may append when storing env vars.
+  const clientId = process.env.GOOGLE_ADS_CLIENT_ID?.replace(/\n/g, "").trim();
+  const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET?.replace(/\n/g, "").trim();
+  const refreshToken = process.env.GOOGLE_ADS_REFRESH_TOKEN?.replace(/\n/g, "").trim();
 
   if (!clientId || !clientSecret || !refreshToken) {
     throw new Error("Google Ads OAuth credentials not configured");
@@ -43,6 +44,7 @@ async function getAccessToken(): Promise<string> {
 
 interface GoogleAdsRow {
   campaign?: { name?: string; id?: string; status?: string };
+  customer?: { currencyCode?: string };
   metrics?: {
     costMicros?: string;
     impressions?: string;
@@ -56,18 +58,29 @@ interface GoogleAdsRow {
   };
 }
 
-function transformRows(rows: GoogleAdsRow[], dayCount: number): CampaignData[] {
+async function getUsdToEurRate(): Promise<number> {
+  try {
+    const res = await fetch("https://api.frankfurter.dev/v1/latest?from=USD&to=EUR");
+    if (!res.ok) return 0.92;
+    const data = await res.json() as { rates?: { EUR?: number } };
+    return data.rates?.EUR ?? 0.92;
+  } catch {
+    return 0.92;
+  }
+}
+
+function transformRows(rows: GoogleAdsRow[], fxRate: number, dayCount: number): CampaignData[] {
   return rows
     .filter((r) => r.campaign?.status !== "REMOVED")
     .map((r) => {
       const costMicros = parseInt(r.metrics?.costMicros ?? "0", 10);
-      const spend = costMicros / 1_000_000;
+      const spend = (costMicros / 1_000_000) * fxRate;
       const impressions = parseInt(r.metrics?.impressions ?? "0", 10);
       const clicks = parseInt(r.metrics?.clicks ?? "0", 10);
       const conversions = r.metrics?.conversions ?? 0;
       const ctr = (r.metrics?.ctr ?? 0) * 100; // Google returns as decimal
-      const cpc = (r.metrics?.averageCpc ?? 0) / 1_000_000;
-      const cpm = (r.metrics?.averageCpm ?? 0) / 1_000_000;
+      const cpc = ((r.metrics?.averageCpc ?? 0) / 1_000_000) * fxRate;
+      const cpm = ((r.metrics?.averageCpm ?? 0) / 1_000_000) * fxRate;
       const conversionValue = r.metrics?.allConversionsValue ?? 0;
       const cpl = conversions > 0 ? spend / conversions : 0;
 
@@ -77,6 +90,7 @@ function transformRows(rows: GoogleAdsRow[], dayCount: number): CampaignData[] {
         cpl: Math.round(cpl * 100) / 100,
         totalSpend: Math.round(spend * 100) / 100,
         totalLeads: Math.round(conversions),
+        clicks,
         ctr: Math.round(ctr * 10) / 10,
         cpm: Math.round(cpm * 100) / 100,
         frequency: impressions > 0 && clicks > 0 ? Math.round((impressions / (clicks / (ctr / 100 || 1))) * 10) / 10 : 1.0,
@@ -101,7 +115,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ...emptyResponse, error: "Invalid brand" }, { status: 400 });
   }
 
-  const customerId = getCustomerId(brand);
+  // Defensive: Vercel CLI sometimes appends a literal "\n" to pulled env var values.
+  const customerId = getCustomerId(brand).replace(/\n/g, "").trim();
   if (!customerId) {
     return NextResponse.json(
       { ...emptyResponse, error: `Google Ads customer ID not configured for ${brand}. Set GOOGLE_ADS_${brand === "aesthetics" ? "AES" : brand.toUpperCase()}_CUSTOMER_ID in .env.local` },
@@ -130,6 +145,7 @@ export async function GET(req: NextRequest) {
       campaign.name,
       campaign.id,
       campaign.status,
+      customer.currency_code,
       metrics.cost_micros,
       metrics.impressions,
       metrics.clicks,
@@ -144,8 +160,8 @@ export async function GET(req: NextRequest) {
       AND campaign.status != 'REMOVED'
   `;
 
-  const cleanCustomerId = customerId.replace(/-/g, "");
-  const url = `https://googleads.googleapis.com/v20/customers/${cleanCustomerId}/googleAds:searchStream`;
+  const cleanCustomerId = customerId.replace(/-/g, "").trim();
+  const url = `https://googleads.googleapis.com/v21/customers/${cleanCustomerId}/googleAds:searchStream`;
 
   try {
     const headers: Record<string, string> = {
@@ -199,7 +215,11 @@ export async function GET(req: NextRequest) {
     const to = new Date(dateTo);
     const dayCount = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / 86400000));
 
-    const campaigns = transformRows(allRows, dayCount);
+    // Detect account currency from first row and convert USD → EUR if needed.
+    const accountCurrency = allRows[0]?.customer?.currencyCode ?? "EUR";
+    const fxRate = accountCurrency === "USD" ? await getUsdToEurRate() : 1.0;
+
+    const campaigns = transformRows(allRows, fxRate, dayCount);
 
     const totals = campaigns.reduce(
       (acc, c) => ({
