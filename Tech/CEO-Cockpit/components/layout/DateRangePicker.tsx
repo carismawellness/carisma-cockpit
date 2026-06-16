@@ -77,7 +77,7 @@ const presets = [
   {
     key: "7d",
     label: "7 days",
-    fn: () => ({ from: subDays(new Date(), 7), to: new Date() }),
+    fn: () => ({ from: subDays(new Date(), 7), to: subDays(new Date(), 1) }),
   },
   {
     key: "lw",
