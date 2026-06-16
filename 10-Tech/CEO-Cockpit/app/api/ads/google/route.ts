@@ -160,17 +160,13 @@ export async function GET(req: NextRequest) {
   `;
 
   const cleanCustomerId = customerId.replace(/-/g, "").trim();
-  const url = `https://googleads.googleapis.com/v20/customers/${cleanCustomerId}/googleAds:searchStream`;
-
-  // login-customer-id required when OAuth token is authorized at MCC level.
-  const mccId = process.env.GOOGLE_ADS_MCC_ID?.replace(/\n/g, "").trim();
+  const url = `https://googleads.googleapis.com/v21/customers/${cleanCustomerId}/googleAds:searchStream`;
 
   try {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${accessToken}`,
       "developer-token": devToken,
       "Content-Type": "application/json",
-      ...(mccId ? { "login-customer-id": mccId } : {}),
     };
 
     const res = await fetch(url, {

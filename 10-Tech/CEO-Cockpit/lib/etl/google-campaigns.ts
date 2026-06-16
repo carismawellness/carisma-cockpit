@@ -20,7 +20,7 @@
 import { upsert, selectRaw } from "@/lib/etl/supabase-etl";
 import { ETLLogger } from "@/lib/etl/etl-logger";
 
-const GOOGLE_ADS_BASE = "https://googleads.googleapis.com/v20";
+const GOOGLE_ADS_BASE = "https://googleads.googleapis.com/v21";
 
 const CUSTOMER_IDS: Record<string, string | undefined> = {
   spa:        process.env.GOOGLE_ADS_SPA_CUSTOMER_ID,
@@ -157,15 +157,12 @@ async function fetchCampaignRows(
       AND campaign.status != 'REMOVED'
   `;
 
-  // login-customer-id is required when authenticating via an MCC manager account.
-  const mccId = process.env.GOOGLE_ADS_MCC_ID?.replace(/\n/g, "").trim();
   const res = await fetch(url, {
     method:  "POST",
     headers: {
-      Authorization:      `Bearer ${accessToken}`,
-      "developer-token":  devToken,
-      "Content-Type":     "application/json",
-      ...(mccId ? { "login-customer-id": mccId } : {}),
+      Authorization:     `Bearer ${accessToken}`,
+      "developer-token": devToken,
+      "Content-Type":    "application/json",
     },
     body: JSON.stringify({ query }),
   });
