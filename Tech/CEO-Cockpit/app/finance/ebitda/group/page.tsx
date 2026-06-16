@@ -66,7 +66,7 @@ const PL_ROWS: { key: NumericBUKey; label: string; isCost?: boolean }[] = [
   { key: "wages",       label: "Wages & Salaries", isCost: true },
   { key: "cogs",        label: "COGS",             isCost: true },
   { key: "rent",        label: "Rent",             isCost: true },
-  { key: "advertising", label: "Advertising",      isCost: true },
+  { key: "advertising", label: "Marketing",         isCost: true },
   { key: "utilities",   label: "Utilities",        isCost: true },
   { key: "sga",         label: "SG&A",             isCost: true },
   { key: "ebitda",      label: "EBITDA" },
@@ -240,7 +240,7 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
   const chartData = businessUnits.map((bu) => ({
     name:        bu.name,
     Wages:       bu.wages,
-    Advertising: bu.advertising,
+    Marketing: bu.advertising,
     Rent:        bu.rent,
     Utilities:   bu.utilities,
     COGS:        bu.cogs,
@@ -396,7 +396,7 @@ function GroupEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date
                   <Tooltip content={<ChartTooltip />} />
                   <Legend />
                   <Bar dataKey="Wages"       stackId="s" fill="#E5C088" />
-                  <Bar dataKey="Advertising" stackId="s" fill="#E5B5D0" />
+                  <Bar dataKey="Marketing" stackId="s" fill="#E5B5D0" />
                   <Bar dataKey="Rent"        stackId="s" fill="#C5D0E0" />
                   <Bar dataKey="Utilities"   stackId="s" fill="#B5DCDC" />
                   <Bar dataKey="COGS"        stackId="s" fill="#E5B8B0" />

@@ -586,14 +586,14 @@ function AestheticsEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo:
     return [{
       name:           "Aesthetics",
       Wages:          dept.wages,
-      Advertising:    dept.advertising,
+      Marketing:      dept.advertising,
       Rent:           dept.rent,
       Utilities:      dept.utilities,
       COGS:           dept.cogs,
       "SG&A":         dept.sga,
       EBITDA:         dept.ebitda,
       WagesPct:       pctOf(dept.wages,       r),
-      AdvertisingPct: pctOf(dept.advertising, r),
+      MarketingPct:   pctOf(dept.advertising, r),
       RentPct:        pctOf(dept.rent,        r),
       UtilitiesPct:   pctOf(dept.utilities,   r),
       COGSPct:        pctOf(dept.cogs,        r),
@@ -820,7 +820,7 @@ function AestheticsEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo:
                   <YAxis tickFormatter={(v: number) => fmtShort(v)} />
                   <Tooltip content={<BreakdownTooltip />} />
                   <Bar dataKey="Wages"       stackId="s" fill="#E5C088" name="Wages"><LabelList dataKey="WagesPct"       content={renderSegmentLabel} /></Bar>
-                  <Bar dataKey="Advertising" stackId="s" fill="#E5B5D0" name="Advertising"><LabelList dataKey="AdvertisingPct" content={renderSegmentLabel} /></Bar>
+                  <Bar dataKey="Marketing" stackId="s" fill="#E5B5D0" name="Marketing"><LabelList dataKey="MarketingPct" content={renderSegmentLabel} /></Bar>
                   <Bar dataKey="Rent"        stackId="s" fill="#C5D0E0" name="Rent"><LabelList dataKey="RentPct"        content={renderSegmentLabel} /></Bar>
                   <Bar dataKey="Utilities"   stackId="s" fill="#B5DCDC" name="Utilities"><LabelList dataKey="UtilitiesPct"   content={renderSegmentLabel} /></Bar>
                   <Bar dataKey="COGS"        stackId="s" fill="#E5B8B0" name="COGS"><LabelList dataKey="COGSPct"        content={renderSegmentLabel} /></Bar>

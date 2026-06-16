@@ -549,14 +549,14 @@ function SpaEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }
       return {
         name:           loc.name,
         Wages:          loc.wages,
-        Advertising:    loc.advertising,
+        Marketing:      loc.advertising,
         Rent:           loc.rent,
         Utilities:      loc.utilities,
         COGS:           loc.cogs,
         "SG&A":         loc.sga,
         EBITDA:         loc.ebitda,
         WagesPct:       pctOf(loc.wages,       r),
-        AdvertisingPct: pctOf(loc.advertising, r),
+        MarketingPct:   pctOf(loc.advertising, r),
         RentPct:        pctOf(loc.rent,        r),
         UtilitiesPct:   pctOf(loc.utilities,   r),
         COGSPct:        pctOf(loc.cogs,        r),
@@ -845,7 +845,7 @@ function SpaEBITDAContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }
                   <Tooltip content={<BreakdownTooltip />} />
                   <Legend />
                   <Bar dataKey="Wages"       stackId="s" fill="#E5C088"><LabelList dataKey="WagesPct"       content={renderSegmentLabel} /></Bar>
-                  <Bar dataKey="Advertising" stackId="s" fill="#E5B5D0"><LabelList dataKey="AdvertisingPct" content={renderSegmentLabel} /></Bar>
+                  <Bar dataKey="Marketing" stackId="s" fill="#E5B5D0"><LabelList dataKey="MarketingPct" content={renderSegmentLabel} /></Bar>
                   <Bar dataKey="Rent"        stackId="s" fill="#C5D0E0"><LabelList dataKey="RentPct"        content={renderSegmentLabel} /></Bar>
                   <Bar dataKey="Utilities"   stackId="s" fill="#B5DCDC"><LabelList dataKey="UtilitiesPct"   content={renderSegmentLabel} /></Bar>
                   <Bar dataKey="COGS"        stackId="s" fill="#E5B8B0"><LabelList dataKey="COGSPct"        content={renderSegmentLabel} /></Bar>

@@ -859,6 +859,10 @@ export async function GET(req: Request) {
   group.ebitda = group.revenue - group.wages - group.advertising - group.sga - group.cogs - group.rent - group.utilities;
   group.ebitda = +group.ebitda.toFixed(2);
 
+  // Zoho raw total: sum of ALL transactions_raw entries for the period before any
+  // EBITDA mapping, filtering, or hardwired-rule overrides. Used for cost QC.
+  const zohoRawExpenses = +(allRawCosts.reduce((sum, r) => sum + r.amount, 0)).toFixed(2);
+
   return NextResponse.json({
     date_from:          dateFrom,
     date_to:            dateTo,
@@ -868,5 +872,6 @@ export async function GET(req: Request) {
     group,
     fallback_applied:   fallbackApplied,
     warnings,
+    zoho_raw_expenses:  zohoRawExpenses,
   });
 }

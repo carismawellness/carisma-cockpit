@@ -34,7 +34,7 @@ const LINE_LABELS: Record<string, string> = {
   revenue:     "Revenue",
   cogs:        "COGS",
   wages:       "Wages & Salaries",
-  advertising: "Advertising",
+  advertising: "Marketing",
   rent:        "Rent",
   utilities:   "Utilities",
   sga:         "SG&A",

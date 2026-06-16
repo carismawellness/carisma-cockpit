@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, X, Database } from "lucide-react";
+import { ChevronDown, ChevronRight, X, Database, CheckCircle2, AlertCircle } from "lucide-react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/charts/config";
@@ -52,13 +52,14 @@ type VenueData = {
 };
 
 type V2Data = {
-  date_from:        string;
-  date_to:          string;
-  days_in_period:   number;
-  venues:           Record<string, VenueData>;
-  group:            VenueData;
-  fallback_applied: Array<{ venue: string; ebitda_line: string; rule_type: string; value: number }>;
-  warnings:         string[];
+  date_from:         string;
+  date_to:           string;
+  days_in_period:    number;
+  venues:            Record<string, VenueData>;
+  group:             VenueData;
+  fallback_applied:  Array<{ venue: string; ebitda_line: string; rule_type: string; value: number }>;
+  warnings:          string[];
+  zoho_raw_expenses: number;
 };
 
 type DrillContact = {
@@ -607,6 +608,40 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
 
       {data && (
         <>
+          {/* Cost Reconciliation QC — compares EBITDA-mapped costs vs raw Zoho Books total */}
+          {(() => {
+            const ebitdaCosts = data.group.wages + data.group.advertising + data.group.sga
+              + data.group.cogs + data.group.rent + data.group.utilities;
+            const zohoCosts = data.zoho_raw_expenses ?? 0;
+            const delta = ebitdaCosts - zohoCosts;
+            const matched = delta >= -100; // ±€100 rounding tolerance
+            return (
+              <div className={`flex flex-wrap items-center gap-3 rounded-lg border px-4 py-3 text-sm ${matched ? "bg-emerald-50 border-emerald-200" : "bg-amber-50 border-amber-200"}`}>
+                <div className="flex items-center gap-2 shrink-0">
+                  {matched
+                    ? <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    : <AlertCircle  className="h-4 w-4 text-amber-600" />}
+                  <span className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Cost QC</span>
+                </div>
+                <div className="h-4 w-px bg-border hidden sm:block" />
+                <div className="flex flex-wrap gap-4 text-xs">
+                  <span>
+                    <span className="text-muted-foreground">EBITDA Total Costs:</span>{" "}
+                    <span className="font-mono font-bold">{fmtC(ebitdaCosts)}</span>
+                  </span>
+                  <span>
+                    <span className="text-muted-foreground">Zoho Books Raw:</span>{" "}
+                    <span className="font-mono font-bold">{fmtC(zohoCosts)}</span>
+                  </span>
+                  <span className={`font-semibold ${matched ? "text-emerald-700" : "text-amber-700"}`}>
+                    Δ {delta >= 0 ? "+" : ""}{fmtC(delta)}
+                    {matched ? " · Reconciled ✓" : " · Costs may be missing ⚠"}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* P&L Table */}
           <div className="overflow-x-auto rounded border bg-card">
             <table className="w-full text-xs border-collapse">
@@ -679,17 +714,17 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                   </tr>
                 ))}
 
-                {/* Advertising */}
+                {/* Marketing */}
                 <tr className="border-b font-semibold cursor-pointer hover:bg-muted/10"
                   onClick={() => setAdvOpen(v => !v)}>
                   <td className="px-3 py-2 sticky left-0 flex items-center gap-1">
                     {advOpen ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
-                    Advertising
+                    Marketing
                   </td>
                   {cols.map(vc => {
                     const v = vd(vc.slug);
                     return (
-                      <td key={vc.slug} className={cellCls(vc.slug)} onClick={cellClick(vc.slug, vc.label, "advertising", "Advertising")}>
+                      <td key={vc.slug} className={cellCls(vc.slug)} onClick={cellClick(vc.slug, vc.label, "advertising", "Marketing")}>
                         {fmtC(v.advertising)}<span className="text-muted-foreground">{pctOf(v.advertising, v.revenue)}</span>
                       </td>
                     );
@@ -701,7 +736,7 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                     <td className="px-3 py-1 pl-8 sticky left-0 capitalize">{ch}</td>
                     {cols.map(vc => (
                       <td key={vc.slug} className={cellCls(vc.slug)}
-                        onClick={cellClick(vc.slug, vc.label, "advertising", `Advertising – ${ch}`, { adChannel: ch })}>
+                        onClick={cellClick(vc.slug, vc.label, "advertising", `Marketing – ${ch}`, { adChannel: ch })}>
                         {fmtC(vd(vc.slug).ad_by_channel[ch] ?? 0)}
                       </td>
                     ))}

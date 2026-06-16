@@ -384,7 +384,7 @@ async function sbFetch<T>(path: string, params: Array<[string, string]> = []): P
 
 const EBITDA_LINE_LABEL: Record<string, string> = {
   wages:       "Wages & Salaries",
-  advertising: "Advertising",
+  advertising: "Marketing",
   sga:         "SG&A",
   cogs:        "COGS",
   rent:        "Rent",

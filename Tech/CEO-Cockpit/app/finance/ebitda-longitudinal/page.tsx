@@ -47,7 +47,7 @@ const COST_COLORS: Record<string, string> = {
 
 const COST_LABELS: Record<string, string> = {
   wages:       "Wages",
-  advertising: "Advertising",
+  advertising: "Marketing",
   rent:        "Rent",
   sga:         "SG&A",
   cogs:        "COGS",
