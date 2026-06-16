@@ -32,9 +32,10 @@ const BRAND_SLUGS = ["spa", "aesthetics", "slimming"] as const;
 type BrandSlug = typeof BRAND_SLUGS[number];
 
 async function getAccessToken(): Promise<string> {
-  const clientId     = process.env.GOOGLE_ADS_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET;
-  const refreshToken = process.env.GOOGLE_ADS_REFRESH_TOKEN;
+  // .trim() strips trailing \n that Vercel CLI may append when pulling/storing env vars.
+  const clientId     = process.env.GOOGLE_ADS_CLIENT_ID?.replace(/\n/g, "").trim();
+  const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET?.replace(/\n/g, "").trim();
+  const refreshToken = process.env.GOOGLE_ADS_REFRESH_TOKEN?.replace(/\n/g, "").trim();
 
   if (!clientId || !clientSecret || !refreshToken) {
     throw new Error("Google Ads OAuth credentials not configured");

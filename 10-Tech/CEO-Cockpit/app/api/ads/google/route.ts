@@ -15,9 +15,10 @@ function getCustomerId(brand: BrandSlug): string {
 }
 
 async function getAccessToken(): Promise<string> {
-  const clientId = process.env.GOOGLE_ADS_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET;
-  const refreshToken = process.env.GOOGLE_ADS_REFRESH_TOKEN;
+  // .trim() strips trailing \n that Vercel CLI may append when storing env vars.
+  const clientId = process.env.GOOGLE_ADS_CLIENT_ID?.replace(/\n/g, "").trim();
+  const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET?.replace(/\n/g, "").trim();
+  const refreshToken = process.env.GOOGLE_ADS_REFRESH_TOKEN?.replace(/\n/g, "").trim();
 
   if (!clientId || !clientSecret || !refreshToken) {
     throw new Error("Google Ads OAuth credentials not configured");
