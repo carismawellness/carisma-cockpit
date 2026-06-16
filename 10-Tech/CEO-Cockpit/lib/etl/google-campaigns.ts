@@ -233,7 +233,7 @@ async function runGoogleCampaignsEtlInner(opts: {
   // Fetch exchange rate once per ETL run (reused across all USD accounts).
   const usdToEur = await getUsdToEurRate();
 
-  const log: string[] = [];
+  const log: string[] = [`[etl] using ${GOOGLE_ADS_BASE}`];
   let totalUpserted = 0;
 
   for (const slug of brandsToProcess) {
