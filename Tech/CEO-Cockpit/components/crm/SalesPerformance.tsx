@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { useCrmAgents } from "@/lib/hooks/useCrmAgents";
 import { useKPIData } from "@/lib/hooks/useKPIData";
@@ -15,6 +16,7 @@ import {
   isExcludedCrmDate,
 } from "@/lib/constants/excluded-dates";
 import { BRAND } from "@/lib/constants/design-tokens";
+import { toLocalDateStr } from "@/lib/utils/dates";
 
 // Canonical brand palette — `soft` for left-border accents.
 const BRAND_BORDER: Record<string, string> = {
@@ -47,6 +49,9 @@ export function SalesPerformance({
   dateTo: Date;
   brandFilter: string | null;
 }) {
+  const from = toLocalDateStr(dateFrom);
+  const to   = toLocalDateStr(dateTo);
+
   const { agents, isLoading } = useCrmAgents(dateFrom, dateTo);
   const { brandMap } = useLookups();
   const { data: crmDailyData, loading: crmDailyLoading } = useKPIData<CrmDailyRow>({
@@ -54,6 +59,20 @@ export function SalesPerformance({
     dateFrom,
     dateTo,
     brandFilter,
+  });
+
+  // Authoritative revenue from brand revenue tables (spa_revenue_daily, aesthetics_sales_daily,
+  // slimming_sales_daily) — same source as Sales pages and Constraint Heatmap.
+  // NEVER use crm_agent_daily.total_sales for revenue display: it is agent-reported pipeline
+  // value from personal tracking sheets and does NOT equal verified POS revenue.
+  const { data: heatmapData } = useQuery({
+    queryKey: ["crm-brand-revenue", from, to],
+    queryFn: async () => {
+      const res = await fetch(`/api/funnel/constraint-heatmap?from=${from}&to=${to}`);
+      if (!res.ok) throw new Error(`revenue fetch ${res.status}`);
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000,
   });
 
   if (isLoading || crmDailyLoading) {
@@ -84,13 +103,11 @@ export function SalesPerformance({
       return meta && meta.brand.toLowerCase() === slug;
     });
 
-    const totalSales     = brandAgents.reduce((s, a) => s + a.totals.total_sales,    0);
     const totalBookings  = brandAgents.reduce((s, a) => s + a.totals.total_bookings, 0);
     const totalDeposits  = brandAgents.reduce((s, a) => s + a.totals.total_deposits, 0);
     const totalMessages  = brandAgents.reduce((s, a) => s + a.totals.total_messages, 0);
 
-    const dailyAvgRevenue = totalSales / numDays;
-    const depositPct      = totalBookings > 0 ? (totalDeposits / totalBookings) * 100 : 0;
+    const depositPct = totalBookings > 0 ? (totalDeposits / totalBookings) * 100 : 0;
     const convMsgPct      = totalMessages > 0 ? (totalBookings / totalMessages) * 100 : 0;
 
     // Slimming: conv over leads from crm_daily (excluding migration days)
@@ -108,11 +125,14 @@ export function SalesPerformance({
 
     const dailyBookingRate = totalBookings / numDays;
 
+    // Verified revenue from POS tables — authoritative source, matches Sales pages.
+    // DO NOT use totalSales (crm_agent_daily.total_sales) for revenue display.
+    const trueRevenue: number | null = heatmapData?.brands?.[slug]?.total_revenue ?? null;
+
     return {
       slug,
       label: BRAND_LABELS[slug],
-      totalSales,
-      dailyAvgRevenue,
+      trueRevenue,
       depositPct,
       convMsgPct,
       convLeadsPct,
@@ -141,12 +161,19 @@ export function SalesPerformance({
             <p className="text-sm text-text-secondary">No agent data for this period.</p>
           ) : b.slug === "slimming" ? (
             // ── Slimming card ────────────────────────────────────────────────
+            // Bookings sourced from agent tracking sheets — count may differ from
+            // GHL "Booking Won" stage if agents book contacts that land in other
+            // GHL stages (e.g. Active Member). A GHL pipeline ETL is required for
+            // an exact match. See AGENTS.md for the data-source rule.
             <div className="space-y-3">
-              <div className="flex justify-between">
+              <div className="flex justify-between items-start">
                 <span className="text-sm text-text-secondary">Total Bookings</span>
-                <span className="text-sm font-bold text-foreground tabular-nums">
-                  {b.totalBookings.toLocaleString()}
-                </span>
+                <div className="text-right">
+                  <span className="text-sm font-bold text-foreground tabular-nums block">
+                    {b.totalBookings.toLocaleString()}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground/60">agent-tracked</span>
+                </div>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-text-secondary">Avg Bookings / Day</span>
@@ -220,17 +247,19 @@ export function SalesPerformance({
             </div>
           ) : (
             // ── Spa & Aesthetics card ────────────────────────────────────────
+            // Revenue sourced from POS tables (spa_revenue_daily / aesthetics_sales_daily).
+            // CRM metrics (Deposit %, Conv) sourced from agent tracking sheets.
             <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-sm text-text-secondary">Total Sales</span>
                 <span className="text-sm font-bold text-foreground">
-                  {formatCurrency(b.totalSales)}
+                  {b.trueRevenue !== null ? formatCurrency(b.trueRevenue) : "—"}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-text-secondary">Daily Average</span>
                 <span className="text-sm font-semibold text-foreground">
-                  {formatCurrency(b.dailyAvgRevenue)}
+                  {b.trueRevenue !== null ? formatCurrency(b.trueRevenue / numDays) : "—"}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -253,6 +282,9 @@ export function SalesPerformance({
                   {formatPercent(b.convMsgPct)}
                 </span>
               </div>
+              <p className="text-[10px] text-muted-foreground/60 pt-1 border-t border-dashed">
+                Revenue from POS · Deposit &amp; Conv from agent tracking sheets
+              </p>
             </div>
           )}
         </Card>
