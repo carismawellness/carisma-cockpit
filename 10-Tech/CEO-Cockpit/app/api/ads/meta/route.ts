@@ -52,7 +52,7 @@ interface MetaInsight {
   spend?: string;
   impressions?: string;
   clicks?: string;
-  cpc?: string;
+  outbound_clicks?: MetaAction[]; // link clicks — matches "CPC (cost per link click)" in Ads Manager
   cpm?: string;
   ctr?: string;
   frequency?: string;
@@ -96,13 +96,21 @@ function transformInsights(
     const roas = safeNum(roasValue);
     const attributedRevenue = Math.round(roas * spend);
 
+    // Use outbound_clicks (link clicks) to match Meta Ads Manager's
+    // "CPC (cost per link click)" — falls back to all clicks if absent.
+    const linkClicks = (row.outbound_clicks ?? []).reduce(
+      (s, a) => a.action_type === "outbound_click" ? s + parseInt(a.value || "0", 10) : s,
+      0,
+    );
+    const clicks = linkClicks > 0 ? linkClicks : parseInt(row.clicks ?? "0", 10);
+
     return {
       campaign: row.campaign_name ?? "Unknown",
       campaignId: row.campaign_id ?? "",
       cpl: Math.round(cpl * 100) / 100,
       totalSpend: Math.round(spend * 100) / 100,
       totalLeads: leads,
-      clicks: parseInt(row.clicks ?? "0", 10),
+      clicks,
       ctr: Math.round(ctr * 100) / 100,
       cpm: Math.round(safeNum(row.cpm) * 100) / 100,
       frequency: Math.round(frequency * 10) / 10,
@@ -146,8 +154,8 @@ export async function GET(req: NextRequest) {
     "campaign_id",
     "spend",
     "impressions",
-    "clicks",
-    "cpc",
+    "clicks",           // all clicks
+    "outbound_clicks",  // link clicks — what Meta shows as "CPC (cost per link click)"
     "cpm",
     "ctr",
     "frequency",
