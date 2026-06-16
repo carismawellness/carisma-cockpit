@@ -803,6 +803,7 @@ function InviteDialog({
 
 function defaultRange(): { from: string; to: string } {
   const to = new Date();
+  to.setDate(to.getDate() - 1); // end yesterday — exclude partial today
   const from = new Date();
   from.setDate(from.getDate() - 90);
   return { from: toDateInput(from), to: toDateInput(to) };
