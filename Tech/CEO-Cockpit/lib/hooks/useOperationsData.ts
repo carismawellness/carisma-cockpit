@@ -486,3 +486,77 @@ export function useStandardsTrend(
     },
   });
 }
+
+/* ── Negative reviews (google_review_texts) ──────────────────────────── */
+
+export interface NegativeReview {
+  reviewName:   string;
+  locationId:   number;
+  locationSlug: string;
+  locationName: string;
+  rating:       number;
+  text:         string;
+  authorName:   string | null;
+  publishedAt:  string | null; // ISO timestamp
+}
+
+/**
+ * Returns individual reviews that qualify as "negative":
+ *   - rating <= 3 (always include, text optional)
+ *   - rating == 4 AND text is non-empty (noteworthy with context)
+ *
+ * Filtered to reviews published within [dateFrom, dateTo].
+ * Falls back to the most recent 90 days of negative reviews if none
+ * exist in the selected window (so the section is never empty when
+ * there IS data).
+ */
+export function useNegativeReviews(dateFrom: Date, dateTo: Date) {
+  const lookup = useLocationsLookup();
+  const fromStr = format(dateFrom, "yyyy-MM-dd");
+  const toStr   = format(dateTo,   "yyyy-MM-dd");
+
+  return useQuery({
+    queryKey: ["negative_reviews", fromStr, toStr],
+    enabled: !!lookup.data,
+    queryFn: async () => {
+      const supabase = createClient();
+
+      // Fetch reviews in the selected date window (using published_at date part)
+      const { data, error } = await supabase
+        .from("google_review_texts")
+        .select("review_name, location_id, rating, text, author_name, published_at")
+        .gte("published_at", fromStr)
+        .lte("published_at", toStr + "T23:59:59Z")
+        .or("rating.lte.3,and(rating.eq.4,text.neq.)")
+        .order("published_at", { ascending: false })
+        .limit(200);
+
+      if (error) throw new Error(error.message);
+
+      const byId = lookup.data!.byId;
+      const results: NegativeReview[] = [];
+
+      for (const row of data ?? []) {
+        const rating = row.rating as number;
+        const text   = (row.text as string | null) ?? "";
+        // rating ≤3 always included; rating=4 only with meaningful text
+        if (rating > 4) continue;
+        if (rating === 4 && text.trim().length === 0) continue;
+
+        const loc = byId.get(row.location_id as number);
+        results.push({
+          reviewName:   row.review_name as string,
+          locationId:   row.location_id as number,
+          locationSlug: loc?.slug ?? String(row.location_id),
+          locationName: loc?.name ?? String(row.location_id),
+          rating,
+          text,
+          authorName:  (row.author_name as string | null),
+          publishedAt: (row.published_at as string | null),
+        });
+      }
+
+      return results;
+    },
+  });
+}

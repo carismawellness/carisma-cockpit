@@ -9,6 +9,7 @@ import {
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import {
   useGoogleReviews,
+  useNegativeReviews,
   useDiligenceAudit,
   useStandardsScores,
   useStandardsTrend,
@@ -16,6 +17,7 @@ import {
   type StandardsLocationRow,
   type WeeklyReviewSummary,
   type MonthlyStandardScore,
+  type NegativeReview,
 } from "@/lib/hooks/useOperationsData";
 import { format, parseISO } from "date-fns";
 import {
@@ -40,6 +42,7 @@ import {
   ClipboardCheck,
   UserSearch,
   AlertTriangle,
+  MessageSquareX,
 } from "lucide-react";
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -317,12 +320,13 @@ function OperationsContent({
   dateTo: Date;
 }) {
   /* ── Live data ─────────────────────────────────────────────────────── */
-  const reviews       = useGoogleReviews(dateTo);
-  const diligence     = useDiligenceAudit(dateTo);
-  const facility      = useStandardsScores("facility", dateFrom, dateTo);
-  const mystery       = useStandardsScores("mystery_guest", dateFrom, dateTo);
-  const facilityTrend = useStandardsTrend("facility", dateTo, 12);
-  const mysteryTrend  = useStandardsTrend("mystery_guest", dateTo, 12);
+  const reviews         = useGoogleReviews(dateTo);
+  const negativeReviews = useNegativeReviews(dateFrom, dateTo);
+  const diligence       = useDiligenceAudit(dateTo);
+  const facility        = useStandardsScores("facility", dateFrom, dateTo);
+  const mystery         = useStandardsScores("mystery_guest", dateFrom, dateTo);
+  const facilityTrend   = useStandardsTrend("facility", dateTo, 12);
+  const mysteryTrend    = useStandardsTrend("mystery_guest", dateTo, 12);
 
   const loading =
     reviews.loading || diligence.loading || facility.loading || mystery.loading;
@@ -525,6 +529,14 @@ function OperationsContent({
 
       </Card>
 
+      {/* ═══════ NEGATIVE REVIEWS ═══════════════════════════════════ */}
+      <NegativeReviewsCard
+        reviews={negativeReviews.data ?? []}
+        loading={negativeReviews.isLoading}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+      />
+
       {/* ═══════ DILIGENCE AUDIT TABLE (Heatmap) ═════════════════════ */}
       <Card className="p-3 md:p-6">
         <div className="flex items-center gap-2 mb-1">
@@ -680,6 +692,143 @@ function OperationsContent({
       />
 
     </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   NEGATIVE REVIEWS CARD
+   Shows individual reviews rated ≤3 stars, or 4 stars with text.
+   Data comes from google_review_texts (populated nightly by the
+   google-reviews ETL from Places API).
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const LOCATION_BADGE_COLORS: Record<string, string> = {
+  inter:               "bg-blue-100 text-blue-800",
+  hugos:               "bg-indigo-100 text-indigo-800",
+  hyatt:               "bg-amber-100 text-amber-800",
+  ramla:               "bg-rose-100 text-rose-800",
+  labranda:            "bg-stone-100 text-stone-800",
+  odycy:               "bg-pink-100 text-pink-800",
+  excelsior:           "bg-purple-100 text-purple-800",
+  novotel:             "bg-teal-100 text-teal-800",
+  "aesthetics-clinic": "bg-emerald-100 text-emerald-800",
+  "slimming-clinic":   "bg-cyan-100 text-cyan-800",
+};
+
+function StarRow({ rating }: { rating: number }) {
+  return (
+    <span className="flex gap-0.5">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <Star
+          key={i}
+          className={cn(
+            "h-3 w-3",
+            i < rating ? "fill-amber-400 text-amber-400" : "fill-transparent text-gray-300",
+          )}
+        />
+      ))}
+    </span>
+  );
+}
+
+function NegativeReviewsCard({
+  reviews,
+  loading,
+  dateFrom,
+  dateTo,
+}: {
+  reviews: NegativeReview[];
+  loading: boolean;
+  dateFrom: Date;
+  dateTo: Date;
+}) {
+  const periodLabel = `${format(dateFrom, "d MMM")}–${format(dateTo, "d MMM yyyy")}`;
+  const critical    = reviews.filter((r) => r.rating <= 3);
+  const noteworthy  = reviews.filter((r) => r.rating === 4 && r.text.trim().length > 0);
+
+  return (
+    <Card className="p-3 md:p-6">
+      <div className="flex items-center gap-2 mb-1">
+        <MessageSquareX className="h-5 w-5 text-[#EF4444]" />
+        <h2 className="text-lg font-semibold text-foreground">Negative Reviews</h2>
+      </div>
+      <p className="text-sm text-muted-foreground mb-4">
+        {periodLabel} — reviews ≤3 stars + 4-star reviews with written feedback
+      </p>
+
+      {loading && <ChartSkeleton />}
+
+      {!loading && reviews.length === 0 && (
+        <div className="py-8 text-center text-sm text-muted-foreground">
+          No qualifying negative reviews found for this period.{" "}
+          <span className="text-xs">(Data populates nightly via Google Places API)</span>
+        </div>
+      )}
+
+      {!loading && reviews.length > 0 && (
+        <div className="space-y-6">
+
+          {/* Critical: ≤3 stars */}
+          {critical.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-red-600 uppercase tracking-wide mb-3">
+                Critical — ≤ 3 Stars ({critical.length})
+              </p>
+              <div className="space-y-3">
+                {critical.map((r) => (
+                  <ReviewBlurb key={r.reviewName} review={r} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Noteworthy: 4-star with text */}
+          {noteworthy.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-3">
+                Noteworthy — 4 Stars with Feedback ({noteworthy.length})
+              </p>
+              <div className="space-y-3">
+                {noteworthy.map((r) => (
+                  <ReviewBlurb key={r.reviewName} review={r} />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function ReviewBlurb({ review }: { review: NegativeReview }) {
+  const badgeClass = LOCATION_BADGE_COLORS[review.locationSlug] ?? "bg-gray-100 text-gray-700";
+  const dateStr = review.publishedAt
+    ? format(new Date(review.publishedAt), "d MMM yyyy")
+    : null;
+  // Truncate long reviews at 400 chars with an ellipsis
+  const blurb = review.text.length > 400
+    ? review.text.slice(0, 400).trimEnd() + "…"
+    : review.text;
+
+  return (
+    <div className="border border-border rounded-lg p-3 bg-background">
+      <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+        <div className="flex items-center gap-2">
+          <StarRow rating={review.rating} />
+          <span className={cn("text-[11px] font-semibold px-2 py-0.5 rounded-full", badgeClass)}>
+            {review.locationName}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          {review.authorName && <span>{review.authorName}</span>}
+          {dateStr && <span>· {dateStr}</span>}
+        </div>
+      </div>
+      {blurb && (
+        <p className="text-sm text-foreground leading-relaxed">{blurb}</p>
+      )}
+    </div>
   );
 }
 

@@ -3,13 +3,15 @@
  *
  * Pulls today's Google review snapshot (rating + total review count) for all
  * 10 Carisma locations via the Places API (New) and upserts into
- * google_reviews. Idempotent — one row per (date, location_id), re-running
- * on the same day just refreshes today's snapshot.
+ * google_reviews. Also captures individual review texts (up to 5 most recent
+ * per location) into google_review_texts for longitudinal negative-review
+ * tracking. Idempotent — re-running on the same day just refreshes snapshots
+ * and adds any newly-posted reviews.
  *
  * No body required: POST {}.
  *
  * Required env vars:
- *   GOOGLE_PLACES_API_KEY   (Places API (New) key — see Tools/seed-google-reviews.md)
+ *   GOOGLE_PLACES_API_KEY   (Places API (New) key)
  *   NEXT_PUBLIC_SUPABASE_URL
  *   SUPABASE_SERVICE_ROLE_KEY
  */
@@ -51,6 +53,7 @@ export async function POST(req: NextRequest) {
       status: result.errors.length === 0 ? "ok" : "partial",
       date: result.date,
       rows_upserted: result.rows_upserted,
+      reviews_upserted: result.reviews_upserted,
       errors: result.errors.length > 0 ? result.errors : undefined,
       log: result.log.join("\n"),
     });
