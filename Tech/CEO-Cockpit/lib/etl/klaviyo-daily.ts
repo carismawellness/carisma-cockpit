@@ -356,6 +356,8 @@ async function runKlaviyoDailyEtlInner(opts: {
       log.push(
         `[${slug}] ✓ subscribers=${subscriberCount} active_flows=${activeFlows} ` +
         `recipients=${aggregates.total_recipients} delivered=${aggregates.total_delivered}` +
+        (aggregates.open_rate_pct  !== null ? ` open_rate=${aggregates.open_rate_pct}%`  : ``) +
+        (aggregates.click_rate_pct !== null ? ` click_rate=${aggregates.click_rate_pct}%` : ``) +
         (lastReportError ? ` [report_err: ${lastReportError}]` : ``)
       );
     } catch (err) {
