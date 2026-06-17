@@ -473,6 +473,45 @@ export async function GET(req: Request) {
     }
   }
 
+  // ── 5b. API-sourced advertising fallback for Spa ──────────────────────────
+  // When Zoho Books has no advertising expense entries for Spa (ad invoices not
+  // yet booked), pull actual spend from meta_campaigns_daily + google_campaigns_daily
+  // (brand_id=1) and distribute across the 8 Spa venues by cockpit_revenue ratio —
+  // the same logic as the HQ-Klaviyo split above.
+  {
+    const SPA_AD_SLUGS = ["intercontinental","hugos","hyatt","ramla","labranda","sunny_coast","excelsior","novotel"] as const;
+    const spaZohoAdTotal = SPA_AD_SLUGS.reduce((s, sv) => s + (venues[sv]?.advertising ?? 0), 0);
+    if (spaZohoAdTotal === 0) {
+      const [metaRows, googleRows] = await Promise.all([
+        supabase.from("meta_campaigns_daily").select("spend")
+          .eq("brand_id", 1).gte("date", dateFrom).lte("date", dateTo),
+        supabase.from("google_campaigns_daily").select("spend")
+          .eq("brand_id", 1).gte("date", dateFrom).lte("date", dateTo),
+      ]);
+      const metaTotal   = ((metaRows.data   ?? []) as Array<{spend: number}>).reduce((s, r) => s + Number(r.spend ?? 0), 0);
+      const googleTotal = ((googleRows.data ?? []) as Array<{spend: number}>).reduce((s, r)  => s + Number(r.spend  ?? 0), 0);
+      const totalApiAd  = metaTotal + googleTotal;
+      if (totalApiAd > 0) {
+        const totalSpaRev = SPA_AD_SLUGS.reduce((s, sv) => s + (venues[sv]?.cockpit_revenue ?? 0), 0);
+        for (const sv of SPA_AD_SLUGS) {
+          if (!venues[sv]) continue;
+          const ratio = totalSpaRev > 0 ? (venues[sv].cockpit_revenue ?? 0) / totalSpaRev : 1 / 8;
+          const metaShare   = +(metaTotal   * ratio).toFixed(2);
+          const googleShare = +(googleTotal * ratio).toFixed(2);
+          venues[sv].advertising += metaShare + googleShare;
+          venues[sv].ad_by_channel["meta"]   = (venues[sv].ad_by_channel["meta"]   ?? 0) + metaShare;
+          venues[sv].ad_by_channel["google"] = (venues[sv].ad_by_channel["google"] ?? 0) + googleShare;
+        }
+        fallbackApplied.push({
+          venue: "all_spa", ebitda_line: "advertising",
+          rule_type: "api_fallback (meta+google)",
+          value: +totalApiAd.toFixed(2),
+        });
+        warnings.push(`Spa advertising sourced from Meta/Google Ads API (€${totalApiAd.toFixed(2)}) — Zoho Books has no ad expenses for this period`);
+      }
+    }
+  }
+
   // ── 6. Apply hardwired venue rules ────────────────────────────────────────
   for (const [key, rule] of hardwiredMap) {
     const [venue, ebitda_line] = key.split("|");
