@@ -485,11 +485,11 @@ export async function GET(req: Request) {
       const [metaRows, googleRows] = await Promise.all([
         supabase.from("meta_campaigns_daily").select("spend")
           .eq("brand_id", 1).gte("date", dateFrom).lte("date", dateTo),
-        supabase.from("google_campaigns_daily").select("cost")
+        supabase.from("google_campaigns_daily").select("spend")
           .eq("brand_id", 1).gte("date", dateFrom).lte("date", dateTo),
       ]);
       const metaTotal   = ((metaRows.data   ?? []) as Array<{spend: number}>).reduce((s, r) => s + Number(r.spend ?? 0), 0);
-      const googleTotal = ((googleRows.data ?? []) as Array<{cost: number}>).reduce((s, r)  => s + Number(r.cost  ?? 0), 0);
+      const googleTotal = ((googleRows.data ?? []) as Array<{spend: number}>).reduce((s, r)  => s + Number(r.spend  ?? 0), 0);
       const totalApiAd  = metaTotal + googleTotal;
       if (totalApiAd > 0) {
         const totalSpaRev = SPA_AD_SLUGS.reduce((s, sv) => s + (venues[sv]?.cockpit_revenue ?? 0), 0);
