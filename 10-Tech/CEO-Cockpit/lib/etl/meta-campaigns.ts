@@ -271,8 +271,12 @@ async function runMetaCampaignsEtlInner(opts: {
         const frequency   = safeNum(row.frequency);
         const campaignId  = row.campaign_id ?? "";
 
+        // "Leads (Form)" in Meta Ads Manager = Instant Form submissions.
+        // Meta API reports these as onsite_web_lead (newer campaigns) or lead
+        // (older / pixel-backed lead gen). Count both to cover all campaign types.
+        const LEAD_ACTION_TYPES = new Set(["lead", "onsite_web_lead", "offsite_conversion.fb_pixel_lead"]);
         const leads = (row.actions ?? []).reduce((sum, a) => {
-          return a.action_type === "lead" ? sum + parseInt(a.value || "0", 10) : sum;
+          return LEAD_ACTION_TYPES.has(a.action_type) ? sum + parseInt(a.value || "0", 10) : sum;
         }, 0);
 
         const roasRaw = row.purchase_roas?.find(
