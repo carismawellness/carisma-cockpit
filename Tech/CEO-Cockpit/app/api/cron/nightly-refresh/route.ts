@@ -85,9 +85,28 @@ export async function GET(req: NextRequest) {
   const mktFrom = from;
   const mktPayload = JSON.stringify({ date_from: fmt(mktFrom), date_to: fmt(now) });
 
-  // Klaviyo syncs yesterday's aggregate snapshot
-  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  const klaviyoPayload = JSON.stringify({ date: fmt(yesterday) });
+  // Klaviyo: re-sync a TRAILING WINDOW, one day at a time.
+  // Email opens/clicks keep arriving for days after a send, so syncing only
+  // yesterday freezes each day's open/click rate at ~1-day maturity and the
+  // dashboard understates engagement for recent ranges. Re-pulling the last
+  // few days each night lets each stored row (UPSERT on date,brand_id) update
+  // with matured data. Single-day calls run sequentially — each is its own
+  // serverless invocation (own time budget) and respects Klaviyo's burst limit.
+  const KLAVIYO_TRAILING_DAYS = 3;
+  const klaviyoDates = Array.from({ length: KLAVIYO_TRAILING_DAYS }, (_, i) =>
+    fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate() - (i + 1))),
+  );
+  const klaviyoSync = async (): Promise<Response> => {
+    let last: Response | undefined;
+    for (const d of klaviyoDates) {
+      last = await fetch(`${BASE_URL}/api/etl/klaviyo-sync`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ date: d }),
+      });
+    }
+    return last as Response;
+  };
 
   // Talexio HR ETL syncs headcount/payroll/shifts for today's date.
   const today = fmt(now);
@@ -113,7 +132,7 @@ export async function GET(req: NextRequest) {
     fetch(`${BASE_URL}/api/etl/ghl-crm`,                      { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/meta-campaigns`,               { method: "POST", headers, body: mktPayload }),
     fetch(`${BASE_URL}/api/etl/google-campaigns`,             { method: "POST", headers, body: mktPayload }),
-    fetch(`${BASE_URL}/api/etl/klaviyo-sync`,                 { method: "POST", headers, body: klaviyoPayload }),
+    klaviyoSync(),
     fetch(`${BASE_URL}/api/etl/klaviyo-flows-sync`,           { method: "POST", headers, body: JSON.stringify({ date: today }) }),
     fetch(`${BASE_URL}/api/etl/talexio-hr?date=${today}`,     { method: "POST", headers }),
     fetch(`${BASE_URL}/api/etl/we360`,                        { method: "POST", headers, body: payload }),
