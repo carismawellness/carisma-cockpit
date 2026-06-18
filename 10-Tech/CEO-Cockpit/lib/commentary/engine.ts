@@ -7,42 +7,22 @@
  *
  * Compatible with both ebitda-v2 (current period) and ebitda-longitudinal
  * (most recent full month) dashboards.
- *
- * Also exports the CRM Agent Commentary Engine functions used by
- * CrmStrategicCommentary.tsx (computeTeamCommentary, computeAgentCommentary,
- * computeCrmMasterCommentary).
  */
 
 import {
   EBITDA_COMMENTARY_CONFIG,
   MetricConfig,
   RagState,
-  TrendState,
-  MetricBenchmark,
-  BENCHMARK_BY_KEY,
-  CRITICAL_METRICS,
-  CRM_AGENT_BENCHMARKS,
-  OPS_RAG_THRESHOLDS,
-  OPS_METRIC_SPECS,
-  OPS_TEMPLATES,
-  OPS_TREND_THRESHOLDS,
-  OPS_TREND_TEMPLATES,
-  OPS_FOCUS_PRIORITY,
-  OPS_WINS_PRIORITY,
+  HR_METRIC_THRESHOLDS,
+  HR_TEMPLATES,
+  HR_FOCUS_PRIORITY,
+  HR_WINS_PRIORITY,
+  type HRThreshold,
 } from "./benchmarks";
-
-import type { CrmAgent } from "@/lib/hooks/useCrmAgents";
-import type { GhlSnapshotBrand } from "@/lib/hooks/useGhlSnapshot";
-
-// Re-export so consumers that import CRM_AGENT_BENCHMARKS from engine.ts work too
-export { CRM_AGENT_BENCHMARKS };
 
 /* ── Public types ────────────────────────────────────────────────────────── */
 
-export type { RagState, MetricConfig, MetricBenchmark };
-
-// RAGState (capital G) — alias used by CrmStrategicCommentary
-export type RAGState = "green" | "yellow" | "red" | "insufficient";
+export type { RagState, MetricConfig };
 
 export interface MetricResult {
   key: string;
@@ -288,391 +268,165 @@ export function computeEbitdaCommentary(
   };
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   CRM AGENT STRATEGIC COMMENTARY ENGINE
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════════
+   HR COMMENTARY ENGINE
+   Pure function — no async, no side effects. Recomputes on every render.
+   ══════════════════════════════════════════════════════════════════════════ */
 
-// ── CRM Core types ────────────────────────────────────────────────────────────
-
-export interface CrmMetricResult {
-  key: string;
-  label: string;
-  value: number;
-  ragState: RAGState;
-  formattedValue: string;
-  template: string;
-  axis: "level" | "trend" | "vs_prior" | "anomaly";
-  priority: number;
+export interface HRCommentaryInput {
+  groupHcPct:             number | null;
+  avgCostPerEmployee:     number | null;
+  revenuePerEmployee:     number | null;
+  revpahSpa:              number | null;
+  revpahAesthetics:       number | null;
+  revpahSlimming:         number | null;
+  netMovement:            number | null;
+  annualisedTurnoverRate: number | null;
+  therapistRatioPct:      number | null;
+  onTimePct:              number | null;
+  avgActivityPct:         number | null;
 }
 
-export interface CommentaryResult {
-  overallRag: RAGState;
-  verdict: string;
-  wins: CrmMetricResult[];
-  focusAreas: CrmMetricResult[];
-  insufficient: boolean;
+export interface HRMetricResult {
+  key:    string;
+  label:  string;
+  status: RagState;
+  text:   string;
 }
 
-// ── CRM Formatting helpers ────────────────────────────────────────────────────
-
-function crmFmtValue(value: number, unit: string): string {
-  switch (unit) {
-    case "%":              return `${value.toFixed(1)}%`;
-    case "EUR":            return `€${Math.round(value).toLocaleString()}`;
-    case "EUR/day":        return `€${Math.round(value).toLocaleString()}`;
-    case "min/day":        return `${Math.round(value)} min`;
-    case "dials":          return `${Math.round(value)}`;
-    case "bookings":       return `${Math.round(value)}`;
-    case "deposits":       return `${Math.round(value)}`;
-    case "bookings/day":   return `${value.toFixed(1)}`;
-    case "leads/week":     return `${Math.round(value)}`;
-    case "contacts":       return `${Math.round(value)}`;
-    case "messages":       return `${Math.round(value)}`;
-    case "agents":         return `${Math.round(value)}`;
-    default:               return `${value.toFixed(1)}`;
-  }
+export interface HRCommentaryOutput {
+  overallStatus: RagState;
+  verdict:       string;
+  wins:          HRMetricResult[];        // GREEN, max 3, ordered by priority
+  focusAreas:    HRMetricResult[];        // RED first, then YELLOW, max 3
 }
 
-function crmFmtDelta(delta: number, unit: string): string {
-  const abs = Math.abs(delta);
-  switch (unit) {
-    case "%":     return `${abs.toFixed(1)}`;
-    case "EUR":   return `€${Math.round(abs).toLocaleString()}`;
-    case "EUR/day": return `€${Math.round(abs).toLocaleString()}`;
-    case "min/day": return `${Math.round(abs)}`;
-    default:      return `${abs.toFixed(1)}`;
-  }
+const HR_LABELS: Record<string, string> = {
+  humanCapitalPct:    "Human Capital %",
+  avgCostPerEmployee: "Avg Cost/Employee",
+  revenuePerEmployee: "Revenue/Employee",
+  revpahSpa:          "Spa RevPAH",
+  revpahAesthetics:   "Aesthetics RevPAH",
+  revpahSlimming:     "Slimming RevPAH",
+  netMovement:        "Net Movement",
+  turnoverRate:       "Turnover Rate",
+  therapistRatio:     "Therapist Ratio",
+  onTimePct:          "On-Time %",
+  avgActivityPct:     "Team Activity",
+};
+
+const HR_KEY_MAP: Record<keyof HRCommentaryInput, string> = {
+  groupHcPct:             "humanCapitalPct",
+  avgCostPerEmployee:     "avgCostPerEmployee",
+  revenuePerEmployee:     "revenuePerEmployee",
+  revpahSpa:              "revpahSpa",
+  revpahAesthetics:       "revpahAesthetics",
+  revpahSlimming:         "revpahSlimming",
+  netMovement:            "netMovement",
+  annualisedTurnoverRate: "turnoverRate",
+  therapistRatioPct:      "therapistRatio",
+  onTimePct:              "onTimePct",
+  avgActivityPct:         "avgActivityPct",
+};
+
+function fmtHR(n: number, unit: HRThreshold["unit"]): string {
+  if (unit === "eur")   return `€${Math.round(n).toLocaleString("en-GB")}`;
+  if (unit === "pct")   return `${Math.round(n)}%`;
+  if (unit === "hrs")   return `${n.toFixed(1)} hrs`;
+  if (n >= 0)           return `+${Math.round(n)}`;
+  return String(Math.round(n));
 }
 
-// ── CRM Core classification ───────────────────────────────────────────────────
-
-export function classifyMetric(value: number, m: MetricBenchmark): RAGState {
-  if (m.higherIsBetter) {
-    if (value >= m.green)  return "green";
-    if (value >= m.yellow) return "yellow";
-    return "red";
-  } else {
-    if (value <= m.green)  return "green";
-    if (value <= m.yellow) return "yellow";
-    return "red";
-  }
-}
-
-// ── CRM Template filling ──────────────────────────────────────────────────────
-
-export function crmFillTemplate(
-  template: string,
-  value: number,
-  benchmark: number,
-  unit: string,
-  delta?: number
-): string {
-  const formattedValue     = crmFmtValue(value, unit);
-  const formattedBenchmark = crmFmtValue(benchmark, unit).replace(/[€%]/g, "").trim();
-  const formattedDelta     = delta !== undefined ? crmFmtDelta(delta, unit) : "—";
-
+function fillHRTemplate(template: string, val: number, t: HRThreshold): string {
+  const delta = Math.abs(val - t.benchmark);
   return template
-    .replace(/\{value\}/g,     formattedValue)
-    .replace(/\{benchmark\}/g, formattedBenchmark)
-    .replace(/\{delta\}/g,     formattedDelta);
+    .replace(/\{\{VAL\}\}/g,       fmtHR(val,          t.unit))
+    .replace(/\{\{BENCHMARK\}\}/g, fmtHR(t.benchmark,  t.unit))
+    .replace(/\{\{TARGET\}\}/g,    fmtHR(t.benchmark,  t.unit))
+    .replace(/\{\{DELTA\}\}/g,     fmtHR(delta,        t.unit));
 }
 
-// ── Build a CrmMetricResult from raw value + benchmark ───────────────────────
+function evalHRMetric(key: string, value: number | null): HRMetricResult | null {
+  if (value === null || isNaN(value)) return null;
+  const t = HR_METRIC_THRESHOLDS[key];
+  if (!t) return null;
+  const tmpl = HR_TEMPLATES[key];
+  if (!tmpl) return null;
 
-function buildCrmMetricResult(
-  key: string,
-  value: number,
-  overrideLabel?: string,
-  overrideBenchmark?: MetricBenchmark
-): CrmMetricResult | null {
-  const m = overrideBenchmark ?? BENCHMARK_BY_KEY[key];
-  if (!m) return null;
+  let status: RagState;
+  const { direction, green, greenMax, yellow, yellowMax } = t;
 
-  const ragState = classifyMetric(value, m);
-  const delta    = Math.abs(value - m.benchmark);
-  const tmplKey  = ragState as "green" | "yellow" | "red";
-  const template = crmFillTemplate(m.templates[tmplKey], value, m.benchmark, m.unit, delta);
+  if (direction === "higher_better") {
+    status = value >= green ? "green" : value >= yellow ? "yellow" : "red";
+  } else if (direction === "lower_better") {
+    status = value <= green ? "green" : value <= yellow ? "yellow" : "red";
+  } else {
+    const inGreen = value >= green && (greenMax == null || value <= greenMax);
+    if (inGreen) {
+      status = "green";
+    } else {
+      const yMax = yellowMax ?? (greenMax != null ? greenMax * 1.1 : green * 1.3);
+      const inYellow =
+        (value >= yellow && value < green) ||
+        (greenMax != null && value > greenMax && value <= yMax);
+      status = inYellow ? "yellow" : "red";
+    }
+  }
 
   return {
     key,
-    label:          overrideLabel ?? m.label,
-    value,
-    ragState,
-    formattedValue: crmFmtValue(value, m.unit),
-    template,
-    axis:           "level",
-    priority:       m.priority,
+    label:  HR_LABELS[key] ?? key,
+    status,
+    text:   fillHRTemplate(tmpl[status] ?? "", value, t),
   };
 }
 
-// ── Concentration risk analysis ───────────────────────────────────────────────
-
-export function analyzeConcentrationRisk(agents: CrmAgent[]): CrmMetricResult | null {
-  const m = BENCHMARK_BY_KEY["team_concentration_risk"];
-  if (!m) return null;
-
-  const totalBookings = agents.reduce((s, a) => s + a.totals.total_bookings, 0);
-  if (totalBookings === 0) return null;
-
-  const sorted    = [...agents].sort((a, b) => b.totals.total_bookings - a.totals.total_bookings);
-  const top2Books = sorted.slice(0, 2).reduce((s, a) => s + a.totals.total_bookings, 0);
-  const sharePct  = (top2Books / totalBookings) * 100;
-
-  const ragState  = classifyMetric(sharePct, m);
-  const delta     = Math.abs(sharePct - m.benchmark);
-  const tmplKey   = ragState as "green" | "yellow" | "red";
-  const template  = crmFillTemplate(m.templates[tmplKey], sharePct, m.benchmark, m.unit, delta);
-
-  return {
-    key:            "team_concentration_risk",
-    label:          m.label,
-    value:          sharePct,
-    ragState,
-    formattedValue: crmFmtValue(sharePct, m.unit),
-    template,
-    axis:           "anomaly",
-    priority:       m.priority,
-  };
-}
-
-// ── Result aggregation helpers ────────────────────────────────────────────────
-
-function crmDeriveOverallRag(results: CrmMetricResult[], criticalKeys: readonly string[]): RAGState {
-  const criticals = results.filter((r) => criticalKeys.includes(r.key));
-  if (criticals.some((r) => r.ragState === "red"))    return "red";
-  if (criticals.some((r) => r.ragState === "yellow")) return "yellow";
-  if (criticals.every((r) => r.ragState === "green")) return "green";
-  return "insufficient";
-}
-
-function crmBuildVerdict(rag: RAGState, context: string): string {
-  switch (rag) {
-    case "green":
-      return `${context} is performing above target — all critical metrics are in the green. Maintain momentum and continue coaching best practices across the team.`;
-    case "yellow":
-      return `${context} is below target on one or more critical metrics. Review the focus areas below and take corrective action before the next dial session.`;
-    case "red":
-      return `${context} has critical performance gaps. Immediate management action is required — do not wait until end of week to address the issues below.`;
-    default:
-      return `${context} — insufficient data for a full assessment. Run the ETL sync to populate metrics.`;
+export function computeHRCommentary(input: HRCommentaryInput): HRCommentaryOutput {
+  const results: HRMetricResult[] = [];
+  for (const [inputKey, threshKey] of Object.entries(HR_KEY_MAP)) {
+    const value = input[inputKey as keyof HRCommentaryInput];
+    const result = evalHRMetric(threshKey, value);
+    if (result) results.push(result);
   }
-}
 
-function crmPartitionResults(results: CrmMetricResult[]): {
-  wins: CrmMetricResult[];
-  focusAreas: CrmMetricResult[];
-} {
-  const wins = results
-    .filter((r) => r.ragState === "green")
-    .sort((a, b) => a.priority - b.priority)
+  const hasRed    = results.some((r) => r.status === "red");
+  const hasYellow = results.some((r) => r.status === "yellow");
+  const overall: RagState = hasRed ? "red" : hasYellow ? "yellow" : "green";
+
+  const byKey = new Map(results.map((r) => [r.key, r]));
+
+  const wins = HR_WINS_PRIORITY
+    .filter((k) => byKey.get(k)?.status === "green")
+    .slice(0, 3)
+    .map((k) => byKey.get(k)!);
+
+  const focusAreas = HR_FOCUS_PRIORITY
+    .filter((k) => {
+      const s = byKey.get(k)?.status;
+      return s === "red" || s === "yellow";
+    })
+    .map((k) => byKey.get(k)!)
+    .sort((a, b) => {
+      if (a.status === "red" && b.status !== "red") return -1;
+      if (b.status === "red" && a.status !== "red") return 1;
+      return 0;
+    })
     .slice(0, 3);
 
-  const focusAreas = [
-    ...results.filter((r) => r.ragState === "red").sort((a, b) => a.priority - b.priority),
-    ...results.filter((r) => r.ragState === "yellow").sort((a, b) => a.priority - b.priority),
-  ].slice(0, 3);
+  const redCount    = results.filter((r) => r.status === "red").length;
+  const yellowCount = results.filter((r) => r.status === "yellow").length;
+  const greenCount  = results.filter((r) => r.status === "green").length;
+  const total       = results.length;
+  const emoji       = overall === "green" ? "🟢" : overall === "yellow" ? "🟡" : "🔴";
 
-  return { wins, focusAreas };
-}
-
-// ── Team commentary (for /crm/individual) ────────────────────────────────────
-
-export function computeTeamCommentary(
-  agents: CrmAgent[],
-  priorAgents: CrmAgent[],
-  periodDays: number
-): CommentaryResult {
-  void priorAgents; // reserved for future trend analysis
-
-  if (agents.length === 0) {
-    return {
-      overallRag:   "insufficient",
-      verdict:      "Insufficient data — run the ETL sync first.",
-      wins:         [],
-      focusAreas:   [],
-      insufficient: true,
-    };
+  let verdict: string;
+  if (overall === "green") {
+    verdict = `${emoji} Workforce metrics are on track — ${greenCount} of ${total} indicators at or above target with no critical flags.`;
+  } else if (overall === "yellow") {
+    verdict = `${emoji} Workforce performance needs attention — ${yellowCount} indicator${yellowCount !== 1 ? "s" : ""} below target${redCount > 0 ? `, ${redCount} in critical range` : ""}.`;
+  } else {
+    verdict = `${emoji} Critical workforce issues detected — ${redCount} metric${redCount !== 1 ? "s" : ""} require immediate action${yellowCount > 0 ? `; ${yellowCount} additional area${yellowCount !== 1 ? "s" : ""} need monitoring` : ""}.`;
   }
 
-  const activeAgents = agents.filter((a) => a.totals.active_days > 0);
-  const sdrAgents    = agents.filter((a) => a.totals.total_talk_time > 0 || a.totals.avg_booking_eff > 0);
-
-  const results: CrmMetricResult[] = [];
-
-  // avg_conv_pct
-  const avgConv = activeAgents.length
-    ? activeAgents.reduce((s, a) => s + a.totals.avg_conversion_rate, 0) / activeAgents.length
-    : 0;
-  const convResult = buildCrmMetricResult("avg_conv_pct", avgConv);
-  if (convResult) results.push(convResult);
-
-  // avg_deposit_pct
-  const avgDeposit = activeAgents.length
-    ? activeAgents.reduce((s, a) => s + a.totals.avg_deposit_pct, 0) / activeAgents.length
-    : 0;
-  const depositResult = buildCrmMetricResult("avg_deposit_pct", avgDeposit);
-  if (depositResult) results.push(depositResult);
-
-  // bkg_eff_pct (SDR agents only)
-  if (sdrAgents.length > 0) {
-    const avgBkgEff = sdrAgents.reduce((s, a) => s + a.totals.avg_booking_eff, 0) / sdrAgents.length;
-    const bkgEffResult = buildCrmMetricResult("bkg_eff_pct", avgBkgEff);
-    if (bkgEffResult) results.push(bkgEffResult);
-  }
-
-  // messages per agent per day
-  if (periodDays > 0 && activeAgents.length > 0) {
-    const totalMessages = agents.reduce((s, a) => s + a.totals.total_messages, 0);
-    const dialsPerDay   = totalMessages / (activeAgents.length * periodDays);
-    const dialsResult   = buildCrmMetricResult("total_messages", dialsPerDay);
-    if (dialsResult) results.push(dialsResult);
-  }
-
-  // talk time per active day (SDR only)
-  if (sdrAgents.length > 0 && periodDays > 0) {
-    const totalTalkTime  = sdrAgents.reduce((s, a) => s + a.totals.total_talk_time, 0);
-    const activeSdrDays  = sdrAgents.reduce((s, a) => s + a.totals.active_days, 0);
-    const talkTimePerDay = activeSdrDays > 0 ? totalTalkTime / activeSdrDays : 0;
-    const talkTimeResult = buildCrmMetricResult("total_talk_time", talkTimePerDay);
-    if (talkTimeResult) results.push(talkTimeResult);
-  }
-
-  // total_bookings
-  const totalBookings  = agents.reduce((s, a) => s + a.totals.total_bookings, 0);
-  const bookingsResult = buildCrmMetricResult("total_bookings", totalBookings);
-  if (bookingsResult) results.push(bookingsResult);
-
-  // total_deposits
-  const totalDeposits  = agents.reduce((s, a) => s + (a.totals.total_deposits ?? 0), 0);
-  const depositsResult = buildCrmMetricResult("total_deposits", totalDeposits);
-  if (depositsResult) results.push(depositsResult);
-
-  // concentration_risk
-  const concentrationResult = analyzeConcentrationRisk(agents);
-  if (concentrationResult) results.push(concentrationResult);
-
-  // inactive_agents_count
-  const inactiveCount  = agents.filter((a) => a.totals.active_days === 0 && a.totals.total_bookings === 0).length;
-  const inactiveResult = buildCrmMetricResult("inactive_agents_count", inactiveCount);
-  if (inactiveResult) results.push(inactiveResult);
-
-  const overallRag = crmDeriveOverallRag(results, CRITICAL_METRICS.team);
-  const verdict    = crmBuildVerdict(overallRag, "Team");
-  const { wins, focusAreas } = crmPartitionResults(results);
-
-  return { overallRag, verdict, wins, focusAreas, insufficient: false };
-}
-
-// ── Individual agent commentary (for /crm/individual/[slug]) ─────────────────
-
-export function computeAgentCommentary(
-  agent: CrmAgent,
-  _priorAgent: CrmAgent | null,
-  periodDays: number
-): CommentaryResult {
-  const t = agent.totals;
-
-  if (t.active_days === 0 && t.total_bookings === 0) {
-    return {
-      overallRag:   "insufficient",
-      verdict:      `No activity recorded for ${agent.name} in the selected period.`,
-      wins:         [],
-      focusAreas:   [],
-      insufficient: true,
-    };
-  }
-
-  const results: CrmMetricResult[] = [];
-
-  const convResult = buildCrmMetricResult("avg_conv_pct", t.avg_conversion_rate);
-  if (convResult) results.push(convResult);
-
-  const depositResult = buildCrmMetricResult("avg_deposit_pct", t.avg_deposit_pct);
-  if (depositResult) results.push(depositResult);
-
-  if (periodDays > 0) {
-    const activeDaysRatio = (t.active_days / periodDays) * 100;
-    const adResult = buildCrmMetricResult("active_days_ratio", activeDaysRatio);
-    if (adResult) results.push(adResult);
-  }
-
-  if (t.active_days > 0) {
-    const dialsPerDay = t.total_messages / t.active_days;
-    const dialsResult = buildCrmMetricResult("total_messages", dialsPerDay);
-    if (dialsResult) results.push(dialsResult);
-  }
-
-  if (t.total_talk_time > 0 && t.active_days > 0) {
-    const talkTimePerDay = t.total_talk_time / t.active_days;
-    const talkTimeResult = buildCrmMetricResult("total_talk_time", talkTimePerDay);
-    if (talkTimeResult) results.push(talkTimeResult);
-  }
-
-  if (t.active_days > 0) {
-    const bkgPerDay = t.total_bookings / t.active_days;
-    const bkgResult = buildCrmMetricResult("bookings_per_active_day", bkgPerDay);
-    if (bkgResult) results.push(bkgResult);
-  }
-
-  if (t.avg_booking_eff > 0) {
-    const bkgEffResult = buildCrmMetricResult("bkg_eff_pct", t.avg_booking_eff);
-    if (bkgEffResult) results.push(bkgEffResult);
-  }
-
-  if (t.active_days > 0) {
-    const revPerDay = t.total_sales / t.active_days;
-    const revResult = buildCrmMetricResult("revenue_per_active_day", revPerDay);
-    if (revResult) results.push(revResult);
-  }
-
-  const overallRag = crmDeriveOverallRag(results, CRITICAL_METRICS.individual);
-  const verdict    = crmBuildVerdict(overallRag, agent.name);
-  const { wins, focusAreas } = crmPartitionResults(results);
-
-  return { overallRag, verdict, wins, focusAreas, insufficient: false };
-}
-
-// ── CRM Master commentary (for /crm — live GHL snapshot) ─────────────────────
-
-export function computeCrmMasterCommentary(snapshot: {
-  spa:        GhlSnapshotBrand;
-  aesthetics: GhlSnapshotBrand;
-  slimming:   GhlSnapshotBrand;
-}): CommentaryResult {
-  const brands = [
-    { key: "spa",        label: "Spa",        data: snapshot.spa        },
-    { key: "aesthetics", label: "Aesthetics",  data: snapshot.aesthetics },
-    { key: "slimming",   label: "Slimming",    data: snapshot.slimming   },
-  ];
-
-  const results: CrmMetricResult[] = [];
-
-  for (const brand of brands) {
-    const d = brand.data;
-
-    const waResult = buildCrmMetricResult("unreadWhatsapp", d.unreadWhatsapp, `${brand.label} — Unread WhatsApp`);
-    if (waResult) results.push({ ...waResult, key: `${brand.key}_unreadWhatsapp` });
-
-    const crmResult = buildCrmMetricResult("unreadCrm", d.unreadCrm, `${brand.label} — Unread CRM SMS`);
-    if (crmResult) results.push({ ...crmResult, key: `${brand.key}_unreadCrm` });
-
-    const emailResult = buildCrmMetricResult("unreadEmail", d.unreadEmail, `${brand.label} — Unread Email`);
-    if (emailResult) results.push({ ...emailResult, key: `${brand.key}_unreadEmail` });
-
-    const leadsResult = buildCrmMetricResult("newLeads", d.newLeads, `${brand.label} — New Leads`);
-    if (leadsResult) results.push({ ...leadsResult, key: `${brand.key}_newLeads` });
-
-    const todoResult = buildCrmMetricResult("todoCount", d.todoCount, `${brand.label} — Follow-up Backlog`);
-    if (todoResult) results.push({ ...todoResult, key: `${brand.key}_todoCount` });
-  }
-
-  let overallRag: RAGState = "green";
-  const allRags = results.map((r) => r.ragState);
-  if (allRags.includes("red"))         overallRag = "red";
-  else if (allRags.includes("yellow")) overallRag = "yellow";
-
-  const verdict = crmBuildVerdict(overallRag, "GHL Live Queue");
-  const { wins, focusAreas } = crmPartitionResults(results);
-
-  return { overallRag, verdict, wins, focusAreas, insufficient: false };
+  return { overallStatus: overall, verdict, wins, focusAreas };
 }
