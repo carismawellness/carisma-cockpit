@@ -17,8 +17,15 @@ async function rateLimit(org: string) {
 }
 
 async function refreshAccessToken(org: "spa" | "aesthetics"): Promise<string> {
-  const clientId     = process.env.ZOHO_BOOKS_CLIENT_ID!;
-  const clientSecret = process.env.ZOHO_BOOKS_CLIENT_SECRET!;
+  // Aesthetics may use its own Zoho API client; fall back to shared CLIENT_ID/SECRET if not set.
+  const clientId =
+    org === "aesthetics"
+      ? (process.env.ZOHO_BOOKS_AESTH_CLIENT_ID ?? process.env.ZOHO_BOOKS_CLIENT_ID!)
+      : process.env.ZOHO_BOOKS_CLIENT_ID!;
+  const clientSecret =
+    org === "aesthetics"
+      ? (process.env.ZOHO_BOOKS_AESTH_CLIENT_SECRET ?? process.env.ZOHO_BOOKS_CLIENT_SECRET!)
+      : process.env.ZOHO_BOOKS_CLIENT_SECRET!;
   const refreshToken =
     org === "spa"
       ? (process.env.ZOHO_BOOKS_SPA_REFRESH_TOKEN ?? process.env.ZOHO_BOOKS_REFRESH_TOKEN!)
@@ -42,7 +49,11 @@ async function refreshAccessToken(org: "spa" | "aesthetics"): Promise<string> {
 }
 
 async function getAccessToken(org: "spa" | "aesthetics"): Promise<string> {
-  const key    = `${process.env.ZOHO_BOOKS_CLIENT_ID}:${org}`;
+  const clientId =
+    org === "aesthetics"
+      ? (process.env.ZOHO_BOOKS_AESTH_CLIENT_ID ?? process.env.ZOHO_BOOKS_CLIENT_ID!)
+      : process.env.ZOHO_BOOKS_CLIENT_ID!;
+  const key    = `${clientId}:${org}`;
   const cached = tokenCache.get(key);
   if (cached && Date.now() < cached.expiresAt) return cached.accessToken;
   return refreshAccessToken(org);
