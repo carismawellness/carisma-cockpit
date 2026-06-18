@@ -16,9 +16,9 @@
 | Topping | Black Sesame | 11.4 | 1.10 | 0.44 | 0.99 |
 | Topping | Egg | 70.0 | 0 | 6.00 | 4.50 |
 | Protein | Double Chicken | 285 | 0 | 58.10 | 5.89 |
-| Dressing | Balsamic Vinegar (side) | 19.2 | 3.3 | 0.20 | 0 |
+| Dressing | Balsamic Vinegar | 19.2 | 3.3 | 0.20 | 0 |
 
-**Voice order:** "Kale and Lettuce base. Cherry tomatoes, cucumbers, beetroot, carrots, omega seeds, black sesame, egg. Double chicken. Balsamic vinegar on the side."
+**Voice order:** "Kale and Lettuce base. Cherry tomatoes, cucumbers, beetroot, carrots, omega seeds, black sesame, egg. Double chicken. Balsamic vinegar on the salad. Note: with extra balsamic vinegar."
 
 ---
 
@@ -40,9 +40,9 @@
 | Topping | Black Sesame | 11.4 | 1.10 | 0.44 | 0.99 |
 | Topping | Egg | 70.0 | 0 | 6.00 | 4.50 |
 | Protein | Double Chicken | 285 | 0 | 58.10 | 5.89 |
-| Dressing | Balsamic Vinegar (side) | 19.2 | 3.3 | 0.20 | 0 |
+| Dressing | Balsamic Vinegar | 19.2 | 3.3 | 0.20 | 0 |
 
-**Voice order:** "Kale and Quinoa base. Avocado, cherry tomatoes, cucumbers, beetroot, carrots, omega seeds, black sesame, egg. Double chicken. Balsamic vinegar on the side."
+**Voice order:** "Kale and Quinoa base. Avocado, cherry tomatoes, cucumbers, beetroot, carrots, omega seeds, black sesame, egg. Double chicken. Balsamic vinegar on the salad. Note: with extra balsamic vinegar."
 
 ---
 

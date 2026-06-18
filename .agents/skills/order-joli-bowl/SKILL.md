@@ -18,14 +18,14 @@ description: "Order one of Mert's three J'Oli bowls via Playwright. Triggered by
 - Base 2: Lettuce
 - Toppings (7): Cherry Tomatoes, Cucumbers, Beetroot, Carrots, Omega Seeds, Black Sesame, Egg
 - Protein: Double Chicken
-- Dressing: Balsamic Vinegar (on the side)
+- Dressing: Balsamic Vinegar (on the salad)
 
 ### THE LONGEVITY BOWL (~721 kcal / 75g protein)
 - Base 1: Kale
 - Base 2: Quinoa
 - Toppings (8): Avocado, Cherry Tomatoes, Cucumbers, Beetroot, Carrots, Omega Seeds, Black Sesame, Egg
 - Protein: Double Chicken
-- Dressing: Balsamic Vinegar (on the side)
+- Dressing: Balsamic Vinegar (on the salad)
 
 ### THE SUPER BOWL
 Same as The Longevity Bowl — identical order. "Super Bowl" is just an alternate name.
@@ -96,7 +96,7 @@ Find "Choose Your Main Topping" section. Click:
 
 ### Step 8 — Select Dressing
 Find "Choose Your Dressing" section. Click:
-- All bowls → "Balsamic Vinegar" (on the side)
+- All bowls → "Balsamic Vinegar" (applied on the salad, not on the side)
 
 ### Step 9 — Select Cutlery
 Click: **With Cutlery** (always)
@@ -110,7 +110,7 @@ After clicking the "Next: Checkout" button, you land on `/checkout/pay`.
 The discount field is hidden by default — click the **"Add discount code"** trigger first (it's a `<span>`, not a button). The field then appears with `id="discount-code"`. Set its value via the React native setter pattern below, then click the **Submit** button. Total should drop to €0.00.
 
 ### Step 12 — Add Order Notes
-Click **"Add order notes"** trigger (also a `<span>`). The textarea `id="notes"` appears. Set value to: **"Balsamic vinegar on the side, please."** (or whatever the bowl protocol requires). Click **Save**.
+Click **"Add order notes"** trigger (also a `<span>`). The textarea `id="notes"` appears. Set value to: **"With extra balsamic vinegar, please."**. Click **Save**.
 
 ### Step 13 — Fill Contact Details (Mert's Defaults)
 Fill these fields by ID with the values below:
@@ -217,7 +217,7 @@ For one-shot ordering, use these defaults without asking unless the user overrid
 - **Phone:** 99503020 (Malta, +356)
 - **Pickup time:** Earliest available slot
 - **Tip:** €0 ("Not now")
-- **Order notes:** "Balsamic vinegar on the side, please." (for all bowls with balsamic dressing)
+- **Order notes:** "With extra balsamic vinegar, please." (dressing goes on the salad, not on the side)
 - **Default bowl when unspecified:** Super Bowl
 
 ### Discovery Method

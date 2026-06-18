@@ -10,7 +10,7 @@ The three brand colors set the visual language for every Carisma dashboard. **Sa
 ## Single source of truth — import it, never hardcode
 
 ```ts
-// Tech/CEO-Cockpit/lib/constants/design-tokens.ts
+// 10-Tech/CEO-Cockpit/lib/constants/design-tokens.ts
 import { BRAND, LY_OVERLAY } from "@/lib/constants/design-tokens";
 
 export const BRAND = {

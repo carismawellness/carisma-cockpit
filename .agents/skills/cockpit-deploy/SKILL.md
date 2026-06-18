@@ -1,13 +1,13 @@
 ---
 name: cockpit-deploy
-description: Use whenever making ANY change to Tech/CEO-Cockpit — every edit must be committed and pushed to origin/main immediately so Vercel deploys to production. Never stage changes and wait.
+description: Use whenever making ANY change to 10-Tech/CEO-Cockpit — every edit must be committed and pushed to origin/main immediately so Vercel deploys to production. Never stage changes and wait.
 ---
 
 # CEO Cockpit — Always Deploy Immediately
 
 ## The Rule
 
-**Every change to `Tech/CEO-Cockpit/` must be committed and pushed to `origin/main` before the task is considered complete.**
+**Every change to `10-Tech/CEO-Cockpit/` must be committed and pushed to `origin/main` before the task is considered complete.**
 
 No exceptions. No "I'll push later." The commit and push are part of the task, not a separate step.
 
@@ -21,7 +21,7 @@ After every Cockpit edit:
 
 ```bash
 # 1. Stage only the files you changed
-git add Tech/CEO-Cockpit/path/to/changed/file.ts
+git add 10-Tech/CEO-Cockpit/path/to/changed/file.ts
 
 # 2. Commit with a clear message
 git commit -m "$(cat <<'EOF'
@@ -44,7 +44,7 @@ Follow the existing pattern in `git log`:
 
 ## What Counts as a Cockpit Change
 
-Any file under `Tech/CEO-Cockpit/` — pages, hooks, API routes, components, lib, constants. If you touched it, push it.
+Any file under `10-Tech/CEO-Cockpit/` — pages, hooks, API routes, components, lib, constants. If you touched it, push it.
 
 ## Red Flags
 

@@ -36,7 +36,7 @@ category_share = sga_total * (weight / 25110)
 
 ## Where the canonical implementation lives
 
-- Code: `Tech/CEO-Cockpit/app/finance/ebitda/page.tsx` — see the `SGA_CATEGORIES` constant and the `sgaShare(sgaTotal, weight)` helper.
+- Code: `10-Tech/CEO-Cockpit/app/finance/ebitda/page.tsx` — see the `SGA_CATEGORIES` constant and the `sgaShare(sgaTotal, weight)` helper.
 - UI: the **P&L by Venue** table on `/finance/ebitda` exposes the breakdown via a chevron-toggle "SG&A" row.
 
 When updating weights, change them in **one place only** (the `SGA_CATEGORIES` const) and any consumer using `sgaShare()` follows automatically.
@@ -50,7 +50,7 @@ When updating weights, change them in **one place only** (the `SGA_CATEGORIES` c
 
 ## How to update weights
 
-1. Open `Tech/CEO-Cockpit/app/finance/ebitda/page.tsx`.
+1. Open `10-Tech/CEO-Cockpit/app/finance/ebitda/page.tsx`.
 2. Edit the `SGA_CATEGORIES` array (search for `SGA_CATEGORIES`).
 3. Update the table in this skill file to match.
 4. Run `npx tsc --noEmit` in the cockpit directory to confirm no breakage.

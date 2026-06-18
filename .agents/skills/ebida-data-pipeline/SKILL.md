@@ -62,7 +62,7 @@ Never update Supabase or the Cockpit before the EBIDA Layer is current. If they 
 | **Supabase** | Cockpit data store | `gnripfrvcxrakjhiwlxy.supabase.co` |
 | **Cockpit** | CEO dashboard (Next.js) | `localhost:3000` / Vercel |
 
-**ETL scripts live in:** `Tech/CEO-Cockpit/etl/`
+**ETL scripts live in:** `10-Tech/CEO-Cockpit/etl/`
 
 ---
 
@@ -73,7 +73,7 @@ Never update Supabase or the Cockpit before the EBIDA Layer is current. If they 
 Run the raw data ETL. This fetches account-level data directly from Zoho Books and the sales sheets, then writes to the Google Sheet. No COA mapping, no splitting, no allocation — raw numbers only.
 
 ```bash
-cd "Tech/CEO-Cockpit/etl"
+cd "10-Tech/CEO-Cockpit/etl"
 
 # Full all-brands daily database (SPA + Aesthetics + Slimming)
 py etl_ebida_layer_v2.py
@@ -103,7 +103,7 @@ After the sheet looks correct, run the ETLs that write to Supabase. These apply 
 
 #### SPA EBITDA (8 locations)
 ```bash
-cd "Tech/CEO-Cockpit/etl"
+cd "10-Tech/CEO-Cockpit/etl"
 py etl_zoho_books_spa_ebitda.py --date-from 2025-01-01 --date-to 2026-05-31
 # Add --force to re-fetch months already cached
 ```
@@ -236,7 +236,7 @@ All credentials live in `carisma-support/.env`. Never commit this file.
 
 **If Google Sheets writes fail with 403:** The token has read-only scope. Re-authorize:
 ```bash
-cd "Tech/CEO-Cockpit/etl"
+cd "10-Tech/CEO-Cockpit/etl"
 py google_reauth_write.py
 ```
 
@@ -288,11 +288,11 @@ The Cockpit ETL applies these fallbacks when Zoho data is incomplete mid-month. 
 
 | File | Purpose |
 |------|---------|
-| `Tech/CEO-Cockpit/etl/etl_ebida_layer_v2.py` | Main EBIDA Layer ETL (all brands, daily) |
-| `Tech/CEO-Cockpit/etl/etl_zoho_spa_raw_layer.py` | SPA-only monthly EBIDA Layer ETL |
-| `Tech/CEO-Cockpit/etl/google_reauth_write.py` | Google Sheets write-scope OAuth |
-| `Tech/CEO-Cockpit/etl/zoho_books_client.py` | Shared Zoho Books API client |
-| `Tech/CEO-Cockpit/etl/shared/supabase_client.py` | Shared Supabase API client |
+| `10-Tech/CEO-Cockpit/etl/etl_ebida_layer_v2.py` | Main EBIDA Layer ETL (all brands, daily) |
+| `10-Tech/CEO-Cockpit/etl/etl_zoho_spa_raw_layer.py` | SPA-only monthly EBIDA Layer ETL |
+| `10-Tech/CEO-Cockpit/etl/google_reauth_write.py` | Google Sheets write-scope OAuth |
+| `10-Tech/CEO-Cockpit/etl/zoho_books_client.py` | Shared Zoho Books API client |
+| `10-Tech/CEO-Cockpit/etl/shared/supabase_client.py` | Shared Supabase API client |
 | `.env` (repo root) | All credentials — never commit |
 | `supabase/migrations/` | Supabase table schema migrations |
 | `app/finance/ebitda/spa/page.tsx` | SPA EBITDA dashboard page |

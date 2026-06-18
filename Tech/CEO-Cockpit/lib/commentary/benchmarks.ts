@@ -529,298 +529,279 @@ export const EBITDA_COMMENTARY_CONFIG: MetricConfig[] = [
   },
 ];
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   CRM AGENT COMMENTARY ENGINE
-   Benchmarks for SDR / Chat-agent performance metrics used by engine.ts.
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════════
+   HR DASHBOARD — Strategic Commentary Benchmarks
+   Expert panel: HR & Workforce Analyst, Revenue/Ops Analyst,
+                 Attendance & Productivity Analyst (Jun 2026)
+   Applies to: /hr and all nested HR dashboards
+   ══════════════════════════════════════════════════════════════════════════ */
 
-export interface MetricBenchmark {
-  label: string;
-  unit: string;
-  higherIsBetter: boolean;
-  benchmark: number;   // reference value used in template {benchmark} placeholder
-  green: number;       // green threshold (>= if higher_better, <= if lower_better)
-  yellow: number;      // yellow threshold
-  priority: number;    // 1 = highest priority
-  templates: {
-    green: string;
-    yellow: string;
-    red: string;
-  };
+/**
+ * HR threshold descriptor — supports directional and range-based metrics.
+ * For "range" direction: green = [green, greenMax], yellow = just outside green.
+ */
+export interface HRThreshold {
+  direction: "higher_better" | "lower_better" | "range";
+  green: number;
+  greenMax?: number;
+  yellow: number;
+  yellowMax?: number;
+  benchmark: number;
+  unit: "pct" | "eur" | "count" | "hrs";
 }
 
-export const BENCHMARK_BY_KEY: Record<string, MetricBenchmark> = {
-  // ── SDR / Team shared ─────────────────────────────────────────────────────
+/* ── HR RAG Thresholds ───────────────────────────────────────────────────── */
 
-  avg_conv_pct: {
-    label: "Avg Conversion Rate",
-    unit: "%",
-    higherIsBetter: true,
-    benchmark: 25,
-    green: 25,
-    yellow: 15,
-    priority: 1,
-    templates: {
-      green:  "Conversion rate is {value}%, above the {benchmark}% target. Strong lead qualification and follow-up cadence is paying off.",
-      yellow: "Conversion rate is {value}%, below the {benchmark}% target. Review objection-handling scripts and increase follow-up frequency for warm leads.",
-      red:    "Conversion rate is {value}%, critically below the {benchmark}% target. Escalate to team lead for script review and live call coaching this week.",
-    },
+export const HR_METRIC_THRESHOLDS: Record<string, HRThreshold> = {
+  humanCapitalPct: {
+    direction: "lower_better",
+    green: 40, yellow: 47, benchmark: 40, unit: "pct",
   },
-
-  avg_deposit_pct: {
-    label: "Deposit Conversion Rate",
-    unit: "%",
-    higherIsBetter: true,
-    benchmark: 60,
-    green: 60,
-    yellow: 40,
-    priority: 2,
-    templates: {
-      green:  "Deposit rate is {value}%, above the {benchmark}% benchmark. Strong commitment from booked leads — maintain payment urgency in closing messages.",
-      yellow: "Deposit rate is {value}%, below the {benchmark}% benchmark. Reinforce urgency and limited-slot messaging at the point of booking confirmation.",
-      red:    "Deposit rate is {value}%, critically below the {benchmark}% benchmark. Review no-show and cancellation data; introduce deposit-first booking policy for high-drop slots.",
-    },
+  avgCostPerEmployee: {
+    direction: "lower_better",
+    green: 1600, yellow: 1950, benchmark: 1600, unit: "eur",
   },
-
-  bkg_eff_pct: {
-    label: "Booking Efficiency",
-    unit: "%",
-    higherIsBetter: true,
-    benchmark: 50,
-    green: 50,
-    yellow: 30,
-    priority: 3,
-    templates: {
-      green:  "Booking efficiency is {value}%, above the {benchmark}% target. Dial time is converting well — sustain the current outreach intensity.",
-      yellow: "Booking efficiency is {value}%, below the {benchmark}% target. Audit call duration and pre-call preparation; shorter discovery cycles improve conversion.",
-      red:    "Booking efficiency is {value}%, critically below the {benchmark}% target. Conduct call shadow sessions and identify top-3 objections blocking commitment.",
-    },
+  revenuePerEmployee: {
+    direction: "higher_better",
+    green: 3700, yellow: 2960, benchmark: 3700, unit: "eur",
   },
-
-  total_messages: {
-    label: "Messages / Dials per Day",
-    unit: "dials",
-    higherIsBetter: true,
-    benchmark: 30,
-    green: 30,
-    yellow: 20,
-    priority: 4,
-    templates: {
-      green:  "Daily activity is {value} dials/messages, at or above the {benchmark} target. Output is consistent — ensure quality is not sacrificed for volume.",
-      yellow: "Daily activity is {value} dials/messages, below the {benchmark} target. Review time-blocking; non-selling tasks may be crowding out dial time.",
-      red:    "Daily activity is {value} dials/messages, critically below the {benchmark} target. Identify time leaks and reset daily dial minimums immediately.",
-    },
+  revpahSpa: {
+    direction: "higher_better",
+    green: 50, yellow: 38, benchmark: 50, unit: "eur",
   },
-
-  total_talk_time: {
-    label: "Talk Time per Active Day",
-    unit: "min/day",
-    higherIsBetter: true,
-    benchmark: 90,
-    green: 90,
-    yellow: 60,
-    priority: 5,
-    templates: {
-      green:  "Talk time is {value} min/day, above the {benchmark}-minute target. Strong phone presence — ensure time is weighted toward qualified leads.",
-      yellow: "Talk time is {value} min/day, below the {benchmark}-minute target. Increase live-conversation attempts; voicemails and texts alone rarely convert.",
-      red:    "Talk time is {value} min/day, critically below the {benchmark}-minute target. Audit dial list quality and remove dead leads dragging down connect rates.",
-    },
+  revpahAesthetics: {
+    direction: "higher_better",
+    green: 70, yellow: 53, benchmark: 70, unit: "eur",
   },
-
-  total_bookings: {
-    label: "Total Bookings",
-    unit: "bookings",
-    higherIsBetter: true,
-    benchmark: 10,
-    green: 10,
-    yellow: 5,
-    priority: 6,
-    templates: {
-      green:  "Team secured {value} bookings in the period, above the {benchmark} target. Conversion funnel is healthy — review capacity to avoid bottlenecks.",
-      yellow: "Team secured {value} bookings, below the {benchmark} target. Increase top-of-funnel activity and tighten lead response SLA to under 5 minutes.",
-      red:    "Team secured {value} bookings, critically below the {benchmark} target. Convene a same-day team huddle to diagnose pipeline blockers.",
-    },
+  revpahSlimming: {
+    direction: "higher_better",
+    green: 35, yellow: 26, benchmark: 35, unit: "eur",
   },
-
-  total_deposits: {
-    label: "Deposits Collected",
-    unit: "deposits",
-    higherIsBetter: true,
-    benchmark: 8,
-    green: 8,
-    yellow: 4,
-    priority: 7,
-    templates: {
-      green:  "Team collected {value} deposits, above the {benchmark} target. Strong close-through — maintain payment confirmation follow-ups post-booking.",
-      yellow: "Team collected {value} deposits, below the {benchmark} target. Follow up on all unconfirmed bookings within 24 hours to secure payment.",
-      red:    "Only {value} deposits collected vs {benchmark} target. Immediately chase unpaid bookings and implement mandatory deposit-first policy for this period.",
-    },
+  netMovement: {
+    direction: "higher_better",
+    green: 0, yellow: -2, benchmark: 0, unit: "count",
   },
-
-  team_concentration_risk: {
-    label: "Top-2 Agent Booking Concentration",
-    unit: "%",
-    higherIsBetter: false,   // lower = more evenly spread = healthier team
-    benchmark: 60,
-    green: 60,
-    yellow: 75,
-    priority: 8,
-    templates: {
-      green:  "Top-2 agents account for {value}% of bookings — healthy distribution. The team is not over-reliant on individual performers.",
-      yellow: "Top-2 agents account for {value}% of bookings, approaching concentration risk at {benchmark}%. Coach the remaining team to reduce key-person dependency.",
-      red:    "Top-2 agents account for {value}% of bookings — high concentration risk above {benchmark}%. Build pipeline depth across all agents to reduce single-point-of-failure.",
-    },
+  turnoverRate: {
+    direction: "lower_better",
+    green: 25, yellow: 40, benchmark: 25, unit: "pct",
   },
-
-  inactive_agents_count: {
-    label: "Inactive Agents",
-    unit: "agents",
-    higherIsBetter: false,
-    benchmark: 0,
-    green: 0,
-    yellow: 1,
-    priority: 9,
-    templates: {
-      green:  "No inactive agents this period — full team engagement.",
-      yellow: "{value} agent(s) recorded no activity. Follow up to confirm availability and reassign leads if needed.",
-      red:    "{value} agents recorded zero activity this period. Immediate manager check-in required; inactive slots are costing the team conversion capacity.",
-    },
+  therapistRatio: {
+    direction: "range",
+    green: 55, greenMax: 68, yellow: 48, yellowMax: 75, benchmark: 61.5, unit: "pct",
   },
-
-  active_days_ratio: {
-    label: "Active Days Ratio",
-    unit: "%",
-    higherIsBetter: true,
-    benchmark: 80,
-    green: 80,
-    yellow: 60,
-    priority: 3,
-    templates: {
-      green:  "Active on {value}% of working days — strong consistency. Use off-days proactively to review scripts and lead quality.",
-      yellow: "Active on {value}% of working days, below the {benchmark}% target. Identify causes of low-activity days and address scheduling or motivation gaps.",
-      red:    "Active on only {value}% of working days — well below the {benchmark}% target. Escalate attendance and engagement to team lead immediately.",
-    },
+  onTimePct: {
+    direction: "higher_better",
+    green: 90, yellow: 80, benchmark: 90, unit: "pct",
   },
-
-  bookings_per_active_day: {
-    label: "Bookings per Active Day",
-    unit: "bookings/day",
-    higherIsBetter: true,
-    benchmark: 1.0,
-    green: 1.0,
-    yellow: 0.5,
-    priority: 2,
-    templates: {
-      green:  "Averaging {value} bookings/day, above the {benchmark} target. Daily output is healthy — review lead source quality to sustain conversion.",
-      yellow: "Averaging {value} bookings/day, below the {benchmark} target. Increase same-day follow-up attempts for warm leads to lift daily close rate.",
-      red:    "Averaging {value} bookings/day, critically below the {benchmark} target. Review lead assignments and call scripts; escalate for coaching.",
-    },
-  },
-
-  revenue_per_active_day: {
-    label: "Agent Revenue per Active Day",
-    unit: "EUR/day",
-    higherIsBetter: true,
-    benchmark: 300,
-    green: 300,
-    yellow: 150,
-    priority: 4,
-    templates: {
-      green:  "Generating €{value}/active day, above the €{benchmark} target. Revenue productivity is on track — focus on upsell to premium treatments.",
-      yellow: "Generating €{value}/active day, below the €{benchmark} target. Review treatment mix and encourage higher-value package bookings.",
-      red:    "Generating €{value}/active day, critically below the €{benchmark} target. Audit lead quality and booking-to-revenue conversion for this agent.",
-    },
-  },
-
-  // ── GHL Master CRM queue metrics ─────────────────────────────────────────
-
-  unreadWhatsapp: {
-    label: "Unread WhatsApp Messages",
-    unit: "messages",
-    higherIsBetter: false,
-    benchmark: 0,
-    green: 5,
-    yellow: 15,
-    priority: 1,
-    templates: {
-      green:  "{value} unread WhatsApp messages — inbox is under control.",
-      yellow: "{value} unread WhatsApp messages — approaching backlog. Assign responding agent and clear within 2 hours.",
-      red:    "{value} unread WhatsApp messages — critical backlog. All agents must prioritise WhatsApp response immediately; SLA breach risk.",
-    },
-  },
-
-  unreadCrm: {
-    label: "Unread CRM SMS",
-    unit: "messages",
-    higherIsBetter: false,
-    benchmark: 0,
-    green: 5,
-    yellow: 15,
-    priority: 2,
-    templates: {
-      green:  "{value} unread CRM SMS — inbox current.",
-      yellow: "{value} unread CRM SMS — growing backlog. Review agent availability and clear queue before end of shift.",
-      red:    "{value} unread CRM SMS — critical. Pause outbound outreach and clear inbound queue first.",
-    },
-  },
-
-  unreadEmail: {
-    label: "Unread Email",
-    unit: "messages",
-    higherIsBetter: false,
-    benchmark: 0,
-    green: 10,
-    yellow: 30,
-    priority: 3,
-    templates: {
-      green:  "{value} unread emails — inbox healthy.",
-      yellow: "{value} unread emails — moderate backlog. Triage and respond to quote/booking requests within 4 hours.",
-      red:    "{value} unread emails — high backlog. Assign dedicated email responder and clear all booking-related threads today.",
-    },
-  },
-
-  newLeads: {
-    label: "New Leads (Last 7 Days)",
-    unit: "leads/week",
-    higherIsBetter: true,
-    benchmark: 20,
-    green: 20,
-    yellow: 10,
-    priority: 4,
-    templates: {
-      green:  "{value} new leads this week, above the {benchmark} target. Lead flow is healthy — ensure response SLA is under 5 minutes.",
-      yellow: "Only {value} new leads this week, below the {benchmark} target. Review ad spend, landing page performance, and lead form completion rates.",
-      red:    "Only {value} new leads this week — critically below the {benchmark} target. Investigate top-of-funnel urgently; check Meta/Google campaign status.",
-    },
-  },
-
-  todoCount: {
-    label: "Follow-up Backlog",
-    unit: "contacts",
-    higherIsBetter: false,
-    benchmark: 0,
-    green: 10,
-    yellow: 25,
-    priority: 5,
-    templates: {
-      green:  "{value} follow-up tasks pending — manageable backlog.",
-      yellow: "{value} follow-up tasks overdue. Block 1 hour to batch-process the backlog before end of day.",
-      red:    "{value} follow-up tasks overdue — critical backlog. Assign all agents to clear tasks; deprioritise outbound until queue is below 10.",
-    },
+  avgActivityPct: {
+    direction: "higher_better",
+    green: 85, yellow: 70, benchmark: 85, unit: "pct",
   },
 };
 
-/**
- * Keys that must NOT be red/yellow for a green overall verdict.
- * The engine uses these to compute the team and individual RAG state.
- */
-export const CRITICAL_METRICS = {
-  team:       ["avg_conv_pct", "total_bookings", "team_concentration_risk"] as const,
-  individual: ["avg_conv_pct", "bookings_per_active_day", "active_days_ratio"] as const,
+/* ── HR Phrasing Templates ───────────────────────────────────────────────── */
+// Slots: {{VAL}}, {{BENCHMARK}}, {{TARGET}}, {{DELTA}}
+// Focus-area templates (yellow/red) MUST end with a concrete, owner-ready action.
+
+export const HR_TEMPLATES: Record<string, PhrasingTemplate> = {
+  humanCapitalPct: {
+    green:
+      "Human Capital % at {{VAL}} — within the ≤40% benchmark. Payroll discipline is strong.",
+    yellow:
+      "Human Capital % at {{VAL}}, {{DELTA}} above the 40% target — monitor payroll growth vs revenue; defer discretionary headcount additions.",
+    red:
+      "Human Capital % at {{VAL}} is critically above the 40% ceiling — payroll is outpacing revenue; review headcount plan with CFO and pause non-essential hiring.",
+  },
+  avgCostPerEmployee: {
+    green:
+      "Avg cost/employee at {{VAL}}/mo — within the ≤{{BENCHMARK}} benchmark for the Malta wellness market.",
+    yellow:
+      "Avg cost/employee at {{VAL}}/mo, {{DELTA}} above the {{BENCHMARK}} benchmark — review overtime and bonus patterns across locations.",
+    red:
+      "Avg cost/employee at {{VAL}}/mo exceeds the {{BENCHMARK}} ceiling — audit pay structure, overtime, and allowances; present corrective plan to CFO within 2 weeks.",
+  },
+  revenuePerEmployee: {
+    green:
+      "Revenue/employee at {{VAL}}/mo — above the {{BENCHMARK}} productivity benchmark. Workforce size is well-matched to revenue.",
+    yellow:
+      "Revenue/employee at {{VAL}}/mo, {{DELTA}} below benchmark — check whether recent headcount additions are aligned with confirmed revenue growth.",
+    red:
+      "Revenue/employee at {{VAL}}/mo is significantly below benchmark — workforce is over-indexed vs revenue; freeze non-essential hiring and review current roster utilisation.",
+  },
+  revpahSpa: {
+    green:
+      "Spa RevPAH at {{VAL}}/hr — at or above the {{BENCHMARK}} target. Therapist utilisation is healthy.",
+    yellow:
+      "Spa RevPAH at {{VAL}}/hr, {{DELTA}} below the {{BENCHMARK}} target — review scheduling gaps and cancellation rates; consider shoulder-hour promotions.",
+    red:
+      "Spa RevPAH at {{VAL}}/hr is critically below target — audit therapist roster vs confirmed bookings, check no-show rates, and escalate to Spa GM within 48 hours.",
+  },
+  revpahAesthetics: {
+    green:
+      "Aesthetics RevPAH at {{VAL}}/hr — above the {{BENCHMARK}} target. Clinic utilisation is strong.",
+    yellow:
+      "Aesthetics RevPAH at {{VAL}}/hr, {{DELTA}} below the {{BENCHMARK}} target — review unfilled practitioner slots and assess treatment-mix shift to lower-ticket services.",
+    red:
+      "Aesthetics RevPAH at {{VAL}}/hr is critically below target — audit booked vs available practitioner hours, check cancellation rates, and escalate to Aesthetics GM within 72 hours.",
+  },
+  revpahSlimming: {
+    green:
+      "Slimming RevPAH at {{VAL}}/hr — at or above the {{BENCHMARK}} target. Session scheduling is on track.",
+    yellow:
+      "Slimming RevPAH at {{VAL}}/hr, {{DELTA}} below the {{BENCHMARK}} target — check session density and whether package redemptions are outpacing new sales.",
+    red:
+      "Slimming RevPAH at {{VAL}}/hr is critically below target — review therapist roster vs bookings, check machine utilisation, and escalate to Slimming GM within 48 hours.",
+  },
+  netMovement: {
+    green:
+      "Net employee movement at {{VAL}} over the period — headcount is stable or growing.",
+    yellow:
+      "Net movement at {{VAL}} — slight net contraction; review leaver reasons and identify preventable exits.",
+    red:
+      "Net movement at {{VAL}} — significant workforce contraction; run an exit-interview analysis and present a retention plan to CHRO within 1 week.",
+  },
+  turnoverRate: {
+    green:
+      "Annualised turnover at {{VAL}}% — within the ≤{{BENCHMARK}}% top-quartile benchmark for this market.",
+    yellow:
+      "Annualised turnover at {{VAL}}%, {{DELTA}} above the {{BENCHMARK}}% benchmark — review exit patterns by brand and location, and assess retention incentives.",
+    red:
+      "Annualised turnover at {{VAL}}% is critical — run a structured exit-interview analysis, identify the top departure reasons, and present a retention plan to CHRO within 2 weeks.",
+  },
+  therapistRatio: {
+    green:
+      "Therapist ratio at {{VAL}}% of total headcount — within the 55–68% optimal band. Staffing mix is well-balanced.",
+    yellow:
+      "Therapist ratio at {{VAL}}%, outside the 55–68% target band — review role distribution; below 55% indicates excessive overhead, above 68% risks service quality.",
+    red:
+      "Therapist ratio at {{VAL}}% is significantly outside the 55–68% band — reassess role distribution and review all open headcount requests before approving non-therapist hires.",
+  },
+  onTimePct: {
+    green:
+      "On-time arrival at {{VAL}}% — above the {{BENCHMARK}}% threshold. Punctuality is strong across all sites.",
+    yellow:
+      "On-time arrival at {{VAL}}%, {{DELTA}} below the {{BENCHMARK}}% target — review late patterns by site and shift; check transport or access issues at affected locations.",
+    red:
+      "On-time arrival at {{VAL}}% is below safe levels — this risks hotel SLA compliance; escalate to Operations Manager and issue formal attendance notices within 48 hours.",
+  },
+  avgActivityPct: {
+    green:
+      "Office team activity at {{VAL}}% — above the {{BENCHMARK}}% benchmark. CRM and back-office throughput is on track.",
+    yellow:
+      "Office team activity at {{VAL}}%, {{DELTA}} below benchmark — check CRM task volume, rule out tool downtime, and verify task assignment is evenly distributed.",
+    red:
+      "Office team activity at {{VAL}}% is critically low — conduct 1-on-1 check-ins with outlier team members and audit task queues before drawing performance conclusions.",
+  },
+};
+
+/* ── HR Focus / Wins Priority ────────────────────────────────────────────── */
+
+export const HR_FOCUS_PRIORITY = [
+  "humanCapitalPct",      // 1 — direct P&L impact, CEO/CFO visibility
+  "revenuePerEmployee",   // 2 — workforce productivity ratio
+  "revpahSpa",            // 3 — largest brand by revenue
+  "revpahAesthetics",     // 4
+  "revpahSlimming",       // 5
+  "turnoverRate",         // 6 — talent retention risk
+  "netMovement",          // 7 — immediate headcount signal
+  "onTimePct",            // 8 — SLA / hotel partner compliance
+  "avgCostPerEmployee",   // 9 — cost structure
+  "therapistRatio",       // 10 — staffing mix
+  "avgActivityPct",       // 11 — office productivity
+];
+
+export const HR_WINS_PRIORITY = [
+  "revenuePerEmployee",   // 1 — workforce productivity win
+  "humanCapitalPct",      // 2 — payroll discipline
+  "revpahSpa",            // 3
+  "revpahAesthetics",     // 4
+  "revpahSlimming",       // 5
+  "onTimePct",            // 6 — SLA compliance
+  "turnoverRate",         // 7 — retention strength
+  "netMovement",          // 8 — headcount growth
+  "avgCostPerEmployee",   // 9
+  "therapistRatio",       // 10
+  "avgActivityPct",       // 11
+];
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MARKETING DASHBOARD  (/marketing + brand sub-pages)
+   Expert panel: paid media analyst + email specialist
+   All CPL thresholds from kpi_thresholds.json + adjusted for Malta market.
+   ROAS = platform-attributed (leads × avg_deal_value / spend).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+export type MktRagState = "green" | "yellow" | "red";
+
+export const MKT_RAG_THRESHOLDS = {
+  roas:              { green: 6.0,  yellow: 3.5,  direction: "higher_better" as const },
+  cplBlended:        { green: 10,   yellow: 18,   direction: "lower_better"  as const },
+  cplSpa:            { green: 8,    yellow: 12,   direction: "lower_better"  as const },
+  cplAesthetics:     { green: 12,   yellow: 18,   direction: "lower_better"  as const },
+  cplSlimming:       { green: 9.20, yellow: 13.80, direction: "lower_better" as const },
+  cpc:               { green: 1.20, yellow: 2.00, direction: "lower_better"  as const },
+  fatigueHealthyPct: { green: 70,   yellow: 40,   direction: "higher_better" as const },
+  emailOpenRate:     { green: 25,   yellow: 20,   direction: "higher_better" as const },
+  emailClickRate:    { green: 3.5,  yellow: 2.3,  direction: "higher_better" as const },
 } as const;
 
-/**
- * Alias exported for backwards-compat; the engine imports this name but does
- * not use it at runtime — it is a convenience re-export of BENCHMARK_BY_KEY.
- */
-export const CRM_AGENT_BENCHMARKS = BENCHMARK_BY_KEY;
+export const MKT_KILL_THRESHOLDS = {
+  cplSpa: 16,
+  cplAesthetics: 24,
+  cplSlimming: 18.40,
+  roasMin: 2.0,
+};
+
+export const MKT_TEMPLATES: Record<
+  string,
+  { green: string; yellow: string; red: string }
+> = {
+  roas: {
+    green:  "ROAS at {{VALUE}} — above target ({{BENCHMARK}}x). Platform attribution is healthy; no immediate budget changes needed.",
+    yellow: "ROAS at {{VALUE}} — below target ({{BENCHMARK}}x). Review audience quality and bid strategy → test lookalike audiences or tighten interest targeting.",
+    red:    "ROAS at {{VALUE}} — approaching kill threshold ({{KILL}}x). Pause underperforming ad sets immediately and audit creative fatigue before injecting more budget.",
+  },
+  cpl: {
+    green:  "{{BRAND}} Meta CPL at {{VALUE}} — within target (≤{{BENCHMARK}}). Lead volume and quality are holding; maintain current bid caps.",
+    yellow: "{{BRAND}} Meta CPL at {{VALUE}} — above target ({{BENCHMARK}}). Refresh the 3 highest-spend creatives and test a new hook → aim to get CPL below {{BENCHMARK}} within 7 days.",
+    red:    "{{BRAND}} Meta CPL at {{VALUE}} — above kill threshold ({{KILL}}). Pause campaigns, diagnose the CPL spike, and launch new creative before reopening spend.",
+  },
+  cpc: {
+    green:  "Google CPC at {{VALUE}} — on target (≤{{BENCHMARK}}). Search intent quality is strong; maintain keyword match types.",
+    yellow: "Google CPC at {{VALUE}} — above target ({{BENCHMARK}}). Review search terms report for irrelevant queries → add negatives and tighten to Exact/Phrase match.",
+    red:    "Google CPC at {{VALUE}} — significantly above target. Pause broad-match campaigns, rebuild with tighter keywords, and set manual CPC caps → implied CPL at {{IMPLIED_CPL}}.",
+  },
+  fatigueHealthyPct: {
+    green:  "{{VALUE}} of campaigns are healthy — creative rotation is working well.",
+    yellow: "Only {{VALUE}} of campaigns are healthy — schedule a creative refresh for Watch-status ad sets within 7 days.",
+    red:    "Less than {{VALUE}} of campaigns are healthy — pause fatigued ad sets, launch 3–5 new creatives per brand this week.",
+  },
+  emailOpenRate: {
+    green:  "Email open rate at {{VALUE}} — above industry benchmark ({{BENCHMARK}}%). Sender reputation is strong; keep current send cadence.",
+    yellow: "Email open rate at {{VALUE}} — near floor ({{BENCHMARK}}%). A/B test subject lines with urgency or personalisation to lift opens before it drops further.",
+    red:    "Email open rate at {{VALUE}} — below floor. Sunset unengaged contacts (>180 days), run a re-engagement sequence, then resume regular sends → protects deliverability.",
+  },
+  emailClickRate: {
+    green:  "Email click rate at {{VALUE}} — above benchmark ({{BENCHMARK}}%). CTA placement and offer are landing.",
+    yellow: "Email click rate at {{VALUE}} — below benchmark ({{BENCHMARK}}%). Test a single prominent CTA above-the-fold instead of multiple competing links.",
+    red:    "Email click rate at {{VALUE}} — critically low. Rebuild emails with one hero offer, one CTA, and a benefit-led headline → test against control next send.",
+  },
+};
+
+export const MKT_FOCUS_PRIORITY: string[] = [
+  "roas",
+  "cpl",
+  "fatigueHealthyPct",
+  "cpc",
+  "emailOpenRate",
+  "emailClickRate",
+];
+
+export const MKT_WINS_PRIORITY: string[] = [
+  "roas",
+  "emailOpenRate",
+  "emailClickRate",
+  "fatigueHealthyPct",
+  "cpl",
+  "cpc",
+];

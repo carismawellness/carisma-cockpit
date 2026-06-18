@@ -23,7 +23,7 @@ from supabase import create_client, Client
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "../Tech/CEO-Cockpit/.env.local"))
+load_dotenv(os.path.join(os.path.dirname(__file__), "../10-Tech/CEO-Cockpit/.env.local"))
 
 SUPABASE_URL      = os.environ["NEXT_PUBLIC_SUPABASE_URL"]
 SUPABASE_KEY      = os.environ["SUPABASE_SERVICE_ROLE_KEY"]

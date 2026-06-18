@@ -46,10 +46,10 @@ External Sources → N8N Workflows (scheduled) → Supabase Tables → Next.js D
 
 ## Key Files
 
-- **Workflow JSONs:** `Tech/CEO-Cockpit/n8n/workflows/pipeline-{NN}-{name}.json`
-- **Python ETL scripts:** `Tech/CEO-Cockpit/etl/etl_{name}.py`
-- **Shared utilities:** `Tech/CEO-Cockpit/etl/shared/` (supabase_client, etl_logger, etl_config, sheets_reader)
-- **Master prompt:** `Tech/CEO-Cockpit/n8n/N8N_ETL_MASTER_PROMPT.md`
+- **Workflow JSONs:** `10-Tech/CEO-Cockpit/n8n/workflows/pipeline-{NN}-{name}.json`
+- **Python ETL scripts:** `10-Tech/CEO-Cockpit/etl/etl_{name}.py`
+- **Shared utilities:** `10-Tech/CEO-Cockpit/etl/shared/` (supabase_client, etl_logger, etl_config, sheets_reader)
+- **Master prompt:** `10-Tech/CEO-Cockpit/n8n/N8N_ETL_MASTER_PROMPT.md`
 
 ## ETL Logging
 

@@ -35,7 +35,7 @@ You maintain the **Funnel Dashboard** in the CEO Cockpit (`/funnel` route). This
 ## Dashboard Architecture
 
 ```
-Tech/CEO-Cockpit/
+10-Tech/CEO-Cockpit/
 ├── app/funnel/page.tsx                          # Page route (DashboardShell wrapper)
 ├── components/funnel/
 │   ├── ConstraintHeatmap.tsx                    # Section 1: metric × brand matrix

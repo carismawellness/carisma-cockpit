@@ -89,7 +89,7 @@ launchctl load ~/Library/LaunchAgents/com.carisma.capi-sync.plist
 
 ## Prerequisites (One-Time Setup)
 
-See the implementation plan at `Docs/plans/2026-04-17-capi-appointments-made.md` for full setup instructions including:
+See the implementation plan at `10-Tech/Docs/plans/2026-04-17-capi-appointments-made.md` for full setup instructions including:
 - Meta pixel creation
 - Zoho CRM custom field setup (CAPI_Sent, Meta_Lead_ID, etc.)
 - Aggregated Event Measurement configuration

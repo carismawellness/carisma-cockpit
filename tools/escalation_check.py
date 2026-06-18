@@ -503,7 +503,7 @@ def main():
         mcp = json.load(f)
 
     # Load Supabase env — check multiple locations
-    for env_name in [".env", "Tech/CEO-Cockpit/.env.local"]:
+    for env_name in [".env", "10-Tech/CEO-Cockpit/.env.local"]:
         env_path = REPO_ROOT / env_name
         if env_path.exists():
             for line in env_path.read_text().splitlines():
