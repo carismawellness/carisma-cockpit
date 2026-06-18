@@ -1,14 +1,15 @@
 /**
  * POST /api/etl/employee-movement-weekly?from=YYYY-MM-DD&to=YYYY-MM-DD
  *
- * Queries ALL Talexio employees (including terminated) for hire/termination dates,
- * then aggregates into weekly buckets and upserts hr_employee_movement_weekly.
+ * Approximates employee hire/exit dates from payslip periodFrom data
+ * (Talexio does not expose hireDate/terminationDate directly).
  *
- * Date source priority:
- *   1. Employee-level hireDate / terminationDate  (most accurate — what Talexio calls hire date)
- *   2. currentPositionSimple.startDate / endDate  (fallback if employee-level fields absent)
+ * Strategy:
+ *   hireDate   ≈ min(payslip.periodFrom) across all payslips for that employee
+ *   exitDate   ≈ max(payslip.periodTo)   for terminated employees
  *
- * Default window: last 52 weeks. Override with ?from=&to= params.
+ * Resolution is monthly (payslip granularity), displayed as weekly buckets.
+ * date_source = "payslip"
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -19,47 +20,35 @@ export const maxDuration = 60;
 
 type GqlResponse<T> = { data?: T; errors?: Array<{ message: string }> };
 
-interface EmpWithHireDate {
-  id: string;
-  fullName: string;
-  isTerminated: boolean;
-  hireDate: string | null;
-  terminationDate: string | null;
+interface PayslipEntry {
+  periodFrom: string;
+  periodTo:   string;
 }
 
-interface EmpWithPositionDates {
-  id: string;
-  fullName: string;
+interface EmpWithPayslips {
+  id:           string;
+  fullName:     string;
   isTerminated: boolean;
-  currentPositionSimple: {
-    startDate: string | null;
-    endDate:   string | null;
-  } | null;
+  payslips:     PayslipEntry[];
 }
 
 // Normalised internal shape
 interface EmpRow {
-  id:               string;
-  fullName:         string;
-  isTerminated:     boolean;
-  hireDate:         string | null;
-  terminationDate:  string | null;
+  id:              string;
+  fullName:        string;
+  isTerminated:    boolean;
+  hireDate:        string | null;
+  terminationDate: string | null;
 }
 
-const GQL_HIRE_DATE = `query {
+const GQL_PAYSLIPS = `query {
   employees {
     id fullName isTerminated
-    hireDate
-    terminationDate
-  }
-}`;
-
-const GQL_POSITION_DATES = `query {
-  employees {
-    id fullName isTerminated
-    currentPositionSimple {
-      startDate
-      endDate
+    payslips {
+      ... on PayrollPayslip {
+        periodFrom
+        periodTo
+      }
     }
   }
 }`;
@@ -82,7 +71,7 @@ function toYMD(d: Date): string {
 // Monday of ISO week containing date d
 function isoWeekMonday(d: Date): Date {
   const day = d.getDay(); // 0=Sun, 1=Mon … 6=Sat
-  const diff = (day === 0 ? -6 : 1 - day); // shift to Monday
+  const diff = (day === 0 ? -6 : 1 - day);
   const m = new Date(d);
   m.setDate(d.getDate() + diff);
   m.setHours(0, 0, 0, 0);
@@ -111,44 +100,50 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "from/to must be YYYY-MM-DD" }, { status: 400 });
   }
 
-  // ── Fetch employees with date info ─────────────────────────────────────────
-  let employees: EmpRow[] = [];
-  let dateSource = "hireDate";
-
+  // ── Fetch employees with payslip history ───────────────────────────────────
+  let rawEmployees: EmpWithPayslips[];
   try {
-    const data = await fetchTalexio<{ employees: EmpWithHireDate[] }>(GQL_HIRE_DATE);
-    employees = (data.employees ?? []).map((e) => ({
+    const data = await fetchTalexio<{ employees: EmpWithPayslips[] }>(GQL_PAYSLIPS);
+    rawEmployees = data.employees ?? [];
+  } catch (e) {
+    return NextResponse.json(
+      { error: `Talexio query failed: ${e instanceof Error ? e.message : String(e)}` },
+      { status: 500 },
+    );
+  }
+
+  // ── Derive hire/exit dates from payslip data ───────────────────────────────
+  const employees: EmpRow[] = rawEmployees.map((e) => {
+    const periods = (e.payslips ?? []).filter(
+      (p) => p.periodFrom && p.periodFrom !== "null",
+    );
+
+    let hireDate:        string | null = null;
+    let terminationDate: string | null = null;
+
+    if (periods.length > 0) {
+      const sorted = [...periods].sort((a, b) =>
+        a.periodFrom.localeCompare(b.periodFrom),
+      );
+      hireDate = sorted[0].periodFrom;
+
+      if (e.isTerminated) {
+        const latestPeriodTo = [...periods]
+          .sort((a, b) => b.periodTo.localeCompare(a.periodTo))[0]?.periodTo;
+        terminationDate = latestPeriodTo ?? null;
+      }
+    }
+
+    return {
       id:              e.id,
       fullName:        e.fullName,
       isTerminated:    e.isTerminated,
-      hireDate:        e.hireDate ?? null,
-      terminationDate: e.terminationDate ?? null,
-    }));
-
-    // If ALL active employees have null hireDate, the field exists but is empty.
-    // That's still valid — we'll just have 0 joiners recorded.
-  } catch {
-    // hireDate / terminationDate not in schema — fall back to position dates
-    dateSource = "positionStartDate";
-    try {
-      const data = await fetchTalexio<{ employees: EmpWithPositionDates[] }>(GQL_POSITION_DATES);
-      employees = (data.employees ?? []).map((e) => ({
-        id:              e.id,
-        fullName:        e.fullName,
-        isTerminated:    e.isTerminated,
-        hireDate:        e.currentPositionSimple?.startDate ?? null,
-        terminationDate: e.isTerminated ? (e.currentPositionSimple?.endDate ?? null) : null,
-      }));
-    } catch (e2) {
-      return NextResponse.json(
-        { error: `Both date strategies failed: ${e2 instanceof Error ? e2.message : String(e2)}` },
-        { status: 500 },
-      );
-    }
-  }
+      hireDate,
+      terminationDate,
+    };
+  });
 
   // ── Build ISO-week buckets ─────────────────────────────────────────────────
-  // Walk from the Monday of the fromDate week to the Monday of the toDate week.
   const weeks: Array<{ monday: Date; sunday: Date }> = [];
   let cursor = isoWeekMonday(fromDate);
   const lastWeekMonday = isoWeekMonday(toDate);
@@ -181,7 +176,6 @@ export async function POST(req: NextRequest) {
     const joiners = joinerNames.length;
     const leavers = leaverNames.length;
 
-    // Total active at end of this week: hired on or before week end, not yet terminated
     const totalHeadcount = employees.filter((e) => {
       const hDate = e.hireDate ? new Date(e.hireDate) : null;
       const tDate = e.terminationDate ? new Date(e.terminationDate) : null;
@@ -199,7 +193,7 @@ export async function POST(req: NextRequest) {
       total_headcount: totalHeadcount,
       joiner_names:    joinerNames,
       leaver_names:    leaverNames,
-      date_source:     dateSource,
+      date_source:     "payslip",
       updated_at:      new Date().toISOString(),
     };
   });
@@ -215,13 +209,14 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({
-    status:       "ok",
-    date_source:  dateSource,
-    weeks_written: rows.length,
-    from:         toYMD(fromDate),
-    to:           toYMD(toDate),
-    employees_total: employees.length,
-    employees_with_hire_date: employees.filter((e) => e.hireDate).length,
+    status:                    "ok",
+    date_source:               "payslip",
+    weeks_written:             rows.length,
+    from:                      toYMD(fromDate),
+    to:                        toYMD(toDate),
+    employees_total:           employees.length,
+    employees_with_hire_date:  employees.filter((e) => e.hireDate).length,
+    employees_terminated:      employees.filter((e) => e.isTerminated).length,
   });
 }
 
