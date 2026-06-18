@@ -12,6 +12,8 @@ import { useKlaviyoOverview } from "@/lib/hooks/useKlaviyoOverview";
 import { useGscRankings } from "@/lib/hooks/useGscRankings";
 import { BRAND as BRAND_TOKENS, type BrandKey } from "@/lib/constants/design-tokens";
 import type { CampaignData } from "@/lib/types/ads";
+import { computeMasterCommentary } from "@/lib/commentary/marketing-engine";
+import { MktCommentaryPanel } from "@/components/marketing/CommentaryPanel";
 
 /* ---------- brand colours (canonical palette) ---------- */
 
@@ -295,6 +297,38 @@ function MarketingMasterContent({
     ];
   }, [metaSpa.data, metaAes.data, metaSlim.data, googleSpa.data, googleAes.data, googleSlim.data, klavSpa, klavAes, klavSlim, gscSpa, gscAes, gscSlim]);
 
+  /* ---- Strategic commentary ---- */
+  const commentaryResult = useMemo(() => {
+    function buildBrand(brand: "spa" | "aesthetics" | "slimming", meta: CampaignData[], google: CampaignData[], klav: { openRate: number; clickRate: number; hasData: boolean }, klavLoading: boolean) {
+      const f = fatigueData.find(x => x.brand === brand) ?? { healthy: 0, watch: 0, fatigued: 0 };
+      return {
+        brand,
+        meta: {
+          totalSpend: meta.reduce((s, c) => s + c.totalSpend, 0),
+          totalLeads: meta.reduce((s, c) => s + c.totalLeads, 0),
+          attributedRevenue: meta.reduce((s, c) => s + c.attributedRevenue, 0),
+          fatigueStats: { healthy: f.healthy, watch: f.watch, fatigued: f.fatigued },
+        },
+        google: {
+          totalSpend: google.reduce((s, c) => s + c.totalSpend, 0),
+          totalLeads: google.reduce((s, c) => s + c.totalLeads, 0),
+          attributedRevenue: google.reduce((s, c) => s + c.attributedRevenue, 0),
+          fatigueStats: { healthy: 0, watch: 0, fatigued: 0 },
+        },
+        email: {
+          openRate: klav.openRate,
+          clickRate: klav.clickRate,
+          hasData: !klavLoading && klav.hasData,
+        },
+      };
+    }
+    return computeMasterCommentary({
+      spa:        buildBrand("spa",        metaSpa.data?.campaigns  ?? [], googleSpa.data?.campaigns  ?? [], klavSpa,  klavSpaLoading),
+      aesthetics: buildBrand("aesthetics", metaAes.data?.campaigns  ?? [], googleAes.data?.campaigns  ?? [], klavAes,  klavAesLoading),
+      slimming:   buildBrand("slimming",   metaSlim.data?.campaigns ?? [], googleSlim.data?.campaigns ?? [], klavSlim, klavSlimLoading),
+    });
+  }, [fatigueData, metaSpa.data, metaAes.data, metaSlim.data, googleSpa.data, googleAes.data, googleSlim.data, klavSpa, klavAes, klavSlim, klavSpaLoading, klavAesLoading, klavSlimLoading]);
+
   /* ---- Check if any data loaded ---- */
   const totalCampaigns =
     (metaSpa.data?.campaigns?.length ?? 0) + (metaAes.data?.campaigns?.length ?? 0) +
@@ -361,6 +395,9 @@ function MarketingMasterContent({
 
       {hasAnyData && (
         <>
+          {/* -- Strategic Commentary -- */}
+          <MktCommentaryPanel result={commentaryResult} loading={isLoading} />
+
           {/* -- Section 1: Cross-Brand KPI Table -- */}
           <section>
             <Card className="p-3 md:p-6">
