@@ -11,6 +11,7 @@
 import {
   RAGState,
   TrendState,
+  PhrasingTemplate,
   OPS_RAG_THRESHOLDS,
   OPS_FACILITY_TREND_THRESHOLDS,
   OPS_MYSTERY_TREND_THRESHOLDS,
@@ -135,6 +136,10 @@ interface MetricEval {
   text:  string;
 }
 
+function getOpsTemplate(tmpl: PhrasingTemplate, state: RAGState): string {
+  return tmpl[state as "green" | "yellow" | "red"] ?? tmpl.red;
+}
+
 function evalOpsMetrics(inp: OpsCommentaryInputs): MetricEval[] {
   const results: MetricEval[] = [];
 
@@ -144,7 +149,7 @@ function evalOpsMetrics(inp: OpsCommentaryInputs): MetricEval[] {
   // weightedAvg
   {
     const state = classifyHigherBetter(inp.weightedAvg, "weightedAvg");
-    const tmpl  = OPS_TEMPLATES.weightedAvg[state];
+    const tmpl  = getOpsTemplate(OPS_TEMPLATES.weightedAvg, state);
     push("weightedAvg", state, fill(tmpl, {
       VALUE:          inp.weightedAvg.toFixed(1),
       LOCATION:       inp.lowestRatedLocation?.name ?? "—",
@@ -156,7 +161,7 @@ function evalOpsMetrics(inp: OpsCommentaryInputs): MetricEval[] {
   // ratingDelta
   if (inp.ratingDelta !== null) {
     const state = classifyHigherBetter(inp.ratingDelta, "ratingDelta");
-    const tmpl  = OPS_TEMPLATES.ratingDelta[state];
+    const tmpl  = getOpsTemplate(OPS_TEMPLATES.ratingDelta, state);
     push("ratingDelta", state, fill(tmpl, {
       VALUE: inp.ratingDelta >= 0
         ? `+${inp.ratingDelta.toFixed(2)}`
@@ -167,21 +172,21 @@ function evalOpsMetrics(inp: OpsCommentaryInputs): MetricEval[] {
   // criticalCount
   {
     const state = classifyLowerBetter(inp.criticalCount, "criticalCount");
-    const tmpl  = OPS_TEMPLATES.criticalCount[state];
+    const tmpl  = getOpsTemplate(OPS_TEMPLATES.criticalCount, state);
     push("criticalCount", state, fill(tmpl, { VALUE: inp.criticalCount }));
   }
 
   // noteworthyCount
   {
     const state = classifyLowerBetter(inp.noteworthyCount, "noteworthyCount");
-    const tmpl  = OPS_TEMPLATES.noteworthyCount[state];
+    const tmpl  = getOpsTemplate(OPS_TEMPLATES.noteworthyCount, state);
     push("noteworthyCount", state, fill(tmpl, { VALUE: inp.noteworthyCount }));
   }
 
   // complimentaryPct
   {
     const state = classifyLowerBetter(inp.complimentaryPct, "complimentaryPct");
-    const tmpl  = OPS_TEMPLATES.complimentaryPct[state];
+    const tmpl  = getOpsTemplate(OPS_TEMPLATES.complimentaryPct, state);
     push("complimentaryPct", state, fill(tmpl, {
       VALUE: `${inp.complimentaryPct.toFixed(1)}%`,
       DELTA: `${(inp.complimentaryPct - 2.0).toFixed(1)}pp`,
@@ -191,7 +196,7 @@ function evalOpsMetrics(inp: OpsCommentaryInputs): MetricEval[] {
   // cashPct
   {
     const state = classifyLowerBetter(inp.cashPct, "cashPct");
-    const tmpl  = OPS_TEMPLATES.cashPct[state];
+    const tmpl  = getOpsTemplate(OPS_TEMPLATES.cashPct, state);
     push("cashPct", state, fill(tmpl, {
       VALUE: `${inp.cashPct.toFixed(1)}%`,
     }));
@@ -200,7 +205,7 @@ function evalOpsMetrics(inp: OpsCommentaryInputs): MetricEval[] {
   // discountedCashPct
   {
     const state = classifyLowerBetter(inp.discountedCashPct, "discountedCashPct");
-    const tmpl  = OPS_TEMPLATES.discountedCashPct[state];
+    const tmpl  = getOpsTemplate(OPS_TEMPLATES.discountedCashPct, state);
     push("discountedCashPct", state, fill(tmpl, {
       VALUE: `${inp.discountedCashPct.toFixed(1)}%`,
     }));
@@ -209,7 +214,7 @@ function evalOpsMetrics(inp: OpsCommentaryInputs): MetricEval[] {
   // delCancelledPct
   {
     const state = classifyLowerBetter(inp.delCancelledPct, "delCancelledPct");
-    const tmpl  = OPS_TEMPLATES.delCancelledPct[state];
+    const tmpl  = getOpsTemplate(OPS_TEMPLATES.delCancelledPct, state);
     push("delCancelledPct", state, fill(tmpl, {
       VALUE: `${inp.delCancelledPct.toFixed(1)}%`,
     }));
@@ -218,14 +223,14 @@ function evalOpsMetrics(inp: OpsCommentaryInputs): MetricEval[] {
   // unattended
   {
     const state = classifyUnattended(inp.unattended);
-    const tmpl  = OPS_TEMPLATES.unattended[state];
+    const tmpl  = getOpsTemplate(OPS_TEMPLATES.unattended, state);
     push("unattended", state, fill(tmpl, { VALUE: inp.unattended }));
   }
 
   // avgFacility
   if (inp.avgFacility > 0) {
     const state = classifyHigherBetter(inp.avgFacility, "avgFacility");
-    const tmpl  = OPS_TEMPLATES.avgFacility[state];
+    const tmpl  = getOpsTemplate(OPS_TEMPLATES.avgFacility, state);
     push("avgFacility", state, fill(tmpl, {
       VALUE:          `${inp.avgFacility.toFixed(0)}%`,
       LOCATION:       inp.lowestFacilityLocation?.name ?? "—",
@@ -238,7 +243,7 @@ function evalOpsMetrics(inp: OpsCommentaryInputs): MetricEval[] {
   // avgMystery
   if (inp.avgMystery > 0) {
     const state = classifyHigherBetter(inp.avgMystery, "avgMystery");
-    const tmpl  = OPS_TEMPLATES.avgMystery[state];
+    const tmpl  = getOpsTemplate(OPS_TEMPLATES.avgMystery, state);
     push("avgMystery", state, fill(tmpl, {
       VALUE: `${inp.avgMystery.toFixed(0)}%`,
     }));
@@ -481,6 +486,7 @@ function pickTemplate(metric: MetricConfig, rag: RagState): string {
     case "green":  return metric.templateGreen;
     case "yellow": return metric.templateYellow;
     case "red":    return metric.templateRed;
+    default:       return "";
   }
 }
 
@@ -732,4 +738,213 @@ export function computeHRCommentary(input: HRCommentaryInput): HRCommentaryOutpu
   }
 
   return { overallStatus: overall, verdict, wins, focusAreas };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CRM COMMENTARY ENGINE
+   Pure functions for team-level, agent-level, and GHL queue commentary.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+import {
+  BENCHMARK_BY_KEY,
+  MetricBenchmark,
+  CRITICAL_METRICS,
+} from "./benchmarks";
+
+import type { CrmAgent } from "@/lib/hooks/useCrmAgents";
+import type { GhlSnapshot } from "@/lib/hooks/useGhlSnapshot";
+
+/* ── Shared CRM result types ─────────────────────────────────────────────── */
+
+export interface CrmMetricResult {
+  key:      string;
+  ragState: RAGState;
+  template: string;
+}
+
+export interface CommentaryResult {
+  overallRag:   RAGState;
+  verdict:      string;
+  focusAreas:   CrmMetricResult[];
+  wins:         CrmMetricResult[];
+  insufficient: boolean;
+}
+
+/* ── Internal CRM helpers ────────────────────────────────────────────────── */
+
+function crmClassify(b: MetricBenchmark, value: number): RAGState {
+  if (b.higherIsBetter) {
+    return value >= b.green ? "green" : value >= b.yellow ? "yellow" : "red";
+  } else {
+    return value <= b.green ? "green" : value <= b.yellow ? "yellow" : "red";
+  }
+}
+
+function crmFillTemplate(template: string, value: number, b: MetricBenchmark): string {
+  return template
+    .replace(/\{value\}/g,     Math.round(value).toString())
+    .replace(/\{benchmark\}/g, b.benchmark.toString());
+}
+
+function crmEval(key: string, value: number): CrmMetricResult | null {
+  const b = BENCHMARK_BY_KEY[key];
+  if (!b) return null;
+  const ragState = crmClassify(b, value);
+  const template = crmFillTemplate(b.templates[(ragState === "insufficient" ? "red" : ragState) as "green" | "yellow" | "red"], value, b);
+  return { key, ragState, template };
+}
+
+function crmOverall(results: CrmMetricResult[], criticalKeys: readonly string[]): RAGState {
+  const byKey = new Map(results.map((r) => [r.key, r]));
+  const hasCriticalRed = criticalKeys.some((k) => byKey.get(k)?.ragState === "red");
+  if (hasCriticalRed || results.filter((r) => r.ragState === "red").length >= 2) return "red";
+  if (results.some((r) => r.ragState === "yellow" || r.ragState === "red")) return "yellow";
+  return "green";
+}
+
+function crmVerdict(overall: RAGState, name: string, reds: number, yellows: number): string {
+  const prefix = overall === "green" ? "✅" : overall === "yellow" ? "⚠️" : "🚨";
+  if (overall === "green") return `${prefix} ${name} — all key metrics on track.`;
+  if (overall === "yellow") return `${prefix} ${name} — ${yellows} metric${yellows !== 1 ? "s" : ""} need attention${reds > 0 ? `; ${reds} in critical range` : ""}.`;
+  return `${prefix} ${name} — ${reds} metric${reds !== 1 ? "s" : ""} require immediate action.`;
+}
+
+/* ── Team commentary ─────────────────────────────────────────────────────── */
+
+export function computeTeamCommentary(
+  agents: CrmAgent[],
+  priorAgents: CrmAgent[],
+  periodDays: number
+): CommentaryResult {
+  if (agents.length === 0) {
+    return { overallRag: "insufficient", verdict: "No data available for this period.", focusAreas: [], wins: [], insufficient: true };
+  }
+
+  const totalBookings  = agents.reduce((s, a) => s + a.totals.total_bookings, 0);
+  const totalDeposits  = agents.reduce((s, a) => s + a.totals.total_deposits, 0);
+  const totalMessages  = agents.reduce((s, a) => s + a.totals.total_messages, 0);
+  const totalTalkTime  = agents.reduce((s, a) => s + (a.totals.total_talk_time ?? 0), 0);
+  const totalActiveDays = agents.reduce((s, a) => s + a.totals.active_days, 0);
+
+  const avgConvPct    = agents.reduce((s, a) => s + (a.totals.avg_conversion_rate ?? 0), 0) / agents.length;
+  const avgDepositPct = agents.reduce((s, a) => s + (a.totals.avg_deposit_pct ?? 0), 0) / agents.length;
+  const avgBkgEff     = agents.reduce((s, a) => s + (a.totals.avg_booking_eff ?? 0), 0) / agents.length;
+
+  const msgsPerDay    = totalActiveDays > 0 ? totalMessages / totalActiveDays : 0;
+  const talkPerDay    = totalActiveDays > 0 ? totalTalkTime / totalActiveDays : 0;
+
+  const sortedByBookings = [...agents].sort((a, b) => b.totals.total_bookings - a.totals.total_bookings);
+  const top2Bookings     = sortedByBookings.slice(0, 2).reduce((s, a) => s + a.totals.total_bookings, 0);
+  const concentrationPct = totalBookings > 0 ? (top2Bookings / totalBookings) * 100 : 0;
+  const inactiveCount    = agents.filter((a) => a.totals.total_bookings === 0).length;
+
+  const metrics: { key: string; value: number }[] = [
+    { key: "avg_conv_pct",           value: avgConvPct },
+    { key: "avg_deposit_pct",        value: avgDepositPct },
+    { key: "bkg_eff_pct",            value: avgBkgEff },
+    { key: "total_messages",         value: msgsPerDay },
+    { key: "total_talk_time",        value: talkPerDay },
+    { key: "total_bookings",         value: totalBookings },
+    { key: "total_deposits",         value: totalDeposits },
+    { key: "team_concentration_risk", value: concentrationPct },
+    { key: "inactive_agents_count",  value: inactiveCount },
+  ];
+
+  const results = metrics.map((m) => crmEval(m.key, m.value)).filter((r): r is CrmMetricResult => r !== null);
+  const overall  = crmOverall(results, CRITICAL_METRICS.team);
+
+  const reds    = results.filter((r) => r.ragState === "red").length;
+  const yellows = results.filter((r) => r.ragState === "yellow").length;
+
+  const focusAreas = results
+    .filter((r) => r.ragState === "red" || r.ragState === "yellow")
+    .sort((a, b) => (a.ragState === "red" ? -1 : 1) - (b.ragState === "red" ? -1 : 1))
+    .slice(0, 3);
+
+  const wins = results.filter((r) => r.ragState === "green").slice(0, 3);
+
+  return { overallRag: overall, verdict: crmVerdict(overall, "Team", reds, yellows), focusAreas, wins, insufficient: false };
+}
+
+/* ── Individual agent commentary ─────────────────────────────────────────── */
+
+export function computeAgentCommentary(
+  agent: CrmAgent,
+  priorAgent: CrmAgent | null,
+  periodDays: number
+): CommentaryResult {
+  const t = agent.totals;
+  if (t.active_days === 0 && t.total_bookings === 0) {
+    return { overallRag: "insufficient", verdict: `${agent.name} — no activity recorded this period.`, focusAreas: [], wins: [], insufficient: true };
+  }
+
+  const activeDayRatio    = (t.active_days / Math.max(periodDays, 1)) * 100;
+  const bkgPerDay         = t.total_bookings / Math.max(t.active_days, 1);
+  const revenuePerDay     = t.total_sales    / Math.max(t.active_days, 1);
+  const msgsPerDay        = t.total_messages / Math.max(t.active_days, 1);
+  const talkPerDay        = (t.total_talk_time ?? 0) / Math.max(t.active_days, 1);
+
+  const metrics: { key: string; value: number }[] = [
+    { key: "avg_conv_pct",         value: t.avg_conversion_rate ?? 0 },
+    { key: "avg_deposit_pct",      value: t.avg_deposit_pct ?? 0 },
+    { key: "bkg_eff_pct",          value: t.avg_booking_eff ?? 0 },
+    { key: "active_days_ratio",    value: activeDayRatio },
+    { key: "bookings_per_active_day", value: bkgPerDay },
+    { key: "revenue_per_active_day",  value: revenuePerDay },
+    { key: "total_messages",       value: msgsPerDay },
+    { key: "total_talk_time",      value: talkPerDay },
+  ];
+
+  const results = metrics.map((m) => crmEval(m.key, m.value)).filter((r): r is CrmMetricResult => r !== null);
+  const overall  = crmOverall(results, CRITICAL_METRICS.individual);
+
+  const reds    = results.filter((r) => r.ragState === "red").length;
+  const yellows = results.filter((r) => r.ragState === "yellow").length;
+
+  const focusAreas = results
+    .filter((r) => r.ragState === "red" || r.ragState === "yellow")
+    .sort((a, b) => (a.ragState === "red" ? -1 : 1) - (b.ragState === "red" ? -1 : 1))
+    .slice(0, 3);
+
+  const wins = results.filter((r) => r.ragState === "green").slice(0, 3);
+
+  return { overallRag: overall, verdict: crmVerdict(overall, agent.name, reds, yellows), focusAreas, wins, insufficient: false };
+}
+
+/* ── GHL master queue commentary ─────────────────────────────────────────── */
+
+export function computeCrmMasterCommentary(snapshot: GhlSnapshot): CommentaryResult {
+  const brands = [snapshot.spa, snapshot.aesthetics, snapshot.slimming];
+
+  const unreadWhatsapp = brands.reduce((s, b) => s + b.unreadWhatsapp, 0);
+  const unreadCrm      = brands.reduce((s, b) => s + b.unreadCrm,      0);
+  const unreadEmail    = brands.reduce((s, b) => s + b.unreadEmail,     0);
+  const newLeads       = brands.reduce((s, b) => s + b.newLeads,        0);
+  const todoCount      = brands.reduce((s, b) => s + b.todoCount,       0);
+
+  const metrics: { key: string; value: number }[] = [
+    { key: "unreadWhatsapp", value: unreadWhatsapp },
+    { key: "unreadCrm",      value: unreadCrm },
+    { key: "unreadEmail",    value: unreadEmail },
+    { key: "newLeads",       value: newLeads },
+    { key: "todoCount",      value: todoCount },
+  ];
+
+  const results = metrics.map((m) => crmEval(m.key, m.value)).filter((r): r is CrmMetricResult => r !== null);
+
+  const hasRed    = results.some((r) => r.ragState === "red");
+  const hasYellow = results.some((r) => r.ragState === "yellow");
+  const overall: RAGState = hasRed ? "red" : hasYellow ? "yellow" : "green";
+
+  const reds    = results.filter((r) => r.ragState === "red").length;
+  const yellows = results.filter((r) => r.ragState === "yellow").length;
+
+  const focusAreas = results
+    .filter((r) => r.ragState === "red" || r.ragState === "yellow")
+    .sort((a, b) => (a.ragState === "red" ? -1 : 1) - (b.ragState === "red" ? -1 : 1))
+    .slice(0, 3);
+
+  const wins = results.filter((r) => r.ragState === "green").slice(0, 3);
+
+  return { overallRag: overall, verdict: crmVerdict(overall, "GHL Queue", reds, yellows), focusAreas, wins, insufficient: false };
 }

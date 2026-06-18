@@ -14,7 +14,7 @@
  * NO numbers appear anywhere else — edit here and the engine + UI react.
  */
 
-export type RAGState   = "green" | "yellow" | "red";
+export type RAGState   = "green" | "yellow" | "red" | "insufficient";
 export type TrendState = "improving" | "flat" | "declining" | "alarming";
 
 export interface MetricSpec {
@@ -30,7 +30,8 @@ export interface MetricSpec {
 export interface PhrasingTemplate {
   green:  string;
   yellow: string;
-  red:    string;
+  red:          string;
+  insufficient?: string;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -625,3 +626,252 @@ export const HR_WINS_PRIORITY = [
   "humanCapitalPct", "therapistRatio", "onTimePct", "avgActivityPct",
   "turnoverRate", "netMovement", "avgCostPerEmployee",
 ];
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MARKETING DASHBOARD (re-instated from prior session)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+export type MktRagState = "green" | "yellow" | "red";
+
+export const MKT_RAG_THRESHOLDS = {
+  roas:              { green: 6.0,  yellow: 3.5,  direction: "higher_better" as const },
+  cplBlended:        { green: 10,   yellow: 18,   direction: "lower_better"  as const },
+  cplSpa:            { green: 8,    yellow: 12,   direction: "lower_better"  as const },
+  cplAesthetics:     { green: 12,   yellow: 18,   direction: "lower_better"  as const },
+  cplSlimming:       { green: 9.20, yellow: 13.80, direction: "lower_better" as const },
+  cpc:               { green: 1.20, yellow: 2.00, direction: "lower_better"  as const },
+  fatigueHealthyPct: { green: 70,   yellow: 40,   direction: "higher_better" as const },
+  emailOpenRate:     { green: 25,   yellow: 20,   direction: "higher_better" as const },
+  emailClickRate:    { green: 3.5,  yellow: 2.3,  direction: "higher_better" as const },
+} as const;
+
+export const MKT_KILL_THRESHOLDS = {
+  cplSpa: 16,
+  cplAesthetics: 24,
+  cplSlimming: 18.40,
+  roasMin: 2.0,
+};
+
+export const MKT_TEMPLATES: Record<string, { green: string; yellow: string; red: string }> = {
+  roas: {
+    green:  "ROAS at {{VALUE}} — above target ({{BENCHMARK}}x). Platform attribution is healthy; no immediate budget changes needed.",
+    yellow: "ROAS at {{VALUE}} — below target ({{BENCHMARK}}x). Review audience quality and bid strategy → test lookalike audiences or tighten interest targeting.",
+    red:    "ROAS at {{VALUE}} — approaching kill threshold ({{KILL}}x). Pause underperforming ad sets immediately and audit creative fatigue before injecting more budget.",
+  },
+  cpl: {
+    green:  "{{BRAND}} Meta CPL at {{VALUE}} — within target (≤{{BENCHMARK}}). Lead volume and quality are holding; maintain current bid caps.",
+    yellow: "{{BRAND}} Meta CPL at {{VALUE}} — above target ({{BENCHMARK}}). Refresh the 3 highest-spend creatives and test a new hook → aim to get CPL below {{BENCHMARK}} within 7 days.",
+    red:    "{{BRAND}} Meta CPL at {{VALUE}} — above kill threshold ({{KILL}}). Pause campaigns, diagnose the CPL spike, and launch new creative before reopening spend.",
+  },
+  cpc: {
+    green:  "Google CPC at {{VALUE}} — on target (≤{{BENCHMARK}}). Search intent quality is strong; maintain keyword match types.",
+    yellow: "Google CPC at {{VALUE}} — above target ({{BENCHMARK}}). Review search terms report for irrelevant queries → add negatives and tighten to Exact/Phrase match.",
+    red:    "Google CPC at {{VALUE}} — significantly above target. Pause broad-match campaigns, rebuild with tighter keywords, and set manual CPC caps → implied CPL at {{IMPLIED_CPL}}.",
+  },
+  fatigueHealthyPct: {
+    green:  "{{VALUE}} of campaigns are healthy — creative rotation is working well.",
+    yellow: "Only {{VALUE}} of campaigns are healthy — schedule a creative refresh for Watch-status ad sets within 7 days.",
+    red:    "Less than {{VALUE}} of campaigns are healthy — pause fatigued ad sets, launch 3–5 new creatives per brand this week.",
+  },
+  emailOpenRate: {
+    green:  "Email open rate at {{VALUE}} — above industry benchmark ({{BENCHMARK}}%). Sender reputation is strong; keep current send cadence.",
+    yellow: "Email open rate at {{VALUE}} — near floor ({{BENCHMARK}}%). A/B test subject lines with urgency or personalisation to lift opens before it drops further.",
+    red:    "Email open rate at {{VALUE}} — below floor. Sunset unengaged contacts (>180 days), run a re-engagement sequence, then resume regular sends → protects deliverability.",
+  },
+  emailClickRate: {
+    green:  "Email click rate at {{VALUE}} — above benchmark ({{BENCHMARK}}%). CTA placement and offer are landing.",
+    yellow: "Email click rate at {{VALUE}} — below benchmark ({{BENCHMARK}}%). Test a single prominent CTA above-the-fold instead of multiple competing links.",
+    red:    "Email click rate at {{VALUE}} — critically low. Rebuild emails with one hero offer, one CTA, and a benefit-led headline → test against control next send.",
+  },
+};
+
+export const MKT_FOCUS_PRIORITY: string[] = [
+  "roas", "cpl", "fatigueHealthyPct", "cpc", "emailOpenRate", "emailClickRate",
+];
+
+export const MKT_WINS_PRIORITY: string[] = [
+  "roas", "emailOpenRate", "emailClickRate", "fatigueHealthyPct", "cpl", "cpc",
+];
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CRM AGENT COMMENTARY — benchmarks (re-instated from prior session)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+export interface MetricBenchmark {
+  label:          string;
+  unit:           string;
+  higherIsBetter: boolean;
+  benchmark:      number;
+  green:          number;
+  yellow:         number;
+  priority:       number;
+  templates: {
+    green:  string;
+    yellow: string;
+    red:          string;
+  insufficient?: string;
+  };
+}
+
+export const BENCHMARK_BY_KEY: Record<string, MetricBenchmark> = {
+  avg_conv_pct: {
+    label: "Avg Conversion Rate", unit: "%", higherIsBetter: true,
+    benchmark: 25, green: 25, yellow: 15, priority: 1,
+    templates: {
+      green:  "Conversion rate is {value}%, above the {benchmark}% target.",
+      yellow: "Conversion rate is {value}%, below the {benchmark}% target. Review objection-handling scripts and increase follow-up frequency.",
+      red:    "Conversion rate is {value}%, critically below the {benchmark}% target. Escalate for script review and live call coaching this week.",
+    },
+  },
+  avg_deposit_pct: {
+    label: "Deposit Conversion Rate", unit: "%", higherIsBetter: true,
+    benchmark: 60, green: 60, yellow: 40, priority: 2,
+    templates: {
+      green:  "Deposit rate is {value}%, above the {benchmark}% benchmark.",
+      yellow: "Deposit rate is {value}%, below the {benchmark}% benchmark. Reinforce urgency and limited-slot messaging.",
+      red:    "Deposit rate is {value}%, critically below {benchmark}%. Introduce deposit-first booking policy.",
+    },
+  },
+  bkg_eff_pct: {
+    label: "Booking Efficiency", unit: "%", higherIsBetter: true,
+    benchmark: 50, green: 50, yellow: 30, priority: 3,
+    templates: {
+      green:  "Booking efficiency is {value}%, above the {benchmark}% target.",
+      yellow: "Booking efficiency is {value}%, below the {benchmark}% target. Audit call duration and pre-call preparation.",
+      red:    "Booking efficiency is {value}%, critically below {benchmark}%. Conduct call shadow sessions.",
+    },
+  },
+  total_messages: {
+    label: "Messages / Dials per Day", unit: "dials", higherIsBetter: true,
+    benchmark: 30, green: 30, yellow: 20, priority: 4,
+    templates: {
+      green:  "Daily activity is {value} dials/messages, at or above the {benchmark} target.",
+      yellow: "Daily activity is {value} dials/messages, below the {benchmark} target. Review time-blocking.",
+      red:    "Daily activity is {value} dials/messages, critically below {benchmark}. Reset daily dial minimums immediately.",
+    },
+  },
+  total_talk_time: {
+    label: "Talk Time per Active Day", unit: "min/day", higherIsBetter: true,
+    benchmark: 90, green: 90, yellow: 60, priority: 5,
+    templates: {
+      green:  "Talk time is {value} min/day, above the {benchmark}-minute target.",
+      yellow: "Talk time is {value} min/day, below {benchmark} minutes. Increase live-conversation attempts.",
+      red:    "Talk time is {value} min/day, critically below {benchmark} minutes. Audit dial list quality.",
+    },
+  },
+  total_bookings: {
+    label: "Total Bookings", unit: "bookings", higherIsBetter: true,
+    benchmark: 10, green: 10, yellow: 5, priority: 6,
+    templates: {
+      green:  "Team secured {value} bookings in the period, above the {benchmark} target.",
+      yellow: "Team secured {value} bookings, below the {benchmark} target. Increase top-of-funnel activity.",
+      red:    "Team secured {value} bookings, critically below {benchmark}. Convene a same-day team huddle.",
+    },
+  },
+  total_deposits: {
+    label: "Deposits Collected", unit: "deposits", higherIsBetter: true,
+    benchmark: 8, green: 8, yellow: 4, priority: 7,
+    templates: {
+      green:  "Team collected {value} deposits, above the {benchmark} target.",
+      yellow: "Team collected {value} deposits, below {benchmark}. Follow up on unconfirmed bookings within 24 hours.",
+      red:    "Only {value} deposits collected vs {benchmark} target. Chase unpaid bookings immediately.",
+    },
+  },
+  team_concentration_risk: {
+    label: "Top-2 Agent Booking Concentration", unit: "%", higherIsBetter: false,
+    benchmark: 60, green: 60, yellow: 75, priority: 8,
+    templates: {
+      green:  "Top-2 agents account for {value}% of bookings — healthy distribution.",
+      yellow: "Top-2 agents account for {value}% of bookings, approaching concentration risk at {benchmark}%.",
+      red:    "Top-2 agents account for {value}% — high concentration risk above {benchmark}%. Build depth across all agents.",
+    },
+  },
+  inactive_agents_count: {
+    label: "Inactive Agents", unit: "agents", higherIsBetter: false,
+    benchmark: 0, green: 0, yellow: 1, priority: 9,
+    templates: {
+      green:  "No inactive agents this period — full team engagement.",
+      yellow: "{value} agent(s) recorded no activity. Follow up to confirm availability.",
+      red:    "{value} agents recorded zero activity. Immediate manager check-in required.",
+    },
+  },
+  active_days_ratio: {
+    label: "Active Days Ratio", unit: "%", higherIsBetter: true,
+    benchmark: 80, green: 80, yellow: 60, priority: 3,
+    templates: {
+      green:  "Active on {value}% of working days — strong consistency.",
+      yellow: "Active on {value}% of working days, below the {benchmark}% target.",
+      red:    "Active on only {value}% of working days — well below {benchmark}%. Escalate immediately.",
+    },
+  },
+  bookings_per_active_day: {
+    label: "Bookings per Active Day", unit: "bookings/day", higherIsBetter: true,
+    benchmark: 1.0, green: 1.0, yellow: 0.5, priority: 2,
+    templates: {
+      green:  "Averaging {value} bookings/day, above the {benchmark} target.",
+      yellow: "Averaging {value} bookings/day, below {benchmark}. Increase same-day follow-up attempts.",
+      red:    "Averaging {value} bookings/day, critically below {benchmark}. Review lead assignments.",
+    },
+  },
+  revenue_per_active_day: {
+    label: "Agent Revenue per Active Day", unit: "EUR/day", higherIsBetter: true,
+    benchmark: 300, green: 300, yellow: 150, priority: 4,
+    templates: {
+      green:  "Generating €{value}/active day, above the €{benchmark} target.",
+      yellow: "Generating €{value}/active day, below €{benchmark}. Review treatment mix.",
+      red:    "Generating €{value}/active day, critically below €{benchmark}. Audit lead quality.",
+    },
+  },
+  unreadWhatsapp: {
+    label: "Unread WhatsApp Messages", unit: "messages", higherIsBetter: false,
+    benchmark: 0, green: 5, yellow: 15, priority: 1,
+    templates: {
+      green:  "{value} unread WhatsApp messages — inbox is under control.",
+      yellow: "{value} unread WhatsApp messages — approaching backlog. Clear within 2 hours.",
+      red:    "{value} unread WhatsApp messages — critical backlog. All agents must prioritise immediately.",
+    },
+  },
+  unreadCrm: {
+    label: "Unread CRM SMS", unit: "messages", higherIsBetter: false,
+    benchmark: 0, green: 5, yellow: 15, priority: 2,
+    templates: {
+      green:  "{value} unread CRM SMS — inbox current.",
+      yellow: "{value} unread CRM SMS — growing backlog. Clear queue before end of shift.",
+      red:    "{value} unread CRM SMS — critical. Pause outbound and clear inbound queue first.",
+    },
+  },
+  unreadEmail: {
+    label: "Unread Email", unit: "messages", higherIsBetter: false,
+    benchmark: 0, green: 10, yellow: 30, priority: 3,
+    templates: {
+      green:  "{value} unread emails — inbox healthy.",
+      yellow: "{value} unread emails — moderate backlog. Triage within 4 hours.",
+      red:    "{value} unread emails — high backlog. Assign dedicated email responder today.",
+    },
+  },
+  newLeads: {
+    label: "New Leads (Last 7 Days)", unit: "leads/week", higherIsBetter: true,
+    benchmark: 20, green: 20, yellow: 10, priority: 4,
+    templates: {
+      green:  "{value} new leads this week, above the {benchmark} target.",
+      yellow: "Only {value} new leads this week, below {benchmark}. Review ad spend.",
+      red:    "Only {value} new leads this week — critically below {benchmark}. Investigate top-of-funnel urgently.",
+    },
+  },
+  todoCount: {
+    label: "Follow-up Backlog", unit: "contacts", higherIsBetter: false,
+    benchmark: 0, green: 10, yellow: 25, priority: 5,
+    templates: {
+      green:  "{value} follow-up tasks pending — manageable backlog.",
+      yellow: "{value} follow-up tasks overdue. Block 1 hour to batch-process.",
+      red:    "{value} follow-up tasks overdue — critical backlog. All agents must clear tasks immediately.",
+    },
+  },
+};
+
+export const CRITICAL_METRICS = {
+  team:       ["avg_conv_pct", "total_bookings", "team_concentration_risk"] as const,
+  individual: ["avg_conv_pct", "bookings_per_active_day", "active_days_ratio"] as const,
+} as const;
+
+export const CRM_AGENT_BENCHMARKS = BENCHMARK_BY_KEY;

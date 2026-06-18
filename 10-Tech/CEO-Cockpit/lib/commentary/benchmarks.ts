@@ -14,7 +14,7 @@
  * NO numbers appear anywhere else — edit here and the engine + UI react.
  */
 
-export type RAGState   = "green" | "yellow" | "red";
+export type RAGState   = "green" | "yellow" | "red" | "insufficient";
 export type TrendState = "improving" | "flat" | "declining" | "alarming";
 
 export interface MetricSpec {
@@ -30,7 +30,8 @@ export interface MetricSpec {
 export interface PhrasingTemplate {
   green:  string;
   yellow: string;
-  red:    string;
+  red:          string;
+  insufficient?: string;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -626,62 +627,61 @@ export const HR_WINS_PRIORITY = [
   "turnoverRate", "netMovement", "avgCostPerEmployee",
 ];
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   MARKETING COMMENTARY ENGINE
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════════
+   MARKETING DASHBOARD (re-instated from prior session)
+   ══════════════════════════════════════════════════════════════════════════ */
 
 export type MktRagState = "green" | "yellow" | "red";
 
-export const MKT_RAG_THRESHOLDS: Record<string, { green: number; yellow: number }> = {
-  roas:              { green: 3.0,  yellow: 2.0 },
-  cpl:               { green: 15,   yellow: 25  },
-  cplSpa:            { green: 12,   yellow: 20  },
-  cplAesthetics:     { green: 18,   yellow: 30  },
-  cplSlimming:       { green: 15,   yellow: 25  },
-  cpc:               { green: 0.80, yellow: 1.50 },
-  fatigueHealthyPct: { green: 60,   yellow: 40  },
-  emailOpenRate:     { green: 25,   yellow: 18  },
-  emailClickRate:    { green: 3.0,  yellow: 1.5 },
+export const MKT_RAG_THRESHOLDS = {
+  roas:              { green: 6.0,  yellow: 3.5,  direction: "higher_better" as const },
+  cplBlended:        { green: 10,   yellow: 18,   direction: "lower_better"  as const },
+  cplSpa:            { green: 8,    yellow: 12,   direction: "lower_better"  as const },
+  cplAesthetics:     { green: 12,   yellow: 18,   direction: "lower_better"  as const },
+  cplSlimming:       { green: 9.20, yellow: 13.80, direction: "lower_better" as const },
+  cpc:               { green: 1.20, yellow: 2.00, direction: "lower_better"  as const },
+  fatigueHealthyPct: { green: 70,   yellow: 40,   direction: "higher_better" as const },
+  emailOpenRate:     { green: 25,   yellow: 20,   direction: "higher_better" as const },
+  emailClickRate:    { green: 3.5,  yellow: 2.3,  direction: "higher_better" as const },
+} as const;
+
+export const MKT_KILL_THRESHOLDS = {
+  cplSpa: 16,
+  cplAesthetics: 24,
+  cplSlimming: 18.40,
+  roasMin: 2.0,
 };
 
-export const MKT_KILL_THRESHOLDS: Record<string, number> = {
-  roasMin:    1.5,
-  cplMax:     40,
-  cplSpaMax:  35,
-  cplAesMax:  50,
-  cplSlimMax: 40,
-};
-
-export const MKT_TEMPLATES: Record<string, Record<MktRagState, string>> = {
+export const MKT_TEMPLATES: Record<string, { green: string; yellow: string; red: string }> = {
   roas: {
-    green:  "ROAS is {{VALUE}}x, above the {{BENCHMARK}}x target. Scale budget on top-performing ad sets.",
-    yellow: "ROAS is {{VALUE}}x, below the {{BENCHMARK}}x target. Audit creative fatigue and audience overlap; pause ad sets below {{KILL}}x.",
-    red:    "ROAS is {{VALUE}}x — below minimum viable threshold ({{KILL}}x). Pause all underperforming ad sets and reassign budget to proven audiences.",
+    green:  "ROAS at {{VALUE}} — above target ({{BENCHMARK}}x). Platform attribution is healthy; no immediate budget changes needed.",
+    yellow: "ROAS at {{VALUE}} — below target ({{BENCHMARK}}x). Review audience quality and bid strategy → test lookalike audiences or tighten interest targeting.",
+    red:    "ROAS at {{VALUE}} — approaching kill threshold ({{KILL}}x). Pause underperforming ad sets immediately and audit creative fatigue before injecting more budget.",
   },
   cpl: {
-    green:  "CPL is €{{VALUE}}, within the €{{BENCHMARK}} target. Lead quality is efficient at current spend.",
-    yellow: "CPL is €{{VALUE}}, above the €{{BENCHMARK}} target. Review landing page conversion rates and audience targeting.",
-    red:    "CPL is €{{VALUE}} — above the €{{KILL}} kill threshold. Pause campaigns and restructure targeting before re-launching.",
+    green:  "{{BRAND}} Meta CPL at {{VALUE}} — within target (≤{{BENCHMARK}}). Lead volume and quality are holding; maintain current bid caps.",
+    yellow: "{{BRAND}} Meta CPL at {{VALUE}} — above target ({{BENCHMARK}}). Refresh the 3 highest-spend creatives and test a new hook → aim to get CPL below {{BENCHMARK}} within 7 days.",
+    red:    "{{BRAND}} Meta CPL at {{VALUE}} — above kill threshold ({{KILL}}). Pause campaigns, diagnose the CPL spike, and launch new creative before reopening spend.",
   },
   cpc: {
-    green:  "CPC is €{{VALUE}}, within the €{{BENCHMARK}} target. Ad relevance and CTR are healthy.",
-    yellow: "CPC is €{{VALUE}}, above the €{{BENCHMARK}} target. A/B test new ad creative to improve CTR.",
-    red:    "CPC is €{{VALUE}} — unsustainably high. Refresh creative and narrow audience targeting immediately.",
+    green:  "Google CPC at {{VALUE}} — on target (≤{{BENCHMARK}}). Search intent quality is strong; maintain keyword match types.",
+    yellow: "Google CPC at {{VALUE}} — above target ({{BENCHMARK}}). Review search terms report for irrelevant queries → add negatives and tighten to Exact/Phrase match.",
+    red:    "Google CPC at {{VALUE}} — significantly above target. Pause broad-match campaigns, rebuild with tighter keywords, and set manual CPC caps → implied CPL at {{IMPLIED_CPL}}.",
   },
   fatigueHealthyPct: {
-    green:  "{{VALUE}}% of ad creatives are healthy (no fatigue). Creative pipeline is in good shape.",
-    yellow: "Only {{VALUE}}% of creatives are healthy. Launch 2–3 new creative variants this week.",
-    red:    "Only {{VALUE}}% of creatives are healthy — creative fatigue is killing performance. Pause all fatigued ads and brief new creatives today.",
+    green:  "{{VALUE}} of campaigns are healthy — creative rotation is working well.",
+    yellow: "Only {{VALUE}} of campaigns are healthy — schedule a creative refresh for Watch-status ad sets within 7 days.",
+    red:    "Less than {{VALUE}} of campaigns are healthy — pause fatigued ad sets, launch 3–5 new creatives per brand this week.",
   },
   emailOpenRate: {
-    green:  "Email open rate is {{VALUE}}%, above the {{BENCHMARK}}% benchmark. Subject line and send-time optimisation is working.",
-    yellow: "Email open rate is {{VALUE}}%, below the {{BENCHMARK}}% benchmark. A/B test subject lines and review send time by segment.",
-    red:    "Email open rate is {{VALUE}}% — below industry floor. Audit list hygiene, unsubscribe rates, and spam filter triggers.",
+    green:  "Email open rate at {{VALUE}} — above industry benchmark ({{BENCHMARK}}%). Sender reputation is strong; keep current send cadence.",
+    yellow: "Email open rate at {{VALUE}} — near floor ({{BENCHMARK}}%). A/B test subject lines with urgency or personalisation to lift opens before it drops further.",
+    red:    "Email open rate at {{VALUE}} — below floor. Sunset unengaged contacts (>180 days), run a re-engagement sequence, then resume regular sends → protects deliverability.",
   },
   emailClickRate: {
-    green:  "Email click rate is {{VALUE}}%, above the {{BENCHMARK}}% benchmark. CTAs and content are resonating.",
-    yellow: "Email click rate is {{VALUE}}%, below the {{BENCHMARK}}% benchmark. Revise CTA placement and test single-focus email layouts.",
-    red:    "Email click rate is {{VALUE}}% — critically low. Rebuild email template with a single, prominent CTA and personalise by segment.",
+    green:  "Email click rate at {{VALUE}} — above benchmark ({{BENCHMARK}}%). CTA placement and offer are landing.",
+    yellow: "Email click rate at {{VALUE}} — below benchmark ({{BENCHMARK}}%). Test a single prominent CTA above-the-fold instead of multiple competing links.",
+    red:    "Email click rate at {{VALUE}} — critically low. Rebuild emails with one hero offer, one CTA, and a benefit-led headline → test against control next send.",
   },
 };
 
@@ -693,20 +693,24 @@ export const MKT_WINS_PRIORITY: string[] = [
   "roas", "emailOpenRate", "emailClickRate", "fatigueHealthyPct", "cpl", "cpc",
 ];
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   CRM AGENT COMMENTARY ENGINE
-   Benchmarks for SDR / Chat-agent performance metrics used by engine.ts.
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════════
+   CRM AGENT COMMENTARY — benchmarks (re-instated from prior session)
+   ══════════════════════════════════════════════════════════════════════════ */
 
 export interface MetricBenchmark {
-  label: string;
-  unit: string;
+  label:          string;
+  unit:           string;
   higherIsBetter: boolean;
-  benchmark: number;
-  green: number;
-  yellow: number;
-  priority: number;
-  templates: { green: string; yellow: string; red: string };
+  benchmark:      number;
+  green:          number;
+  yellow:         number;
+  priority:       number;
+  templates: {
+    green:  string;
+    yellow: string;
+    red:          string;
+  insufficient?: string;
+  };
 }
 
 export const BENCHMARK_BY_KEY: Record<string, MetricBenchmark> = {
@@ -715,8 +719,8 @@ export const BENCHMARK_BY_KEY: Record<string, MetricBenchmark> = {
     benchmark: 25, green: 25, yellow: 15, priority: 1,
     templates: {
       green:  "Conversion rate is {value}%, above the {benchmark}% target.",
-      yellow: "Conversion rate is {value}%, below the {benchmark}% target. Review objection-handling scripts and follow-up frequency.",
-      red:    "Conversion rate is {value}%, critically below {benchmark}%. Escalate for script review and live call coaching this week.",
+      yellow: "Conversion rate is {value}%, below the {benchmark}% target. Review objection-handling scripts and increase follow-up frequency.",
+      red:    "Conversion rate is {value}%, critically below the {benchmark}% target. Escalate for script review and live call coaching this week.",
     },
   },
   avg_deposit_pct: {
@@ -724,7 +728,7 @@ export const BENCHMARK_BY_KEY: Record<string, MetricBenchmark> = {
     benchmark: 60, green: 60, yellow: 40, priority: 2,
     templates: {
       green:  "Deposit rate is {value}%, above the {benchmark}% benchmark.",
-      yellow: "Deposit rate is {value}%, below {benchmark}%. Reinforce urgency and limited-slot messaging.",
+      yellow: "Deposit rate is {value}%, below the {benchmark}% benchmark. Reinforce urgency and limited-slot messaging.",
       red:    "Deposit rate is {value}%, critically below {benchmark}%. Introduce deposit-first booking policy.",
     },
   },
@@ -733,7 +737,7 @@ export const BENCHMARK_BY_KEY: Record<string, MetricBenchmark> = {
     benchmark: 50, green: 50, yellow: 30, priority: 3,
     templates: {
       green:  "Booking efficiency is {value}%, above the {benchmark}% target.",
-      yellow: "Booking efficiency is {value}%, below {benchmark}%. Audit call duration and pre-call preparation.",
+      yellow: "Booking efficiency is {value}%, below the {benchmark}% target. Audit call duration and pre-call preparation.",
       red:    "Booking efficiency is {value}%, critically below {benchmark}%. Conduct call shadow sessions.",
     },
   },
@@ -742,8 +746,8 @@ export const BENCHMARK_BY_KEY: Record<string, MetricBenchmark> = {
     benchmark: 30, green: 30, yellow: 20, priority: 4,
     templates: {
       green:  "Daily activity is {value} dials/messages, at or above the {benchmark} target.",
-      yellow: "Daily activity is {value} dials/messages, below {benchmark}. Review time-blocking.",
-      red:    "Daily activity is {value} dials/messages, critically below {benchmark}. Reset daily minimums immediately.",
+      yellow: "Daily activity is {value} dials/messages, below the {benchmark} target. Review time-blocking.",
+      red:    "Daily activity is {value} dials/messages, critically below {benchmark}. Reset daily dial minimums immediately.",
     },
   },
   total_talk_time: {
@@ -760,7 +764,7 @@ export const BENCHMARK_BY_KEY: Record<string, MetricBenchmark> = {
     benchmark: 10, green: 10, yellow: 5, priority: 6,
     templates: {
       green:  "Team secured {value} bookings in the period, above the {benchmark} target.",
-      yellow: "Team secured {value} bookings, below {benchmark}. Increase top-of-funnel activity.",
+      yellow: "Team secured {value} bookings, below the {benchmark} target. Increase top-of-funnel activity.",
       red:    "Team secured {value} bookings, critically below {benchmark}. Convene a same-day team huddle.",
     },
   },
