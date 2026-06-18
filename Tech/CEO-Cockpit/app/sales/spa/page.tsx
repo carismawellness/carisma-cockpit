@@ -278,13 +278,13 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
         <SalesKPICard
           label="Service Revenue"
           value={fmtShort(totals.services)}
-          subtitle={`${pct(totals.services, totals.gross_revenue)} of gross`}
+          subtitle={`${fmtShort(Math.round(totals.services / (1 + VAT_RATE)))} ex-VAT · ${pct(totals.services, totals.gross_revenue)} of gross`}
           yoyChange={yoy.service}
         />
         <SalesKPICard
           label="Retail Revenue"
           value={fmtShort(totals.product_total)}
-          subtitle={`${pct(totals.product_total, totals.gross_revenue)} of gross`}
+          subtitle={`${fmtShort(Math.round(totals.product_total / (1 + VAT_RATE)))} ex-VAT · ${pct(totals.product_total, totals.gross_revenue)} of gross`}
           yoyChange={yoy.retail}
         />
         <SalesKPICard
