@@ -43,7 +43,7 @@ export type AccountMeta = {
   section: "income" | "expense" | "other";
 };
 
-const PAGE_THROTTLE_MS       = 1000;   // was 1500; dropped after broader OAuth scope unlocked all 6 endpoints
+const PAGE_THROTTLE_MS       = 300;    // was 1000 (was 1500); SPA has ~200-300 txns/month — at 1000ms that's 300s alone, hitting Vercel's function limit. callWithRetry handles 429s with 15s/30s/60s backoffs.
 const RATE_LIMIT_BACKOFFS_MS = [15000, 30000, 60000];
 
 async function callWithRetry<T>(fn: () => Promise<T>, label: string, log: string[]): Promise<T> {
