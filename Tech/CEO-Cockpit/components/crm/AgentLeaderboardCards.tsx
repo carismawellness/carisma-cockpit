@@ -67,6 +67,7 @@ type ChartRow = {
   name:        string;
   brand:       AgentBrand;
   role:        string;
+  inactive:    boolean;
   revenue:     number;
   revBarTotal: number;
   lc:          number;
@@ -102,6 +103,7 @@ function toRow(agent: CrmAgent): ChartRow | null {
     name:        agent.name,
     brand:       meta.brand,
     role:        meta.role,
+    inactive:    meta.inactive,
     revenue,
     revBarTotal,
     lc, crm, other,
@@ -374,8 +376,8 @@ export function AgentLeaderboardCards({ agents }: AgentLeaderboardCardsProps) {
   }
 
   const allRows = agents.map(toRow).filter((r): r is ChartRow => r !== null);
-  const activeRows = allRows.filter((r) => r.revenue > 0 || r.activeDays > 0);
-  const inactiveRows = allRows.filter((r) => r.revenue === 0 && r.activeDays === 0);
+  const activeRows = allRows.filter((r) => !r.inactive && (r.revenue > 0 || r.activeDays > 0));
+  const inactiveRows = allRows.filter((r) => r.inactive || (r.revenue === 0 && r.activeDays === 0));
 
   if (activeRows.length === 0) {
     return (
