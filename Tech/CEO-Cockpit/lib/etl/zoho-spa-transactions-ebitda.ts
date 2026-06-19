@@ -437,10 +437,18 @@ export async function runSpaEbitdaMonthFromTransactions(
   }
 
   for (const c of classified) {
-    if (c.tagSlug === "hq" || c.rule === "hq") {
-      addVenueRaw(c, "hq", c.amount);
-    } else if (c.tagSlug && c.tagSlug in LOCATION_MAP) {
+    // Explicit location tag always routes to that venue.
+    if (c.tagSlug && c.tagSlug in LOCATION_MAP) {
       addVenueRaw(c, c.tagSlug, c.amount);
+    // CoA rule = "hq" means the account is definitively headquarters (e.g. wages).
+    // Wages with an HQ tag also stay in HQ even if the CoA rule says something else.
+    // All other lines: if CoA map assigned a distribution rule (equal/sales_ratio/
+    // salary_cost), respect it — the HQ tag is a Zoho categorisation, not an
+    // override for the EBITDA split. This ensures shared subscriptions (Fresha Eu,
+    // HighLevel, Shopify, etc.) that happen to carry the HQ tag are still spread
+    // across venues as the CoA map intends.
+    } else if (c.rule === "hq" || (c.tagSlug === "hq" && c.line === "wages")) {
+      addVenueRaw(c, "hq", c.amount);
     } else {
       const dist = distribute(c.rule, c.amount, locRevenue, totalRevenue, locSalary, totalSalary);
       for (const [locId, share] of Object.entries(dist)) {
