@@ -14,7 +14,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-export const dynamic = "force-dynamic";
+export const dynamic    = "force-dynamic";
+export const maxDuration = 300;
 
 const GHL_BASE = "https://services.leadconnectorhq.com";
 const GHL_V    = "2021-07-28";
@@ -73,19 +74,16 @@ async function countActiveOpps(apiKey: string, locationId: string, fromMs: numbe
     const opps = data.opportunities ?? [];
     if (!opps.length) break;
 
-    let oldestInBatch = Infinity;
-
     for (const opp of opps) {
       const rawDate = opp.lastStageChangeAt ?? opp.updatedAt;
       if (!rawDate) continue;
       const ts = new Date(rawDate).getTime();
-      if (ts < oldestInBatch) oldestInBatch = ts;
       if (ts >= fromMs && ts <= toMs) matchedIds.add(opp.id);
     }
 
-    // Opportunities are returned newest-first; stop paging once we've passed the window
-    if (oldestInBatch < fromMs) break;
-
+    // NO early exit: GHL sorts opportunities by createdAt (not lastStageChangeAt),
+    // so old opportunities created before the window can still have lastStageChangeAt
+    // within the window. Must scan all pages to get an accurate count.
     const next = data.meta?.startAfter;
     if (next == null) break;
     startAfter    = String(next);
