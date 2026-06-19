@@ -104,6 +104,7 @@ export const departments: Department[] = [
           { slug: "agent-anni",     label: "Anni",     path: "/crm/individual/anni",     icon: User },
           { slug: "agent-nicci",    label: "Nicci",    path: "/crm/individual/nicci",    icon: User },
           { slug: "agent-april",    label: "April",    path: "/crm/individual/april",    icon: User },
+          { slug: "agent-ray",      label: "Ray",      path: "/crm/individual/ray",      icon: User },
           { slug: "agent-queenee",  label: "Queenee",  path: "/crm/individual/queenee",  icon: User },
         ],
       },
