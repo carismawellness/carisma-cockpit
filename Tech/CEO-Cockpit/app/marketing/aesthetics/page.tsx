@@ -33,6 +33,8 @@ import {
   getFatigueSummary,
   buildCplChartData,
 } from "@/components/marketing/ui";
+import { computeBrandCommentary } from "@/lib/commentary/marketing-engine";
+import { MktCommentaryPanel } from "@/components/marketing/CommentaryPanel";
 import {
   Euro,
   TrendingUp,
@@ -192,6 +194,28 @@ function AestheticsMarketingContent({
     dateTo,
   });
 
+  /* ---- Strategic commentary ---- */
+  const commentaryResult = useMemo(() => computeBrandCommentary({
+    brand: "aesthetics",
+    meta: {
+      totalSpend: metaAggregate?.totalSpend ?? 0,
+      totalLeads: metaAggregate?.totalLeads ?? 0,
+      attributedRevenue: metaAggregate?.totalRevenue ?? 0,
+      fatigueStats: metaFatigue,
+    },
+    google: {
+      totalSpend: googleAggregate?.totalSpend ?? 0,
+      totalLeads: googleAggregate?.totalLeads ?? 0,
+      attributedRevenue: googleAggregate?.totalRevenue ?? 0,
+      fatigueStats: googleFatigue,
+    },
+    email: {
+      openRate: klaviyo.openRate,
+      clickRate: klaviyo.clickRate,
+      hasData: !klaviyoLoading && klaviyo.openRate > 0,
+    },
+  }), [metaAggregate, googleAggregate, metaFatigue, googleFatigue, klaviyo, klaviyoLoading]);
+
   /* ---- Loading state ---- */
   if (isLoading) {
     return (
@@ -259,6 +283,9 @@ function AestheticsMarketingContent({
           </span>
         </div>
       )}
+
+      {/* ── Strategic Commentary ─────────────────────────────────────── */}
+      <MktCommentaryPanel result={commentaryResult} loading={isLoading || klaviyoLoading} />
 
       {/* ── Section 1: Hero KPIs ────────────────────────────────────── */}
       {(() => {

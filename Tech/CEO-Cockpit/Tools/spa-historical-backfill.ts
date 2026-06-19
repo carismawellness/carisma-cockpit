@@ -2,7 +2,7 @@
  * Spa historical backfill — 2014-10-10 → 2023-08-27 (~167k transaction rows)
  *
  * Source: Sheet 1jOdDzPFWqVL-kRPA2TjBSqK6Fj5A6KCQZShlXwESh6I, tab "Sales MASTER".
- * Plan:   Tech/CEO-Cockpit/docs/spa-historical-migration-plan.md
+ * Plan:   10-Tech/CEO-Cockpit/docs/spa-historical-migration-plan.md
  *
  * Lands rows into spa_transactions_raw (loss-less) then re-aggregates into the
  * existing spa_revenue_daily / spa_revenue_monthly / spa_services_by_employee_daily

@@ -8,6 +8,7 @@ import { AgentDetailPanel } from "@/components/crm/AgentDetailPanel";
 import { useCrmAgents } from "@/lib/hooks/useCrmAgents";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { CommissionHeroBanner, CommissionHeroBannerSkeleton } from "@/components/crm/CommissionHeroBanner";
+import { AgentCrmCommentary } from "@/components/crm/CrmStrategicCommentary";
 import { AGENT_META_BY_SLUG } from "@/lib/constants/agents";
 import { ChevronLeft, ExternalLink } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -88,6 +89,11 @@ function AgentPageContent({
           totalSales={agent.totals.total_sales}
           periodLabel={periodLabel}
         />
+      )}
+
+      {/* Agent Strategic Commentary */}
+      {!isLoading && agent && (
+        <AgentCrmCommentary agent={agent} dateFrom={dateFrom} dateTo={dateTo} />
       )}
 
       {/* Loading (rest of content) */}

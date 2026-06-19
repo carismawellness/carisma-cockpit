@@ -117,10 +117,12 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
     };
   });
 
+  const totalTalkTime = rows.reduce((s, r) => s + (r.talk_time_total ?? 0), 0);
+
   return (
     <div className="space-y-6">
       {/* KPI Summary Cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-8">
         <KpiCard label="Total Sales" value={formatCurrency(totals.total_sales)} />
         <KpiCard
           label="Booking Eff"
@@ -141,6 +143,7 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
         <KpiCard label="AOV"            value={formatCurrency(totals.avg_aov)} />
         <KpiCard label="Active Days"    value={String(totals.active_days)} />
         <KpiCard label="Total Messages" value={String(totals.total_messages)} />
+        <KpiCard label="Talk Time"      value={totalTalkTime > 0 ? `${totalTalkTime}m` : "—"} />
       </div>
 
       {/* Daily Sales & Conversion Trend */}

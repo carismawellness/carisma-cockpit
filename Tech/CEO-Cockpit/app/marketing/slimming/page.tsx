@@ -33,6 +33,8 @@ import {
   getFatigueSummary,
   buildCplChartData,
 } from "@/components/marketing/ui";
+import { computeBrandCommentary } from "@/lib/commentary/marketing-engine";
+import { MktCommentaryPanel } from "@/components/marketing/CommentaryPanel";
 import {
   Euro,
   TrendingUp,
@@ -213,6 +215,32 @@ function SlimmingMarketingContent({
     dateTo,
   });
 
+  /* ---------- Strategic commentary ---------- */
+  const commentaryResult = useMemo(() => {
+    const metaLeads = metaCampaigns.reduce((s, c) => s + c.totalLeads, 0);
+    const googleLeads = googleCampaigns.reduce((s, c) => s + c.totalLeads, 0);
+    return computeBrandCommentary({
+      brand: "slimming",
+      meta: {
+        totalSpend: metaTotalSpend,
+        totalLeads: metaLeads,
+        attributedRevenue: metaTotalAttributed,
+        fatigueStats: metaFatigue,
+      },
+      google: {
+        totalSpend: googleTotalSpend,
+        totalLeads: googleLeads,
+        attributedRevenue: googleTotalAttributed,
+        fatigueStats: googleFatigue,
+      },
+      email: {
+        openRate: klaviyo.openRate,
+        clickRate: klaviyo.clickRate,
+        hasData: !klaviyoLoading && klaviyo.openRate > 0,
+      },
+    });
+  }, [metaCampaigns, googleCampaigns, metaTotalSpend, metaTotalAttributed, googleTotalSpend, googleTotalAttributed, metaFatigue, googleFatigue, klaviyo, klaviyoLoading]);
+
   return (
     <>
       {/* ── Page Header ──────────────────────────────────────────────── */}
@@ -251,6 +279,9 @@ function SlimmingMarketingContent({
           <p className="text-sm font-semibold text-red-700">API Error: {apiError}</p>
         </div>
       )}
+
+      {/* ── Strategic Commentary ─────────────────────────────────────── */}
+      <MktCommentaryPanel result={commentaryResult} loading={isLoading || klaviyoLoading} />
 
       {/* ── Creative Fatigue Alert with full breakdown ───────────────── */}
       {(totalFatigued > 0 || totalWatch > 0) && (

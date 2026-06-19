@@ -49,6 +49,8 @@ import {
   getFatigueSummary,
   buildCplChartData,
 } from "@/components/marketing/ui";
+import { computeBrandCommentary } from "@/lib/commentary/marketing-engine";
+import { MktCommentaryPanel } from "@/components/marketing/CommentaryPanel";
 import {
   Euro,
   TrendingUp,
@@ -659,6 +661,32 @@ function SpaMarketingContent({
     return { totalLeads, totalSpend, totalRevenue, totalProfit, totalRoas, totalProfitPct };
   }, [profitabilityData]);
 
+  /* --- Strategic commentary --- */
+  const commentaryResult = useMemo(() => {
+    const metaLeads   = metaCampaigns.reduce((s, c) => s + c.totalLeads, 0);
+    const googleLeads = googleCampaigns.reduce((s, c) => s + c.totalLeads, 0);
+    return computeBrandCommentary({
+      brand: "spa",
+      meta: {
+        totalSpend: metaTotalSpend,
+        totalLeads: metaLeads,
+        attributedRevenue: metaTotalAttributed,
+        fatigueStats: metaFatigue,
+      },
+      google: {
+        totalSpend: googleTotalSpend,
+        totalLeads: googleLeads,
+        attributedRevenue: googleTotalAttributed,
+        fatigueStats: googleFatigue,
+      },
+      email: {
+        openRate: klaviyo.overview.openRate,
+        clickRate: klaviyo.overview.clickRate,
+        hasData: !klaviyo.loading && klaviyo.overview.openRate > 0,
+      },
+    });
+  }, [metaCampaigns, googleCampaigns, metaTotalSpend, metaTotalAttributed, googleTotalSpend, googleTotalAttributed, metaFatigue, googleFatigue, klaviyo]);
+
   const profitabilityColumns = [
     {
       key: "campaign",
@@ -764,6 +792,9 @@ function SpaMarketingContent({
           </span>
         </div>
       )}
+
+      {/* ── Strategic Commentary ─────────────────────────────────────── */}
+      <MktCommentaryPanel result={commentaryResult} loading={isLoading} />
 
       {/* ── Section 1: Hero KPIs ────────────────────────────────────── */}
       {!isLoading && (() => {

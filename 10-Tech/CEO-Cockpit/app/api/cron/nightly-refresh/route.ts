@@ -152,9 +152,12 @@ export async function GET(req: NextRequest) {
   //   in Ads Manager) in addition to the old "lead" action type.
   // - diligence-metrics overwrites cash/discounted_cash/complimentary rows created by diligence-audit
   const reconPayload = JSON.stringify({ date_from: fmt(mktFrom), date_to: fmt(now) });
-  const [leadReconRes, diligenceMetricsRes] = await Promise.allSettled([
+  const [leadReconRes, diligenceMetricsRes, speedToLeadRes] = await Promise.allSettled([
     fetch(`${BASE_URL}/api/etl/lead-reconciliation`, { method: "POST", headers, body: reconPayload }),
     fetch(`${BASE_URL}/api/etl/diligence-metrics`,   { method: "POST", headers }),
+    // speed-to-lead reads the GHL webhook mirror + stage-event log refreshed by
+    // ghl-crm (Phase 1), plus an approximate historical backfill. 90-day window.
+    fetch(`${BASE_URL}/api/etl/speed-to-lead`,       { method: "POST", headers, body: JSON.stringify({ days_back: 90 }) }),
   ]);
 
   const outcome = (r: PromiseSettledResult<Response>) =>
@@ -190,6 +193,7 @@ export async function GET(req: NextRequest) {
     ["wix_spa_orders",          wixOrdersRes],
     ["lead_reconciliation",     leadReconRes],
     ["diligence_metrics",       diligenceMetricsRes],
+    ["speed_to_lead",           speedToLeadRes],
   ];
 
   // ── Consolidated failure alerting (never breaks the cron) ──────────────────

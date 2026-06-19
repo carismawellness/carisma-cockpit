@@ -5,6 +5,8 @@ export interface CampaignData {
   cpl: number;
   totalSpend: number;
   totalLeads: number;
+  /** Total ad clicks for this campaign in the period — used to compute CPC */
+  clicks: number;
   ctr: number;
   cpm: number;
   frequency: number;

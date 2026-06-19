@@ -44,6 +44,13 @@ import {
   AlertTriangle,
   MessageSquareX,
 } from "lucide-react";
+import {
+  computeOpsCommentary,
+  classifyFacilityTrend,
+  classifyMysteryTrend,
+  type OpsCommentaryInputs,
+  type OpsCommentaryResult,
+} from "@/lib/commentary/engine";
 
 /* ═══════════════════════════════════════════════════════════════════════
    LOCATION DISPLAY CONSTANTS (data itself is live from Supabase)
@@ -309,6 +316,55 @@ function OpsScorecard({
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+   OPERATIONS COMMENTARY — Strategic verdict card
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function OperationsCommentary({ result }: { result: OpsCommentaryResult }) {
+  if (result.insufficientData) return null;
+
+  return (
+    <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200 shadow-sm">
+      <div className="p-4 md:p-5">
+        <p className="text-base font-semibold text-amber-900 mb-0.5">Operations Snapshot</p>
+        <p className="text-xs text-amber-700 mb-3">{result.verdict}</p>
+        {(result.wins.length > 0 || result.focusAreas.length > 0) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-amber-200">
+            {result.wins.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-700 mb-2">
+                  ✅ Working well
+                </p>
+                <ul className="space-y-2">
+                  {result.wins.map((w) => (
+                    <li key={w.metricKey} className="text-sm leading-snug text-amber-900">
+                      <span className="font-medium">{w.label}:</span> {w.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {result.focusAreas.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-700 mb-2">
+                  🎯 Focus areas
+                </p>
+                <ul className="space-y-2">
+                  {result.focusAreas.map((f) => (
+                    <li key={f.metricKey} className="text-sm leading-snug text-amber-900">
+                      <span className="font-medium">{f.label}:</span> {f.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
    MAIN CONTENT
    ═══════════════════════════════════════════════════════════════════════ */
 
@@ -386,6 +442,54 @@ function OperationsContent({
   const facilityBarData = [...facility.rows].sort((a, b) => a.score - b.score);
   const mysteryBarData = [...mystery.rows].sort((a, b) => a.score - b.score);
 
+  /* ── Strategic Commentary Engine ─────────────────────────────────── */
+  const facilityTrendArr   = facilityTrend.data ?? [];
+  const mysteryTrendArr    = mysteryTrend.data ?? [];
+  const facilityTrendDelta = facilityTrendArr.length >= 2
+    ? facilityTrendArr[facilityTrendArr.length - 1].avgScore -
+      facilityTrendArr[facilityTrendArr.length - 2].avgScore
+    : 0;
+  const mysteryTrendDelta  = mysteryTrendArr.length >= 2
+    ? mysteryTrendArr[mysteryTrendArr.length - 1].avgScore -
+      mysteryTrendArr[mysteryTrendArr.length - 2].avgScore
+    : 0;
+
+  const negReviews     = negativeReviews.data ?? [];
+  const lowestRated    = reviews.snapshots.length > 0
+    ? reviews.snapshots.reduce((min, s) => s.avgRating < min.avgRating ? s : min)
+    : null;
+  const lowestFacility = facility.rows.length > 0
+    ? facility.rows.reduce((min, s) => s.score < min.score ? s : min)
+    : null;
+  const lowestMystery  = mystery.rows.length > 0
+    ? mystery.rows.reduce((min, s) => s.score < min.score ? s : min)
+    : null;
+
+  const commentaryInputs: OpsCommentaryInputs = {
+    weightedAvg,
+    ratingDelta,
+    totalReviews,
+    criticalCount:          negReviews.filter((r) => r.rating <= 3).length,
+    noteworthyCount:        negReviews.filter((r) => r.rating === 4 && r.text.trim().length > 0).length,
+    lowestRatedLocation:    lowestRated ? { name: lowestRated.name, rating: lowestRated.avgRating } : null,
+    complimentaryPct:       totPct(diligenceTotals.complimentary),
+    cashPct:                totPct(diligenceTotals.cashSales),
+    discountedCashPct:      totPct(diligenceTotals.discountedCash),
+    delCancelledPct:        totPct(diligenceTotals.deletedCancelled),
+    unattended:             diligenceTotals.unattended,
+    avgFacility,
+    lowestFacilityLocation: lowestFacility ? { name: lowestFacility.name, score: lowestFacility.score } : null,
+    facilityTrend:          classifyFacilityTrend(facilityTrendDelta),
+    facilityTrendDelta,
+    avgMystery,
+    lowestMysteryLocation:  lowestMystery ? { name: lowestMystery.name, score: lowestMystery.score } : null,
+    mysteryTrend:           classifyMysteryTrend(mysteryTrendDelta),
+    mysteryTrendDelta,
+    hasEnoughData:          reviews.snapshots.length > 0 || facility.rows.length > 0 || mystery.rows.length > 0,
+    periodLabel:            formatDateRangeLabel(dateFrom, dateTo),
+  };
+  const commentary = computeOpsCommentary(commentaryInputs);
+
   const shortName = (d: DiligenceRow) => SHORT_NAMES[d.slug] ?? d.name;
 
   /* ── Loading state ────────────────────────────────────────────────── */
@@ -425,6 +529,7 @@ function OperationsContent({
         avgFacility={avgFacility}
         avgMystery={avgMystery}
       />
+      <OperationsCommentary result={commentary} />
 
       {/* ═══════ REVIEWS — LONGITUDINAL TREND ════════════════════════ */}
       <Card className="p-3 md:p-6">

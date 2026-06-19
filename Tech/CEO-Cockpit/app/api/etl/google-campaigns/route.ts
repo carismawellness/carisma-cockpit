@@ -13,6 +13,7 @@ import { runGoogleCampaignsEtl } from "@/lib/etl/google-campaigns";
 
 export const maxDuration = 300;
 export const dynamic    = "force-dynamic";
+// cache-bust: aa9de68
 
 function defaultDateFrom(): string {
   const d = new Date();

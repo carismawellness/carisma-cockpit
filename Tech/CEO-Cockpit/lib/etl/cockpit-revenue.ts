@@ -168,9 +168,10 @@ async function fetchCockpitServicesByDay(dateFrom: Date, dateTo: Date): Promise<
     const locId = COCKPIT_SPA_LOCATION_MAP[stripCol(row, "Sales Point")];
     if (locId === undefined) continue;
     const unitPrice = safeFloat(stripCol(row, "Unit Price"));
+    const amountEx  = +(unitPrice / (1 + VAT_RATE)).toFixed(2);
     const dk        = dateKey(d);
     if (!totals[locId]) totals[locId] = {};
-    totals[locId][dk] = (totals[locId][dk] ?? 0) + unitPrice;
+    totals[locId][dk] = (totals[locId][dk] ?? 0) + amountEx;
   }
   return totals;
 }

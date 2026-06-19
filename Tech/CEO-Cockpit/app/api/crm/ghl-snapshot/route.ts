@@ -91,22 +91,59 @@ async function fetchTodoCount(apiKey: string, locationId: string): Promise<numbe
   }
 }
 
+async function fetchUnreadCounts(
+  apiKey: string,
+  locationId: string,
+): Promise<{ whatsapp: number; crm: number; email: number }> {
+  async function countByType(type: string): Promise<number> {
+    try {
+      const data = await ghlGet("/conversations/search", apiKey, {
+        locationId,
+        status: "unread",
+        type,
+        limit: "1",
+      }) as { total?: number };
+      return data.total ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  const [whatsapp, crm, email] = await Promise.all([
+    countByType("TYPE_WHATSAPP"),
+    countByType("TYPE_SMS"),
+    countByType("TYPE_EMAIL"),
+  ]);
+
+  return { whatsapp, crm, email };
+}
+
 export async function GET() {
-  const result: Record<string, { newLeads: number; todoCount: number }> = {
-    spa:        { newLeads: 0, todoCount: 0 },
-    aesthetics: { newLeads: 0, todoCount: 0 },
-    slimming:   { newLeads: 0, todoCount: 0 },
+  const result: Record<string, {
+    newLeads: number; todoCount: number;
+    unreadWhatsapp: number; unreadCrm: number; unreadEmail: number;
+  }> = {
+    spa:        { newLeads: 0, todoCount: 0, unreadWhatsapp: 0, unreadCrm: 0, unreadEmail: 0 },
+    aesthetics: { newLeads: 0, todoCount: 0, unreadWhatsapp: 0, unreadCrm: 0, unreadEmail: 0 },
+    slimming:   { newLeads: 0, todoCount: 0, unreadWhatsapp: 0, unreadCrm: 0, unreadEmail: 0 },
   };
 
   await Promise.all(
     Object.entries(BRAND_CONFIG).map(async ([slug, { apiKey, locationId }]) => {
       if (!apiKey) return;
       try {
-        const [newLeads, todoCount] = await Promise.all([
+        const [newLeads, todoCount, unread] = await Promise.all([
           fetchNewLeads(apiKey, locationId),
           fetchTodoCount(apiKey, locationId),
+          fetchUnreadCounts(apiKey, locationId),
         ]);
-        result[slug] = { newLeads, todoCount };
+        result[slug] = {
+          newLeads,
+          todoCount,
+          unreadWhatsapp: unread.whatsapp,
+          unreadCrm:      unread.crm,
+          unreadEmail:    unread.email,
+        };
       } catch {
         // leave defaults of 0 on error
       }

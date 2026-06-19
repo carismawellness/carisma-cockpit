@@ -12,6 +12,8 @@ import { GroupLongitudinal } from "@/components/sales/GroupLongitudinal";
 import { useGroupRevenue } from "@/lib/hooks/useGroupRevenue";
 import { Building2, Sparkles, Scale, ShoppingBag } from "lucide-react";
 import { SpaIntegrityBadge } from "@/components/sales/SpaIntegrityBadge";
+import { SalesStrategicCommentary } from "@/components/sales/SalesStrategicCommentary";
+import { computeSalesCommentary } from "@/lib/commentary/engine";
 
 function fmtK(v: number) {
   if (Math.abs(v) >= 1_000_000) return `€${(v / 1_000_000).toFixed(2)}M`;
@@ -35,6 +37,16 @@ function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
   const router = useRouter();
   const { period, ly, spa_locations, monthly, forecast, isFetching } = useGroupRevenue(dateFrom, dateTo);
 
+  // Prior-period (same-length immediately-preceding window) for momentum
+  // signals in the strategic commentary.
+  const { priorFrom, priorTo } = useMemo(() => {
+    const spanDays = Math.max(1, Math.round((dateTo.getTime() - dateFrom.getTime()) / 86_400_000));
+    const pTo   = new Date(dateFrom.getTime() - 86_400_000);
+    const pFrom = new Date(pTo.getTime() - spanDays * 86_400_000);
+    return { priorFrom: pFrom, priorTo: pTo };
+  }, [dateFrom, dateTo]);
+  const { period: priorPeriod, isFetching: isPriorFetching } = useGroupRevenue(priorFrom, priorTo);
+
   const yoy = useMemo(() => ({
     total:      calcYoY(period.total,             ly.total),
     spa:        calcYoY(period.spa,               ly.spa),
@@ -48,6 +60,31 @@ function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
   const retailSharePct = period.spa > 0 && period.spa_retail !== undefined
     ? (period.spa_retail / period.spa) * 100
     : null;
+
+  // Strategic commentary — recomputed on every date-filter change.
+  const commentary = useMemo(() => {
+    const periodLabel = `${dateFrom.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${dateTo.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
+    const revenuePopPct = priorPeriod.total > 0
+      ? ((period.total - priorPeriod.total) / priorPeriod.total) * 100
+      : null;
+    // Top-brand concentration = max brand share %.
+    const brandShares = period.total > 0
+      ? [period.spa, period.aesthetics, period.slimming].map((v) => (v / period.total) * 100)
+      : [];
+    const topBrandSharePct = brandShares.length > 0 ? Math.max(...brandShares) : null;
+    const spaRetailAttachPct = period.total > 0 && period.spa_retail !== undefined
+      ? (period.spa_retail / period.total) * 100
+      : null;
+    return computeSalesCommentary({
+      scope:               "group",
+      periodRevenue:       period.total,
+      periodLabel,
+      revenueYoyPct:       yoy.total ?? null,
+      revenuePopPct,
+      spaRetailAttachPct,
+      topBrandSharePct,
+    });
+  }, [dateFrom, dateTo, period, priorPeriod, yoy.total]);
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -133,6 +170,11 @@ function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
           />
         </button>
       </SalesKPIGrid>
+
+      <SalesStrategicCommentary
+        result={commentary}
+        loading={isFetching || isPriorFetching}
+      />
 
       <GroupBrandBreakdown
         period={period}

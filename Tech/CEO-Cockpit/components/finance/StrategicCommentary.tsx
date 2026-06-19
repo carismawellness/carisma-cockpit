@@ -1,14 +1,13 @@
 "use client";
 
 import { useMemo } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   computeEbitdaCommentary,
   CommentaryOutput,
   MetricResult,
   RagState,
 } from "@/lib/commentary/engine";
-
-/* ── Types ────────────────────────────────────────────────────────────────── */
 
 interface VenueData {
   revenue: number;
@@ -27,62 +26,25 @@ interface StrategicCommentaryProps {
   loading: boolean;
 }
 
-/* ── RAG dot ─────────────────────────────────────────────────────────────── */
-
-function RagDot({ rag, size = "sm" }: { rag: RagState; size?: "sm" | "md" }) {
-  const sizeClass = size === "md" ? "h-3 w-3" : "h-2.5 w-2.5";
-  const colorClass =
-    rag === "green"
-      ? "bg-emerald-500"
-      : rag === "yellow"
-      ? "bg-amber-400"
-      : "bg-red-500";
-  return (
-    <span
-      className={`inline-block rounded-full flex-shrink-0 ${sizeClass} ${colorClass}`}
-      aria-hidden="true"
-    />
-  );
+function ragEmoji(rag: RagState): string {
+  if (rag === "green") return "✅";
+  if (rag === "yellow") return "🟡";
+  return "🔴";
 }
-
-/* ── Metric row ──────────────────────────────────────────────────────────── */
-
-function MetricRow({ result }: { result: MetricResult }) {
-  const prefix =
-    result.rag === "red" ? (
-      <RagDot rag="red" />
-    ) : result.rag === "yellow" ? (
-      <RagDot rag="yellow" />
-    ) : (
-      <RagDot rag="green" />
-    );
-
-  return (
-    <li className="flex items-start gap-2 text-sm leading-snug">
-      <span className="mt-[3px]">{prefix}</span>
-      <span className="text-muted-foreground">
-        <span className="font-medium text-foreground">{result.label}:</span>{" "}
-        {result.text}
-      </span>
-    </li>
-  );
-}
-
-/* ── Skeleton ────────────────────────────────────────────────────────────── */
 
 function Skeleton() {
   return (
-    <div className="rounded-lg border bg-card p-4 space-y-3 animate-pulse">
-      <div className="h-4 w-3/4 rounded bg-muted" />
-      <div className="h-3 w-full rounded bg-muted" />
-      <div className="h-3 w-5/6 rounded bg-muted" />
-      <div className="h-3 w-2/3 rounded bg-muted" />
-      <div className="h-3 w-4/5 rounded bg-muted" />
-    </div>
+    <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200 shadow-sm">
+      <CardHeader className="pb-2">
+        <div className="animate-pulse space-y-2">
+          <div className="h-4 bg-amber-200 rounded w-40" />
+          <div className="h-3 bg-amber-100 rounded w-full" />
+          <div className="h-3 bg-amber-100 rounded w-4/5" />
+        </div>
+      </CardHeader>
+    </Card>
   );
 }
-
-/* ── Main component ──────────────────────────────────────────────────────── */
 
 export function StrategicCommentary({
   current,
@@ -98,51 +60,53 @@ export function StrategicCommentary({
 
   if (!commentary || commentary.insufficientData) {
     return (
-      <div className="rounded-lg border bg-card p-4">
-        <p className="text-sm text-muted-foreground">
-          Insufficient data for this period.
-        </p>
-      </div>
+      <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200 shadow-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base font-semibold text-amber-900">
+            Strategic Summary
+          </CardTitle>
+          <p className="text-xs text-amber-700 mt-0.5">
+            Not enough data for this period.
+          </p>
+        </CardHeader>
+      </Card>
     );
   }
 
   const { overallRag, verdictText, wins, focusAreas } = commentary;
 
+  const topItems = [
+    ...focusAreas.slice(0, 3),
+    ...wins.slice(0, Math.max(0, 3 - focusAreas.length)),
+  ];
+
   return (
-    <div className="rounded-lg border bg-card p-4 space-y-3">
-      {/* ── Verdict ── */}
-      <div className="flex items-center gap-2">
-        <RagDot rag={overallRag} size="md" />
-        <p className="text-sm font-semibold leading-snug">{verdictText}</p>
-      </div>
-
-      {/* ── Focus areas (red/yellow first) ── */}
-      {focusAreas.length > 0 && (
-        <div className="space-y-1.5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Focus areas
-          </p>
-          <ul className="space-y-1.5">
-            {focusAreas.map((r) => (
-              <MetricRow key={r.key} result={r} />
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* ── Working well (green) ── */}
-      {wins.length > 0 && (
-        <div className="space-y-1.5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Working well
-          </p>
-          <ul className="space-y-1.5">
-            {wins.map((r) => (
-              <MetricRow key={r.key} result={r} />
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
+    <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200 shadow-sm">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base font-semibold text-amber-900">
+          Strategic Summary
+        </CardTitle>
+        <p className="text-xs text-amber-700 mt-0.5">
+          {ragEmoji(overallRag)} {verdictText}
+        </p>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <ul className="space-y-2.5">
+          {topItems.map((r) => (
+            <li key={r.key} className="text-sm leading-snug text-amber-900">
+              {ragEmoji(r.rag)}{" "}
+              <span className="font-medium">{r.label}:</span> {r.text}
+            </li>
+          ))}
+          {focusAreas.length === 0 && wins.length > 3 && (
+            wins.slice(3).map((r) => (
+              <li key={r.key} className="text-sm leading-snug text-amber-900">
+                ✅ <span className="font-medium">{r.label}:</span> {r.text}
+              </li>
+            ))
+          )}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }

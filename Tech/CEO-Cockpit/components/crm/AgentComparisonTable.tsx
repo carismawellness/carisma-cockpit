@@ -44,18 +44,20 @@ const BRAND_BG_STYLE: Record<AgentBrand, { bg: string; fg: string }> = {
 // ── Subtotal helper ───────────────────────────────────────────────────────────
 
 interface GroupTotals {
-  total_sales:    number;
-  total_bookings: number;
-  total_deposits: number;
-  total_messages: number;
+  total_sales:     number;
+  total_bookings:  number;
+  total_deposits:  number;
+  total_messages:  number;
+  total_talk_time: number;
 }
 
 function groupTotals(agents: CrmAgent[]): GroupTotals {
   return {
-    total_sales:    agents.reduce((s, a) => s + a.totals.total_sales,    0),
-    total_bookings: agents.reduce((s, a) => s + a.totals.total_bookings, 0),
-    total_deposits: agents.reduce((s, a) => s + a.totals.total_deposits, 0),
-    total_messages: agents.reduce((s, a) => s + a.totals.total_messages, 0),
+    total_sales:     agents.reduce((s, a) => s + a.totals.total_sales,    0),
+    total_bookings:  agents.reduce((s, a) => s + a.totals.total_bookings, 0),
+    total_deposits:  agents.reduce((s, a) => s + a.totals.total_deposits, 0),
+    total_messages:  agents.reduce((s, a) => s + a.totals.total_messages, 0),
+    total_talk_time: agents.reduce((s, a) => s + (a.totals.total_talk_time ?? 0), 0),
   };
 }
 
@@ -108,7 +110,7 @@ export function AgentComparisonTable({ agents }: AgentComparisonTableProps) {
 
   let rowIndex = 0;
 
-  const COLS = 9; // # | Rep | Role | Revenue | Dials | Bookings | Deposits | Bkg Eff | Bkg Rate | Deposit %
+  const COLS = 10; // # | Rep | Role | Revenue | Dials | Talk Time | Bookings | Deposits | Bkg Eff | Bkg Rate | Deposit %
 
   return (
     <Card>
@@ -125,6 +127,7 @@ export function AgentComparisonTable({ agents }: AgentComparisonTableProps) {
                 <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Role</th>
                 <th className="pb-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Revenue</th>
                 <th className="pb-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Dials</th>
+                <th className="pb-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Talk Time</th>
                 <th className="pb-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bookings</th>
                 <th className="pb-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Deposits</th>
                 <th className="pb-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bkg Eff</th>
@@ -194,6 +197,9 @@ export function AgentComparisonTable({ agents }: AgentComparisonTableProps) {
                             {t.total_messages.toLocaleString()}
                           </td>
                           <td className="py-2 text-right tabular-nums text-foreground">
+                            {(t.total_talk_time ?? 0) > 0 ? `${t.total_talk_time}m` : "—"}
+                          </td>
+                          <td className="py-2 text-right tabular-nums text-foreground">
                             {t.total_bookings}
                           </td>
                           <td className="py-2 text-right tabular-nums text-foreground">
@@ -220,6 +226,7 @@ export function AgentComparisonTable({ agents }: AgentComparisonTableProps) {
                       </td>
                       <td className="py-1.5 text-right tabular-nums">{formatCurrency(bt.total_sales)}</td>
                       <td className="py-1.5 text-right tabular-nums">{bt.total_messages.toLocaleString()}</td>
+                      <td className="py-1.5 text-right tabular-nums">{(bt.total_talk_time ?? 0) > 0 ? `${bt.total_talk_time}m` : "—"}</td>
                       <td className="py-1.5 text-right tabular-nums">{bt.total_bookings}</td>
                       <td className="py-1.5 text-right tabular-nums">{bt.total_deposits}</td>
                       <td className={`py-1.5 text-right tabular-nums ${bookingRateClass(bt_bkgEff, false)}`}>
@@ -249,6 +256,7 @@ export function AgentComparisonTable({ agents }: AgentComparisonTableProps) {
                     </td>
                     <td className="py-2 text-right tabular-nums">{formatCurrency(grandTotals.total_sales)}</td>
                     <td className="py-2 text-right tabular-nums">{grandTotals.total_messages.toLocaleString()}</td>
+                    <td className="py-2 text-right tabular-nums">{(grandTotals.total_talk_time ?? 0) > 0 ? `${grandTotals.total_talk_time}m` : "—"}</td>
                     <td className="py-2 text-right tabular-nums">{grandTotals.total_bookings}</td>
                     <td className="py-2 text-right tabular-nums">{grandTotals.total_deposits}</td>
                     <td className={`py-2 text-right tabular-nums ${bookingRateClass(g_bkgEff, false)}`}>

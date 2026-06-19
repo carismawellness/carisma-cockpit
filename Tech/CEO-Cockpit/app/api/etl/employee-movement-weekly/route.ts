@@ -2,7 +2,7 @@
  * POST /api/etl/employee-movement-weekly?from=YYYY-MM-DD&to=YYYY-MM-DD
  *
  * Approximates employee hire/exit dates from payslip periodFrom data
- * (Talexio does not expose hireDate/terminationDate directly).
+ * (Talexio doesn't expose hireDate/terminationDate directly).
  *
  * Strategy:
  *   hireDate   ≈ min(payslip.periodFrom) across all payslips for that employee
@@ -122,12 +122,14 @@ export async function POST(req: NextRequest) {
     let terminationDate: string | null = null;
 
     if (periods.length > 0) {
+      // Sort ascending
       const sorted = [...periods].sort((a, b) =>
         a.periodFrom.localeCompare(b.periodFrom),
       );
       hireDate = sorted[0].periodFrom;
 
       if (e.isTerminated) {
+        // Use end of latest payslip period as approximate exit
         const latestPeriodTo = [...periods]
           .sort((a, b) => b.periodTo.localeCompare(a.periodTo))[0]?.periodTo;
         terminationDate = latestPeriodTo ?? null;
@@ -176,6 +178,7 @@ export async function POST(req: NextRequest) {
     const joiners = joinerNames.length;
     const leavers = leaverNames.length;
 
+    // Total active at end of this week
     const totalHeadcount = employees.filter((e) => {
       const hDate = e.hireDate ? new Date(e.hireDate) : null;
       const tDate = e.terminationDate ? new Date(e.terminationDate) : null;

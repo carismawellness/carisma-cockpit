@@ -12,6 +12,8 @@ import { useKlaviyoOverview } from "@/lib/hooks/useKlaviyoOverview";
 import { useGscRankings } from "@/lib/hooks/useGscRankings";
 import { BRAND as BRAND_TOKENS, type BrandKey } from "@/lib/constants/design-tokens";
 import type { CampaignData } from "@/lib/types/ads";
+import { computeMasterCommentary } from "@/lib/commentary/marketing-engine";
+import { MktCommentaryPanel } from "@/components/marketing/CommentaryPanel";
 
 /* ---------- brand colours (canonical palette) ---------- */
 
@@ -151,15 +153,15 @@ function MarketingMasterContent({
       const revenue = all.reduce((s, c) => s + c.attributedRevenue, 0);
       const metaLeads = meta.reduce((s, c) => s + c.totalLeads, 0);
       const metaSpend = meta.reduce((s, c) => s + c.totalSpend, 0);
-      const googleLeads = google.reduce((s, c) => s + c.totalLeads, 0);
-      const googleSpend = google.reduce((s, c) => s + c.totalSpend, 0);
+      // CPC uses total clicks across Meta + Google (not leads/conversions)
+      const totalClicks = all.reduce((s, c) => s + c.clicks, 0);
       return {
         revenue: formatCurrency(revenue),
         spend: formatCurrency(spend),
         roas: spend > 0 ? `${(revenue / spend).toFixed(1)}x` : "—",
         roasNum: spend > 0 ? revenue / spend : 0,
         cpl: metaLeads > 0 ? `€${(metaSpend / metaLeads).toFixed(1)}` : "—",
-        cpc: googleLeads > 0 ? `€${(googleSpend / googleLeads).toFixed(1)}` : "—",
+        cpc: totalClicks > 0 ? `€${(spend / totalClicks).toFixed(2)}` : "—",
       };
     }
 
@@ -207,22 +209,26 @@ function MarketingMasterContent({
   /* ---- Compute channel performance ---- */
   const channelByBrand = useMemo(() => {
     function channelMetrics(campaigns: CampaignData[]) {
-      const spend = campaigns.reduce((s, c) => s + c.totalSpend, 0);
+      const spend   = campaigns.reduce((s, c) => s + c.totalSpend, 0);
       const revenue = campaigns.reduce((s, c) => s + c.attributedRevenue, 0);
-      const roas = spend > 0 ? revenue / spend : 0;
+      const leads   = campaigns.reduce((s, c) => s + c.totalLeads, 0);
+      const clicks  = campaigns.reduce((s, c) => s + c.clicks, 0);
+      const roas    = spend > 0 ? revenue / spend : 0;
       return {
         revenue: formatCurrency(revenue),
-        spend: formatCurrency(spend),
-        roas: `${roas.toFixed(1)}x`,
+        spend:   formatCurrency(spend),
+        roas:    `${roas.toFixed(1)}x`,
         roasNum: roas,
+        cpl:     leads  > 0 ? `€${(spend / leads).toFixed(2)}`  : "—",
+        cpc:     clicks > 0 ? `€${(spend / clicks).toFixed(2)}` : "—",
       };
     }
 
-    const metaSpaM = channelMetrics(metaSpa.data?.campaigns ?? []);
-    const metaAesM = channelMetrics(metaAes.data?.campaigns ?? []);
+    const metaSpaM  = channelMetrics(metaSpa.data?.campaigns  ?? []);
+    const metaAesM  = channelMetrics(metaAes.data?.campaigns  ?? []);
     const metaSlimM = channelMetrics(metaSlim.data?.campaigns ?? []);
-    const googleSpaM = channelMetrics(googleSpa.data?.campaigns ?? []);
-    const googleAesM = channelMetrics(googleAes.data?.campaigns ?? []);
+    const googleSpaM  = channelMetrics(googleSpa.data?.campaigns  ?? []);
+    const googleAesM  = channelMetrics(googleAes.data?.campaigns  ?? []);
     const googleSlimM = channelMetrics(googleSlim.data?.campaigns ?? []);
 
     const fmtSubs = (n: number) => n > 0 ? n.toLocaleString() : "—";
@@ -232,23 +238,27 @@ function MarketingMasterContent({
       {
         channel: "Meta Ads",
         rows: [
-          { metric: "Attributed Revenue", spa: metaSpaM.revenue, aesthetics: metaAesM.revenue, slimming: metaSlimM.revenue },
-          { metric: "Ad Spend", spa: metaSpaM.spend, aesthetics: metaAesM.spend, slimming: metaSlimM.spend },
+          { metric: "Attributed Revenue", spa: metaSpaM.revenue,  aesthetics: metaAesM.revenue,  slimming: metaSlimM.revenue },
+          { metric: "Ad Spend",           spa: metaSpaM.spend,    aesthetics: metaAesM.spend,    slimming: metaSlimM.spend },
           {
             metric: "ROAS", spa: metaSpaM.roas, aesthetics: metaAesM.roas, slimming: metaSlimM.roas,
             roasValues: { spa: metaSpaM.roasNum, aesthetics: metaAesM.roasNum, slimming: metaSlimM.roasNum },
           },
+          { metric: "CPL (Cost per Lead)",  spa: metaSpaM.cpl,  aesthetics: metaAesM.cpl,  slimming: metaSlimM.cpl },
+          { metric: "CPC (Cost per Click)", spa: metaSpaM.cpc,  aesthetics: metaAesM.cpc,  slimming: metaSlimM.cpc },
         ] as TableRow[],
       },
       {
         channel: "Google Ads",
         rows: [
-          { metric: "Attributed Revenue", spa: googleSpaM.revenue, aesthetics: googleAesM.revenue, slimming: googleSlimM.revenue },
-          { metric: "Ad Spend", spa: googleSpaM.spend, aesthetics: googleAesM.spend, slimming: googleSlimM.spend },
+          { metric: "Attributed Revenue",       spa: googleSpaM.revenue,  aesthetics: googleAesM.revenue,  slimming: googleSlimM.revenue },
+          { metric: "Ad Spend",                 spa: googleSpaM.spend,    aesthetics: googleAesM.spend,    slimming: googleSlimM.spend },
           {
             metric: "ROAS", spa: googleSpaM.roas, aesthetics: googleAesM.roas, slimming: googleSlimM.roas,
             roasValues: { spa: googleSpaM.roasNum, aesthetics: googleAesM.roasNum, slimming: googleSlimM.roasNum },
           },
+          { metric: "CPL (Cost per Conv.)",  spa: googleSpaM.cpl,  aesthetics: googleAesM.cpl,  slimming: googleSlimM.cpl },
+          { metric: "CPC (Cost per Click)",  spa: googleSpaM.cpc,  aesthetics: googleAesM.cpc,  slimming: googleSlimM.cpc },
         ] as TableRow[],
       },
       {
@@ -286,6 +296,38 @@ function MarketingMasterContent({
       },
     ];
   }, [metaSpa.data, metaAes.data, metaSlim.data, googleSpa.data, googleAes.data, googleSlim.data, klavSpa, klavAes, klavSlim, gscSpa, gscAes, gscSlim]);
+
+  /* ---- Strategic commentary ---- */
+  const commentaryResult = useMemo(() => {
+    function buildBrand(brand: "spa" | "aesthetics" | "slimming", meta: CampaignData[], google: CampaignData[], klav: { openRate: number; clickRate: number; hasData: boolean }, klavLoading: boolean) {
+      const f = fatigueData.find(x => x.brand === brand) ?? { healthy: 0, watch: 0, fatigued: 0 };
+      return {
+        brand,
+        meta: {
+          totalSpend: meta.reduce((s, c) => s + c.totalSpend, 0),
+          totalLeads: meta.reduce((s, c) => s + c.totalLeads, 0),
+          attributedRevenue: meta.reduce((s, c) => s + c.attributedRevenue, 0),
+          fatigueStats: { healthy: f.healthy, watch: f.watch, fatigued: f.fatigued },
+        },
+        google: {
+          totalSpend: google.reduce((s, c) => s + c.totalSpend, 0),
+          totalLeads: google.reduce((s, c) => s + c.totalLeads, 0),
+          attributedRevenue: google.reduce((s, c) => s + c.attributedRevenue, 0),
+          fatigueStats: { healthy: 0, watch: 0, fatigued: 0 },
+        },
+        email: {
+          openRate: klav.openRate,
+          clickRate: klav.clickRate,
+          hasData: !klavLoading && klav.hasData,
+        },
+      };
+    }
+    return computeMasterCommentary({
+      spa:        buildBrand("spa",        metaSpa.data?.campaigns  ?? [], googleSpa.data?.campaigns  ?? [], klavSpa,  klavSpaLoading),
+      aesthetics: buildBrand("aesthetics", metaAes.data?.campaigns  ?? [], googleAes.data?.campaigns  ?? [], klavAes,  klavAesLoading),
+      slimming:   buildBrand("slimming",   metaSlim.data?.campaigns ?? [], googleSlim.data?.campaigns ?? [], klavSlim, klavSlimLoading),
+    });
+  }, [fatigueData, metaSpa.data, metaAes.data, metaSlim.data, googleSpa.data, googleAes.data, googleSlim.data, klavSpa, klavAes, klavSlim, klavSpaLoading, klavAesLoading, klavSlimLoading]);
 
   /* ---- Check if any data loaded ---- */
   const totalCampaigns =
@@ -353,6 +395,9 @@ function MarketingMasterContent({
 
       {hasAnyData && (
         <>
+          {/* -- Strategic Commentary -- */}
+          <MktCommentaryPanel result={commentaryResult} loading={isLoading} />
+
           {/* -- Section 1: Cross-Brand KPI Table -- */}
           <section>
             <Card className="p-3 md:p-6">

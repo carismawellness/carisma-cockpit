@@ -16,6 +16,7 @@ export interface CrmAgentTotals {
   total_deposits: number;
   total_messages: number;
   active_days: number;
+  total_talk_time: number;
 }
 
 export interface CrmAgentRow {
@@ -41,6 +42,9 @@ export interface CrmAgentRow {
   total_sales: number;
   deposit_pct: number;
   aov: number;
+  talk_time_outbound: number;
+  talk_time_inbound: number;
+  talk_time_total: number;
 }
 
 export interface CrmAgent {

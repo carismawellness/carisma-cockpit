@@ -39,6 +39,8 @@ interface MetaInsight {
   spend?:              string;
   impressions?:        string;
   clicks?:             string;
+  /** Link clicks only (outbound_clicks) — what Meta Ads Manager calls "CPC (cost per link click)" */
+  outbound_clicks?:    MetaAction[];
   ctr?:                string;
   cpm?:                string;
   frequency?:          string;
@@ -143,7 +145,8 @@ async function fetchInsights(
     "adset_name",
     "spend",
     "impressions",
-    "clicks",
+    "clicks",         // all clicks — used for impressions context, NOT for CPC
+    "outbound_clicks", // link clicks — what Meta calls "CPC (cost per link click)"
     "ctr",
     "cpm",
     "frequency",
@@ -255,14 +258,25 @@ async function runMetaCampaignsEtlInner(opts: {
       for (const row of insights) {
         const spend       = safeNum(row.spend);
         const impressions = parseInt(row.impressions ?? "0", 10);
-        const clicks      = parseInt(row.clicks ?? "0", 10);
+        // Use outbound_clicks (link clicks) to match Meta Ads Manager's
+        // "CPC (cost per link click)" definition. Falls back to all-clicks
+        // only if outbound_clicks is absent from the API response.
+        const linkClicks  = (row.outbound_clicks ?? []).reduce(
+          (s, a) => a.action_type === "outbound_click" ? s + parseInt(a.value || "0", 10) : s,
+          0,
+        );
+        const clicks = linkClicks > 0 ? linkClicks : parseInt(row.clicks ?? "0", 10);
         const ctrPct      = safeNum(row.ctr);
         const cpm         = safeNum(row.cpm);
         const frequency   = safeNum(row.frequency);
         const campaignId  = row.campaign_id ?? "";
 
+        // "Leads (Form)" in Meta Ads Manager = Instant Form submissions.
+        // Meta API reports these as onsite_web_lead (newer campaigns) or lead
+        // (older / pixel-backed lead gen). Count both to cover all campaign types.
+        const LEAD_ACTION_TYPES = new Set(["lead", "onsite_web_lead", "offsite_conversion.fb_pixel_lead"]);
         const leads = (row.actions ?? []).reduce((sum, a) => {
-          return a.action_type === "lead" ? sum + parseInt(a.value || "0", 10) : sum;
+          return LEAD_ACTION_TYPES.has(a.action_type) ? sum + parseInt(a.value || "0", 10) : sum;
         }, 0);
 
         const roasRaw = row.purchase_roas?.find(

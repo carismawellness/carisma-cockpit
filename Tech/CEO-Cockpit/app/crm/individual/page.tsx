@@ -6,6 +6,7 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { SyncButton } from "@/components/dashboard/SyncButton";
 import { AgentTeamBanner } from "@/components/crm/AgentTeamBanner";
 import { AgentLeaderboardCards } from "@/components/crm/AgentLeaderboardCards";
+import { TeamCrmCommentary } from "@/components/crm/CrmStrategicCommentary";
 import { AgentComparisonTable } from "@/components/crm/AgentComparisonTable";
 import { useCrmAgents } from "@/lib/hooks/useCrmAgents";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
@@ -74,6 +75,11 @@ function IndividualKPIsContent({
         <div className="h-20 animate-pulse rounded-xl bg-gray-100" />
       ) : (
         <AgentTeamBanner agents={agents} />
+      )}
+
+      {/* Section 1b: Strategic Commentary */}
+      {!isLoading && (
+        <TeamCrmCommentary agents={agents} dateFrom={dateFrom} dateTo={dateTo} />
       )}
 
       {/* Section 2: Agent Leaderboard Cards */}

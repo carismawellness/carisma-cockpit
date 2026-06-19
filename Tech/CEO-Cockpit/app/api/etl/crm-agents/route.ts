@@ -170,6 +170,9 @@ type CrmRow = {
   total_sales:         number;
   deposit_pct:         number;
   aov:                 number;
+  talk_time_outbound:  number;
+  talk_time_inbound:   number;
+  talk_time_total:     number;
 };
 
 function buildChatRow(slug: string, date: string, row: string[]): CrmRow {
@@ -197,43 +200,52 @@ function buildChatRow(slug: string, date: string, row: string[]): CrmRow {
     total_sales:         parseCurrency(cell(row, 17)),
     deposit_pct:         parsePercent(cell(row, 18)),
     aov:                 parseCurrency(cell(row, 19)),
+    talk_time_outbound:  0,
+    talk_time_inbound:   0,
+    talk_time_total:     0,
   };
 }
 
 function buildSdrRow(slug: string, date: string, row: string[]): CrmRow {
-  // Actual SDR tab layout (verified 2026-06-18 against vj, dorianne, juliana, nathalia):
-  //   0=Date | 1=Out Sales | 2=Out Dials | 3=Out Answered | 4=Out Talk Time | 5=Out Booked | 6=Out Dep
-  //   7=Booking Eff | 8=Booking Rate
-  //   9=In Sales | 10=In Recv | 11=In Talk Time | 12=In Booked | 13=In Dep
-  //   14=Chat Sales | 15=Chat Convs | 16=Chat Booked | 17=Chat Dep
-  //   18=Tot Sales | 19=Tot Booked | 20=Tot Dep | 21=Tot Talk Time | 22=Rate | 23=Dials | 24=Dep% | 25=AOV
-  const outDials  = parseInteger(cell(row, 2));   // Out Dials
-  const inRecv    = parseInteger(cell(row, 10));  // In Recv
-  const chatConvs = parseInteger(cell(row, 15));  // Chat Convs
+  // SDR sheets after Talk Time column insertion: columns A–Z (26 cols)
+  //   A=Date | B=Out Sales | C=Out Dials | D=Out Answered
+  //   E=Out Talk Time (NEW) | F=Out Booked | G=Out Dep
+  //   H=Booking Eff | I=Booking Rate
+  //   J=In Sales | K=In Recv
+  //   L=In Talk Time (NEW) | M=In Booked | N=In Dep
+  //   O=Chat Sales | P=Chat Convs | Q=Chat Booked | R=Chat Dep
+  //   S=Tot Sales | T=Tot Booked | U=Tot Dep
+  //   V=Tot Talk Time (NEW) | W=Rate | X=Dials | Y=Dep% | Z=AOV
+  const outDials  = parseInteger(cell(row, 2));   // C
+  const inRecv    = parseInteger(cell(row, 10));  // K (was 9)
+  const chatConvs = parseInteger(cell(row, 15));  // P (was 13)
   return {
     agent_slug:          slug,
     date,
-    booking_eff_pct:     parsePercent(cell(row, 7)),   // Booking Eff
-    booking_rate_pct:    parsePercent(cell(row, 8)),   // Booking Rate
-    lc_sales:            parseCurrency(cell(row, 14)), // Chat Sales
-    lc_messages:         chatConvs,                    // Chat Convs
-    lc_booked:           parseInteger(cell(row, 16)),  // Chat Booked
-    lc_deposit:          parseInteger(cell(row, 17)),  // Chat Dep
-    crm_sales:           parseCurrency(cell(row, 9)),  // In Sales
-    crm_messages:        inRecv,                       // In Recv
-    crm_booked:          parseInteger(cell(row, 12)),  // In Booked
-    crm_deposit:         parseInteger(cell(row, 13)),  // In Dep
-    other_sales:         parseCurrency(cell(row, 1)),  // Out Sales
-    other_messages:      outDials,                     // Out Dials
-    other_booked:        parseInteger(cell(row, 5)),   // Out Booked
-    other_deposit:       parseInteger(cell(row, 6)),   // Out Dep
-    total_messages:      Math.min(outDials + inRecv + chatConvs, PG_INT_MAX),
-    total_booked:        parseInteger(cell(row, 19)),  // Tot Booked
-    total_deposit_count: parseInteger(cell(row, 20)),  // Tot Dep
-    conversion_rate_pct: parsePercent(cell(row, 22)),  // Rate
-    total_sales:         parseCurrency(cell(row, 18)), // Tot Sales
-    deposit_pct:         parsePercent(cell(row, 24)),  // Dep%
-    aov:                 parseCurrency(cell(row, 25)), // AOV
+    booking_eff_pct:     parsePercent(cell(row, 7)),   // H (was 6)
+    booking_rate_pct:    parsePercent(cell(row, 8)),   // I (was 7)
+    lc_sales:            parseCurrency(cell(row, 14)), // O (was 12)
+    lc_messages:         chatConvs,                    // P (was 13)
+    lc_booked:           parseInteger(cell(row, 16)),  // Q (was 14)
+    lc_deposit:          parseInteger(cell(row, 17)),  // R (was 15)
+    crm_sales:           parseCurrency(cell(row, 9)),  // J (was 8)
+    crm_messages:        inRecv,                       // K (was 9 → 10 but inRecv already updated)
+    crm_booked:          parseInteger(cell(row, 12)),  // M (was 10)
+    crm_deposit:         parseInteger(cell(row, 13)),  // N (was 11)
+    other_sales:         parseCurrency(cell(row, 1)),  // B
+    other_messages:      outDials,                     // C
+    other_booked:        parseInteger(cell(row, 5)),   // F (was 4)
+    other_deposit:       parseInteger(cell(row, 6)),   // G (was 5)
+    total_messages:      outDials + inRecv + chatConvs,
+    total_booked:        parseInteger(cell(row, 19)),  // T (was 17)
+    total_deposit_count: parseInteger(cell(row, 20)),  // U (was 18)
+    conversion_rate_pct: parsePercent(cell(row, 22)),  // W (was 19)
+    total_sales:         parseCurrency(cell(row, 18)), // S (was 16)
+    deposit_pct:         parsePercent(cell(row, 24)),  // Y (was 21)
+    aov:                 parseCurrency(cell(row, 25)), // Z (was 22)
+    talk_time_outbound:  parseInteger(cell(row, 4)),   // E (NEW)
+    talk_time_inbound:   parseInteger(cell(row, 11)),  // L (NEW)
+    talk_time_total:     parseInteger(cell(row, 21)),  // V (NEW)
   };
 }
 

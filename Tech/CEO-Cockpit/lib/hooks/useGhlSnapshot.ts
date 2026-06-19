@@ -5,6 +5,9 @@ import { useQuery } from "@tanstack/react-query";
 export interface GhlSnapshotBrand {
   newLeads: number;
   todoCount: number;
+  unreadWhatsapp: number;
+  unreadCrm: number;
+  unreadEmail: number;
 }
 
 export interface GhlSnapshot {
@@ -13,7 +16,10 @@ export interface GhlSnapshot {
   slimming:   GhlSnapshotBrand;
 }
 
-const EMPTY_BRAND: GhlSnapshotBrand = { newLeads: 0, todoCount: 0 };
+const EMPTY_BRAND: GhlSnapshotBrand = {
+  newLeads: 0, todoCount: 0,
+  unreadWhatsapp: 0, unreadCrm: 0, unreadEmail: 0,
+};
 const EMPTY_SNAPSHOT: GhlSnapshot = {
   spa:        EMPTY_BRAND,
   aesthetics: EMPTY_BRAND,

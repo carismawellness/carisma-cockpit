@@ -6,6 +6,7 @@ import { MessageQueueHealth } from "@/components/crm/MessageQueueHealth";
 import { LeadReconciliation } from "@/components/crm/LeadReconciliation";
 import { LeadsPerHour } from "@/components/crm/LeadsPerHour";
 import { PipelineFunnel } from "@/components/crm/PipelineFunnel";
+import { SpeedToLeadSection } from "@/components/crm/SpeedToLeadSection";
 import { GHLSyncBadge } from "@/components/crm/GHLSyncBadge";
 import { CrmMasterCommentary } from "@/components/crm/CrmStrategicCommentary";
 import { useGhlSnapshot } from "@/lib/hooks/useGhlSnapshot";
@@ -91,6 +92,9 @@ function CRMContent({
         <h2 className="text-lg font-semibold text-foreground mb-3">Pipeline Funnel</h2>
         <PipelineFunnel dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
       </section>
+
+      {/* Speed to Lead */}
+      <SpeedToLeadSection dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
 
       {/* Daily Lead Volume */}
       <section>

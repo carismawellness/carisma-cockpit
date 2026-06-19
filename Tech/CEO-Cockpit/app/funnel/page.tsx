@@ -3,6 +3,7 @@
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { ConstraintHeatmap } from "@/components/funnel/ConstraintHeatmap";
 import { CampaignFunnelPanel } from "@/components/funnel/CampaignFunnelPanel";
+import { FunnelStrategicCommentary } from "@/components/funnel/FunnelStrategicCommentary";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 
 function FunnelContent({
@@ -21,6 +22,9 @@ function FunnelContent({
           {formatDateRangeLabel(dateFrom, dateTo)} · Full-funnel constraint analysis
         </p>
       </div>
+
+      {/* 0. Strategic Commentary — executive read of the funnel */}
+      <FunnelStrategicCommentary dateFrom={dateFrom} dateTo={dateTo} />
 
       {/* 1. Constraint Heatmap — conclusion first */}
       <section>

@@ -72,6 +72,9 @@ type CrmAgentRow = {
   deposit_pct: number;
   aov: number;
   etl_synced_at: string;
+  talk_time_outbound: number;
+  talk_time_inbound: number;
+  talk_time_total: number;
 };
 
 type AgentTotals = {
@@ -85,6 +88,7 @@ type AgentTotals = {
   total_deposits: number;
   total_messages: number;
   active_days: number;
+  total_talk_time: number;
 };
 
 type AgentResult = {
@@ -115,10 +119,11 @@ function computeTotals(rows: CrmAgentRow[]): AgentTotals {
     (r) => rowRevenue(r) > 0 || r.total_booked > 0
   );
 
-  const total_sales    = rows.reduce((s, r) => s + rowRevenue(r),               0);
-  const total_bookings = rows.reduce((s, r) => s + (r.total_booked        ?? 0), 0);
-  const total_deposits = rows.reduce((s, r) => s + (r.total_deposit_count ?? 0), 0);
-  const total_messages = rows.reduce((s, r) => s + (r.total_messages      ?? 0), 0);
+  const total_sales     = rows.reduce((s, r) => s + rowRevenue(r),               0);
+  const total_bookings  = rows.reduce((s, r) => s + (r.total_booked        ?? 0), 0);
+  const total_deposits  = rows.reduce((s, r) => s + (r.total_deposit_count ?? 0), 0);
+  const total_messages  = rows.reduce((s, r) => s + (r.total_messages      ?? 0), 0);
+  const total_talk_time = rows.reduce((s, r) => s + (r.talk_time_total     ?? 0), 0);
 
   // Averages over active days only, excluding zero values
   const nonZeroConversion = activeDays
@@ -152,6 +157,7 @@ function computeTotals(rows: CrmAgentRow[]): AgentTotals {
     total_deposits,
     total_messages,
     active_days:         activeDays.length,
+    total_talk_time,
   };
 }
 

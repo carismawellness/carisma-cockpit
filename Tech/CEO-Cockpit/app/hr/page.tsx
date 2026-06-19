@@ -21,6 +21,7 @@ import {
   useTalexioShiftsRange,
 } from "@/lib/hooks/useTalexio";
 import { useHRFinancials, useHRRevPAH, useWe360Productivity, useHREmployeeMovement } from "@/lib/hooks/useHRData";
+import { computeHRCommentary, type HRCommentaryInput, type HRCommentaryOutput } from "@/lib/commentary/engine";
 import { normaliseLocation, LOCATION_TO_BRAND } from "@/lib/constants/hr-mapping";
 import { useAttendance, type AttendanceFilter } from "@/lib/hooks/useAttendance";
 import {
@@ -710,6 +711,41 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
       : 0
   );
 
+  // ── Strategic Commentary ──────────────────────────────────────────────────
+  const hrCommentary = useMemo((): HRCommentaryOutput | null => {
+    const ftCount = staffComposition.roleData.find((r) => r.key === "fullTimeTherapist")?.count ?? 0;
+    const ptCount = staffComposition.roleData.find((r) => r.key === "partTimeTherapist")?.count ?? 0;
+    const therapistRatioPct =
+      staffComposition.total > 0 ? ((ftCount + ptCount) / staffComposition.total) * 100 : null;
+
+    const totalLeavers = movementQ.data?.summary?.totalLeavers ?? 0;
+    const currentTotal = movementQ.data?.summary?.currentTotal ?? resolvedHeadcount;
+    const annualisedTurnoverRate =
+      currentTotal > 0 ? (totalLeavers / currentTotal) * (52 / 26) * 100 : null;
+
+    const input: HRCommentaryInput = {
+      groupHcPct:             groupHcPct > 0 ? groupHcPct : null,
+      avgCostPerEmployee:
+        isFinancialsReal && financialsQ.data!.totalHeadcount > 0
+          ? financialsQ.data!.totalPayroll / financialsQ.data!.totalHeadcount
+          : null,
+      revenuePerEmployee:     revenuePerEmployee > 0 ? revenuePerEmployee : null,
+      revpahSpa:              revpahQ.data?.byBrand?.Spa?.avgRevPAH ?? null,
+      revpahAesthetics:       revpahQ.data?.byBrand?.Aesthetics?.avgRevPAH ?? null,
+      revpahSlimming:         revpahQ.data?.byBrand?.Slimming?.avgRevPAH ?? null,
+      netMovement:            movementQ.data?.summary?.netMovement ?? null,
+      annualisedTurnoverRate,
+      therapistRatioPct,
+      onTimePct:              onTimePct > 0 ? onTimePct : null,
+      avgActivityPct:         avgProductivity > 0 ? avgProductivity : null,
+    };
+    return computeHRCommentary(input);
+  }, [
+    groupHcPct, financialsQ.data, revenuePerEmployee, revpahQ.data,
+    movementQ.data, staffComposition, onTimePct, avgProductivity,
+    resolvedHeadcount, isFinancialsReal,
+  ]);
+
   // ── KPI cards ─────────────────────────────────────────────────────────────
   const kpis: HRMetricData[] = [
     {
@@ -853,6 +889,12 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           ))}
         </div>
       )}
+
+      {/* ── Strategic Commentary ──────────────────────────────────────── */}
+      <HRCommentaryPanel
+        commentary={hrCommentary}
+        isLoading={talexioLoading || financialsQ.isLoading || revpahQ.isLoading}
+      />
 
       {/* ══════════════════════════════════════════════════════════════════
           SECTION: Net Employee Movement (KPI bubbles + trend chart)
@@ -1673,6 +1715,75 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
         );
       })()}
     </>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// STRATEGIC COMMENTARY PANEL
+// ════════════════════════════════════════════════════════════════════════════
+
+function HRCommentaryPanel({
+  commentary,
+  isLoading,
+}: {
+  commentary: HRCommentaryOutput | null;
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200 shadow-sm p-4 md:p-5">
+        <div className="animate-pulse space-y-2">
+          <div className="h-4 bg-amber-200 rounded w-40" />
+          <div className="h-3 bg-amber-100 rounded w-full" />
+          <div className="h-3 bg-amber-100 rounded w-4/5" />
+        </div>
+      </Card>
+    );
+  }
+
+  if (!commentary) return null;
+
+  const { verdict, wins, focusAreas } = commentary;
+
+  return (
+    <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200 shadow-sm">
+      <div className="p-4 md:p-5">
+        <p className="text-base font-semibold text-amber-900 mb-0.5">Workforce Snapshot</p>
+        <p className="text-xs text-amber-700 mb-3">{verdict}</p>
+        {(wins.length > 0 || focusAreas.length > 0) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-amber-200">
+            {wins.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-700 mb-2">
+                  ✅ Working well
+                </p>
+                <ul className="space-y-2">
+                  {wins.map((w) => (
+                    <li key={w.key} className="text-sm leading-snug text-amber-900">
+                      {w.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {focusAreas.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-700 mb-2">
+                  🎯 Focus areas
+                </p>
+                <ul className="space-y-2">
+                  {focusAreas.map((f) => (
+                    <li key={f.key} className="text-sm leading-snug text-amber-900">
+                      {f.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }
 

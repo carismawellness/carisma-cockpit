@@ -137,6 +137,7 @@ export async function GET(req: NextRequest) {
       cpl:               agg.conversions > 0 ? Math.round((agg.spend / agg.conversions) * 100) / 100 : 0,
       totalSpend:        Math.round(agg.spend * 100) / 100,
       totalLeads:        Math.round(agg.conversions),
+      clicks:            agg.clicks,
       ctr:               n > 0 ? Math.round((agg.ctrSum / n) * 100) / 100 : 0,
       cpm:               n > 0 ? Math.round((agg.cpmSum / n) * 100) / 100 : 0,
       frequency:         1, // Google doesn't track frequency the same way
@@ -152,7 +153,7 @@ export async function GET(req: NextRequest) {
       spend:       acc.spend + c.totalSpend,
       leads:       acc.leads + c.totalLeads,
       impressions: acc.impressions,
-      clicks:      acc.clicks,
+      clicks:      acc.clicks + c.clicks,
       revenue:     acc.revenue + c.attributedRevenue,
     }),
     { spend: 0, leads: 0, impressions: 0, clicks: 0, revenue: 0 },

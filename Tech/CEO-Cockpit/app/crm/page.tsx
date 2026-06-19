@@ -6,7 +6,10 @@ import { MessageQueueHealth } from "@/components/crm/MessageQueueHealth";
 import { LeadReconciliation } from "@/components/crm/LeadReconciliation";
 import { LeadsPerHour } from "@/components/crm/LeadsPerHour";
 import { PipelineFunnel } from "@/components/crm/PipelineFunnel";
+import { SpeedToLeadSection } from "@/components/crm/SpeedToLeadSection";
 import { GHLSyncBadge } from "@/components/crm/GHLSyncBadge";
+import { CrmMasterCommentary } from "@/components/crm/CrmStrategicCommentary";
+import { useGhlSnapshot } from "@/lib/hooks/useGhlSnapshot";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { CalendarRange } from "lucide-react";
 
@@ -19,6 +22,8 @@ function CRMContent({
   dateTo: Date;
   brandFilter: string | null;
 }) {
+  const { snapshot } = useGhlSnapshot();
+
   return (
     <>
       <div className="flex items-start justify-between gap-4">
@@ -54,6 +59,8 @@ function CRMContent({
           </p>
         </div>
         <MessageQueueHealth dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
+        {/* GHL Queue Strategic Commentary */}
+        <CrmMasterCommentary snapshot={snapshot} />
       </div>
 
       {/* ── DATE-RANGE DIVIDER ───────────────────────────────────────────────
@@ -85,6 +92,9 @@ function CRMContent({
         <h2 className="text-lg font-semibold text-foreground mb-3">Pipeline Funnel</h2>
         <PipelineFunnel dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
       </section>
+
+      {/* Speed to Lead */}
+      <SpeedToLeadSection dateFrom={dateFrom} dateTo={dateTo} brandFilter={brandFilter} />
 
       {/* Daily Lead Volume */}
       <section>

@@ -147,15 +147,17 @@ export async function GET(req: NextRequest) {
   ]);
 
   // Phase 2: runs after Phase 1 completes.
-  // - lead-reconciliation is intentionally EXCLUDED: ghl-crm (Phase 1) already writes
-  //   crm_lead_reconciliation with leads_meta = GHL contacts attributed to Meta (Facebook UTM).
-  //   Running lead-reconciliation after ghl-crm would overwrite leads_meta with
-  //   meta_campaigns_daily.leads (action_type="lead" = Meta native lead form submissions),
-  //   which is always 0 for Carisma because they run click-to-WhatsApp/website campaigns,
-  //   not Meta native lead forms. The result was Meta Leads always showing 0 in the widget.
+  // - lead-reconciliation depends on meta-campaigns (leads_meta) + ghl-crm (leads_crm).
+  //   meta-campaigns now correctly counts onsite_web_lead (Meta Instant Forms = "Leads (Form)"
+  //   in Ads Manager) in addition to the old "lead" action type.
   // - diligence-metrics overwrites cash/discounted_cash/complimentary rows created by diligence-audit
-  const [diligenceMetricsRes] = await Promise.allSettled([
+  const reconPayload = JSON.stringify({ date_from: fmt(mktFrom), date_to: fmt(now) });
+  const [leadReconRes, diligenceMetricsRes, speedToLeadRes] = await Promise.allSettled([
+    fetch(`${BASE_URL}/api/etl/lead-reconciliation`, { method: "POST", headers, body: reconPayload }),
     fetch(`${BASE_URL}/api/etl/diligence-metrics`,   { method: "POST", headers }),
+    // speed-to-lead reads the GHL webhook mirror + stage-event log refreshed by
+    // ghl-crm (Phase 1), plus an approximate historical backfill. 90-day window.
+    fetch(`${BASE_URL}/api/etl/speed-to-lead`,       { method: "POST", headers, body: JSON.stringify({ days_back: 90 }) }),
   ]);
 
   const outcome = (r: PromiseSettledResult<Response>) =>
@@ -189,7 +191,9 @@ export async function GET(req: NextRequest) {
     ["attendance_daily",        attendanceDailyRes],
     ["therapist_shifts_monthly", therapistShiftsRes],
     ["wix_spa_orders",          wixOrdersRes],
+    ["lead_reconciliation",     leadReconRes],
     ["diligence_metrics",       diligenceMetricsRes],
+    ["speed_to_lead",           speedToLeadRes],
   ];
 
   // ── Consolidated failure alerting (never breaks the cron) ──────────────────
