@@ -668,8 +668,10 @@ export async function fetchTransactionLines(
   client: ZohoBooksClient,
   fromDate: string,
   toDate: string,
+  opts: { skipSources?: TxnSource[] } = {},
 ): Promise<LinePullResult> {
   const log: string[] = [];
+  const skipSet = new Set(opts.skipSources ?? []);
 
   log.push("Loading chart of accounts…");
   const accountMeta = await loadAccountMeta(client, log);
@@ -682,6 +684,10 @@ export async function fetchTransactionLines(
   };
 
   for (const cfg of ENDPOINTS) {
+    if (skipSet.has(cfg.source)) {
+      log.push(`\n[${cfg.source}] SKIPPED (skipSources)`);
+      continue;
+    }
     log.push(`\n[${cfg.source}] listing ${fromDate} … ${toDate}`);
     let summaries: Array<Record<string, unknown>>;
     try {

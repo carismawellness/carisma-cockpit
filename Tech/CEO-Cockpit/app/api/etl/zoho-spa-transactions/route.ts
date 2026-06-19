@@ -41,8 +41,14 @@ export async function POST(req: NextRequest) {
     log.push(`Loaded ${Object.keys(coaMap).length} mapped accounts`);
 
     // Single full-range pull amortises rate-limit cost across all months.
-    log.push(`Pulling transactions ${dateFrom} … ${dateTo} (single full-range fetch)…`);
-    const pull = await fetchTransactionLines(client, dateFrom, dateTo);
+    // Skip revenue-side sources (invoice, creditnote, salesreturn) — SPA revenue
+    // comes from spa_revenue_daily (Cockpit datasheet) and is explicitly ignored
+    // in transactions_raw reads (ebitda-v2 line 413: `if (line === "revenue") continue`).
+    // Skipping these dramatically reduces transaction count for high-volume SPA org.
+    log.push(`Pulling transactions ${dateFrom} … ${dateTo} (single full-range fetch, skip revenue sources)…`);
+    const pull = await fetchTransactionLines(client, dateFrom, dateTo, {
+      skipSources: ["invoice", "creditnote", "salesreturn"],
+    });
     log.push(...pull.log.map(s => `  ${s}`));
     log.push(`Per source: ${JSON.stringify(pull.perSourceCount)}`);
     log.push(`Total lines: ${pull.lines.length}`);
