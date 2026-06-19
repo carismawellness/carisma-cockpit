@@ -286,7 +286,7 @@ export async function runAestheticsEbitdaMonthFromTransactions(
       if (/professional|legal|audit|accounting|consultant|advisory/.test(low)) return "prof_services";
       if (/fuel|petrol|diesel|gas station/.test(low))                          return "fuel";
       if (/laundry|linen|uniform/.test(low))                                   return "laundry";
-      if (/software|subscription|saas|licen[cs]e|system/.test(low))           return "software";
+      if (/software|subscription|saas|licen[cs]e|system|fresha/.test(low))    return "software";
       if (/clean|hygiene|sanitiz|pest/.test(low))                              return "cleaning";
       if (/travel|transport|flight|hotel|accommodation|taxi|uber|airbnb/.test(low)) return "travel";
       if (/insur/.test(low))                                                   return "insurance";
@@ -331,6 +331,7 @@ export async function runAestheticsEbitdaMonthFromTransactions(
     } else {
       rule = "equal"; line = detectLine(ln.account_name, ln.section);
     }
+    const coaSub = line.startsWith("sga_") ? line.slice(4) : null; // preserve explicit sub before collapse
     if (line.startsWith("sga_")) line = "sga";
     if (!VALID_LINES.has(line)) { droppedExcluded++; continue; }
 
@@ -342,7 +343,7 @@ export async function runAestheticsEbitdaMonthFromTransactions(
     classified.push({
       date:         ln.date,
       line,
-      sub_line:     resolveSubLine(line, ln.account_name),
+      sub_line:     (line === "sga" && coaSub) ? coaSub : resolveSubLine(line, ln.account_name),
       rule,
       tagDept:      tagsToDept(ln.tags),
       nameDept:     detectDept(ln.account_name),
