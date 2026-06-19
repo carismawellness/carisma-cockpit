@@ -24,6 +24,45 @@ export const maxDuration = 300;
 const SKIP_SOURCES = ["invoice", "creditnote", "salesreturn", "customerpayment", "vendorpayment"] as const;
 const CHUNK_DAYS = 7; // max days per fetchTransactionLines call
 
+// Sub-line correction: account_name keywords that resolve to a sub-line.
+// resolveSubLine() in the ETL checks account_name, but some Zoho accounts use
+// generic names (e.g. "Administration Expenses"). This PATCH pass runs AFTER
+// all rows are written so any missed rows are corrected before the route returns.
+const SGA_SUB_FIX: [string[], string][] = [
+  [["software", "subscription", "saas", "license", "licence", "system", "fresha"], "software"],
+  [["travel", "transport", "flight", "hotel", "accommodation", "taxi", "uber", "airbnb", "parking", "car hire", "car rental", "vehicle hire", "airline", "airways"], "travel"],
+  [["laundry", "linen", "uniform"], "laundry"],
+  [["fuel", "petrol", "diesel", "gas station"], "fuel"],
+  [["clean", "hygiene", "sanitiz", "pest"], "cleaning"],
+  [["insur"], "insurance"],
+  [["event", "function", "catering", "hospitality"], "events"],
+  [["maintenance", "repair", "service contract"], "maintenance"],
+  [["telecom", "telephone", "mobile", "internet", "broadband", "phone"], "telecom"],
+  [["professional", "legal", "audit", "accounting", "consultant", "advisory"], "prof_services"],
+];
+
+function sbUrl(table: string): string {
+  const base = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  return `${base}/rest/v1/${table}`;
+}
+function sbHeaders(): Record<string, string> {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  return { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "return=representation" };
+}
+
+async function fixSgaSubLines(dateFrom: string, dateTo: string): Promise<number> {
+  let total = 0;
+  for (const [keywords, subLine] of SGA_SUB_FIX) {
+    const orParts = keywords.map(k => `account_name.ilike.*${k}*`).join(",");
+    const filter = `org=eq.spa&ebitda_line=eq.sga&ebitda_sub_line=neq.${subLine}&date=gte.${dateFrom}&date=lte.${dateTo}&or=(${orParts})`;
+    const resp = await fetch(`${sbUrl("transactions_raw")}?${filter}`, {
+      method: "PATCH", headers: sbHeaders(), body: JSON.stringify({ ebitda_sub_line: subLine }),
+    });
+    if (resp.ok) { const rows = await resp.json() as unknown[]; total += rows.length; }
+  }
+  return total;
+}
+
 function addDays(dateStr: string, n: number): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   const dt = new Date(y, m - 1, d + n);
@@ -99,9 +138,14 @@ export async function POST(req: NextRequest) {
       chunkStart = addDays(chunkEnd, 1);
     }
 
+    // Auto-fix SGA sub_lines: resolveSubLine() misses accounts with generic COA
+    // names (e.g. "Administration Expenses") where the vendor name carries the signal.
+    const fixedRows = await fixSgaSubLines(dateFrom, dateTo);
+    if (fixedRows) log.push(`\nSGA sub_line fix: ${fixedRows} row(s) corrected`);
+
     await logger.complete(totalSpa + totalHq);
     log.push(`\nDone — ${totalSpa} spa rows + ${totalHq} hq row(s) upserted total`);
-    return NextResponse.json({ status: "ok", spa_rows: totalSpa, hq_rows: totalHq, log: log.join("\n") });
+    return NextResponse.json({ status: "ok", spa_rows: totalSpa, hq_rows: totalHq, sga_fixed: fixedRows, log: log.join("\n") });
   } catch (e) {
     const msg = String(e);
     await logger.fail(msg);
