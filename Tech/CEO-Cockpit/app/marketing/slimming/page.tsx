@@ -281,7 +281,7 @@ function SlimmingMarketingContent({
       )}
 
       {/* ── Strategic Commentary ─────────────────────────────────────── */}
-      <MktCommentaryPanel result={commentaryResult} loading={isLoading || klaviyoLoading} />
+      <MktCommentaryPanel title="Slimming Marketing Snapshot" result={commentaryResult} loading={isLoading || klaviyoLoading} />
 
       {/* ── Creative Fatigue Alert with full breakdown ───────────────── */}
       {(totalFatigued > 0 || totalWatch > 0) && (

@@ -285,7 +285,7 @@ function AestheticsMarketingContent({
       )}
 
       {/* ── Strategic Commentary ─────────────────────────────────────── */}
-      <MktCommentaryPanel result={commentaryResult} loading={isLoading || klaviyoLoading} />
+      <MktCommentaryPanel title="Aesthetics Marketing Snapshot" result={commentaryResult} loading={isLoading || klaviyoLoading} />
 
       {/* ── Section 1: Hero KPIs ────────────────────────────────────── */}
       {(() => {
