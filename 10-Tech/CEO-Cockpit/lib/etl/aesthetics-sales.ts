@@ -43,7 +43,7 @@ async function fetchCockpitCsv(): Promise<Record<string, string>[]> {
   // picks up any recent entries whose date/price were missing in the primary.
   // The primary rows (with empty date/price) are skipped by the ETL anyway, so
   // appending duplicates causes no double-counting.
-  const tailStart = rows.length - 30; // sheet row just before last known rows
+  const tailStart = rows.length - 15; // targets last ~15 sheet rows (fresh cache zone)
   const tailUrl = cockpitCsvUrl(
     COCKPIT_TABS.AESTHETICS.name,
     `A${tailStart}:H${tailStart + 150}`,
