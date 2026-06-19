@@ -11,23 +11,57 @@ const LOW_VAT     = 0.12;
 
 // ── CSV helpers ───────────────────────────────────────────────────────────────
 
+function parseCsvToRows(text: string, headers: string[]): Record<string, string>[] {
+  const rows = parseCSV(text);
+  if (rows.length < 1) return [];
+  return rows.map(cells =>
+    Object.fromEntries(headers.map((h, i) => [h, (cells[i] ?? "").trim()]))
+  );
+}
+
 async function fetchCockpitCsv(): Promise<Record<string, string>[]> {
+  // Primary fetch — may serve a stale gviz cache for very recent rows.
   const url = cockpitCsvUrl(COCKPIT_TABS.AESTHETICS.name, "A2:H");
   const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) throw new Error(`Cockpit Datasheet fetch failed: ${resp.status}`);
   const text = await resp.text();
   const rows = parseCSV(text);
   if (rows.length < 2) return [];
-  // Guard before normalisation — verifies row 0 has the canonical headers.
   assertCockpitHeaders(rows, COCKPIT_TABS.AESTHETICS.name, REQUIRED_HEADERS);
   let headerIdx = 0;
   for (let i = 0; i < Math.min(rows.length, 5); i++) {
     if (rows[i].filter(c => c.trim()).length >= 3) { headerIdx = i; break; }
   }
   const headers = rows[headerIdx].map(h => h.trim().toLowerCase());
-  return rows.slice(headerIdx + 1).map(cells =>
+  const primaryRows = rows.slice(headerIdx + 1).map(cells =>
     Object.fromEntries(headers.map((h, i) => [h, (cells[i] ?? "").trim()]))
   );
+
+  // Supplemental tail fetch — a specific high-row range has a distinct gviz
+  // cache key and typically returns the current sheet state even when the
+  // full-sheet cache is stale. Append its rows so the ETL's date carry-forward
+  // picks up any recent entries whose date/price were missing in the primary.
+  // The primary rows (with empty date/price) are skipped by the ETL anyway, so
+  // appending duplicates causes no double-counting.
+  const tailStart = rows.length - 30; // sheet row just before last known rows
+  const tailUrl = cockpitCsvUrl(
+    COCKPIT_TABS.AESTHETICS.name,
+    `A${tailStart}:H${tailStart + 150}`,
+  );
+  try {
+    const tailResp = await fetch(tailUrl, { redirect: "follow" });
+    if (tailResp.ok) {
+      const tailText = await tailResp.text();
+      const tailRows = parseCsvToRows(tailText, headers);
+      // Only append rows that have a non-empty date (fresh rows)
+      const freshRows = tailRows.filter(r => r["date of service"]?.trim());
+      return [...primaryRows, ...freshRows];
+    }
+  } catch {
+    // Tail fetch failure is non-fatal — primary data is still valid.
+  }
+
+  return primaryRows;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
