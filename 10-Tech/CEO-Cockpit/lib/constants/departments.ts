@@ -13,6 +13,7 @@ import {
   BookOpen,
   ShoppingBag,
   Hotel,
+  LayoutDashboard,
   type LucideIcon,
 } from "lucide-react";
 
@@ -44,6 +45,13 @@ export interface Department {
 }
 
 export const departments: Department[] = [
+  {
+    slug: "executive-summary",
+    label: "Executive Summary",
+    icon: LayoutDashboard,
+    path: "/executive-summary",
+    group: "General",
+  },
   {
     slug: "funnel",
     label: "Funnel",
