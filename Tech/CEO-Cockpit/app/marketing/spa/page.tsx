@@ -794,7 +794,7 @@ function SpaMarketingContent({
       )}
 
       {/* ── Strategic Commentary ─────────────────────────────────────── */}
-      <MktCommentaryPanel result={commentaryResult} loading={isLoading} />
+      <MktCommentaryPanel title="Spa Marketing Snapshot" result={commentaryResult} loading={isLoading} />
 
       {/* ── Section 1: Hero KPIs ────────────────────────────────────── */}
       {!isLoading && (() => {
