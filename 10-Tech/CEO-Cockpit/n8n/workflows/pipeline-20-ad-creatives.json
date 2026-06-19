@@ -1,0 +1,200 @@
+{
+  "name": "Pipeline 20: Ad Creatives → ad_creatives",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 */6 * * *" }]
+        }
+      },
+      "id": "p20-schedule",
+      "name": "Schedule (Every 6h)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const startTime = Date.now();\nreturn [{ json: { source_name: 'ad_creatives', start_time: startTime } }];"
+      },
+      "id": "p20-set-start",
+      "name": "Set Start Time",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ source_name: 'ad_creatives', status: 'running' }) }}"
+      },
+      "id": "p20-log-start",
+      "name": "Log ETL Start",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const logResponse = $input.first().json;\nconst logId = Array.isArray(logResponse) ? logResponse[0].id : logResponse.id;\nconst startTime = $('Set Start Time').first().json.start_time;\n\nconst accounts = [\n  { act_id: 'act_654279452039150', brand_id: 1 },\n  { act_id: 'act_382359687910745', brand_id: 2 },\n  { act_id: 'act_1496776195316716', brand_id: 3 }\n];\n\nreturn accounts.map(a => ({ json: { ...a, log_id: logId, start_time: startTime } }));"
+      },
+      "id": "p20-split-accounts",
+      "name": "Split Ad Accounts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.act_id }}/ads?fields=name,campaign{name},insights.date_preset(last_7d).time_increment(1){spend,impressions,clicks,ctr,frequency,cpm,actions}&access_token={{ $env.META_ACCESS_TOKEN }}",
+        "options": {}
+      },
+      "id": "p20-fetch-ads",
+      "name": "Fetch Ad-Level Insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst brandId = $('Split Ad Accounts').first().json.brand_id;\nconst ads = input.data || [];\nconst allRows = [];\n\nfor (const ad of ads) {\n  const adName = ad.name || 'Unknown';\n  const campaignName = (ad.campaign && ad.campaign.name) ? ad.campaign.name : null;\n  const insights = (ad.insights && ad.insights.data) ? ad.insights.data : [];\n\n  if (insights.length === 0) continue;\n\n  // Sort insights by date ascending for fatigue calculation\n  insights.sort((a, b) => a.date_start.localeCompare(b.date_start));\n\n  // Baseline CTR: use the oldest data point\n  const baselineCtr = parseFloat(insights[0].ctr || 0);\n\n  // Recent 3-day avg CTR\n  const recent3 = insights.slice(-3);\n  const recentAvgCtr = recent3.reduce((sum, d) => sum + parseFloat(d.ctr || 0), 0) / recent3.length;\n\n  for (const day of insights) {\n    const actions = day.actions || [];\n    const leadAction = actions.find(a => a.action_type === 'lead');\n    const leads = leadAction ? parseInt(leadAction.value, 10) : 0;\n    const freq = parseFloat(day.frequency || 0);\n    const ctr = parseFloat(day.ctr || 0);\n\n    // Fatigue status calculation\n    let fatigueStatus = 'healthy';\n    if (baselineCtr > 0) {\n      const ctrDrop = (baselineCtr - recentAvgCtr) / baselineCtr;\n      if (ctrDrop > 0.20 && freq > 3.0) {\n        fatigueStatus = 'fatigued';\n      } else if (ctrDrop > 0.10 || freq > 2.5) {\n        fatigueStatus = 'watch';\n      }\n    }\n\n    allRows.push({\n      date: day.date_start,\n      brand_id: brandId,\n      platform: 'meta',\n      campaign_name: campaignName,\n      ad_name: adName,\n      creative_url: null,\n      spend: parseFloat(day.spend || 0),\n      impressions: parseInt(day.impressions || 0, 10),\n      clicks: parseInt(day.clicks || 0, 10),\n      ctr_pct: Math.round(ctr * 100) / 100,\n      frequency: Math.round(freq * 100) / 100,\n      cpm: Math.round(parseFloat(day.cpm || 0) * 100) / 100,\n      leads: leads,\n      fatigue_status: fatigueStatus\n    });\n  }\n}\n\nreturn allRows.map(r => ({ json: r }));"
+      },
+      "id": "p20-transform",
+      "name": "Transform & Compute Fatigue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/ad_creatives",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "resolution=merge-duplicates" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($input.all().map(item => item.json)) }}"
+      },
+      "id": "p20-upsert",
+      "name": "Upsert ad_creatives",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const startTime = $('Set Start Time').first().json.start_time;\nconst logId = $('Split Ad Accounts').first().json.log_id;\nconst totalRows = $input.all().length;\nconst durationSec = Math.round((Date.now() - startTime) / 1000);\n\nreturn [{ json: {\n  log_id: logId,\n  status: 'success',\n  rows_upserted: totalRows,\n  duration_sec: durationSec\n}}];"
+      },
+      "id": "p20-prep-success",
+      "name": "Prepare Success Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log?id=eq.{{ $json.log_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $json.status, rows_upserted: $json.rows_upserted, completed_at: new Date().toISOString(), duration_sec: $json.duration_sec }) }}"
+      },
+      "id": "p20-log-success",
+      "name": "Log ETL Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const startTime = $('Set Start Time').first().json.start_time;\nconst logId = $('Split Ad Accounts').first().json.log_id;\nconst durationSec = Math.round((Date.now() - startTime) / 1000);\nconst errorMsg = $input.first().json.message || 'Unknown error';\n\nreturn [{ json: {\n  log_id: logId,\n  status: 'failed',\n  error_message: errorMsg.substring(0, 500),\n  duration_sec: durationSec\n}}];"
+      },
+      "id": "p20-prep-fail",
+      "name": "Prepare Failure Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 520]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log?id=eq.{{ $json.log_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'failed', error_message: $json.error_message, completed_at: new Date().toISOString(), duration_sec: $json.duration_sec }) }}"
+      },
+      "id": "p20-log-fail",
+      "name": "Log ETL Failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 520]
+    }
+  ],
+  "connections": {
+    "Schedule (Every 6h)": {
+      "main": [[{ "node": "Set Start Time", "type": "main", "index": 0 }]]
+    },
+    "Set Start Time": {
+      "main": [[{ "node": "Log ETL Start", "type": "main", "index": 0 }]]
+    },
+    "Log ETL Start": {
+      "main": [[{ "node": "Split Ad Accounts", "type": "main", "index": 0 }]]
+    },
+    "Split Ad Accounts": {
+      "main": [[{ "node": "Fetch Ad-Level Insights", "type": "main", "index": 0 }]]
+    },
+    "Fetch Ad-Level Insights": {
+      "main": [[{ "node": "Transform & Compute Fatigue", "type": "main", "index": 0 }]]
+    },
+    "Transform & Compute Fatigue": {
+      "main": [[{ "node": "Upsert ad_creatives", "type": "main", "index": 0 }]]
+    },
+    "Upsert ad_creatives": {
+      "main": [[{ "node": "Prepare Success Log", "type": "main", "index": 0 }]]
+    },
+    "Prepare Success Log": {
+      "main": [[{ "node": "Log ETL Success", "type": "main", "index": 0 }]]
+    },
+    "Prepare Failure Log": {
+      "main": [[{ "node": "Log ETL Failure", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

@@ -1,0 +1,151 @@
+{
+  "name": "Pipeline 17: Google Reviews → google_reviews",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 8 * * *" }]
+        }
+      },
+      "id": "p17-schedule",
+      "name": "Schedule (Daily 08:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const startTime = Date.now();\nreturn [{ json: { source_name: 'google_reviews', start_time: startTime } }];"
+      },
+      "id": "p17-set-start",
+      "name": "Set Start Time",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ source_name: 'google_reviews', status: 'running' }) }}"
+      },
+      "id": "p17-log-start",
+      "name": "Log ETL Start",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const logResponse = $input.first().json;\nconst logId = Array.isArray(logResponse) ? logResponse[0].id : logResponse.id;\nconst startTime = $('Set Start Time').first().json.start_time;\nreturn [{ json: { log_id: logId, start_time: startTime } }];"
+      },
+      "id": "p17-extract-log",
+      "name": "Extract Log ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://mybusiness.googleapis.com/v4/accounts/ACCOUNT_ID/locations/LOCATION_ID/reviews",
+        "options": {}
+      },
+      "id": "p17-placeholder-http",
+      "name": "Fetch Google Reviews (PLACEHOLDER)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// PLACEHOLDER: Transform Google Business Profile API response\n// Once the API is configured, parse the reviews response and map to:\n// { date, location_id, brand_id, total_reviews, avg_rating, new_reviews_count, five_star, four_star, three_star, two_star, one_star }\n\nreturn [{ json: { rows_upserted: 0, message: 'Placeholder — not yet configured' } }];"
+      },
+      "id": "p17-transform",
+      "name": "Transform Reviews Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const startTime = $('Set Start Time').first().json.start_time;\nconst logId = $('Extract Log ID').first().json.log_id;\nconst durationSec = Math.round((Date.now() - startTime) / 1000);\n\nreturn [{ json: {\n  log_id: logId,\n  status: 'success',\n  rows_upserted: $input.first().json.rows_upserted || 0,\n  duration_sec: durationSec\n}}];"
+      },
+      "id": "p17-prep-success",
+      "name": "Prepare Success Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log?id=eq.{{ $json.log_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $json.status, rows_upserted: $json.rows_upserted, completed_at: new Date().toISOString(), duration_sec: $json.duration_sec }) }}"
+      },
+      "id": "p17-log-success",
+      "name": "Log ETL Complete",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "content": "## TODO: Configure Google Business Profile OAuth2\n\n1. Create OAuth2 credentials in Google Cloud Console for Google Business Profile API\n2. Add the OAuth2 credential to n8n\n3. Update the 'Fetch Google Reviews' HTTP node to use the credential\n4. Set the correct ACCOUNT_ID and LOCATION_ID values for each brand location\n5. Implement the transform logic to parse the reviews API response\n\nAPI docs: https://developers.google.com/my-business/reference/rest",
+        "width": 500,
+        "height": 220
+      },
+      "id": "p17-sticky",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [660, 40]
+    }
+  ],
+  "connections": {
+    "Schedule (Daily 08:00)": {
+      "main": [[{ "node": "Set Start Time", "type": "main", "index": 0 }]]
+    },
+    "Set Start Time": {
+      "main": [[{ "node": "Log ETL Start", "type": "main", "index": 0 }]]
+    },
+    "Log ETL Start": {
+      "main": [[{ "node": "Extract Log ID", "type": "main", "index": 0 }]]
+    },
+    "Extract Log ID": {
+      "main": [[{ "node": "Fetch Google Reviews (PLACEHOLDER)", "type": "main", "index": 0 }]]
+    },
+    "Fetch Google Reviews (PLACEHOLDER)": {
+      "main": [[{ "node": "Transform Reviews Data", "type": "main", "index": 0 }]]
+    },
+    "Transform Reviews Data": {
+      "main": [[{ "node": "Prepare Success Log", "type": "main", "index": 0 }]]
+    },
+    "Prepare Success Log": {
+      "main": [[{ "node": "Log ETL Complete", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

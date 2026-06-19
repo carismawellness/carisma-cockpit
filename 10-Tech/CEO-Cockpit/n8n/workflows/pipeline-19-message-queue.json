@@ -1,0 +1,198 @@
+{
+  "name": "Pipeline 19: Message Queue → message_queue",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 */2 * * *" }]
+        }
+      },
+      "id": "p19-schedule",
+      "name": "Schedule (Every 2h)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const startTime = Date.now();\nreturn [{ json: { source_name: 'message_queue', start_time: startTime } }];"
+      },
+      "id": "p19-set-start",
+      "name": "Set Start Time",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ source_name: 'message_queue', status: 'running' }) }}"
+      },
+      "id": "p19-log-start",
+      "name": "Log ETL Start",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const logResponse = $input.first().json;\nconst logId = Array.isArray(logResponse) ? logResponse[0].id : logResponse.id;\nconst startTime = $('Set Start Time').first().json.start_time;\n\n// Emit one item per brand for parallel processing\nconst brands = [\n  { brand_id: 1, brand_name: 'spa', zoho_org: 'spa' },\n  { brand_id: 2, brand_name: 'aesthetics', zoho_org: 'aesthetics' },\n  { brand_id: 3, brand_name: 'slimming', zoho_org: 'slimming' }\n];\n\nreturn brands.map(b => ({ json: { ...b, log_id: logId, start_time: startTime } }));"
+      },
+      "id": "p19-split-brands",
+      "name": "Split Brands",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://www.zohoapis.eu/crm/v6/Leads?criteria=((Lead_Status:equals:Not Contacted))&per_page=1",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env['ZOHO_CRM_TOKEN_' + $json.brand_name.toUpperCase()] }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "p19-zoho-crm",
+      "name": "Fetch Zoho CRM Unreplied",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://WHATSAPP_BUSINESS_API/messages?status=unread",
+        "options": {}
+      },
+      "id": "p19-whatsapp",
+      "name": "Fetch WhatsApp Unreplied (PLACEHOLDER)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 520]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine CRM and WhatsApp data per brand\nconst brandData = $('Split Brands').first().json;\nconst crmResponse = $('Fetch Zoho CRM Unreplied').first().json;\nconst unrepliedCrm = (crmResponse && crmResponse.info) ? (crmResponse.info.count || 0) : 0;\n\n// WhatsApp placeholder — will be 0 until API is configured\nconst unrepliedWhatsapp = 0;\nconst unrepliedEmail = 0;\n\nreturn [{ json: {\n  snapshot_at: new Date().toISOString(),\n  brand_id: brandData.brand_id,\n  unreplied_whatsapp: unrepliedWhatsapp,\n  unreplied_email: unrepliedEmail,\n  unreplied_crm: unrepliedCrm,\n  oldest_unreplied_min: null\n}}];"
+      },
+      "id": "p19-combine",
+      "name": "Combine Queue Counts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/message_queue",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ snapshot_at: $json.snapshot_at, brand_id: $json.brand_id, unreplied_whatsapp: $json.unreplied_whatsapp, unreplied_email: $json.unreplied_email, unreplied_crm: $json.unreplied_crm, oldest_unreplied_min: $json.oldest_unreplied_min }) }}"
+      },
+      "id": "p19-upsert",
+      "name": "Insert message_queue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const startTime = $('Set Start Time').first().json.start_time;\nconst logId = $('Split Brands').first().json.log_id;\nconst totalRows = $input.all().length;\nconst durationSec = Math.round((Date.now() - startTime) / 1000);\n\nreturn [{ json: {\n  log_id: logId,\n  status: 'success',\n  rows_upserted: totalRows,\n  duration_sec: durationSec\n}}];"
+      },
+      "id": "p19-prep-success",
+      "name": "Prepare Success Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log?id=eq.{{ $json.log_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $json.status, rows_upserted: $json.rows_upserted, completed_at: new Date().toISOString(), duration_sec: $json.duration_sec }) }}"
+      },
+      "id": "p19-log-success",
+      "name": "Log ETL Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 300]
+    },
+    {
+      "parameters": {
+        "content": "## TODO: Configure WhatsApp Business API\n\n1. Set up WhatsApp Business API credentials in n8n\n2. Update the 'Fetch WhatsApp Unreplied' node with correct endpoint\n3. Add email unreplied count source (Gmail API or Zoho Mail)\n4. Set ZOHO_CRM_TOKEN_SPA, ZOHO_CRM_TOKEN_AESTHETICS, ZOHO_CRM_TOKEN_SLIMMING env vars in n8n\n5. Consider adding oldest_unreplied_min calculation from CRM timestamps",
+        "width": 500,
+        "height": 200
+      },
+      "id": "p19-sticky",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [660, 40]
+    }
+  ],
+  "connections": {
+    "Schedule (Every 2h)": {
+      "main": [[{ "node": "Set Start Time", "type": "main", "index": 0 }]]
+    },
+    "Set Start Time": {
+      "main": [[{ "node": "Log ETL Start", "type": "main", "index": 0 }]]
+    },
+    "Log ETL Start": {
+      "main": [[{ "node": "Split Brands", "type": "main", "index": 0 }]]
+    },
+    "Split Brands": {
+      "main": [[
+        { "node": "Fetch Zoho CRM Unreplied", "type": "main", "index": 0 },
+        { "node": "Fetch WhatsApp Unreplied (PLACEHOLDER)", "type": "main", "index": 0 }
+      ]]
+    },
+    "Fetch Zoho CRM Unreplied": {
+      "main": [[{ "node": "Combine Queue Counts", "type": "main", "index": 0 }]]
+    },
+    "Combine Queue Counts": {
+      "main": [[{ "node": "Insert message_queue", "type": "main", "index": 0 }]]
+    },
+    "Insert message_queue": {
+      "main": [[{ "node": "Prepare Success Log", "type": "main", "index": 0 }]]
+    },
+    "Prepare Success Log": {
+      "main": [[{ "node": "Log ETL Success", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

@@ -1,0 +1,186 @@
+{
+  "name": "Pipeline 11: GA4 → ga4_daily",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 6 * * *" }]
+        }
+      },
+      "id": "schedule-1",
+      "name": "Schedule (Daily 06:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const startTime = Date.now();\nreturn [{ json: { source_name: 'ga4', start_time: startTime } }];"
+      },
+      "id": "set-start-time",
+      "name": "Set Start Time",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ source_name: 'ga4', status: 'running' }) }}"
+      },
+      "id": "log-start",
+      "name": "Log ETL Start",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const logResponse = $input.first().json;\nconst logId = Array.isArray(logResponse) ? logResponse[0].id : logResponse.id;\nconst startTime = $('Set Start Time').first().json.start_time;\n\n// TODO: Set GA4 property IDs for each brand in n8n UI\nconst properties = [\n  { property_id: 'GA4_PROPERTY_ID_SPA', brand_id: 1 },\n  { property_id: 'GA4_PROPERTY_ID_AES', brand_id: 2 },\n  { property_id: 'GA4_PROPERTY_ID_SLIM', brand_id: 3 }\n];\n\nreturn properties.map(p => ({ json: { ...p, log_id: logId, start_time: startTime } }));"
+      },
+      "id": "split-properties",
+      "name": "Split GA4 Properties",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://analyticsdata.googleapis.com/v1beta/properties/{{ $json.property_id }}:runReport",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ dateRanges: [{ startDate: '7daysAgo', endDate: 'yesterday' }], dimensions: [{ name: 'date' }], metrics: [{ name: 'sessions' }, { name: 'totalUsers' }, { name: 'newUsers' }, { name: 'screenPageViews' }, { name: 'averageSessionDuration' }, { name: 'bounceRate' }, { name: 'conversions' }] }) }}",
+        "options": {}
+      },
+      "id": "http-ga4",
+      "name": "Fetch GA4 Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst brandId = $('Split GA4 Properties').first().json.brand_id;\nconst rows = input.rows || [];\n\nconst result = rows.map(row => {\n  const dateRaw = row.dimensionValues[0].value; // YYYYMMDD\n  const date = dateRaw.substring(0, 4) + '-' + dateRaw.substring(4, 6) + '-' + dateRaw.substring(6, 8);\n  \n  const metrics = row.metricValues;\n  const bounceRate = parseFloat(metrics[5].value || 0);\n  \n  return {\n    date: date,\n    brand_id: brandId,\n    sessions: parseInt(metrics[0].value || 0, 10),\n    total_users: parseInt(metrics[1].value || 0, 10),\n    new_users: parseInt(metrics[2].value || 0, 10),\n    page_views: parseInt(metrics[3].value || 0, 10),\n    avg_session_duration_sec: Math.round(parseFloat(metrics[4].value || 0) * 100) / 100,\n    bounce_rate_pct: Math.round(bounceRate * 10000) / 100,\n    conversions: parseInt(metrics[6].value || 0, 10)\n  };\n});\n\nreturn result.map(r => ({ json: r }));"
+      },
+      "id": "transform-ga4",
+      "name": "Transform GA4 Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/ga4_daily",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "resolution=merge-duplicates" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($input.all().map(item => item.json)) }}"
+      },
+      "id": "upsert-ga4-daily",
+      "name": "Upsert ga4_daily",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const startTime = $('Set Start Time').first().json.start_time;\nconst logId = $('Split GA4 Properties').first().json.log_id;\nconst totalRows = $input.all().length;\nconst durationSec = Math.round((Date.now() - startTime) / 1000);\n\nreturn [{ json: {\n  log_id: logId,\n  status: 'success',\n  rows_upserted: totalRows,\n  duration_sec: durationSec\n}}];"
+      },
+      "id": "prepare-log-success",
+      "name": "Prepare Success Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log?id=eq.{{ $json.log_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $json.status, rows_upserted: $json.rows_upserted, completed_at: new Date().toISOString(), duration_sec: $json.duration_sec }) }}"
+      },
+      "id": "log-success",
+      "name": "Log ETL Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 300]
+    },
+    {
+      "parameters": {
+        "content": "## TODO: GA4 Setup Required\n\n1. Set **GA4 property IDs** for each brand in the 'Split GA4 Properties' code node\n2. Configure **Google OAuth2** credentials in n8n UI for the GA4 Data API\n3. Update the HTTP Request node to use OAuth2 credential\n\nProperty IDs can be found in GA4 Admin > Property Settings.",
+        "width": 400,
+        "height": 200
+      },
+      "id": "sticky-todo",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [660, 40]
+    }
+  ],
+  "connections": {
+    "Schedule (Daily 06:00)": {
+      "main": [[{ "node": "Set Start Time", "type": "main", "index": 0 }]]
+    },
+    "Set Start Time": {
+      "main": [[{ "node": "Log ETL Start", "type": "main", "index": 0 }]]
+    },
+    "Log ETL Start": {
+      "main": [[{ "node": "Split GA4 Properties", "type": "main", "index": 0 }]]
+    },
+    "Split GA4 Properties": {
+      "main": [[{ "node": "Fetch GA4 Report", "type": "main", "index": 0 }]]
+    },
+    "Fetch GA4 Report": {
+      "main": [[{ "node": "Transform GA4 Data", "type": "main", "index": 0 }]]
+    },
+    "Transform GA4 Data": {
+      "main": [[{ "node": "Upsert ga4_daily", "type": "main", "index": 0 }]]
+    },
+    "Upsert ga4_daily": {
+      "main": [[{ "node": "Prepare Success Log", "type": "main", "index": 0 }]]
+    },
+    "Prepare Success Log": {
+      "main": [[{ "node": "Log ETL Success", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

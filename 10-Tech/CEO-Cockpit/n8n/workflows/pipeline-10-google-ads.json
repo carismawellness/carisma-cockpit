@@ -1,0 +1,188 @@
+{
+  "name": "Pipeline 10: Google Ads → marketing_daily",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 */6 * * *" }]
+        }
+      },
+      "id": "schedule-1",
+      "name": "Schedule (6h)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const startTime = Date.now();\nreturn [{ json: { source_name: 'google_ads', start_time: startTime } }];"
+      },
+      "id": "set-start-time",
+      "name": "Set Start Time",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ source_name: 'google_ads', status: 'running' }) }}"
+      },
+      "id": "log-start",
+      "name": "Log ETL Start",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// TODO: Configure Google Ads OAuth2 credentials and customer IDs in n8n UI\n// \n// Required setup:\n// 1. Create Google Ads OAuth2 credentials in n8n\n// 2. Set customer IDs for each brand:\n//    - brand_id=1 (spa): customer ID TBD\n//    - brand_id=2 (aesthetics): customer ID TBD  \n//    - brand_id=3 (slimming): customer ID TBD\n// 3. Set developer token in credentials\n//\n// Once configured, this node should emit one item per brand with:\n//   { customer_id, brand_id, log_id, start_time }\n\nconst logResponse = $input.first().json;\nconst logId = Array.isArray(logResponse) ? logResponse[0].id : logResponse.id;\nconst startTime = $('Set Start Time').first().json.start_time;\n\nconst customers = [\n  { customer_id: 'CUSTOMER_ID_SPA', brand_id: 1 },\n  { customer_id: 'CUSTOMER_ID_AES', brand_id: 2 },\n  { customer_id: 'CUSTOMER_ID_SLIM', brand_id: 3 }\n];\n\nreturn customers.map(c => ({ json: { ...c, log_id: logId, start_time: startTime } }));"
+      },
+      "id": "setup-customers",
+      "name": "Setup Customer IDs (TODO)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://googleads.googleapis.com/v18/customers/{{ $json.customer_id }}/googleAds:searchStream",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "developer-token", "value": "={{ $env.GOOGLE_ADS_DEVELOPER_TOKEN }}" },
+            { "name": "login-customer-id", "value": "={{ $env.GOOGLE_ADS_MCC_ID }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: \"SELECT segments.date, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_per_conversion, metrics.average_cpc, metrics.ctr FROM campaign WHERE segments.date DURING LAST_7_DAYS\" }) }}",
+        "options": {}
+      },
+      "id": "http-google-ads",
+      "name": "Fetch Google Ads Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst brandId = $('Setup Customer IDs (TODO)').first().json.brand_id;\n\n// Google Ads searchStream returns an array of result batches\nconst results = input.results || (Array.isArray(input) ? input.flatMap(b => b.results || []) : []);\n\n// Aggregate by date\nconst byDate = {};\nfor (const row of results) {\n  const date = row.segments?.date;\n  if (!date) continue;\n  \n  if (!byDate[date]) {\n    byDate[date] = { spend: 0, impressions: 0, clicks: 0, leads: 0, cpc_sum: 0, ctr_sum: 0, count: 0 };\n  }\n  \n  // cost_micros needs to be divided by 1,000,000\n  byDate[date].spend += (row.metrics?.costMicros || 0) / 1000000;\n  byDate[date].impressions += parseInt(row.metrics?.impressions || 0, 10);\n  byDate[date].clicks += parseInt(row.metrics?.clicks || 0, 10);\n  byDate[date].leads += parseFloat(row.metrics?.conversions || 0);\n  byDate[date].count++;\n}\n\nconst rows = Object.entries(byDate).map(([date, d]) => {\n  const cpl = d.leads > 0 ? Math.round((d.spend / d.leads) * 100) / 100 : null;\n  const cpc = d.clicks > 0 ? Math.round((d.spend / d.clicks) * 100) / 100 : null;\n  const ctr_pct = d.impressions > 0 ? Math.round((d.clicks / d.impressions) * 10000) / 100 : 0;\n  \n  return {\n    date: date,\n    brand_id: brandId,\n    platform: 'google',\n    spend: Math.round(d.spend * 100) / 100,\n    impressions: d.impressions,\n    clicks: d.clicks,\n    leads: Math.round(d.leads),\n    cpl: cpl,\n    roas: null,\n    ctr_pct: ctr_pct,\n    cpc: cpc\n  };\n});\n\nreturn rows.map(r => ({ json: r }));"
+      },
+      "id": "transform-google",
+      "name": "Transform Google Ads Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/marketing_daily",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "resolution=merge-duplicates" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($input.all().map(item => item.json)) }}"
+      },
+      "id": "upsert-marketing-daily",
+      "name": "Upsert marketing_daily",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const startTime = $('Set Start Time').first().json.start_time;\nconst logId = $('Setup Customer IDs (TODO)').first().json.log_id;\nconst totalRows = $input.all().length;\nconst durationSec = Math.round((Date.now() - startTime) / 1000);\n\nreturn [{ json: {\n  log_id: logId,\n  status: 'success',\n  rows_upserted: totalRows,\n  duration_sec: durationSec\n}}];"
+      },
+      "id": "prepare-log-success",
+      "name": "Prepare Success Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log?id=eq.{{ $json.log_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $json.status, rows_upserted: $json.rows_upserted, completed_at: new Date().toISOString(), duration_sec: $json.duration_sec }) }}"
+      },
+      "id": "log-success",
+      "name": "Log ETL Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 300]
+    },
+    {
+      "parameters": {
+        "content": "## TODO: Google Ads Setup Required\n\n1. Create **Google Ads OAuth2** credential in n8n UI\n2. Set **customer IDs** for each brand in the 'Setup Customer IDs' code node\n3. Set env vars: `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_MCC_ID`\n4. Update the HTTP Request node to use the OAuth2 credential\n\nThis workflow is a **placeholder** until credentials are configured.",
+        "width": 400,
+        "height": 250
+      },
+      "id": "sticky-todo",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [660, 40]
+    }
+  ],
+  "connections": {
+    "Schedule (6h)": {
+      "main": [[{ "node": "Set Start Time", "type": "main", "index": 0 }]]
+    },
+    "Set Start Time": {
+      "main": [[{ "node": "Log ETL Start", "type": "main", "index": 0 }]]
+    },
+    "Log ETL Start": {
+      "main": [[{ "node": "Setup Customer IDs (TODO)", "type": "main", "index": 0 }]]
+    },
+    "Setup Customer IDs (TODO)": {
+      "main": [[{ "node": "Fetch Google Ads Data", "type": "main", "index": 0 }]]
+    },
+    "Fetch Google Ads Data": {
+      "main": [[{ "node": "Transform Google Ads Data", "type": "main", "index": 0 }]]
+    },
+    "Transform Google Ads Data": {
+      "main": [[{ "node": "Upsert marketing_daily", "type": "main", "index": 0 }]]
+    },
+    "Upsert marketing_daily": {
+      "main": [[{ "node": "Prepare Success Log", "type": "main", "index": 0 }]]
+    },
+    "Prepare Success Log": {
+      "main": [[{ "node": "Log ETL Success", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

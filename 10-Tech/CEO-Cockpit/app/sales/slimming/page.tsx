@@ -1,0 +1,656 @@
+"use client";
+
+import { useMemo } from "react";
+import { DashboardShell } from "@/components/dashboard/DashboardShell";
+import { Card } from "@/components/ui/card";
+import { SalesKPICard } from "@/components/sales/SalesKPICard";
+import { SalesKPIGrid } from "@/components/sales/SalesKPIGrid";
+import { SlimmingProgramHealthSection } from "@/components/sales/SlimmingProgramHealthSection";
+import { ServiceTreemap } from "@/components/sales/ServiceTreemap";
+import { useSlimmingSales } from "@/lib/hooks/useSlimmingSales";
+import { useSlimmingTreatments } from "@/lib/hooks/useSlimmingTreatments";
+import { useSalaryRoster } from "@/lib/hooks/useSalaryRoster";
+import { BRAND } from "@/lib/constants/design-tokens";
+import { CheckCircle2, AlertTriangle as AlertTriangleIcon } from "lucide-react";
+import { FileSpreadsheet } from "lucide-react";
+import { SyncButton } from "@/components/dashboard/SyncButton";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, LabelList,
+  // eslint-disable-next-line @typescript-eslint/no-deprecated
+  Cell,
+} from "recharts";
+
+// ── Colour palette (unified pastel set, see .agents/skills/carisma-brand-colors) ─
+const SLIMMING_SOFT  = BRAND.slimming.soft;   // slimming soft — primary fill/stroke
+const SLIMMING_GREEN = SLIMMING_SOFT;         // alias kept for chart series that use fills
+const NAVY           = "#B8C9E0";   // soft Meta blue
+const BLUE           = "#B8C9E0";   // (alias)
+const PURPLE         = "#D5C0E5";   // soft SG&A purple
+const GOLD           = "#E5C088";   // soft amber
+const TEAL           = "#B5DCDC";   // soft utilities cyan
+
+const SERVICE_TYPE_COLORS: Record<string, string> = {
+  weight_loss: SLIMMING_GREEN,  // primary slimming service
+  treatment:   BLUE,
+  medical:     PURPLE,
+  product:     GOLD,
+  unknown:     "#C7C4BD",
+};
+
+// Distinct colours for treatment types (cycles if more than palette length).
+// Non-brand pastels only — never reuse another brand's identity hex here.
+const TREATMENT_PALETTE = [SLIMMING_GREEN, NAVY, GOLD, PURPLE, "#C5D0E0", "#E5B5D0", "#D5D0CA", "#A8D4A8", "#E5B8B0", TEAL];
+
+// ── Formatters ────────────────────────────────────────────────────────────────
+function fmtK(v: number): string {
+  if (Math.abs(v) >= 1_000_000) return `€${(v / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(v) >= 1_000)     return `€${(v / 1_000).toFixed(1)}K`;
+  return `€${v.toFixed(0)}`;
+}
+
+function pct(part: number, total: number): string {
+  return total > 0 ? `${Math.round((part / total) * 100)}%` : "—";
+}
+
+// Recharts v3 formatters — accept unknown then narrow
+const tooltipFmt = (v: unknown, name: unknown): [string, string] =>
+  [typeof v === "number" ? fmtK(v) : String(v ?? ""), String(name ?? "")];
+
+// ── Custom tooltips ───────────────────────────────────────────────────────────
+function StaffTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; fill: string; payload?: { revenue_gross?: number; salary_cost?: number; k_label?: string | null; Bookings?: number } }>; label?: string }) {
+  if (!active || !payload?.length) return null;
+  // Pull canonical fields off the row payload (not the per-segment value),
+  // so the tooltip reflects gross revenue even when the visible "revenue_net_inc"
+  // stack segment is 0 (K% > 100% case — e.g. Brunna in retail).
+  const row    = payload[0]?.payload ?? {};
+  const gross  = row.revenue_gross ?? 0;
+  const salary = row.salary_cost   ?? 0;
+  const kLabel = row.k_label;
+  return (
+    <div className="bg-white border rounded-lg shadow-lg p-3 text-xs space-y-1">
+      <p className="font-semibold text-sm">{label}</p>
+      <p style={{ color: BRAND.slimming.dark }}>Revenue inc-VAT: {fmtK(gross)}</p>
+      {salary > 0 && (
+        <p style={{ color: NAVY }}>Salary cost: {fmtK(salary)}{kLabel ? ` · K%=${kLabel}` : ""}</p>
+      )}
+    </div>
+  );
+}
+
+function GenericTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; fill: string }>; label?: string }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-white border rounded-lg shadow-lg p-3 text-xs space-y-1">
+      <p className="font-semibold text-sm">{label}</p>
+      {payload.map(p => (
+        <p key={p.name} style={{ color: p.fill }}>{p.name}: {fmtK(p.value)}</p>
+      ))}
+    </div>
+  );
+}
+
+// ── Shared legend for staff charts ────────────────────────────────────────────
+function StaffLegend({ retailColor, hideBookings = false }: { retailColor?: string; hideBookings?: boolean }) {
+  const barColor = retailColor ?? SLIMMING_GREEN;
+  return (
+    <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+      <span className="flex items-center gap-1.5">
+        <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: barColor }} />
+        Revenue inc-VAT
+      </span>
+      {!hideBookings && (
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: NAVY, opacity: 0.55 }} />
+          Bookings (count scale)
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ── Shared empty / loading state ──────────────────────────────────────────────
+function EmptyState({ isLoading }: { isLoading: boolean }) {
+  return (
+    <p className="text-sm text-muted-foreground py-6 text-center">
+      {isLoading ? "Loading…" : "No data for selected period"}
+    </p>
+  );
+}
+
+// ── Bar chart height: 48 px per row, min 180 ─────────────────────────────────
+function chartH(n: number) { return Math.max(180, n * 48 + 40); }
+
+// ── Main content ──────────────────────────────────────────────────────────────
+const SALARY_BLUE = "#4a7fa5";
+
+const SLM_GROUP_ORDER = ["Weight Loss", "GLP-1s", "Body Treatments", "Packages", "Medical", "Products", "Admin"] as const;
+const SLM_GROUP_COLORS: Record<string, string> = {
+  "Weight Loss":     BRAND.slimming.soft,
+  "GLP-1s":          "#7C3AED",
+  "Body Treatments": "#DB2777",
+  "Packages":        "#B87000",
+  "Medical":         "#2563EB",
+  "Products":        "#0891B2",
+  "Admin":           "#9CA3AF",
+  "Other":           "#D1D5DB",
+};
+
+// Slimming sales surface uses GROSS (paid, inc-VAT). K% = salary / gross.
+// revenue_gross is preserved on the row so the tooltip can show the real
+// number — `revenue_net_inc` is the stacked-bar segment and goes to 0 when
+// salary outpaces revenue (K% > 100%), which would otherwise read as "€0".
+function enrichWithSalary(
+  staff: string,
+  revenue_gross: number,
+  getSalary: (name: string) => number | null,
+) {
+  const salary = getSalary(staff) ?? 0;
+  const salary_cost = salary > 0 ? Math.min(salary, revenue_gross) : 0;
+  const k_pct = salary > 0 && revenue_gross > 0 ? +(salary / revenue_gross * 100).toFixed(0) : null;
+  const revStr = revenue_gross >= 1000 ? `€${(revenue_gross / 1000).toFixed(1)}K` : `€${revenue_gross}`;
+  return {
+    revenue_gross,
+    salary_cost,
+    revenue_net_inc: Math.max(0, revenue_gross - salary_cost),
+    k_label: k_pct != null ? `${k_pct}%` : null as string | null,
+    bar_label: revStr,
+  };
+}
+
+function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
+  const {
+    byStaff, byServiceType, byService, totals,
+    isFetching, isSyncing, syncError, triggerSync,
+  } = useSlimmingSales(dateFrom, dateTo);
+
+  const spanDays     = Math.round((dateTo.getTime() - dateFrom.getTime()) / 86400000);
+  const prevDateTo   = useMemo(() => new Date(dateFrom.getTime() - 86400000), [dateFrom]);
+  const prevDateFrom = useMemo(() => new Date(prevDateTo.getTime() - spanDays * 86400000), [prevDateTo, spanDays]);
+  const { totals: prevTotals } = useSlimmingSales(prevDateFrom, prevDateTo, { skipSync: true });
+
+  const delta = useMemo(() => {
+    const calc = (curr: number, prior: number) => prior > 0 ? ((curr - prior) / prior) * 100 : undefined;
+    return {
+      net:     calc(totals.revenue_paid,         prevTotals.revenue_paid),
+      service: calc(totals.service_revenue_paid, prevTotals.service_revenue_paid),
+      retail:  calc(totals.retail_revenue_paid,  prevTotals.retail_revenue_paid),
+    };
+  }, [totals, prevTotals]);
+
+  const {
+    byStaff: txByStaff,
+    byTreatment,
+    totals: txTotals,
+    isFetching: txFetching,
+    isSyncing: txSyncing,
+  } = useSlimmingTreatments(dateFrom, dateTo);
+
+  const { getSlmSalary } = useSalaryRoster(dateFrom, dateTo);
+
+  const isLoading   = isFetching || isSyncing;
+  const txLoading   = txFetching || txSyncing;
+
+  // Split staff: retail (name contains "retail") vs regular
+  const regularStaff = byStaff.filter(s => !/retail/i.test(s.staff));
+  const retailStaff  = byStaff
+    .filter(s => /retail/i.test(s.staff))
+    .map(s => ({ ...s, staff: s.staff.replace(/\s*retail\s*/i, "").trim() }));
+
+  const regularChartData = useMemo(() =>
+    regularStaff.map(s => ({
+      name: s.staff,
+      "Bookings": s.tx_count,
+      ...enrichWithSalary(s.staff, s.revenue_paid, getSlmSalary),
+    })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [regularStaff, getSlmSalary]
+  );
+
+  const retailChartData = useMemo(() =>
+    retailStaff.map(s => ({
+      name: s.staff,
+      "Bookings": s.tx_count,
+      ...enrichWithSalary(s.staff, s.revenue_paid, getSlmSalary),
+    })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [retailStaff, getSlmSalary]
+  );
+
+  // Tx (treatments) tab uses price_inc_vat → revenue_inc for gross consistency.
+  const txStaffData = useMemo(() =>
+    txByStaff.map(s => ({
+      name: s.staff,
+      "Bookings": s.tx_count,
+      ...enrichWithSalary(s.staff, s.revenue_inc, getSlmSalary),
+    })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [txByStaff, getSlmSalary]
+  );
+
+  const serviceTypeData = byServiceType.map(t => ({
+    name:      t.label,
+    "Revenue": t.revenue_paid,
+    type:      t.type,
+    pct:       t.pct,
+  }));
+
+  const byGroup = useMemo(() => {
+    const map = new Map<string, typeof byService>();
+    for (const s of byService) {
+      const g = s.nav_group;
+      if (!map.has(g)) map.set(g, []);
+      map.get(g)!.push(s);
+    }
+    return SLM_GROUP_ORDER
+      .filter(g => map.has(g))
+      .map(g => ({
+        group:         g,
+        color:         SLM_GROUP_COLORS[g] ?? "#D1D5DB",
+        services:      map.get(g)!,
+        total_revenue: map.get(g)!.reduce((s, v) => s + v.revenue_paid, 0),
+        total_count:   map.get(g)!.reduce((s, v) => s + v.tx_count, 0),
+      }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [byService]);
+
+  const txTypeData = byTreatment.map(t => ({
+    name:      t.treatment,
+    "Revenue": t.revenue_inc,
+    count:     t.tx_count,
+    pct:       t.pct,
+  }));
+
+  return (
+    <>
+      {/* ── Page Header ─────────────────────────────────────────────── */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="space-y-1">
+          <h1 className="text-xl md:text-2xl font-bold text-foreground tracking-tight">
+            Slimming — Sales
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            All figures in EUR · gross (inc-VAT) · Revenue = actually collected (Paid)
+          </p>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <a
+              href="https://docs.google.com/spreadsheets/d/195RvbNuZd-oNL-rziKC3Wz6ndy0cDA_a/edit#gid=1945063877"
+              target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors"
+            >
+              <FileSpreadsheet className="h-3 w-3" />
+              Cockpit Datasheet — Slimming Sales ↗
+            </a>
+            <a
+              href="https://docs.google.com/spreadsheets/d/195RvbNuZd-oNL-rziKC3Wz6ndy0cDA_a/edit#gid=1735295211"
+              target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors"
+            >
+              <FileSpreadsheet className="h-3 w-3" />
+              Cockpit Datasheet — Slimming Treatments (Tx) ↗
+            </a>
+          </div>
+        </div>
+        <SyncButton
+          onSync={async () => { triggerSync(); }}
+          lastSynced={totals.last_synced}
+          isExternalBusy={isSyncing || isFetching}
+        />
+      </div>
+      {syncError && (
+        <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2">{syncError}</p>
+      )}
+      <SalesKPIGrid columns={3}>
+        <SalesKPICard
+          label="Gross Revenue"
+          value={fmtK(totals.revenue_paid)}
+          subtitle={`inc-VAT · ${totals.tx_count} bookings`}
+          yoyChange={delta.net}
+          yoyLabel="vs prev period"
+        />
+        <SalesKPICard
+          label="Service Revenue"
+          value={fmtK(totals.service_revenue_paid)}
+          subtitle={`${pct(totals.service_revenue_paid, totals.revenue_paid)} of gross`}
+          yoyChange={delta.service}
+          yoyLabel="vs prev period"
+        />
+        <SalesKPICard
+          label="Retail Revenue"
+          value={fmtK(totals.retail_revenue_paid)}
+          subtitle={`${pct(totals.retail_revenue_paid, totals.revenue_paid)} of gross`}
+          yoyChange={delta.retail}
+          yoyLabel="vs prev period"
+        />
+      </SalesKPIGrid>
+
+      {/* ── Revenue by Staff — Regular & Retail (side-by-side) ──────── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+        {/* Regular staff */}
+        <Card className="p-4 md:p-5">
+          <div className="flex items-center gap-2 mb-1">
+            <h2 className="text-base font-semibold text-foreground">Revenue by Staff</h2>
+            <span className="text-xs text-muted-foreground">(Sale of column)</span>
+          </div>
+          <p className="text-xs text-muted-foreground mb-4">Services / programmes</p>
+          {regularStaff.length === 0 ? (
+            <EmptyState isLoading={isLoading} />
+          ) : (
+            <ResponsiveContainer width="100%" height={chartH(regularStaff.length)}>
+              <BarChart
+                layout="vertical"
+                data={regularChartData}
+                margin={{ top: 20, right: 100, left: 72, bottom: 4 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tickFormatter={fmtK} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={68} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                <Tooltip content={<StaffTooltip />} />
+                <Bar dataKey="revenue_net_inc" stackId="rev" fill={SLIMMING_GREEN} radius={[0, 0, 0, 0]} maxBarSize={28} name="Revenue inc-VAT">
+                  {/* Fallback label for rows with no salary (salary_cost = 0):
+                      the bar_label list on the salary bar doesn't render when its
+                      value is 0, so this paints the gross on the revenue bar instead. */}
+                  <LabelList
+                    dataKey="bar_label"
+                    content={({ x, y, width, height, value, index }) => {
+                      if (index == null) return null;
+                      const row = regularChartData[index];
+                      if (!row || (row.salary_cost ?? 0) > 0) return null;
+                      const cx = (Number(x) || 0) + (Number(width) || 0) + 4;
+                      const cy = (Number(y) || 0) + (Number(height) || 0) / 2 + 3;
+                      return <text x={cx} y={cy} fontSize={10} fill="#374151">{String(value ?? "")}</text>;
+                    }}
+                  />
+                </Bar>
+                <Bar dataKey="salary_cost" stackId="rev" fill={SALARY_BLUE} radius={[0, 4, 4, 0]} maxBarSize={28} name="Salary cost">
+                  <LabelList dataKey="k_label" position="insideRight" formatter={(v: unknown) => v ? String(v) : ""} style={{ fontSize: 9, fill: "#fff", fontWeight: 700 }} />
+                  <LabelList dataKey="bar_label" position="right" formatter={(v: unknown) => String(v ?? "")} style={{ fontSize: 10, fill: "#374151" }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+          <StaffLegend hideBookings />
+        </Card>
+
+        {/* Retail staff */}
+        <Card className="p-4 md:p-5">
+          <div className="flex items-center gap-2 mb-1">
+            <h2 className="text-base font-semibold text-foreground">Revenue by Staff — Retail</h2>
+          </div>
+          <p className="text-xs text-muted-foreground mb-4">Product retail sales</p>
+          {retailStaff.length === 0 ? (
+            <EmptyState isLoading={isLoading} />
+          ) : (
+            <ResponsiveContainer width="100%" height={chartH(retailStaff.length)}>
+              <BarChart
+                layout="vertical"
+                data={retailChartData}
+                margin={{ top: 20, right: 100, left: 72, bottom: 4 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tickFormatter={fmtK} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={68} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                <Tooltip content={<StaffTooltip />} />
+                <Bar dataKey="revenue_net_inc" stackId="rev" fill={GOLD} radius={[0, 0, 0, 0]} maxBarSize={28} name="Revenue inc-VAT">
+                  <LabelList
+                    dataKey="bar_label"
+                    content={({ x, y, width, height, value, index }) => {
+                      if (index == null) return null;
+                      const row = retailChartData[index];
+                      if (!row || (row.salary_cost ?? 0) > 0) return null;
+                      const cx = (Number(x) || 0) + (Number(width) || 0) + 4;
+                      const cy = (Number(y) || 0) + (Number(height) || 0) / 2 + 3;
+                      return <text x={cx} y={cy} fontSize={10} fill="#374151">{String(value ?? "")}</text>;
+                    }}
+                  />
+                </Bar>
+                <Bar dataKey="salary_cost" stackId="rev" fill={SALARY_BLUE} radius={[0, 4, 4, 0]} maxBarSize={28} name="Salary cost">
+                  <LabelList dataKey="k_label" position="insideRight" formatter={(v: unknown) => v ? String(v) : ""} style={{ fontSize: 9, fill: "#fff", fontWeight: 700 }} />
+                  <LabelList dataKey="bar_label" position="right" formatter={(v: unknown) => String(v ?? "")} style={{ fontSize: 10, fill: "#374151" }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+          <StaffLegend retailColor={GOLD} hideBookings />
+        </Card>
+
+      </div>
+
+      {/* ── Revenue by Service Type ───────────────────────────────────── */}
+      <Card className="p-4 md:p-5">
+        <h2 className="text-base font-semibold text-foreground mb-1">Revenue by Service Type</h2>
+        <p className="text-xs text-muted-foreground mb-4">Weight Loss (col C) vs Treatments (col D) vs Medical</p>
+        {byServiceType.length === 0 ? (
+          <EmptyState isLoading={isLoading} />
+        ) : (
+          <ResponsiveContainer width="100%" height={chartH(byServiceType.length)}>
+            <BarChart
+              layout="vertical"
+              data={serviceTypeData}
+              margin={{ top: 20, right: 120, left: 120, bottom: 4 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis
+                type="number"
+                tickFormatter={fmtK}
+                tick={{ fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={116}
+                tick={{ fontSize: 12 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip
+                formatter={tooltipFmt}
+              />
+              <Bar dataKey="Revenue" radius={[0, 4, 4, 0]} maxBarSize={32}>
+                {serviceTypeData.map((entry, i) => (
+                  <Cell key={i} fill={SERVICE_TYPE_COLORS[entry.type] ?? "#9CA3AF"} />
+                ))}
+                <LabelList
+                  dataKey="Revenue"
+                  position="right"
+                  formatter={(v: unknown) => fmtK(Number(v))}
+                  style={{ fontSize: 10, fontWeight: 600, fill: "#111827" }}
+                />
+                <LabelList
+                  dataKey="pct"
+                  position="insideRight"
+                  formatter={(v: unknown) => (typeof v === "number" && v >= 8 ? `${v}%` : "")}
+                  style={{ fontSize: 10, fontWeight: 700, fill: "#fff" }}
+                />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+        {/* Colour legend */}
+        {byServiceType.length > 0 && (
+          <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-muted-foreground">
+            {byServiceType.map(t => (
+              <span key={t.type} className="flex items-center gap-1.5">
+                <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: SERVICE_TYPE_COLORS[t.type] ?? "#9CA3AF" }} />
+                {t.label}
+              </span>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* ── Revenue by Service / Product — treemap (area = revenue, colour = category) ─── */}
+      <ServiceTreemap
+        title="Revenue by Service / Product"
+        subtitle="Each rectangle = one service · Area = revenue share · Colour = website nav category"
+        byGroup={byGroup.map(g => ({
+          group:         g.group,
+          color:         g.color,
+          total_revenue: g.total_revenue,
+          total_count:   g.total_count,
+          services:      g.services
+            .filter(s => s.revenue_paid > 0)
+            .map(s => ({
+              service:   s.service,
+              revenue:   s.revenue_paid,
+              tx_count:  s.tx_count,
+              nav_group: g.group,
+            })),
+        }))}
+        totalRevenue={totals.revenue_paid}
+        totalCount={totals.tx_count}
+        loading={isLoading}
+        qcLine={(() => {
+          // QC: byGroup totals must sum to totals.revenue_paid (both come from
+          // the same useSlimmingSales hook, so any drift is an internal bug).
+          const sum   = byGroup.reduce((s, g) => s + g.total_revenue, 0);
+          const delta = sum - totals.revenue_paid;
+          const pct   = totals.revenue_paid > 0 ? (Math.abs(delta) / totals.revenue_paid) * 100 : 0;
+          const ok    = pct <= 0.5;
+          const Icon  = ok ? CheckCircle2 : AlertTriangleIcon;
+          return (
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${ok ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}
+              title={`Treemap groups sum: €${Math.round(sum)} · Brand total: €${Math.round(totals.revenue_paid)} · Δ ${delta >= 0 ? "+" : ""}€${Math.round(delta)} (${pct.toFixed(2)}%)`}
+            >
+              <Icon className="h-2.5 w-2.5" /> {ok ? "Matches brand total" : `Drift ${pct.toFixed(1)}%`}
+            </span>
+          );
+        })()}
+      />
+
+      {/* ═══════════════════════════════════════════════════════════
+          Tx Slimming section — from the Treatments (Tx) tab
+         ═══════════════════════════════════════════════════════════ */}
+      <div className="space-y-1 pt-2">
+        <h2 className="text-lg font-bold text-foreground tracking-tight">Tx Slimming — Treatment Breakdown</h2>
+        <p className="text-xs text-muted-foreground">
+          Source: Cockpit Datasheet → Tx Slimming tab ·{" "}
+          {txTotals.last_synced
+            ? `Last synced: ${new Date(txTotals.last_synced).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" })}`
+            : "Not yet synced"}
+        </p>
+      </div>
+
+      {/* ── Treatments by Therapist ───────────────────────────────────── */}
+      <Card className="p-4 md:p-5">
+        <h2 className="text-base font-semibold text-foreground mb-1">Treatments by Therapist</h2>
+        <p className="text-xs text-muted-foreground mb-4">Revenue inc-VAT per therapist from the Tx tab</p>
+        {txByStaff.length === 0 ? (
+          <EmptyState isLoading={txLoading} />
+        ) : (
+          <ResponsiveContainer width="100%" height={chartH(txByStaff.length)}>
+            <BarChart
+              layout="vertical"
+              data={txStaffData}
+              margin={{ top: 20, right: 100, left: 100, bottom: 4 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis
+                type="number"
+                tickFormatter={fmtK}
+                tick={{ fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={96}
+                tick={{ fontSize: 12 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip content={<GenericTooltip />} />
+              <Bar dataKey="revenue_net_inc" stackId="rev" fill={TEAL} radius={[0, 0, 0, 0]} maxBarSize={28} name="Revenue inc-VAT" />
+              <Bar dataKey="salary_cost" stackId="rev" fill={SALARY_BLUE} radius={[0, 4, 4, 0]} maxBarSize={28} name="Salary cost">
+                <LabelList dataKey="k_label" position="insideRight" formatter={(v: unknown) => v ? String(v) : ""} style={{ fontSize: 9, fill: "#fff", fontWeight: 700 }} />
+                <LabelList dataKey="bar_label" position="right" formatter={(v: unknown) => String(v ?? "")} style={{ fontSize: 11, fill: "#374151" }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+        {txByStaff.length > 0 && (
+          <div className="mt-3 text-xs text-muted-foreground">
+            Total: {fmtK(txTotals.revenue_inc)} inc-VAT · {txTotals.tx_count} sessions
+          </div>
+        )}
+      </Card>
+
+      {/* ── Treatments by Type ────────────────────────────────────────── */}
+      <Card className="p-4 md:p-5">
+        <h2 className="text-base font-semibold text-foreground mb-1">Treatments by Type</h2>
+        <p className="text-xs text-muted-foreground mb-4">Revenue inc-VAT per treatment type from the Tx tab</p>
+        {byTreatment.length === 0 ? (
+          <EmptyState isLoading={txLoading} />
+        ) : (
+          <ResponsiveContainer width="100%" height={chartH(byTreatment.length)}>
+            <BarChart
+              layout="vertical"
+              data={txTypeData}
+              margin={{ top: 20, right: 120, left: 140, bottom: 4 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis
+                type="number"
+                tickFormatter={fmtK}
+                tick={{ fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={136}
+                tick={{ fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip
+                formatter={tooltipFmt}
+              />
+              <Bar dataKey="Revenue" radius={[0, 4, 4, 0]} maxBarSize={28}>
+                {txTypeData.map((_, i) => (
+                  <Cell key={i} fill={TREATMENT_PALETTE[i % TREATMENT_PALETTE.length]} />
+                ))}
+                <LabelList
+                  dataKey="Revenue"
+                  position="right"
+                  formatter={(v: unknown) => fmtK(Number(v))}
+                  style={{ fontSize: 10, fontWeight: 600, fill: "#111827" }}
+                />
+                <LabelList
+                  dataKey="pct"
+                  position="insideRight"
+                  formatter={(v: unknown) => (typeof v === "number" && v >= 8 ? `${v}%` : "")}
+                  style={{ fontSize: 10, fontWeight: 700, fill: "#fff" }}
+                />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+        {byTreatment.length > 0 && (
+          <div className="mt-3 text-xs text-muted-foreground">
+            Total: {fmtK(txTotals.revenue_inc)} inc-VAT · {txTotals.tx_count} sessions
+          </div>
+        )}
+      </Card>
+
+      {/* ── Program Health (additive — computed server-side) ─────────── */}
+      <SlimmingProgramHealthSection dateFrom={dateFrom} dateTo={dateTo} />
+    </>
+  );
+}
+
+export default function SlimmingSalesPage() {
+  return (
+    <DashboardShell>
+      {({ dateFrom, dateTo }) => (
+        <SlimmingSalesContent dateFrom={dateFrom} dateTo={dateTo} />
+      )}
+    </DashboardShell>
+  );
+}

@@ -1,0 +1,338 @@
+{
+  "name": "ETL: Klaviyo Campaigns (Daily)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8,
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "kl-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ source_name: 'klaviyo_campaigns', status: 'running' }) }}"
+      },
+      "id": "kl-log-start",
+      "name": "Log ETL Start",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const startedAt = new Date().toISOString();\nconst logId = $input.first().json[0]?.id || $input.first().json?.id;\nreturn [{ json: { log_id: logId, started_at: startedAt } }];"
+      },
+      "id": "kl-extract-log-id",
+      "name": "Extract Log ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Define brands with their Klaviyo API keys\n// All 3 brands use the same Klaviyo account/key for now\nconst brands = [\n  { brand_id: 1, brand_name: 'spa', api_key: $env.KLAVIYO_API_KEY },\n  { brand_id: 2, brand_name: 'aesthetics', api_key: $env.KLAVIYO_API_KEY },\n  { brand_id: 3, brand_name: 'slimming', api_key: $env.KLAVIYO_API_KEY }\n];\n\nconst logId = $input.first().json.log_id;\nconst startedAt = $input.first().json.started_at;\n\nreturn brands.map(b => ({ json: { ...b, log_id: logId, started_at: startedAt } }));"
+      },
+      "id": "kl-brands",
+      "name": "Build Brand List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [740, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://a.klaviyo.com/api/campaigns/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Klaviyo-API-Key {{ $env.KLAVIYO_API_KEY }}" },
+            { "name": "revision", "value": "2024-10-15" },
+            { "name": "Accept", "value": "application/json" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "filter", "value": "equals(messages.channel,'email'),greater-than(send_time,2026-04-12T00:00:00Z)" }
+          ]
+        }
+      },
+      "id": "kl-fetch-campaigns",
+      "name": "Fetch Campaigns",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [980, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const brandId = $('Build Brand List').item.json.brand_id;\nconst campaigns = $input.first().json.data || [];\n\nif (campaigns.length === 0) {\n  return [{ json: { brand_id: brandId, campaign_ids: [], campaigns: [], skip: true } }];\n}\n\nconst campaignIds = campaigns.map(c => c.id);\nconst campaignMeta = campaigns.map(c => ({\n  id: c.id,\n  name: c.attributes?.name || 'Unknown',\n  send_time: c.attributes?.send_time || c.attributes?.created_at\n}));\n\nreturn [{ json: { brand_id: brandId, campaign_ids: campaignIds, campaigns: campaignMeta, skip: false } }];"
+      },
+      "id": "kl-extract-ids",
+      "name": "Extract Campaign IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1220, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "version": 2, "caseSensitive": true },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "kl-cond-skip",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "notEqual" }
+            }
+          ]
+        }
+      },
+      "id": "kl-has-campaigns",
+      "name": "Has Campaigns?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://a.klaviyo.com/api/campaign-values-reports/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Klaviyo-API-Key {{ $env.KLAVIYO_API_KEY }}" },
+            { "name": "revision", "value": "2024-10-15" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Accept", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ data: { type: 'campaign-values-report', attributes: { statistics: ['opens', 'clicks', 'recipients', 'revenue'], timeframe: { key: 'last_30_days' }, filter: 'equals(campaign_id,\"' + $json.campaign_ids.join('\"),equals(campaign_id,\"') + '\")' }, relationships: { campaigns: { data: $json.campaign_ids.map(id => ({ type: 'campaign', id })) } } } }) }}"
+      },
+      "id": "kl-fetch-metrics",
+      "name": "Fetch Campaign Metrics",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1700, 220]
+    },
+    {
+      "parameters": {
+        "jsCode": "const brandId = $('Extract Campaign IDs').item.json.brand_id;\nconst campaigns = $('Extract Campaign IDs').item.json.campaigns;\nconst metricsData = $input.first().json.data || [];\n\nconst rows = [];\n\n// Build a map of metrics by campaign ID\nconst metricsMap = {};\nfor (const entry of metricsData) {\n  const stats = entry.attributes?.statistics || {};\n  const cId = entry.relationships?.campaign?.data?.id || entry.id;\n  metricsMap[cId] = stats;\n}\n\n// Group by date to compute revenue_pct_of_total\nconst byDate = {};\n\nfor (const campaign of campaigns) {\n  const sendDate = campaign.send_time ? campaign.send_time.substring(0, 10) : new Date().toISOString().substring(0, 10);\n  const metrics = metricsMap[campaign.id] || {};\n\n  const row = {\n    date: sendDate,\n    brand_id: brandId,\n    campaign_name: campaign.name,\n    sends: metrics.recipients || 0,\n    opens: metrics.opens || 0,\n    clicks: metrics.clicks || 0,\n    revenue: parseFloat(metrics.revenue || 0).toFixed(2)\n  };\n\n  if (!byDate[sendDate]) byDate[sendDate] = [];\n  byDate[sendDate].push(row);\n  rows.push(row);\n}\n\n// Compute revenue_pct_of_total per date\nfor (const date of Object.keys(byDate)) {\n  const dateRows = byDate[date];\n  const totalRevenue = dateRows.reduce((sum, r) => sum + parseFloat(r.revenue), 0);\n  for (const row of dateRows) {\n    row.revenue_pct_of_total = totalRevenue > 0\n      ? parseFloat((parseFloat(row.revenue) / totalRevenue * 100).toFixed(2))\n      : 0;\n  }\n}\n\nreturn rows.map(r => ({ json: r }));"
+      },
+      "id": "kl-transform",
+      "name": "Transform to Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1940, 220]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/klaviyo_campaigns",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "resolution=merge-duplicates" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ date: $json.date, brand_id: $json.brand_id, campaign_name: $json.campaign_name, sends: $json.sends, opens: $json.opens, clicks: $json.clicks, revenue: $json.revenue, revenue_pct_of_total: $json.revenue_pct_of_total }) }}"
+      },
+      "id": "kl-upsert",
+      "name": "Upsert to Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2180, 220],
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const logId = $('Extract Log ID').first().json.log_id;\nconst startedAt = $('Extract Log ID').first().json.started_at;\nconst items = $input.all();\nconst rowsUpserted = items.length;\nconst durationSec = Math.round((Date.now() - new Date(startedAt).getTime()) / 1000);\n\nreturn [{ json: { log_id: logId, rows_upserted: rowsUpserted, duration_sec: durationSec } }];"
+      },
+      "id": "kl-count-rows",
+      "name": "Count Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2420, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log?id=eq.{{ $json.log_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'success', rows_upserted: $json.rows_upserted, completed_at: new Date().toISOString(), duration_sec: $json.duration_sec }) }}"
+      },
+      "id": "kl-log-success",
+      "name": "Log ETL Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2660, 300]
+    },
+    {
+      "parameters": {},
+      "id": "kl-error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "const errorMsg = $input.first().json.execution?.error?.message || 'Unknown error';\nlet logId = null;\ntry {\n  const execData = $input.first().json.execution?.data?.resultData?.runData;\n  if (execData && execData['Extract Log ID']) {\n    logId = execData['Extract Log ID'][0]?.data?.main?.[0]?.[0]?.json?.log_id;\n  }\n} catch(e) {}\n\nreturn [{ json: { log_id: logId, error_message: errorMsg.substring(0, 1000) } }];"
+      },
+      "id": "kl-error-parse",
+      "name": "Parse Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 600]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "version": 2, "caseSensitive": true },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "kl-cond-has-log-id",
+              "leftValue": "={{ $json.log_id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ]
+        }
+      },
+      "id": "kl-check-log-id",
+      "name": "Has Log ID?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [500, 600]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log?id=eq.{{ $json.log_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'failed', error_message: $json.error_message, completed_at: new Date().toISOString() }) }}"
+      },
+      "id": "kl-log-fail",
+      "name": "Log ETL Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [740, 520]
+    },
+    {
+      "parameters": {
+        "content": "## ETL: Klaviyo Campaigns (Daily)\n\n**Schedule:** Daily at 08:00\n**Source:** Klaviyo API\n**Target:** klaviyo_campaigns\n\n**NOTE:** Configure `KLAVIYO_API_KEY` env var in n8n.\nCurrently all 3 brands use the same API key.\nIf separate Klaviyo accounts per brand are needed,\nupdate the Build Brand List node with per-brand keys."
+      },
+      "id": "kl-sticky",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-200, 100],
+      "parameters_extra": {
+        "width": 380,
+        "height": 200
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[{ "node": "Log ETL Start", "type": "main", "index": 0 }]]
+    },
+    "Log ETL Start": {
+      "main": [[{ "node": "Extract Log ID", "type": "main", "index": 0 }]]
+    },
+    "Extract Log ID": {
+      "main": [[{ "node": "Build Brand List", "type": "main", "index": 0 }]]
+    },
+    "Build Brand List": {
+      "main": [[{ "node": "Fetch Campaigns", "type": "main", "index": 0 }]]
+    },
+    "Fetch Campaigns": {
+      "main": [[{ "node": "Extract Campaign IDs", "type": "main", "index": 0 }]]
+    },
+    "Extract Campaign IDs": {
+      "main": [[{ "node": "Has Campaigns?", "type": "main", "index": 0 }]]
+    },
+    "Has Campaigns?": {
+      "main": [
+        [{ "node": "Fetch Campaign Metrics", "type": "main", "index": 0 }],
+        [{ "node": "Count Rows", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Campaign Metrics": {
+      "main": [[{ "node": "Transform to Rows", "type": "main", "index": 0 }]]
+    },
+    "Transform to Rows": {
+      "main": [[{ "node": "Upsert to Supabase", "type": "main", "index": 0 }]]
+    },
+    "Upsert to Supabase": {
+      "main": [[{ "node": "Count Rows", "type": "main", "index": 0 }]]
+    },
+    "Count Rows": {
+      "main": [[{ "node": "Log ETL Success", "type": "main", "index": 0 }]]
+    },
+    "Error Trigger": {
+      "main": [[{ "node": "Parse Error", "type": "main", "index": 0 }]]
+    },
+    "Parse Error": {
+      "main": [[{ "node": "Has Log ID?", "type": "main", "index": 0 }]]
+    },
+    "Has Log ID?": {
+      "main": [
+        [{ "node": "Log ETL Failed", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}
