@@ -20,7 +20,7 @@ INSERT INTO crm_agent_mapping (agent_slug, display_name, position, brand_slug) V
   ('juliana',  'Juliana',  'sdr',  'spa'),
   ('vj',       'VJ',       'sdr',  'spa'),
   ('april',    'April',    'sdr',  'aesthetics'),
-  ('ray',      'Ray',      'sdr',  'aesthetics'),
+  ('rey',      'Rey',      'sdr',  'aesthetics'),
   ('dorianne', 'Dorianne', 'sdr',  'slimming'),
   ('queenee',  'Queenee',  'sdr',  'slimming'),
   ('anni',     'Anni',     'sdr',  NULL),
