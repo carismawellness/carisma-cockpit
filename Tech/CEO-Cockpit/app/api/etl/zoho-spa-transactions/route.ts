@@ -47,7 +47,11 @@ export async function POST(req: NextRequest) {
     // Skipping these dramatically reduces transaction count for high-volume SPA org.
     log.push(`Pulling transactions ${dateFrom} … ${dateTo} (single full-range fetch, skip revenue sources)…`);
     const pull = await fetchTransactionLines(client, dateFrom, dateTo, {
-      skipSources: ["invoice", "creditnote", "salesreturn"],
+      // Skip revenue-side + payment sources for SPA (high-volume Fresha sync).
+      // Revenue: spa_revenue_daily is authoritative. Payments: only capture bank
+      // charges (minor amounts, negligible vs SGA total). Both are explicitly
+      // skipped or irrelevant in ebitda-v2 reads.
+      skipSources: ["invoice", "creditnote", "salesreturn", "customerpayment", "vendorpayment"],
     });
     log.push(...pull.log.map(s => `  ${s}`));
     log.push(`Per source: ${JSON.stringify(pull.perSourceCount)}`);
