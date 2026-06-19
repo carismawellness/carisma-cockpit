@@ -27,9 +27,15 @@ async function patchWhere(filters: string, body: Record<string, unknown>): Promi
   return rows.length;
 }
 
-// PostgREST OR filter for account_name ilike patterns
+// PostgREST OR filter checking both account_name and contact_name.
+// Some vendors (e.g. Fresha) use generic COA accounts ("Service Charges") so the
+// vendor name (contact_name) is the only reliable classification signal.
 function orFilter(patterns: string[]): string {
-  return "or=(" + patterns.map(p => `account_name.ilike.*${p}*`).join(",") + ")";
+  const parts = [
+    ...patterns.map(p => `account_name.ilike.*${p}*`),
+    ...patterns.map(p => `contact_name.ilike.*${p}*`),
+  ];
+  return "or=(" + parts.join(",") + ")";
 }
 
 const TRAVEL_KEYWORDS = [

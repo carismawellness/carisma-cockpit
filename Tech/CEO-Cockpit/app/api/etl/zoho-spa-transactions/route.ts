@@ -53,7 +53,13 @@ function sbHeaders(): Record<string, string> {
 async function fixSgaSubLines(dateFrom: string, dateTo: string): Promise<number> {
   let total = 0;
   for (const [keywords, subLine] of SGA_SUB_FIX) {
-    const orParts = keywords.map(k => `account_name.ilike.*${k}*`).join(",");
+    // Check both account_name (COA) and contact_name (vendor) — some vendors like
+    // Fresha use generic COA accounts (e.g. "Service Charges") so the vendor name
+    // is the only reliable signal.
+    const orParts = [
+      ...keywords.map(k => `account_name.ilike.*${k}*`),
+      ...keywords.map(k => `contact_name.ilike.*${k}*`),
+    ].join(",");
     const filter = `org=eq.spa&ebitda_line=eq.sga&ebitda_sub_line=neq.${subLine}&date=gte.${dateFrom}&date=lte.${dateTo}&or=(${orParts})`;
     const resp = await fetch(`${sbUrl("transactions_raw")}?${filter}`, {
       method: "PATCH", headers: sbHeaders(), body: JSON.stringify({ ebitda_sub_line: subLine }),
