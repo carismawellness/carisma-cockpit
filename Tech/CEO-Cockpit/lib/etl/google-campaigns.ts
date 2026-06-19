@@ -104,7 +104,7 @@ interface GoogleAdsRow {
     impressions?:         string;
     clicks?:              string;
     conversions?:         number;
-    allConversionsValue?: number;
+    conversionsValue?: number;
     ctr?:                 number;
     averageCpc?:          number;
     averageCpm?:          number;
@@ -149,7 +149,7 @@ async function fetchCampaignRows(
       metrics.impressions,
       metrics.clicks,
       metrics.conversions,
-      metrics.all_conversions_value,
+      metrics.conversions_value,
       metrics.ctr,
       metrics.average_cpc,
       metrics.average_cpm,
@@ -271,7 +271,7 @@ async function runGoogleCampaignsEtlInner(opts: {
         const impressions     = parseInt(r.metrics?.impressions ?? "0", 10);
         const clicks          = parseInt(r.metrics?.clicks ?? "0", 10);
         const conversions     = r.metrics?.conversions ?? 0;
-        const conversionValue = (r.metrics?.allConversionsValue ?? 0) * fxRate;
+        const conversionValue = (r.metrics?.conversionsValue ?? 0) * fxRate;
         const ctrPct          = (r.metrics?.ctr ?? 0) * 100; // Google returns decimal
         const cpc             = ((r.metrics?.averageCpc ?? 0) / 1_000_000) * fxRate;
         const cpm             = ((r.metrics?.averageCpm ?? 0) / 1_000_000) * fxRate;
