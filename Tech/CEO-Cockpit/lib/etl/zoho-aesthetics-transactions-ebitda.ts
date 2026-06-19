@@ -288,7 +288,7 @@ export async function runAestheticsEbitdaMonthFromTransactions(
       if (/laundry|linen|uniform/.test(low))                                   return "laundry";
       if (/software|subscription|saas|licen[cs]e|system|fresha/.test(low))    return "software";
       if (/clean|hygiene|sanitiz|pest/.test(low))                              return "cleaning";
-      if (/travel|transport|flight|hotel|accommodation|taxi|uber|airbnb/.test(low)) return "travel";
+      if (/travel|transport|flight|hotel|accommodation|taxi|uber|airbnb|parking|car hire|car rental|vehicle hire|airline|airways/.test(low)) return "travel";
       if (/insur/.test(low))                                                   return "insurance";
       if (/event|function|catering|hospitality/.test(low))                     return "events";
       if (/maintenance|repair|service contract|fix/.test(low))                 return "maintenance";

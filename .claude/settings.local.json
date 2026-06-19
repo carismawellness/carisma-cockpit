@@ -172,71 +172,41 @@
       "mcp__klaviyo__klaviyo_get_segments",
       "Bash(kill -0 72892)",
       "Bash(grep --line-buffered -E \"Done\\\\.|ERROR|To suppress|suppressed$\")",
-      "Bash(mkdir -p \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/api/admin/invitations\")",
-      "Bash(mkdir -p \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/api/admin/user-permissions\")",
-      "Bash(mkdir -p \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/api/admin/users\")",
-      "Bash(mkdir -p \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/register\")",
-      "Bash(mkdir -p \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/unauthorized\")",
-      "Bash(rm '/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/sales/spa/page.tsx')",
-      "Bash(mv '/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/sales/spa-deepa/page.tsx' '/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/sales/spa/page.tsx')",
-      "Bash(rmdir '/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/sales/spa-deepa')",
+      "Bash(mkdir -p \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/Tech/CEO-Cockpit/app/api/admin/invitations\")",
+      "Bash(mkdir -p \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/Tech/CEO-Cockpit/app/api/admin/user-permissions\")",
+      "Bash(mkdir -p \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/Tech/CEO-Cockpit/app/api/admin/users\")",
+      "Bash(mkdir -p \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/Tech/CEO-Cockpit/app/register\")",
+      "Bash(mkdir -p \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/Tech/CEO-Cockpit/app/unauthorized\")",
+      "Bash(rm '/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/Tech/CEO-Cockpit/app/sales/spa/page.tsx')",
+      "Bash(mv '/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/Tech/CEO-Cockpit/app/sales/spa-deepa/page.tsx' '/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/Tech/CEO-Cockpit/app/sales/spa/page.tsx')",
+      "Bash(rmdir '/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/Tech/CEO-Cockpit/app/sales/spa-deepa')",
       "mcp__playwright__browser_run_code_unsafe",
       "Bash(mkdir -p app/settings/etl-runner)",
       "Bash(git show *)",
-      "Bash(rm \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/sales/aesthetics-deepa/page.tsx\")",
-      "Bash(rmdir \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/sales/aesthetics-deepa\")",
-      "Bash(rm \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/sales/slimming-deepa/page.tsx\")",
-      "Bash(rmdir \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/sales/slimming-deepa\")",
-      "Bash(rm -f '/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/api/etl/zoho-spa/route.ts')",
-      "Bash(rm -f '/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/api/etl/zoho-aesthetics/route.ts')",
-      "Bash(rm -f '/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/api/etl/zoho-hq/route.ts')",
-      "Bash(rm -f '/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/api/finance/financial-entries/route.ts')",
-      "Bash(rm -f '/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/api/finance/zoho-transactions-daily/route.ts')",
-      "mcp__ghl-slimming__get_pipelines",
-      "mcp__ghl-slimming__search_contacts",
-      "mcp__ghl-aesthetics__search_conversations",
-      "mcp__ghl-slimming__search_conversations",
-      "Bash(rm \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/ceo/page.tsx\")",
-      "Bash(rmdir \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/ceo\")",
-      "mcp__talexio__talexio_me",
-      "mcp__talexio__talexio_headcount",
-      "mcp__talexio__talexio_payroll_list",
-      "mcp__talexio__talexio_time_logs",
-      "mcp__talexio__talexio_leave_balances",
-      "mcp__talexio__talexio_query",
-      "mcp__talexio__talexio_get_employee",
-      "mcp__playwright__browser_network_request",
-      "mcp__ghl-aesthetics__get_pipelines",
-      "Bash(rm \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/supabase/migrations/069_create_klaviyo_flows_daily.sql\")",
-      "Bash(rm -rf \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/app/api/admin/migrate-klaviyo-flows\")",
-      "Bash(mkdir -p ~/.claude/skills/bar-chart-labels)",
-      "Read(//Users/mertgulen/.claude/skills/**)",
-      "Bash(mkdir -p \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/docs/reviews\")"
+      "Bash(rm \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/Tech/CEO-Cockpit/app/sales/aesthetics-deepa/page.tsx\")",
+      "Bash(rmdir \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/Tech/CEO-Cockpit/app/sales/aesthetics-deepa\")",
+      "Bash(rm \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/Tech/CEO-Cockpit/app/sales/slimming-deepa/page.tsx\")",
+      "Bash(rmdir \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/Tech/CEO-Cockpit/app/sales/slimming-deepa\")",
+      "Bash(mkdir -p \"c:/Users/admin/carisma-support/.claude/commands\")",
+      "Bash(mkdir -p \"c:/Users/admin/.claude/projects/c--Users-admin-carisma-support/memory\")",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\admin\" -Recurse -Filter \"python.exe\" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch \"WindowsApps\" } | Select-Object -First 5 FullName)",
+      "PowerShell(Get-ChildItem \"C:\\\\\" -Recurse -Filter \"python.exe\" -ErrorAction SilentlyContinue -Depth 5 | Where-Object { $_.FullName -notmatch \"WindowsApps\" } | Select-Object -First 5 FullName)",
+      "mcp__klaviyo-slimming__klaviyo_campaigns_list",
+      "mcp__klaviyo-spa__klaviyo_metrics_list",
+      "mcp__klaviyo-aesthetics__klaviyo_metrics_list",
+      "mcp__klaviyo-slimming__klaviyo_metrics_list"
     ],
-    "defaultMode": "bypassPermissions",
-    "additionalDirectories": [
-      "/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit/docs"
-    ]
+    "defaultMode": "bypassPermissions"
   },
   "enableAllProjectMcpServers": true,
   "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 /Users/mertgulen/.claude/hooks/play-trigger.py"
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
         "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI\" && git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -q \"^10-Tech/CEO-Cockpit/\" && (cd \"10-Tech/CEO-Cockpit\" && npx vercel --prod --yes 2>&1 | tail -5) || true",
+            "command": "cd \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI\" && git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -q \"^Tech/CEO-Cockpit/\" && (cd \"Tech/CEO-Cockpit\" && npx vercel --prod --yes 2>&1 | tail -5) || true",
             "timeout": 120,
             "statusMessage": "Deploying CEO-Cockpit to production..."
           }
@@ -247,7 +217,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.file_path // empty' | { read -r f; echo \"$f\" | grep -q '10-Tech/CEO-Cockpit/' && cd \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/10-Tech/CEO-Cockpit\" && npx vercel --prod --yes 2>&1 | tail -5; } 2>/dev/null || true",
+            "command": "jq -r '.tool_input.file_path // empty' | { read -r f; echo \"$f\" | grep -q 'Tech/CEO-Cockpit/' && cd \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/Tech/CEO-Cockpit\" && npx vercel --prod --yes 2>&1 | tail -5; } 2>/dev/null || true",
             "timeout": 120,
             "statusMessage": "Deploying cockpit to production...",
             "async": true
