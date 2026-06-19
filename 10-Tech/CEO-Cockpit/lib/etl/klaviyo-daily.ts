@@ -91,8 +91,8 @@ async function fetchSubscriberCount(apiKey: string): Promise<number> {
       const url = `${KLAVIYO_BASE}/lists/${list.id}/?additional-fields%5Blist%5D=profile_count`;
       const r = await fetchWithRetry(url, { headers: klaviyoHeaders(apiKey) });
       if (!r.ok) {
-        // On sustained 429 stop trying — we'll resume on the next nightly run.
-        if (r.status === 429) break;
+        // Skip this list on 429 rather than aborting all remaining ones.
+        if (r.status === 429) { await sleep(2000); continue; }
         continue;
       }
       const j = (await r.json()) as {
