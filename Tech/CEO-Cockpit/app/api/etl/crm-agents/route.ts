@@ -237,7 +237,7 @@ function buildSdrRow(slug: string, date: string, row: string[]): CrmRow {
     other_messages:      outDials,                     // C
     other_booked:        parseInteger(cell(row, 5)),   // F (was 4)
     other_deposit:       parseInteger(cell(row, 6)),   // G (was 5)
-    total_messages:      outDials + inRecv + chatConvs,
+    total_messages:      Math.min(outDials + inRecv + chatConvs, PG_INT_MAX),
     total_booked:        parseInteger(cell(row, 19)),  // T (was 17)
     total_deposit_count: parseInteger(cell(row, 20)),  // U (was 18)
     conversion_rate_pct: parsePercent(cell(row, 22)),  // W (was 19)
