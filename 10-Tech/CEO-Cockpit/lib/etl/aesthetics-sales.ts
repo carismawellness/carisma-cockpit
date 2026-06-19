@@ -12,7 +12,7 @@ const LOW_VAT     = 0.12;
 // ── CSV helpers ───────────────────────────────────────────────────────────────
 
 async function fetchCockpitCsv(): Promise<Record<string, string>[]> {
-  const url = cockpitCsvUrl(COCKPIT_TABS.AESTHETICS.name);
+  const url = cockpitCsvUrl(COCKPIT_TABS.AESTHETICS.name, "A2:H");
   const resp = await fetch(url, { redirect: "follow" });
   if (!resp.ok) throw new Error(`Cockpit Datasheet fetch failed: ${resp.status}`);
   const text = await resp.text();

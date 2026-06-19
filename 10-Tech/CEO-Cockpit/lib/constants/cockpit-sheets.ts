@@ -57,7 +57,9 @@ export const COCKPIT_TABS = {
 } as const;
 
 /** Build a zero-auth CSV URL for any Cockpit tab.
- *  Takes the tab NAME (not gid). See file header for the URL-form rationale. */
-export function cockpitCsvUrl(tabName: string): string {
-  return `https://docs.google.com/spreadsheets/d/${COCKPIT_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}&range=A2:ZZ`;
+ *  Takes the tab NAME (not gid). See file header for the URL-form rationale.
+ *  Pass an explicit `range` to narrow columns and get a distinct gviz cache key
+ *  (useful when the default A2:ZZ cache is stale but a tighter range is fresh). */
+export function cockpitCsvUrl(tabName: string, range = "A2:ZZ"): string {
+  return `https://docs.google.com/spreadsheets/d/${COCKPIT_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}&range=${range}`;
 }
