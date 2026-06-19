@@ -8,7 +8,6 @@ import { formatCurrency } from "@/lib/charts/config";
 import { BRAND } from "@/lib/constants/design-tokens";
 import { EbitdaSummaryHeader, SummaryData, SppyData } from "@/components/finance/EbitdaSummaryHeader";
 import { PractitionerProductivityTable } from "@/components/finance/PractitionerProductivityTable";
-import { StrategicCommentary } from "@/components/finance/StrategicCommentary";
 
 // ── Venue config (matches the API) ───────────────────────────────────────────
 
@@ -591,11 +590,6 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
   return (
     <div className="space-y-4">
       <EbitdaSummaryHeader data={summaryData} loading={loading} />
-      <StrategicCommentary
-        current={data?.group ?? null}
-        prior={sppyData?.group ?? null}
-        loading={loading}
-      />
 
       {/* Toolbar */}
       <div className="flex flex-wrap gap-2 items-center">

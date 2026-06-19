@@ -1,0 +1,279 @@
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
+import { Card } from "@/components/ui/card";
+import { useKPIData } from "@/lib/hooks/useKPIData";
+import { useLookups } from "@/lib/hooks/useLookups";
+import { LeadReconRow } from "@/lib/types/crm";
+import { isExcludedCrmDate } from "@/lib/constants/excluded-dates";
+import { BRAND } from "@/lib/constants/design-tokens";
+import { toLocalDateStr } from "@/lib/utils/dates";
+
+// Canonical brand palette — `soft` for fills/borders (CRM bar, left-border),
+// `soft` for the Meta companion bar to visually pair it with the brand.
+const BRAND_DARK: Record<string, string> = {
+  spa:        BRAND.spa.soft,
+  aesthetics: BRAND.aesthetics.soft,
+  slimming:   BRAND.slimming.soft,
+};
+const BRAND_SOFT: Record<string, string> = {
+  spa:        BRAND.spa.soft,
+  aesthetics: BRAND.aesthetics.soft,
+  slimming:   BRAND.slimming.soft,
+};
+
+/* ------------------------------------------------------------------ */
+/*  Constants                                                          */
+/* ------------------------------------------------------------------ */
+
+const BRANDS = [
+  { slug: "spa", label: "Spa" },
+  { slug: "aesthetics", label: "Aesthetics" },
+  { slug: "slimming", label: "Slimming" },
+] as const;
+
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+function syncPct(crm: number, meta: number): number {
+  // Only a problem when Meta has MORE leads than CRM (leads not making it in).
+  // CRM having more than Meta is fine — manual entries, walk-ins, etc.
+  if (meta === 0) return 100; // no Meta leads to check against
+  if (crm >= meta) return 100; // all Meta leads accounted for
+  return (crm / meta) * 100; // what % of Meta leads made it to CRM
+}
+
+function syncColor(pct: number): string {
+  if (pct >= 95) return "#16A34A"; // green
+  if (pct >= 80) return "#F59E0B"; // amber
+  return "#DC2626"; // red
+}
+
+function syncTextColor(pct: number): string {
+  if (pct >= 95) return "text-emerald-600";
+  if (pct >= 80) return "text-amber-600";
+  return "text-red-600";
+}
+
+function syncBgColor(pct: number): string {
+  if (pct >= 95) return "bg-emerald-100 text-emerald-800";
+  if (pct >= 80) return "bg-amber-100 text-amber-700";
+  return "bg-red-100 text-red-700";
+}
+
+function syncLabel(pct: number): string {
+  if (pct >= 95) return "Synced";
+  if (pct >= 80) return "Minor Gap";
+  return "Out of Sync";
+}
+
+/* ------------------------------------------------------------------ */
+/*  Component                                                          */
+/* ------------------------------------------------------------------ */
+
+export function LeadReconciliation({
+  dateFrom,
+  dateTo,
+  brandFilter,
+}: {
+  dateFrom: Date;
+  dateTo: Date;
+  brandFilter: string | null;
+}) {
+  const from = toLocalDateStr(dateFrom);
+  const to   = toLocalDateStr(dateTo);
+
+  const { brandMap } = useLookups();
+
+  const { data, loading } = useKPIData<LeadReconRow>({
+    table: "crm_lead_reconciliation",
+    dateFrom,
+    dateTo,
+    brandFilter,
+  });
+
+  // Active Pipeline: unique opportunities that had any stage change in the period.
+  // This matches GHL's "Last Stage Change Date" filter — use this number when
+  // comparing the Cockpit against a GHL pipeline view filtered by that date.
+  const { data: activePipelineData } = useQuery({
+    queryKey: ["active-pipeline", from, to],
+    queryFn: async () => {
+      const res = await fetch(`/api/crm/active-pipeline?from=${from}&to=${to}`);
+      if (!res.ok) throw new Error(`active-pipeline ${res.status}`);
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  if (loading) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="h-48 rounded-xl bg-gray-100 animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  // Build brand_id -> slug lookup
+  const brandIdToSlug: Record<number, string> = {};
+  for (const [slug, id] of Object.entries(brandMap)) {
+    brandIdToSlug[id] = slug;
+  }
+
+  // Aggregate per brand
+  const brandTotals: Record<string, { crmLeads: number; metaLeads: number }> = {};
+  for (const brand of BRANDS) {
+    brandTotals[brand.slug] = { crmLeads: 0, metaLeads: 0 };
+  }
+  for (const row of data) {
+    if (isExcludedCrmDate(row.date)) continue;
+    const slug = brandIdToSlug[row.brand_id];
+    if (slug && brandTotals[slug]) {
+      brandTotals[slug].crmLeads += row.leads_crm;
+      brandTotals[slug].metaLeads += row.leads_meta;
+    }
+  }
+
+  // Alert only when Meta has significantly MORE leads than CRM (leads not making it in)
+  const alertBrands = BRANDS.filter((b) => {
+    const t = brandTotals[b.slug];
+    return t.metaLeads > 0 && syncPct(t.crmLeads, t.metaLeads) < 80;
+  });
+
+  const visibleBrands = brandFilter
+    ? BRANDS.filter((b) => b.slug === brandFilter)
+    : BRANDS;
+
+  return (
+    <div className="space-y-4">
+      {/* Alert banner */}
+      {alertBrands.length > 0 && (
+        <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <span className="font-semibold">Sync issue:</span>{" "}
+          {alertBrands.map((b) => b.label).join(", ")} —
+          CRM and Meta lead counts are significantly mismatched. Investigate missing leads.
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {visibleBrands.map((brand) => {
+          const t = brandTotals[brand.slug];
+          const pct = syncPct(t.crmLeads, t.metaLeads);
+          const delta = t.crmLeads - t.metaLeads;
+          const max = Math.max(t.crmLeads, t.metaLeads, 1);
+
+          const activePipelineCount: number = activePipelineData?.brands?.[brand.slug]?.active_opps ?? null;
+
+          return (
+            <Card
+              key={brand.slug}
+              className="p-5 border-l-4"
+              style={{
+                borderLeftColor: BRAND_DARK[brand.slug] ?? "#888",
+              }}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold uppercase tracking-wider text-text-secondary">
+                  {brand.label}
+                </h3>
+                <span className={`text-xs font-bold px-2 py-1 rounded ${syncBgColor(pct)}`}>
+                  {syncLabel(pct)}
+                </span>
+              </div>
+
+              {/* ── New Leads section (creation date) ── */}
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">
+                New Leads · created this period
+              </p>
+
+              {/* Sync ring / percentage */}
+              <div className="flex items-center gap-4 mb-3">
+                <div className="relative w-14 h-14 flex-shrink-0">
+                  <svg viewBox="0 0 36 36" className="w-14 h-14 -rotate-90">
+                    <path
+                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      fill="none"
+                      stroke="#E5E7EB"
+                      strokeWidth="3"
+                    />
+                    <path
+                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      fill="none"
+                      stroke={syncColor(pct)}
+                      strokeWidth="3"
+                      strokeDasharray={`${pct}, 100`}
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <span className={`absolute inset-0 flex items-center justify-center text-xs font-bold ${syncTextColor(pct)}`}>
+                    {pct.toFixed(0)}%
+                  </span>
+                </div>
+                <div className="flex-1 text-sm text-text-secondary">
+                  {delta >= 0
+                    ? delta === 0 ? "Perfectly synced" : `${Math.abs(delta)} extra in CRM`
+                    : `${Math.abs(delta)} missing from CRM`}
+                </div>
+              </div>
+
+              {/* Bar comparison */}
+              <div className="space-y-2 mb-4">
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-text-secondary">CRM Leads</span>
+                    <span className="font-semibold text-foreground tabular-nums">
+                      {t.crmLeads.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${(t.crmLeads / max) * 100}%`,
+                        backgroundColor: BRAND_DARK[brand.slug] ?? "#888",
+                      }}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-text-secondary">Meta Leads</span>
+                    <span className="font-semibold text-foreground tabular-nums">
+                      {t.metaLeads.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${(t.metaLeads / max) * 100}%`,
+                        backgroundColor: BRAND_SOFT[brand.slug] ?? "#D4D4D4",
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Active Pipeline section (last stage change date) ── */}
+              <div className="pt-3 border-t border-dashed border-gray-200">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">
+                  Active Pipeline · stage moved this period
+                </p>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-2xl font-bold tabular-nums" style={{ color: BRAND_DARK[brand.slug] }}>
+                    {activePipelineCount !== null ? activePipelineCount.toLocaleString() : "—"}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground leading-tight text-right max-w-[120px]">
+                    unique opps<br />compare in GHL:<br />"Last Stage Change Date"
+                  </span>
+                </div>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

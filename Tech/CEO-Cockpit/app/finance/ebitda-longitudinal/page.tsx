@@ -23,7 +23,6 @@ import {
   SummaryData,
   SppyData,
 } from "@/components/finance/EbitdaSummaryHeader";
-import { StrategicCommentary } from "@/components/finance/StrategicCommentary";
 import type { LongitudinalResponse } from "@/app/api/finance/ebitda-longitudinal/route";
 import { BRAND, LY_OVERLAY } from "@/lib/constants/design-tokens";
 
@@ -672,29 +671,6 @@ function LongitudinalContent({
       {/* Summary Header */}
       <EbitdaSummaryHeader
         data={summaryData}
-        loading={loading}
-      />
-      <StrategicCommentary
-        current={summaryData ? {
-          revenue: summaryData.groupRevenue,
-          wages: 0,
-          advertising: 0,
-          sga: 0,
-          cogs: 0,
-          rent: 0,
-          utilities: 0,
-          ebitda: summaryData.groupEbitda,
-        } : null}
-        prior={summaryData?.sppy ? {
-          revenue: summaryData.sppy.groupRevenue,
-          wages: 0,
-          advertising: 0,
-          sga: 0,
-          cogs: 0,
-          rent: 0,
-          utilities: 0,
-          ebitda: summaryData.sppy.groupEbitda,
-        } : null}
         loading={loading}
       />
 

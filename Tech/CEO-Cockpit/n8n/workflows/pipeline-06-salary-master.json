@@ -1,0 +1,268 @@
+{
+  "name": "ETL: Salary Master (1st of month 10:00)",
+  "active": false,
+  "nodes": [
+    {
+      "id": "p06-sched",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 0,
+              "field": "cronExpression",
+              "expression": "0 10 1 * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "p06-start",
+      "name": "Set Start Time",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { start_time: new Date().toISOString(), source_name: \"salary_master\" } }];"
+      }
+    },
+    {
+      "id": "p06-log-start",
+      "name": "Log ETL Start",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"source_name\": \"salary_master\", \"status\": \"running\"}",
+        "options": {}
+      }
+    },
+    {
+      "id": "p06-extract-id",
+      "name": "Extract Log ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { log_id: $input.first().json[0].id, start_time: $('Set Start Time').first().json.start_time } }];"
+      }
+    },
+    {
+      "id": "p06-exec",
+      "name": "Execute Python ETL",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "command": "cd \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/Tech/CEO-Cockpit\" && python3 -m etl.etl_salary_master"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "p06-parse",
+      "name": "Parse Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "const stdout = $input.first().json.stdout || '';\nconst logId = $('Extract Log ID').first().json.log_id;\nconst startTime = $('Extract Log ID').first().json.start_time;\nconst durationSec = Math.round((Date.now() - new Date(startTime).getTime()) / 1000);\n\n// Try to extract rows_upserted from stdout\nlet rowsUpserted = 0;\nconst match = stdout.match(/rows[_\\s]?upserted[:\\s]*(\\d+)/i) || stdout.match(/upserted[:\\s]*(\\d+)/i) || stdout.match(/(\\d+)\\s*rows?/i);\nif (match) rowsUpserted = parseInt(match[1]);\n\nreturn [{ json: { log_id: logId, rows_upserted: rowsUpserted, duration_sec: durationSec, completed_at: new Date().toISOString() } }];"
+      }
+    },
+    {
+      "id": "p06-log-done",
+      "name": "Log ETL Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        -100
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log?id=eq.{{ $json.log_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'success', rows_upserted: $json.rows_upserted, completed_at: $json.completed_at, duration_sec: $json.duration_sec }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "p06-log-fail",
+      "name": "Log ETL Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        150
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log?id=eq.{{ $('Extract Log ID').first().json.log_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'failed', error_message: ($input.first().json.stderr || 'Unknown error').substring(0, 500), completed_at: new Date().toISOString(), duration_sec: Math.round((Date.now() - new Date($('Extract Log ID').first().json.start_time).getTime()) / 1000) }) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Start Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Start Time": {
+      "main": [
+        [
+          {
+            "node": "Log ETL Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log ETL Start": {
+      "main": [
+        [
+          {
+            "node": "Extract Log ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Log ID": {
+      "main": [
+        [
+          {
+            "node": "Execute Python ETL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Python ETL": {
+      "main": [
+        [
+          {
+            "node": "Parse Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log ETL Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Result": {
+      "main": [
+        [
+          {
+            "node": "Log ETL Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

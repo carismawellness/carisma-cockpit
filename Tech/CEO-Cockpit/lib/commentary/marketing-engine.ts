@@ -8,6 +8,7 @@
  */
 
 import type { MktRagState } from "./benchmarks";
+export type { MktRagState };
 import {
   MKT_RAG_THRESHOLDS,
   MKT_KILL_THRESHOLDS,

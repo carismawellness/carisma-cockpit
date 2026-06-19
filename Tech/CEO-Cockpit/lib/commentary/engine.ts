@@ -948,3 +948,221 @@ export function computeCrmMasterCommentary(snapshot: GhlSnapshot): CommentaryRes
 
   return { overallRag: overall, verdict: crmVerdict(overall, "GHL Queue", reds, yellows), focusAreas, wins, insufficient: false };
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SALES COMMENTARY ENGINE
+   Deterministic — same (inputs + config) always produce the same output.
+   No runtime LLM call; benchmarks live in benchmarks.ts.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+import {
+  SALES_GROUP_CONFIG,
+  SALES_SPA_CONFIG,
+  SALES_AES_CONFIG,
+  SALES_SLIM_CONFIG,
+  SALES_FOCUS_PRIORITY,
+  SALES_WINS_PRIORITY,
+  type SalesMetricConfig,
+} from "./benchmarks";
+
+export type SalesScope = "group" | "spa" | "aesthetics" | "slimming";
+
+/** Raw sales metric values for the selected period. Pass `null` for any
+ *  metric the page can't compute — the engine simply skips it. */
+export interface SalesCommentaryInput {
+  scope:               SalesScope;
+  /** Total revenue (inc-VAT) for the selected period. Required to detect
+   *  insufficient-data state. */
+  periodRevenue:       number;
+  periodLabel:         string;
+
+  /** YoY % change (current − LY) / LY × 100. null = no LY baseline (Slimming). */
+  revenueYoyPct:       number | null;
+  /** Period-over-period % change. */
+  revenuePopPct:       number | null;
+
+  /** Group: spa-retail / group-total %. */
+  spaRetailAttachPct?: number | null;
+  /** Group: top-brand contribution to group revenue (highest %). */
+  topBrandSharePct?:   number | null;
+  /** Spa: retail / Spa total %. */
+  retailSharePct?:     number | null;
+  /** Spa: non-hotel guest share of bookings %. */
+  nonHotelSharePct?:   number | null;
+  /** Cash sales share % — Spa & Aesthetics. */
+  cashSharePct?:       number | null;
+  /** AOV in EUR — Aesthetics & Slimming. */
+  aov?:                number | null;
+}
+
+export interface SalesInsight {
+  key:    string;
+  label:  string;
+  state:  RagState;
+  text:   string;
+}
+
+export interface SalesCommentaryResult {
+  overallState:     RagState;
+  verdict:          string;
+  wins:             SalesInsight[];
+  focusAreas:       SalesInsight[];
+  insufficientData: boolean;
+}
+
+const SALES_CONFIG_BY_SCOPE: Record<SalesScope, SalesMetricConfig[]> = {
+  group:      SALES_GROUP_CONFIG,
+  spa:        SALES_SPA_CONFIG,
+  aesthetics: SALES_AES_CONFIG,
+  slimming:   SALES_SLIM_CONFIG,
+};
+
+function classifySales(cfg: SalesMetricConfig, value: number): RagState {
+  if (cfg.direction === "higher_is_better") {
+    if (value >= cfg.green)  return "green";
+    if (value >= cfg.yellow) return "yellow";
+    return "red";
+  }
+  if (cfg.direction === "lower_is_better") {
+    if (value <= cfg.green)  return "green";
+    if (value <= cfg.yellow) return "yellow";
+    return "red";
+  }
+  // range: green inside [green, greenMax], yellow inside [yellow, yellowMax]
+  const gMax = cfg.greenMax  ?? cfg.green;
+  const yMax = cfg.yellowMax ?? cfg.yellow;
+  if (value >= cfg.green  && value <= gMax) return "green";
+  if (value >= cfg.yellow && value <= yMax) return "yellow";
+  return "red";
+}
+
+function fmtSalesValue(value: number, unit: SalesMetricConfig["unit"]): string {
+  if (unit === "eur") return Math.round(value).toLocaleString("en-GB");
+  if (unit === "pp")  return value.toFixed(1);
+  // pct — keep sign for clarity (e.g. "-5.2", "+18.4")
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(1)}`;
+}
+
+function fillSalesTemplate(cfg: SalesMetricConfig, value: number, state: RagState): string {
+  const tmpl =
+    state === "green"  ? cfg.templateGreen  :
+    state === "yellow" ? cfg.templateYellow :
+                         cfg.templateRed;
+  const valueStr     = fmtSalesValue(value, cfg.unit);
+  const benchmarkStr = cfg.unit === "eur"
+    ? Math.round(cfg.benchmark).toLocaleString("en-GB")
+    : cfg.benchmark.toString();
+  return tmpl
+    .replace(/\{value\}/g,     valueStr)
+    .replace(/\{benchmark\}/g, benchmarkStr);
+}
+
+function pickSalesMetrics(input: SalesCommentaryInput): { cfg: SalesMetricConfig; value: number }[] {
+  const cfgs    = SALES_CONFIG_BY_SCOPE[input.scope];
+  const byKey   = new Map(cfgs.map((c) => [c.key, c]));
+  const results: { cfg: SalesMetricConfig; value: number }[] = [];
+
+  const tryMetric = (key: string, value: number | null | undefined) => {
+    if (value == null) return;
+    if (!isFinite(value)) return;
+    const cfg = byKey.get(key);
+    if (!cfg) return;
+    results.push({ cfg, value });
+  };
+
+  tryMetric("revenue_yoy",        input.revenueYoyPct);
+  tryMetric("revenue_pop",        input.revenuePopPct);
+  tryMetric("spa_retail_attach",  input.spaRetailAttachPct);
+  tryMetric("brand_concentration",input.topBrandSharePct);
+  tryMetric("retail_share",       input.retailSharePct);
+  tryMetric("non_hotel_share",    input.nonHotelSharePct);
+  tryMetric("cash_share",         input.cashSharePct);
+  tryMetric("aov",                input.aov);
+
+  return results;
+}
+
+function buildSalesVerdict(
+  scope:    SalesScope,
+  overall:  RagState,
+  reds:     number,
+  yellows:  number,
+  greens:   number,
+  total:    number,
+  periodLabel: string,
+): string {
+  const scopeName =
+    scope === "group"      ? "Group sales" :
+    scope === "spa"        ? "Spa sales" :
+    scope === "aesthetics" ? "Aesthetics sales" :
+                             "Slimming sales";
+  const emoji = overall === "green" ? "🟢" : overall === "yellow" ? "🟡" : "🔴";
+  if (overall === "green") {
+    return `${emoji} ${scopeName} on track in ${periodLabel} — ${greens} of ${total} indicators at or above target with no critical flags.`;
+  }
+  if (overall === "yellow") {
+    return `${emoji} ${scopeName} need attention in ${periodLabel} — ${yellows} indicator${yellows !== 1 ? "s" : ""} below target${reds > 0 ? `, ${reds} in critical range` : ""}.`;
+  }
+  return `${emoji} ${scopeName} require immediate action in ${periodLabel} — ${reds} metric${reds !== 1 ? "s" : ""} in the red${yellows > 0 ? `; ${yellows} more area${yellows !== 1 ? "s" : ""} need monitoring` : ""}.`;
+}
+
+function determineSalesOverall(
+  results: { cfg: SalesMetricConfig; state: RagState }[],
+): RagState {
+  const reds    = results.filter((r) => r.state === "red");
+  const yellows = results.filter((r) => r.state === "yellow");
+  if (reds.some((r) => r.cfg.priority <= 2)) return "red";
+  if (reds.length >= 2) return "red";
+  if (reds.length > 0 || yellows.length > 0) return "yellow";
+  return "green";
+}
+
+export function computeSalesCommentary(input: SalesCommentaryInput): SalesCommentaryResult {
+  const metrics = pickSalesMetrics(input);
+  if (input.periodRevenue <= 0 || metrics.length < 2) {
+    return {
+      overallState:     "green",
+      verdict:          "Insufficient data for the selected period.",
+      wins:             [],
+      focusAreas:       [],
+      insufficientData: true,
+    };
+  }
+
+  const evaluated = metrics.map(({ cfg, value }) => {
+    const state = classifySales(cfg, value);
+    const text  = fillSalesTemplate(cfg, value, state);
+    return { cfg, value, state, text };
+  });
+
+  const overall = determineSalesOverall(evaluated);
+  const byKey   = new Map(evaluated.map((m) => [m.cfg.key, m]));
+
+  const focusAreas: SalesInsight[] = SALES_FOCUS_PRIORITY
+    .map((k) => byKey.get(k))
+    .filter((m): m is NonNullable<typeof m> => m !== undefined)
+    .filter((m) => m.state === "red" || m.state === "yellow")
+    .sort((a, b) => {
+      if (a.state === "red" && b.state !== "red") return -1;
+      if (b.state === "red" && a.state !== "red") return 1;
+      return a.cfg.priority - b.cfg.priority;
+    })
+    .slice(0, 3)
+    .map((m) => ({ key: m.cfg.key, label: m.cfg.label, state: m.state, text: m.text }));
+
+  const wins: SalesInsight[] = SALES_WINS_PRIORITY
+    .map((k) => byKey.get(k))
+    .filter((m): m is NonNullable<typeof m> => m !== undefined)
+    .filter((m) => m.state === "green")
+    .sort((a, b) => a.cfg.priority - b.cfg.priority)
+    .slice(0, 3)
+    .map((m) => ({ key: m.cfg.key, label: m.cfg.label, state: m.state, text: m.text }));
+
+  const reds    = evaluated.filter((m) => m.state === "red").length;
+  const yellows = evaluated.filter((m) => m.state === "yellow").length;
+  const greens  = evaluated.filter((m) => m.state === "green").length;
+  const verdict = buildSalesVerdict(input.scope, overall, reds, yellows, greens, evaluated.length, input.periodLabel);
+
+  return { overallState: overall, verdict, wins, focusAreas, insufficientData: false };
+}

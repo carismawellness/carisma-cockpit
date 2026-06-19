@@ -1,0 +1,204 @@
+{
+  "name": "ETL: CRM Master (Daily)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9,
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "crm-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ source_name: 'crm_master', status: 'running' }) }}"
+      },
+      "id": "crm-log-start",
+      "name": "Log ETL Start",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const startedAt = new Date().toISOString();\nconst logId = $input.first().json[0]?.id || $input.first().json?.id;\nreturn [{ json: { log_id: logId, started_at: startedAt } }];"
+      },
+      "id": "crm-extract-log-id",
+      "name": "Extract Log ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "command": "cd \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/Tech/CEO-Cockpit\" && python3 -m etl.etl_crm_master 2>&1"
+      },
+      "id": "crm-execute",
+      "name": "Execute CRM ETL",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [740, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $('Extract Log ID').first().json;\nconst stdout = $input.first().json.stdout || '';\nconst exitCode = $input.first().json.exitCode;\n\n// Try to parse rows_upserted from stdout\nlet rowsUpserted = 0;\nconst match = stdout.match(/rows_upserted[\"']?\\s*[:=]\\s*(\\d+)/);\nif (match) {\n  rowsUpserted = parseInt(match[1], 10);\n}\n\n// Also try JSON parsing\ntry {\n  const lines = stdout.trim().split('\\n');\n  for (const line of lines) {\n    if (line.includes('{')) {\n      const parsed = JSON.parse(line.substring(line.indexOf('{')));\n      if (parsed.rows_upserted !== undefined) {\n        rowsUpserted = parsed.rows_upserted;\n      }\n    }\n  }\n} catch(e) {}\n\nconst startedAt = new Date(prev.started_at);\nconst durationSec = Math.round((Date.now() - startedAt.getTime()) / 1000);\n\nif (exitCode !== 0) {\n  throw new Error(`ETL script failed (exit ${exitCode}): ${stdout.substring(0, 500)}`);\n}\n\nreturn [{ json: {\n  log_id: prev.log_id,\n  rows_upserted: rowsUpserted,\n  duration_sec: durationSec,\n  stdout: stdout\n}}];"
+      },
+      "id": "crm-parse-result",
+      "name": "Parse Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [980, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log?id=eq.{{ $json.log_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'success', rows_upserted: $json.rows_upserted, completed_at: new Date().toISOString(), duration_sec: $json.duration_sec }) }}"
+      },
+      "id": "crm-log-success",
+      "name": "Log ETL Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1220, 300]
+    },
+    {
+      "parameters": {},
+      "id": "crm-error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "const errorMsg = $input.first().json.execution?.error?.message || 'Unknown error';\n// Try to get log_id from execution data\nlet logId = null;\ntry {\n  const execData = $input.first().json.execution?.data?.resultData?.runData;\n  if (execData && execData['Extract Log ID']) {\n    logId = execData['Extract Log ID'][0]?.data?.main?.[0]?.[0]?.json?.log_id;\n  }\n} catch(e) {}\n\nreturn [{ json: { log_id: logId, error_message: errorMsg.substring(0, 1000) } }];"
+      },
+      "id": "crm-error-parse",
+      "name": "Parse Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 600]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "version": 2, "caseSensitive": true },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "crm-cond-has-log-id",
+              "leftValue": "={{ $json.log_id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ]
+        }
+      },
+      "id": "crm-check-log-id",
+      "name": "Has Log ID?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [500, 600]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log?id=eq.{{ $json.log_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'failed', error_message: $json.error_message, completed_at: new Date().toISOString() }) }}"
+      },
+      "id": "crm-log-fail",
+      "name": "Log ETL Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [740, 520]
+    },
+    {
+      "parameters": {
+        "content": "## ETL: CRM Master (Daily)\n\n**Schedule:** Daily at 09:00\n**Source:** Google Sheets → Python ETL script\n**Target:** crm_daily, crm_by_rep\n\nThis workflow runs the existing Python ETL script\n`etl.etl_crm_master` which reads from the CRM\nGoogle Sheet and upserts to Supabase."
+      },
+      "id": "crm-sticky",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-200, 100],
+      "parameters_extra": {
+        "width": 350,
+        "height": 180
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[{ "node": "Log ETL Start", "type": "main", "index": 0 }]]
+    },
+    "Log ETL Start": {
+      "main": [[{ "node": "Extract Log ID", "type": "main", "index": 0 }]]
+    },
+    "Extract Log ID": {
+      "main": [[{ "node": "Execute CRM ETL", "type": "main", "index": 0 }]]
+    },
+    "Execute CRM ETL": {
+      "main": [[{ "node": "Parse Result", "type": "main", "index": 0 }]]
+    },
+    "Parse Result": {
+      "main": [[{ "node": "Log ETL Success", "type": "main", "index": 0 }]]
+    },
+    "Error Trigger": {
+      "main": [[{ "node": "Parse Error", "type": "main", "index": 0 }]]
+    },
+    "Parse Error": {
+      "main": [[{ "node": "Has Log ID?", "type": "main", "index": 0 }]]
+    },
+    "Has Log ID?": {
+      "main": [
+        [{ "node": "Log ETL Failed", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

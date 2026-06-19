@@ -1,0 +1,276 @@
+{
+  "name": "ETL: Zoho CRM Speed to Lead (4h)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 */4 * * *"
+            }
+          ]
+        }
+      },
+      "id": "stl-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ source_name: 'zoho_crm_stl', status: 'running' }) }}"
+      },
+      "id": "stl-log-start",
+      "name": "Log ETL Start",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const startedAt = new Date().toISOString();\nconst logId = $input.first().json[0]?.id || $input.first().json?.id;\nreturn [{ json: { log_id: logId, started_at: startedAt } }];"
+      },
+      "id": "stl-extract-log-id",
+      "name": "Extract Log ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build brand configs for Zoho CRM queries\n// Each brand has its own Zoho CRM org — uses OAuth2 credentials\nconst brands = [\n  { brand_id: 1, brand_name: 'spa', credential_name: 'Zoho CRM Spa' },\n  { brand_id: 2, brand_name: 'aesthetics', credential_name: 'Zoho CRM Aesthetics' },\n  { brand_id: 3, brand_name: 'slimming', credential_name: 'Zoho CRM Slimming' }\n];\n\nconst logId = $input.first().json.log_id;\nconst startedAt = $input.first().json.started_at;\n\n// Compute 24 hours ago in ISO format\nconst since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();\n\nreturn brands.map(b => ({ json: { ...b, log_id: logId, started_at: startedAt, since } }));"
+      },
+      "id": "stl-brands",
+      "name": "Build Brand List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [740, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.zohoapis.eu/crm/v6/Deals",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "zohoOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "fields", "value": "Deal_Name,Speed_to_Lead_Minutes,Campaign_Entry_Time,First_Contact_Time,Created_Time" },
+            { "name": "criteria", "value": "((Created_Time:greater_than:{{ $json.since }}))" },
+            { "name": "per_page", "value": "200" }
+          ]
+        }
+      },
+      "id": "stl-fetch-deals",
+      "name": "Fetch Deals",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [980, 300],
+      "credentials": {
+        "zohoOAuth2Api": {
+          "id": "PLACEHOLDER_ZOHO_CREDENTIAL_ID",
+          "name": "Zoho CRM OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const brandId = $('Build Brand List').item.json.brand_id;\nconst response = $input.first().json;\nconst deals = response.data || [];\nconst today = new Date().toISOString().substring(0, 10);\n\n// Define STL buckets\nconst buckets = {\n  '<1min': { min: 0, max: 1 },\n  '1-3min': { min: 1, max: 3 },\n  '3-5min': { min: 3, max: 5 },\n  '5-15min': { min: 5, max: 15 },\n  '15-30min': { min: 15, max: 30 },\n  '30min+': { min: 30, max: Infinity }\n};\n\n// Initialize counts\nconst counts = {};\nfor (const bucket of Object.keys(buckets)) {\n  counts[bucket] = 0;\n}\n\nlet total = 0;\n\nfor (const deal of deals) {\n  let stlMinutes = null;\n\n  // Use Speed_to_Lead_Minutes field if available\n  if (deal.Speed_to_Lead_Minutes != null && deal.Speed_to_Lead_Minutes !== '') {\n    stlMinutes = parseFloat(deal.Speed_to_Lead_Minutes);\n  }\n  // Otherwise compute from Campaign_Entry_Time and First_Contact_Time\n  else if (deal.Campaign_Entry_Time && deal.First_Contact_Time) {\n    const entry = new Date(deal.Campaign_Entry_Time);\n    const contact = new Date(deal.First_Contact_Time);\n    stlMinutes = (contact - entry) / 60000;\n  }\n\n  if (stlMinutes == null || isNaN(stlMinutes) || stlMinutes < 0) continue;\n\n  total++;\n\n  // Assign to bucket\n  for (const [bucket, range] of Object.entries(buckets)) {\n    if (stlMinutes >= range.min && stlMinutes < range.max) {\n      counts[bucket]++;\n      break;\n    }\n  }\n}\n\n// Build output rows\nconst rows = Object.keys(buckets).map(bucket => ({\n  json: {\n    date: today,\n    brand_id: brandId,\n    bucket: bucket,\n    count: counts[bucket],\n    pct: total > 0 ? parseFloat((counts[bucket] / total * 100).toFixed(2)) : 0\n  }\n}));\n\nreturn rows;"
+      },
+      "id": "stl-bucket",
+      "name": "Bucket STL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/speed_to_lead_distribution",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "resolution=merge-duplicates" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ date: $json.date, brand_id: $json.brand_id, bucket: $json.bucket, count: $json.count, pct: $json.pct }) }}"
+      },
+      "id": "stl-upsert",
+      "name": "Upsert to Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const logId = $('Extract Log ID').first().json.log_id;\nconst startedAt = $('Extract Log ID').first().json.started_at;\nconst items = $input.all();\nconst rowsUpserted = items.length;\nconst durationSec = Math.round((Date.now() - new Date(startedAt).getTime()) / 1000);\n\nreturn [{ json: { log_id: logId, rows_upserted: rowsUpserted, duration_sec: durationSec } }];"
+      },
+      "id": "stl-count-rows",
+      "name": "Count Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1700, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log?id=eq.{{ $json.log_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'success', rows_upserted: $json.rows_upserted, completed_at: new Date().toISOString(), duration_sec: $json.duration_sec }) }}"
+      },
+      "id": "stl-log-success",
+      "name": "Log ETL Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1940, 300]
+    },
+    {
+      "parameters": {},
+      "id": "stl-error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "const errorMsg = $input.first().json.execution?.error?.message || 'Unknown error';\nlet logId = null;\ntry {\n  const execData = $input.first().json.execution?.data?.resultData?.runData;\n  if (execData && execData['Extract Log ID']) {\n    logId = execData['Extract Log ID'][0]?.data?.main?.[0]?.[0]?.json?.log_id;\n  }\n} catch(e) {}\n\nreturn [{ json: { log_id: logId, error_message: errorMsg.substring(0, 1000) } }];"
+      },
+      "id": "stl-error-parse",
+      "name": "Parse Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 600]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "version": 2, "caseSensitive": true },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "stl-cond-has-log-id",
+              "leftValue": "={{ $json.log_id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ]
+        }
+      },
+      "id": "stl-check-log-id",
+      "name": "Has Log ID?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [500, 600]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log?id=eq.{{ $json.log_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'failed', error_message: $json.error_message, completed_at: new Date().toISOString() }) }}"
+      },
+      "id": "stl-log-fail",
+      "name": "Log ETL Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [740, 520]
+    },
+    {
+      "parameters": {
+        "content": "## ETL: Zoho CRM Speed to Lead (4h)\n\n**Schedule:** Every 4 hours\n**Source:** Zoho CRM API (EU)\n**Target:** speed_to_lead_distribution\n\n**SETUP REQUIRED:**\n1. Create Zoho OAuth2 credentials in n8n\n2. Update the credential ID in the Fetch Deals node\n   (currently set to PLACEHOLDER_ZOHO_CREDENTIAL_ID)\n3. Each brand needs its own Zoho CRM credential\n   if they use separate Zoho orgs."
+      },
+      "id": "stl-sticky",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-200, 100],
+      "parameters_extra": {
+        "width": 380,
+        "height": 220
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[{ "node": "Log ETL Start", "type": "main", "index": 0 }]]
+    },
+    "Log ETL Start": {
+      "main": [[{ "node": "Extract Log ID", "type": "main", "index": 0 }]]
+    },
+    "Extract Log ID": {
+      "main": [[{ "node": "Build Brand List", "type": "main", "index": 0 }]]
+    },
+    "Build Brand List": {
+      "main": [[{ "node": "Fetch Deals", "type": "main", "index": 0 }]]
+    },
+    "Fetch Deals": {
+      "main": [[{ "node": "Bucket STL", "type": "main", "index": 0 }]]
+    },
+    "Bucket STL": {
+      "main": [[{ "node": "Upsert to Supabase", "type": "main", "index": 0 }]]
+    },
+    "Upsert to Supabase": {
+      "main": [[{ "node": "Count Rows", "type": "main", "index": 0 }]]
+    },
+    "Count Rows": {
+      "main": [[{ "node": "Log ETL Success", "type": "main", "index": 0 }]]
+    },
+    "Error Trigger": {
+      "main": [[{ "node": "Parse Error", "type": "main", "index": 0 }]]
+    },
+    "Parse Error": {
+      "main": [[{ "node": "Has Log ID?", "type": "main", "index": 0 }]]
+    },
+    "Has Log ID?": {
+      "main": [
+        [{ "node": "Log ETL Failed", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

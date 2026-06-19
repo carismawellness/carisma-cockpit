@@ -1,0 +1,176 @@
+{
+  "name": "Pipeline 15: Wix → ga4_daily",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 7 * * *" }]
+        }
+      },
+      "id": "p15-schedule",
+      "name": "Schedule (Daily 07:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const startTime = Date.now();\nreturn [{ json: { source_name: 'wix', start_time: startTime } }];"
+      },
+      "id": "p15-set-start",
+      "name": "Set Start Time",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ source_name: 'wix', status: 'running' }) }}"
+      },
+      "id": "p15-log-start",
+      "name": "Log ETL Start",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const logResponse = $input.first().json;\nconst logId = Array.isArray(logResponse) ? logResponse[0].id : logResponse.id;\nconst startTime = $('Set Start Time').first().json.start_time;\nreturn [{ json: { log_id: logId, start_time: startTime } }];"
+      },
+      "id": "p15-extract-log",
+      "name": "Extract Log ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "command": "cd \"/Users/mertgulen/Library/CloudStorage/GoogleDrive-mertgulen98@gmail.com/My Drive/Carisma Wellness Group/Carisma AI /Carisma AI/Tech/CEO-Cockpit\" && python3 -m etl.etl_wix"
+      },
+      "id": "p15-exec",
+      "name": "Execute Wix ETL",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [880, 300],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const output = $input.first().json;\nconst exitCode = output.exitCode || 0;\nconst stdout = output.stdout || '';\nconst stderr = output.stderr || '';\n\nif (exitCode !== 0) {\n  throw new Error(`Wix ETL failed (exit ${exitCode}): ${stderr || stdout}`);\n}\n\n// Try to parse row count from stdout\nconst match = stdout.match(/(\\d+)\\s*rows?/i);\nconst rowCount = match ? parseInt(match[1], 10) : 0;\n\nreturn [{ json: { rows_upserted: rowCount, stdout, stderr } }];"
+      },
+      "id": "p15-parse",
+      "name": "Parse Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const startTime = $('Set Start Time').first().json.start_time;\nconst logId = $('Extract Log ID').first().json.log_id;\nconst rowsUpserted = $input.first().json.rows_upserted || 0;\nconst durationSec = Math.round((Date.now() - startTime) / 1000);\n\nreturn [{ json: {\n  log_id: logId,\n  status: 'success',\n  rows_upserted: rowsUpserted,\n  duration_sec: durationSec\n}}];"
+      },
+      "id": "p15-prep-success",
+      "name": "Prepare Success Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log?id=eq.{{ $json.log_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $json.status, rows_upserted: $json.rows_upserted, completed_at: new Date().toISOString(), duration_sec: $json.duration_sec }) }}"
+      },
+      "id": "p15-log-success",
+      "name": "Log ETL Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const startTime = $('Set Start Time').first().json.start_time;\nconst logId = $('Extract Log ID').first().json.log_id;\nconst durationSec = Math.round((Date.now() - startTime) / 1000);\nconst errorMsg = $input.first().json.stderr || $input.first().json.stdout || 'Unknown error';\n\nreturn [{ json: {\n  log_id: logId,\n  status: 'failed',\n  error_message: errorMsg.substring(0, 500),\n  duration_sec: durationSec\n}}];"
+      },
+      "id": "p15-prep-fail",
+      "name": "Prepare Failure Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 520]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log?id=eq.{{ $json.log_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'failed', error_message: $json.error_message, completed_at: new Date().toISOString(), duration_sec: $json.duration_sec }) }}"
+      },
+      "id": "p15-log-fail",
+      "name": "Log ETL Failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 520]
+    }
+  ],
+  "connections": {
+    "Schedule (Daily 07:00)": {
+      "main": [[{ "node": "Set Start Time", "type": "main", "index": 0 }]]
+    },
+    "Set Start Time": {
+      "main": [[{ "node": "Log ETL Start", "type": "main", "index": 0 }]]
+    },
+    "Log ETL Start": {
+      "main": [[{ "node": "Extract Log ID", "type": "main", "index": 0 }]]
+    },
+    "Extract Log ID": {
+      "main": [[{ "node": "Execute Wix ETL", "type": "main", "index": 0 }]]
+    },
+    "Execute Wix ETL": {
+      "main": [
+        [{ "node": "Parse Result", "type": "main", "index": 0 }],
+        [{ "node": "Prepare Failure Log", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Result": {
+      "main": [[{ "node": "Prepare Success Log", "type": "main", "index": 0 }]]
+    },
+    "Prepare Success Log": {
+      "main": [[{ "node": "Log ETL Success", "type": "main", "index": 0 }]]
+    },
+    "Prepare Failure Log": {
+      "main": [[{ "node": "Log ETL Failure", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

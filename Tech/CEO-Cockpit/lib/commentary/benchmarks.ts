@@ -875,3 +875,267 @@ export const CRITICAL_METRICS = {
 } as const;
 
 export const CRM_AGENT_BENCHMARKS = BENCHMARK_BY_KEY;
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SALES DASHBOARDS
+   ══════════════════════════════════════════════════════════════════════════
+
+   Build-time expert panel synthesis (2026-06-18):
+     • Revenue / FP&A advisor — YoY growth bands for growth-stage wellness
+     • Hotel-spa GM advisor   — guest mix, complimentary, cash share for
+                                hotel-partnered spa operations in Malta
+     • Aesthetic-clinic ops   — AOV, retail attach, cash share for
+                                medical-aesthetics business model
+     • Slimming-programme PM  — period-over-period growth for newly-launched
+                                brand (no LY baseline)
+
+   Benchmarks are calibrated to Carisma scale (10 locations, EUR 3.3M FY25,
+   Malta market). When a metric has both YoY and prior-period comparisons,
+   the engine prefers prior-period when the brand has < 12 months history
+   (Slimming case) so the period-period direction stays meaningful.
+
+   Edit benchmarks HERE — never hardcode in pages or in the engine.        */
+
+export interface SalesMetricConfig {
+  key:        string;
+  label:      string;
+  unit:       "pct" | "eur" | "pp";
+  direction:  "higher_is_better" | "lower_is_better" | "range";
+  /** For higher_is_better / lower_is_better: hits green at this value or better.
+   *  For range: lower bound of the green band. */
+  green:      number;
+  /** Yellow boundary (closer to red). For range: lower bound of the wider yellow band. */
+  yellow:     number;
+  /** Upper bound of green for range direction (else ignored). */
+  greenMax?:  number;
+  /** Upper bound of yellow for range direction (else ignored). */
+  yellowMax?: number;
+  /** Reference number for template fills (industry benchmark or internal target). */
+  benchmark:  number;
+  /** Lower priority = more important; surfaces first within a state colour. */
+  priority:   number;
+  /** Templates with {value}, {benchmark}, {delta} slots. */
+  templateGreen:  string;
+  templateYellow: string;
+  templateRed:    string;
+}
+
+/* ── Group Sales (top-level /sales) ─────────────────────────────────────── */
+
+export const SALES_GROUP_CONFIG: SalesMetricConfig[] = [
+  {
+    key:       "revenue_yoy",
+    label:     "Revenue YoY",
+    unit:      "pct",
+    direction: "higher_is_better",
+    green:     20,
+    yellow:    5,
+    benchmark: 20,
+    priority:  1,
+    templateGreen:  "Group revenue +{value}% vs last year — beating the {benchmark}% growth target.",
+    templateYellow: "Group revenue +{value}% vs last year — under the {benchmark}% target. Identify the lagging brand and stress-test its pipeline.",
+    templateRed:    "Group revenue {value}% vs last year — well under the {benchmark}% target. Convene a revenue review across all three brands this week.",
+  },
+  {
+    key:       "revenue_pop",
+    label:     "Revenue vs Prior Period",
+    unit:      "pct",
+    direction: "higher_is_better",
+    green:     10,
+    yellow:    -5,
+    benchmark: 10,
+    priority:  2,
+    templateGreen:  "Trending up — revenue +{value}% vs the previous comparable window.",
+    templateYellow: "Revenue {value}% vs the previous window. Watch the trajectory; if it persists two more cycles, treat as a slowdown.",
+    templateRed:    "Revenue {value}% vs the previous window — clear momentum loss. Diagnose by brand and channel before next forecast call.",
+  },
+  {
+    key:       "spa_retail_attach",
+    label:     "Spa Retail Attach",
+    unit:      "pct",
+    direction: "higher_is_better",
+    green:     15,
+    yellow:    8,
+    benchmark: 15,
+    priority:  3,
+    templateGreen:  "Spa retail attach at {value}% of Spa revenue — at the {benchmark}% target. Therapists are recommending well.",
+    templateYellow: "Spa retail attach at {value}% — under the {benchmark}% target. Refresh therapist product training and review POS prompts.",
+    templateRed:    "Spa retail attach at {value}% — well below the {benchmark}% target. Audit incentive scheme and product visibility at point of sale.",
+  },
+  {
+    key:       "brand_concentration",
+    label:     "Brand Concentration",
+    unit:      "pct",
+    direction: "lower_is_better",
+    green:     65,
+    yellow:    80,
+    benchmark: 65,
+    priority:  4,
+    templateGreen:  "Brand mix balanced — top brand contributes {value}% of revenue (target ≤{benchmark}%).",
+    templateYellow: "Top brand contributes {value}% of revenue — above the {benchmark}% concentration target. Accelerate the smaller brands' pipelines.",
+    templateRed:    "Top brand contributes {value}% of revenue — concentrated risk. A single-brand shock would hit the group hard. Diversify aggressively.",
+  },
+];
+
+/* ── Per-brand: SPA ─────────────────────────────────────────────────────── */
+
+export const SALES_SPA_CONFIG: SalesMetricConfig[] = [
+  {
+    key:       "revenue_yoy",
+    label:     "Spa Revenue YoY",
+    unit:      "pct",
+    direction: "higher_is_better",
+    green:     15,
+    yellow:    0,
+    benchmark: 15,
+    priority:  1,
+    templateGreen:  "Spa revenue +{value}% YoY — at or above the {benchmark}% growth target.",
+    templateYellow: "Spa revenue +{value}% YoY — under the {benchmark}% target. Review hotel occupancy alignment and therapist utilisation.",
+    templateRed:    "Spa revenue {value}% YoY — material decline. Pull the worst-performing hotel into a recovery plan this week.",
+  },
+  {
+    key:       "retail_share",
+    label:     "Retail Share of Spa",
+    unit:      "pct",
+    direction: "higher_is_better",
+    green:     15,
+    yellow:    8,
+    benchmark: 15,
+    priority:  2,
+    templateGreen:  "Retail at {value}% of Spa revenue — at the {benchmark}% target. Strong attach behaviour.",
+    templateYellow: "Retail at {value}% of Spa revenue — under the {benchmark}% target. Retrain therapists on the take-home regimen pitch.",
+    templateRed:    "Retail at {value}% of Spa revenue — well under the {benchmark}% target. Step up product visibility at reception and audit therapist incentives.",
+  },
+  {
+    key:       "non_hotel_share",
+    label:     "Non-Hotel Guest Share",
+    unit:      "pct",
+    direction: "range",
+    green:     25,
+    greenMax:  50,
+    yellow:    15,
+    yellowMax: 60,
+    benchmark: 35,
+    priority:  3,
+    templateGreen:  "Non-hotel guests at {value}% of bookings — healthy mix (target {benchmark}%).",
+    templateYellow: "Non-hotel guests at {value}% of bookings — drifting from the {benchmark}% target. Top up local-resident marketing if low; protect hotel relationships if high.",
+    templateRed:    "Non-hotel guests at {value}% of bookings — outside the healthy band around {benchmark}%. The mix concentration creates demand fragility.",
+  },
+  {
+    key:       "cash_share",
+    label:     "Cash Sales %",
+    unit:      "pct",
+    direction: "lower_is_better",
+    green:     15,
+    yellow:    25,
+    benchmark: 15,
+    priority:  4,
+    templateGreen:  "Cash sales at {value}% — within the ≤{benchmark}% control target.",
+    templateYellow: "Cash sales at {value}% — above the {benchmark}% control target. Review POS workflow and float reconciliation.",
+    templateRed:    "Cash sales at {value}% — material cash exposure. Audit reception POS practices and unannounced cashbox check this week.",
+  },
+];
+
+/* ── Per-brand: AESTHETICS ──────────────────────────────────────────────── */
+
+export const SALES_AES_CONFIG: SalesMetricConfig[] = [
+  {
+    key:       "revenue_yoy",
+    label:     "Aesthetics Revenue YoY",
+    unit:      "pct",
+    direction: "higher_is_better",
+    green:     25,
+    yellow:    5,
+    benchmark: 25,
+    priority:  1,
+    templateGreen:  "Aesthetics revenue +{value}% YoY — beating the {benchmark}% growth target for a category at this scale.",
+    templateYellow: "Aesthetics revenue +{value}% YoY — under the {benchmark}% target. Review consult→treatment conversion and ad-spend efficiency.",
+    templateRed:    "Aesthetics revenue {value}% YoY — well under the {benchmark}% target. Diagnose top-of-funnel (CPL) and bottom-of-funnel (close rate) jointly.",
+  },
+  {
+    key:       "aov",
+    label:     "Average Order Value",
+    unit:      "eur",
+    direction: "higher_is_better",
+    green:     180,
+    yellow:    130,
+    benchmark: 180,
+    priority:  2,
+    templateGreen:  "AOV at €{value} — at or above the €{benchmark} target. Mix is biased to higher-value treatments.",
+    templateYellow: "AOV at €{value} — under the €{benchmark} target. Review the upsell flow and package construction.",
+    templateRed:    "AOV at €{value} — material gap to the €{benchmark} target. Investigate discounting and entry-level mix.",
+  },
+  {
+    key:       "cash_share",
+    label:     "Cash Sales %",
+    unit:      "pct",
+    direction: "lower_is_better",
+    green:     15,
+    yellow:    25,
+    benchmark: 15,
+    priority:  3,
+    templateGreen:  "Cash sales at {value}% — within the ≤{benchmark}% control target.",
+    templateYellow: "Cash sales at {value}% — above the {benchmark}% target. Tighten POS workflow and reconciliation.",
+    templateRed:    "Cash sales at {value}% — material cash exposure. Run an unannounced cashbox audit.",
+  },
+  {
+    key:       "revenue_pop",
+    label:     "Revenue vs Prior Period",
+    unit:      "pct",
+    direction: "higher_is_better",
+    green:     10,
+    yellow:    -5,
+    benchmark: 10,
+    priority:  4,
+    templateGreen:  "Trending up — revenue +{value}% vs the previous comparable window.",
+    templateYellow: "Revenue {value}% vs the previous window — slowdown signal. Watch booked vs walk-in mix.",
+    templateRed:    "Revenue {value}% vs the previous window — clear momentum loss. Diagnose lead volume and close rate this week.",
+  },
+];
+
+/* ── Per-brand: SLIMMING ────────────────────────────────────────────────── */
+/* Slimming launched Feb 2026 — YoY is not meaningful yet. Brand-specific
+   commentary uses period-over-period as the headline growth signal. */
+
+export const SALES_SLIM_CONFIG: SalesMetricConfig[] = [
+  {
+    key:       "revenue_pop",
+    label:     "Revenue vs Prior Period",
+    unit:      "pct",
+    direction: "higher_is_better",
+    green:     20,
+    yellow:    0,
+    benchmark: 20,
+    priority:  1,
+    templateGreen:  "Slimming revenue +{value}% vs the previous window — strong post-launch ramp.",
+    templateYellow: "Slimming revenue +{value}% vs the previous window — under the {benchmark}% ramp target. Check pipeline depth and consult→treatment conversion.",
+    templateRed:    "Slimming revenue {value}% vs the previous window — ramp stalled. Audit ad spend, lead quality, and consult-show rate this week.",
+  },
+  {
+    key:       "aov",
+    label:     "Average Order Value",
+    unit:      "eur",
+    direction: "higher_is_better",
+    green:     200,
+    yellow:    120,
+    benchmark: 200,
+    priority:  2,
+    templateGreen:  "AOV at €{value} — programme upsell is working; biased to multi-session packages.",
+    templateYellow: "AOV at €{value} — under the €{benchmark} target. Review package upsell at consultation close.",
+    templateRed:    "AOV at €{value} — material gap to the €{benchmark} target. Single-session sales are dominating; tighten the package pitch.",
+  },
+];
+
+export const SALES_FOCUS_PRIORITY = [
+  "revenue_yoy", "revenue_pop", "brand_concentration",
+  "cash_share", "non_hotel_share",
+  "spa_retail_attach", "retail_share",
+  "aov",
+] as const;
+
+export const SALES_WINS_PRIORITY = [
+  "revenue_yoy", "revenue_pop", "aov",
+  "spa_retail_attach", "retail_share",
+  "non_hotel_share", "cash_share",
+  "brand_concentration",
+] as const;

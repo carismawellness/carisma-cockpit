@@ -1,0 +1,151 @@
+{
+  "name": "Pipeline 18: Diligence Audit → diligence_audit",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 23 * * *" }]
+        }
+      },
+      "id": "p18-schedule",
+      "name": "Schedule (Daily 23:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const startTime = Date.now();\nreturn [{ json: { source_name: 'diligence_audit', start_time: startTime } }];"
+      },
+      "id": "p18-set-start",
+      "name": "Set Start Time",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ source_name: 'diligence_audit', status: 'running' }) }}"
+      },
+      "id": "p18-log-start",
+      "name": "Log ETL Start",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const logResponse = $input.first().json;\nconst logId = Array.isArray(logResponse) ? logResponse[0].id : logResponse.id;\nconst startTime = $('Set Start Time').first().json.start_time;\nreturn [{ json: { log_id: logId, start_time: startTime } }];"
+      },
+      "id": "p18-extract-log",
+      "name": "Extract Log ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://PLACEHOLDER_POS_API/transactions",
+        "options": {}
+      },
+      "id": "p18-placeholder-http",
+      "name": "Fetch POS Transactions (PLACEHOLDER)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// PLACEHOLDER: Transform POS/booking system API response\n// Once the source system is determined, parse the response and map to:\n// { date, location_id, brand_id, total_transactions, deleted_count, cancelled_count,\n//   complementary_count, cash_count, discounted_cash_count, unattended_count }\n\nreturn [{ json: { rows_upserted: 0, message: 'Placeholder — POS system not yet determined' } }];"
+      },
+      "id": "p18-transform",
+      "name": "Transform Audit Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const startTime = $('Set Start Time').first().json.start_time;\nconst logId = $('Extract Log ID').first().json.log_id;\nconst durationSec = Math.round((Date.now() - startTime) / 1000);\n\nreturn [{ json: {\n  log_id: logId,\n  status: 'success',\n  rows_upserted: $input.first().json.rows_upserted || 0,\n  duration_sec: durationSec\n}}];"
+      },
+      "id": "p18-prep-success",
+      "name": "Prepare Success Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/etl_sync_log?id=eq.{{ $json.log_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $json.status, rows_upserted: $json.rows_upserted, completed_at: new Date().toISOString(), duration_sec: $json.duration_sec }) }}"
+      },
+      "id": "p18-log-success",
+      "name": "Log ETL Complete",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "content": "## TODO: Determine POS/booking system and configure API\n\n1. Identify which POS or booking system is used at each location\n2. Obtain API credentials and configure in n8n\n3. Update the HTTP Request node with the correct endpoint\n4. Implement transform logic to categorize transactions:\n   - deleted_count, cancelled_count, complementary_count\n   - cash_count, discounted_cash_count, unattended_count\n5. Test with a single location before enabling for all",
+        "width": 500,
+        "height": 220
+      },
+      "id": "p18-sticky",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [660, 40]
+    }
+  ],
+  "connections": {
+    "Schedule (Daily 23:00)": {
+      "main": [[{ "node": "Set Start Time", "type": "main", "index": 0 }]]
+    },
+    "Set Start Time": {
+      "main": [[{ "node": "Log ETL Start", "type": "main", "index": 0 }]]
+    },
+    "Log ETL Start": {
+      "main": [[{ "node": "Extract Log ID", "type": "main", "index": 0 }]]
+    },
+    "Extract Log ID": {
+      "main": [[{ "node": "Fetch POS Transactions (PLACEHOLDER)", "type": "main", "index": 0 }]]
+    },
+    "Fetch POS Transactions (PLACEHOLDER)": {
+      "main": [[{ "node": "Transform Audit Data", "type": "main", "index": 0 }]]
+    },
+    "Transform Audit Data": {
+      "main": [[{ "node": "Prepare Success Log", "type": "main", "index": 0 }]]
+    },
+    "Prepare Success Log": {
+      "main": [[{ "node": "Log ETL Complete", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}
