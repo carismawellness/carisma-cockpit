@@ -1731,19 +1731,11 @@ function HRCommentaryPanel({
 }) {
   if (isLoading) {
     return (
-      <Card className="p-4 md:p-6">
-        <div className="animate-pulse space-y-3">
-          <div className="h-3 bg-slate-200 rounded w-32" />
-          <div className="h-4 bg-slate-100 rounded w-full" />
-          <div className="grid grid-cols-2 gap-4 mt-3">
-            {[0, 1].map((i) => (
-              <div key={i} className="space-y-2">
-                <div className="h-3 bg-slate-100 rounded w-24" />
-                <div className="h-3 bg-slate-100 rounded w-full" />
-                <div className="h-3 bg-slate-100 rounded w-4/5" />
-              </div>
-            ))}
-          </div>
+      <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200 shadow-sm p-4 md:p-5">
+        <div className="animate-pulse space-y-2">
+          <div className="h-4 bg-amber-200 rounded w-40" />
+          <div className="h-3 bg-amber-100 rounded w-full" />
+          <div className="h-3 bg-amber-100 rounded w-4/5" />
         </div>
       </Card>
     );
@@ -1752,54 +1744,42 @@ function HRCommentaryPanel({
   if (!commentary) return null;
 
   const { verdict, wins, focusAreas } = commentary;
-  const hasBoth = wins.length > 0 && focusAreas.length > 0;
 
   return (
-    <Card className="p-4 md:p-6">
-      <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
-        Strategic Commentary
-      </p>
-      <p className="text-sm md:text-[15px] font-medium text-slate-800 leading-relaxed mb-4">
-        {verdict}
-      </p>
-      <div className={`grid gap-4 ${hasBoth ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1"}`}>
-        {wins.length > 0 && (
-          <div>
-            <p className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider mb-2">
-              ✅ Working well
-            </p>
-            <ul className="space-y-2">
-              {wins.map((w) => (
-                <li key={w.key} className="flex gap-2 text-sm text-slate-600 leading-snug">
-                  <span className="mt-1.5 shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  <span>{w.text}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {focusAreas.length > 0 && (
-          <div>
-            <p className="text-[11px] font-semibold text-red-700 uppercase tracking-wider mb-2">
-              🎯 Focus areas
-            </p>
-            <ul className="space-y-2">
-              {focusAreas.map((f) => (
-                <li
-                  key={f.key}
-                  className={`flex gap-2 text-sm leading-snug ${
-                    f.status === "red" ? "text-red-700" : "text-amber-700"
-                  }`}
-                >
-                  <span
-                    className={`mt-1.5 shrink-0 w-1.5 h-1.5 rounded-full ${
-                      f.status === "red" ? "bg-red-500" : "bg-amber-400"
-                    }`}
-                  />
-                  <span>{f.text}</span>
-                </li>
-              ))}
-            </ul>
+    <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200 shadow-sm">
+      <div className="p-4 md:p-5">
+        <p className="text-base font-semibold text-amber-900 mb-0.5">Workforce Snapshot</p>
+        <p className="text-xs text-amber-700 mb-3">{verdict}</p>
+        {(wins.length > 0 || focusAreas.length > 0) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-amber-200">
+            {wins.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-700 mb-2">
+                  ✅ Working well
+                </p>
+                <ul className="space-y-2">
+                  {wins.map((w) => (
+                    <li key={w.key} className="text-sm leading-snug text-amber-900">
+                      {w.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {focusAreas.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-700 mb-2">
+                  🎯 Focus areas
+                </p>
+                <ul className="space-y-2">
+                  {focusAreas.map((f) => (
+                    <li key={f.key} className="text-sm leading-snug text-amber-900">
+                      {f.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         )}
       </div>

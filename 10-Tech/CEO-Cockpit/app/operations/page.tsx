@@ -320,95 +320,46 @@ function OpsScorecard({
    ═══════════════════════════════════════════════════════════════════════ */
 
 function OperationsCommentary({ result }: { result: OpsCommentaryResult }) {
-  const borderColor =
-    result.overallState === "green"
-      ? "#22C55E"
-      : result.overallState === "yellow"
-      ? "#F59E0B"
-      : "#EF4444";
-
-  const badgeCls =
-    result.overallState === "green"
-      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-      : result.overallState === "yellow"
-      ? "bg-amber-50 text-amber-700 border border-amber-200"
-      : "bg-red-50 text-red-700 border border-red-200";
-
-  const badgeLabel =
-    result.overallState === "green"
-      ? "🟢 All Clear"
-      : result.overallState === "yellow"
-      ? "🟡 Watch"
-      : "🔴 Action Required";
-
-  if (result.insufficientData) {
-    return (
-      <Card className="p-4" style={{ borderLeft: `4px solid ${borderColor}` }}>
-        <p className="text-sm text-muted-foreground">{result.verdict}</p>
-      </Card>
-    );
-  }
+  if (result.insufficientData) return null;
 
   return (
-    <Card className="p-4 md:p-5" style={{ borderLeft: `4px solid ${borderColor}` }}>
-      {/* Header row */}
-      <div className="flex items-start gap-3 mb-4 flex-wrap">
-        <span className={cn("text-[11px] font-semibold px-2.5 py-1 rounded-full shrink-0", badgeCls)}>
-          {badgeLabel}
-        </span>
-        <p className="text-sm font-semibold text-foreground leading-snug">{result.verdict}</p>
+    <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200 shadow-sm">
+      <div className="p-4 md:p-5">
+        <p className="text-base font-semibold text-amber-900 mb-0.5">Operations Snapshot</p>
+        <p className="text-xs text-amber-700 mb-3">{result.verdict}</p>
+        {(result.wins.length > 0 || result.focusAreas.length > 0) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-amber-200">
+            {result.wins.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-700 mb-2">
+                  ✅ Working well
+                </p>
+                <ul className="space-y-2">
+                  {result.wins.map((w) => (
+                    <li key={w.metricKey} className="text-sm leading-snug text-amber-900">
+                      <span className="font-medium">{w.label}:</span> {w.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {result.focusAreas.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-700 mb-2">
+                  🎯 Focus areas
+                </p>
+                <ul className="space-y-2">
+                  {result.focusAreas.map((f) => (
+                    <li key={f.metricKey} className="text-sm leading-snug text-amber-900">
+                      <span className="font-medium">{f.label}:</span> {f.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
       </div>
-
-      {/* Two-column insight grid */}
-      {(result.wins.length > 0 || result.focusAreas.length > 0) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-border/50">
-          {/* Wins */}
-          {result.wins.length > 0 && (
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600 mb-2.5">
-                ✅ Working well
-              </p>
-              <ul className="space-y-2.5">
-                {result.wins.map((w) => (
-                  <li key={w.metricKey} className="flex gap-2 text-sm">
-                    <span className="text-emerald-500 mt-0.5 shrink-0 leading-none">•</span>
-                    <span className="text-foreground leading-snug">
-                      <span className="font-medium">{w.label}:</span>{" "}
-                      {w.text}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {/* Focus areas */}
-          {result.focusAreas.length > 0 && (
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-600 mb-2.5">
-                🎯 Focus areas
-              </p>
-              <ul className="space-y-2.5">
-                {result.focusAreas.map((f) => (
-                  <li key={f.metricKey} className="flex gap-2 text-sm">
-                    <span
-                      className={cn(
-                        "mt-0.5 shrink-0 leading-none",
-                        f.state === "red" ? "text-red-500" : "text-amber-500",
-                      )}
-                    >
-                      •
-                    </span>
-                    <span className="text-foreground leading-snug">
-                      <span className="font-medium">{f.label}:</span>{" "}
-                      {f.text}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
     </Card>
   );
 }
