@@ -7,7 +7,6 @@ import { SalesKPICard } from "@/components/sales/SalesKPICard";
 import { SalesKPIGrid } from "@/components/sales/SalesKPIGrid";
 import { useAestheticsSales } from "@/lib/hooks/useAestheticsSales";
 import { SalesStrategicCommentary } from "@/components/sales/SalesStrategicCommentary";
-import { computeSalesCommentary } from "@/lib/commentary/engine";
 import { useSalaryRoster } from "@/lib/hooks/useSalaryRoster";
 import { formatCurrency } from "@/lib/charts/config";
 import { BRAND } from "@/lib/constants/design-tokens";
@@ -94,6 +93,23 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
   }, [totals, lyTotals]);
 
   const { getAesSalary } = useSalaryRoster(dateFrom, dateTo);
+
+  // Performance Snapshot input — pure data; the amber card lives at the top.
+  const aesSnapshotInput = useMemo(() => {
+    const periodLabel = `${dateFrom.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${dateTo.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
+    const aov = totals.tx_count > 0 ? totals.revenue_inc / totals.tx_count : null;
+    const cashRow = byCashType.find((c) => c.category === "Cash");
+    const cashSharePct = cashRow?.pct ?? null;
+    return {
+      scope:         "aesthetics" as const,
+      periodLabel,
+      periodRevenue: totals.revenue_inc,
+      revenueYoyPct: yoy.net ?? null,
+      revenuePopPct: null,
+      cashSharePct,
+      aov,
+    };
+  }, [dateFrom, dateTo, totals, byCashType, yoy.net]);
 
   const GROUP_ORDER = ["Face", "Body", "Packages", "Membership", "Consultation", "Admin", "Other"] as const;
   const GROUP_COLORS: Record<string, string> = {
@@ -204,6 +220,12 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
       {syncError && (
         <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2">{syncError}</p>
       )}
+
+      <SalesStrategicCommentary
+        input={aesSnapshotInput}
+        loading={isFetching || isSyncing}
+      />
+
       <SalesKPIGrid columns={3}>
         <SalesKPICard
           label="Gross Revenue"
@@ -230,24 +252,6 @@ function AestheticsSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: 
         })()}
       </SalesKPIGrid>
 
-      <SalesStrategicCommentary
-        result={useMemo(() => {
-          const periodLabel = `${dateFrom.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${dateTo.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
-          const aov = totals.tx_count > 0 ? totals.revenue_inc / totals.tx_count : null;
-          const cashRow = byCashType.find((c) => c.category === "Cash");
-          const cashSharePct = cashRow?.pct ?? null;
-          return computeSalesCommentary({
-            scope:         "aesthetics",
-            periodRevenue: totals.revenue_inc,
-            periodLabel,
-            revenueYoyPct: yoy.net ?? null,
-            revenuePopPct: null,
-            cashSharePct,
-            aov,
-          });
-        }, [dateFrom, dateTo, totals, byCashType, yoy.net])}
-        loading={isFetching || isSyncing}
-      />
 
       {/* ── Revenue by Employee ───────────────────────────────────────── */}
       <Card className="p-4 md:p-5">

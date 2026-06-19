@@ -15,7 +15,6 @@ import { Card } from "@/components/ui/card";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useSpaRevenue } from "@/lib/hooks/useSpaRevenue";
 import { SalesStrategicCommentary } from "@/components/sales/SalesStrategicCommentary";
-import { computeSalesCommentary } from "@/lib/commentary/engine";
 import { useSpaServicesMix } from "@/lib/hooks/useSpaServicesMix";
 import { useSpaDeepaAnalytics } from "@/lib/hooks/useSpaDeepaAnalytics";
 import { ServiceTreemap } from "@/components/sales/ServiceTreemap";
@@ -178,6 +177,39 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
     };
   }, [analytics.guestGroups]);
 
+  /* ── Performance Snapshot input ────────────────────────────── */
+  const spaSnapshotInput = useMemo(() => {
+    const periodLabel = formatDateRangeLabel(dateFrom, dateTo);
+    const retailSharePct = totals.gross_revenue > 0
+      ? (totals.product_total / totals.gross_revenue) * 100
+      : null;
+    const nonHotelSharePct = analytics.isFetching
+      ? null
+      : (100 - overallGuestMix.hotelPct);
+    // Cash share — sum "Cash" across locations / payment-types total.
+    let cashSharePct: number | null = null;
+    if (!analytics.isFetching && analytics.paymentByLocation.length > 0) {
+      let cashTotal = 0, allTotal = 0;
+      for (const loc of analytics.paymentByLocation) {
+        for (const [method, value] of Object.entries(loc.payment_types)) {
+          allTotal += value;
+          if (/cash/i.test(method)) cashTotal += value;
+        }
+      }
+      if (allTotal > 0) cashSharePct = (cashTotal / allTotal) * 100;
+    }
+    return {
+      scope:           "spa" as const,
+      periodLabel,
+      periodRevenue:   totals.gross_revenue,
+      revenueYoyPct:   yoy.gross ?? null,
+      revenuePopPct:   null,
+      retailSharePct,
+      nonHotelSharePct,
+      cashSharePct,
+    };
+  }, [dateFrom, dateTo, totals, yoy.gross, analytics.isFetching, analytics.paymentByLocation, overallGuestMix.hotelPct]);
+
   /* ── Payment type by location (100% stacked) ────────────────── */
   const paymentByLocationData = useMemo(() =>
     analytics.paymentByLocation.map((loc) => {
@@ -269,6 +301,12 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
         </div>
       )}
 
+      {/* ── Performance Snapshot (always-on commentary card) ───── */}
+      <SalesStrategicCommentary
+        input={spaSnapshotInput}
+        loading={isLoading || analytics.isFetching}
+      />
+
       {/* ── KPI Row ─────────────────────────────────────────────────── */}
       <SalesKPIGrid columns={4}>
         <SalesKPICard
@@ -295,42 +333,6 @@ function SpaDeepaContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
           subtitle={`of bookings · ${overallGuestMix.total.toLocaleString()} total visits`}
         />
       </SalesKPIGrid>
-
-      <SalesStrategicCommentary
-        result={useMemo(() => {
-          const periodLabel = formatDateRangeLabel(dateFrom, dateTo);
-          const retailSharePct = totals.gross_revenue > 0
-            ? (totals.product_total / totals.gross_revenue) * 100
-            : null;
-          const nonHotelSharePct = analytics.isFetching
-            ? null
-            : (100 - overallGuestMix.hotelPct);
-          // Cash share — sum "Cash" across all locations, divide by their
-          // payment-types-total. Skipped when analytics still loading.
-          let cashSharePct: number | null = null;
-          if (!analytics.isFetching && analytics.paymentByLocation.length > 0) {
-            let cashTotal = 0, allTotal = 0;
-            for (const loc of analytics.paymentByLocation) {
-              for (const [method, value] of Object.entries(loc.payment_types)) {
-                allTotal += value;
-                if (/cash/i.test(method)) cashTotal += value;
-              }
-            }
-            if (allTotal > 0) cashSharePct = (cashTotal / allTotal) * 100;
-          }
-          return computeSalesCommentary({
-            scope:           "spa",
-            periodRevenue:   totals.gross_revenue,
-            periodLabel,
-            revenueYoyPct:   yoy.gross ?? null,
-            revenuePopPct:   null,                 // page already shows YoY; PoP not currently computed
-            retailSharePct,
-            nonHotelSharePct,
-            cashSharePct,
-          });
-        }, [dateFrom, dateTo, totals, yoy.gross, analytics.isFetching, analytics.paymentByLocation, overallGuestMix.hotelPct])}
-        loading={isLoading || analytics.isFetching}
-      />
 
       {/* ── Revenue Mix by Hotel ──────────────────────────────────── */}
       {locations.length > 0 && (

@@ -13,7 +13,6 @@ import { useGroupRevenue } from "@/lib/hooks/useGroupRevenue";
 import { Building2, Sparkles, Scale, ShoppingBag } from "lucide-react";
 import { SpaIntegrityBadge } from "@/components/sales/SpaIntegrityBadge";
 import { SalesStrategicCommentary } from "@/components/sales/SalesStrategicCommentary";
-import { computeSalesCommentary } from "@/lib/commentary/engine";
 
 function fmtK(v: number) {
   if (Math.abs(v) >= 1_000_000) return `€${(v / 1_000_000).toFixed(2)}M`;
@@ -61,29 +60,38 @@ function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
     ? (period.spa_retail / period.spa) * 100
     : null;
 
-  // Strategic commentary — recomputed on every date-filter change.
-  const commentary = useMemo(() => {
+  // Performance Snapshot input — pure data; the component renders the amber card.
+  const snapshotInput = useMemo(() => {
     const periodLabel = `${dateFrom.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${dateTo.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
     const revenuePopPct = priorPeriod.total > 0
       ? ((period.total - priorPeriod.total) / priorPeriod.total) * 100
       : null;
-    // Top-brand concentration = max brand share %.
-    const brandShares = period.total > 0
-      ? [period.spa, period.aesthetics, period.slimming].map((v) => (v / period.total) * 100)
-      : [];
-    const topBrandSharePct = brandShares.length > 0 ? Math.max(...brandShares) : null;
+    // Top-brand concentration = the largest single-brand share of group revenue.
+    let topBrandSharePct: number | null = null;
+    let topBrandName:     string | null = null;
+    if (period.total > 0) {
+      const brands: Array<[string, number]> = [
+        ["Spa",        period.spa],
+        ["Aesthetics", period.aesthetics],
+        ["Slimming",   period.slimming],
+      ];
+      const [name, value] = brands.reduce((best, cur) => cur[1] > best[1] ? cur : best, brands[0]);
+      topBrandSharePct = (value / period.total) * 100;
+      topBrandName     = name;
+    }
     const spaRetailAttachPct = period.total > 0 && period.spa_retail !== undefined
       ? (period.spa_retail / period.total) * 100
       : null;
-    return computeSalesCommentary({
-      scope:               "group",
-      periodRevenue:       period.total,
+    return {
+      scope:               "group" as const,
       periodLabel,
+      periodRevenue:       period.total,
       revenueYoyPct:       yoy.total ?? null,
       revenuePopPct,
       spaRetailAttachPct,
       topBrandSharePct,
-    });
+      topBrandName,
+    };
   }, [dateFrom, dateTo, period, priorPeriod, yoy.total]);
 
   return (
@@ -95,6 +103,11 @@ function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
         </div>
         <SpaIntegrityBadge dateFrom={dateFrom} dateTo={dateTo} />
       </div>
+
+      <SalesStrategicCommentary
+        input={snapshotInput}
+        loading={isFetching || isPriorFetching}
+      />
 
       <SalesKPIGrid columns={5}>
         <div className="h-full">
@@ -170,11 +183,6 @@ function GroupSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date 
           />
         </button>
       </SalesKPIGrid>
-
-      <SalesStrategicCommentary
-        result={commentary}
-        loading={isFetching || isPriorFetching}
-      />
 
       <GroupBrandBreakdown
         period={period}

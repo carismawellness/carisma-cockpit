@@ -9,7 +9,6 @@ import { SlimmingProgramHealthSection } from "@/components/sales/SlimmingProgram
 import { ServiceTreemap } from "@/components/sales/ServiceTreemap";
 import { useSlimmingSales } from "@/lib/hooks/useSlimmingSales";
 import { SalesStrategicCommentary } from "@/components/sales/SalesStrategicCommentary";
-import { computeSalesCommentary } from "@/lib/commentary/engine";
 import { useSlimmingTreatments } from "@/lib/hooks/useSlimmingTreatments";
 import { useSalaryRoster } from "@/lib/hooks/useSalaryRoster";
 import { BRAND } from "@/lib/constants/design-tokens";
@@ -190,6 +189,21 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
 
   const { getSlmSalary } = useSalaryRoster(dateFrom, dateTo);
 
+  // Performance Snapshot input — pure data; the amber card lives at the top.
+  const slmSnapshotInput = useMemo(() => {
+    const periodLabel = `${dateFrom.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${dateTo.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
+    const aov = totals.tx_count > 0 ? totals.revenue_paid / totals.tx_count : null;
+    return {
+      scope:         "slimming" as const,
+      periodLabel,
+      periodRevenue: totals.revenue_paid,
+      // Slimming launched Feb 2026 — no meaningful LY. PoP is the headline signal.
+      revenueYoyPct: null,
+      revenuePopPct: delta.net ?? null,
+      aov,
+    };
+  }, [dateFrom, dateTo, totals, delta.net]);
+
   const isLoading   = isFetching || isSyncing;
   const txLoading   = txFetching || txSyncing;
 
@@ -302,6 +316,12 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
       {syncError && (
         <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2">{syncError}</p>
       )}
+
+      <SalesStrategicCommentary
+        input={slmSnapshotInput}
+        loading={isFetching || isSyncing}
+      />
+
       <SalesKPIGrid columns={3}>
         <SalesKPICard
           label="Gross Revenue"
@@ -325,23 +345,6 @@ function SlimmingSalesContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Da
           yoyLabel="vs prev period"
         />
       </SalesKPIGrid>
-
-      <SalesStrategicCommentary
-        result={useMemo(() => {
-          const periodLabel = `${dateFrom.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${dateTo.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
-          const aov = totals.tx_count > 0 ? totals.revenue_paid / totals.tx_count : null;
-          return computeSalesCommentary({
-            scope:         "slimming",
-            periodRevenue: totals.revenue_paid,
-            periodLabel,
-            // Slimming launched Feb 2026 — no meaningful LY. PoP is the headline signal.
-            revenueYoyPct: null,
-            revenuePopPct: delta.net ?? null,
-            aov,
-          });
-        }, [dateFrom, dateTo, totals, delta.net])}
-        loading={isFetching || isSyncing}
-      />
 
       {/* ── Revenue by Staff — Regular & Retail (side-by-side) ──────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
