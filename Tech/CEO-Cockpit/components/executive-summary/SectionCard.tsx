@@ -12,28 +12,38 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useDateRange } from "@/lib/hooks/useDateRange";
 import { toLocalDateStr } from "@/lib/utils/dates";
-import type { RAG, DeptHeadlineKpi } from "@/lib/types/executive-summary";
+import { calmText, type RAG, type DeptHeadlineKpi } from "@/lib/types/executive-summary";
 
-/* ── RAG styling ──────────────────────────────────────────────────────────── */
+/* ── RAG styling ──────────────────────────────────────────────────────────────
+ * Deliberately calm: soft, low-saturation tints (rose, not fire-engine red) and
+ * a small dot rather than large red fills. The state is still legible, but the
+ * page reads as a measured briefing, not an alarm. */
 
 const RAG_BADGE: Record<RAG, string> = {
-  GREEN: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  YELLOW: "bg-amber-50 text-amber-700 ring-amber-200",
-  RED: "bg-red-50 text-red-600 ring-red-200",
+  GREEN: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+  YELLOW: "bg-amber-50 text-amber-700 ring-amber-100",
+  RED: "bg-rose-50 text-rose-600 ring-rose-100",
   NEUTRAL: "bg-slate-100 text-slate-500 ring-slate-200",
 };
 
 const RAG_ACCENT: Record<RAG, string> = {
-  GREEN: "before:bg-emerald-400",
-  YELLOW: "before:bg-amber-400",
-  RED: "before:bg-red-400",
-  NEUTRAL: "before:bg-slate-300",
+  GREEN: "before:bg-emerald-300",
+  YELLOW: "before:bg-amber-300",
+  RED: "before:bg-rose-300",
+  NEUTRAL: "before:bg-slate-200",
+};
+
+const RAG_DOT: Record<RAG, string> = {
+  GREEN: "bg-emerald-500",
+  YELLOW: "bg-amber-400",
+  RED: "bg-rose-400",
+  NEUTRAL: "bg-slate-400",
 };
 
 const RAG_LABEL: Record<RAG, string> = {
   GREEN: "On track",
   YELLOW: "Watch",
-  RED: "Action",
+  RED: "Needs focus",
   NEUTRAL: "—",
 };
 
@@ -41,20 +51,12 @@ export function RagBadge({ rag, className }: { rag: RAG; className?: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset",
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset",
         RAG_BADGE[rag],
         className,
       )}
     >
-      <span
-        className={cn(
-          "h-1.5 w-1.5 rounded-full",
-          rag === "GREEN" && "bg-emerald-500",
-          rag === "YELLOW" && "bg-amber-500",
-          rag === "RED" && "bg-red-500",
-          rag === "NEUTRAL" && "bg-slate-400",
-        )}
-      />
+      <span className={cn("h-1.5 w-1.5 rounded-full", RAG_DOT[rag])} />
       {RAG_LABEL[rag]}
     </span>
   );
@@ -82,7 +84,7 @@ function KpiTile({ kpi }: { kpi: DeptHeadlineKpi }) {
         <span
           className={cn(
             "mt-0.5 inline-flex items-center gap-0.5 text-[11px] font-semibold",
-            good ? "text-emerald-600" : "text-red-500",
+            good ? "text-emerald-600" : "text-rose-500",
           )}
         >
           <Arrow className="h-3 w-3" />
@@ -163,7 +165,7 @@ export function SectionCard({
         </div>
 
         {/* Verdict */}
-        <p className="text-sm leading-snug text-foreground">{headline}</p>
+        <p className="text-sm leading-snug text-foreground">{calmText(headline)}</p>
 
         {/* KPI strip */}
         {kpis.length > 0 && (
@@ -179,12 +181,12 @@ export function SectionCard({
           <div className="grid gap-3 pt-1 md:grid-cols-2">
             {focusAreas.length > 0 && (
               <div>
-                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700">Focus areas</p>
+                <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">Focus areas</p>
                 <ul className="space-y-1">
                   {focusAreas.slice(0, 2).map((t, i) => (
                     <li key={i} className="flex gap-1.5 text-xs leading-snug text-muted-foreground">
-                      <span className="text-amber-500">▸</span>
-                      <span className="min-w-0">{t}</span>
+                      <span className="text-slate-400">▸</span>
+                      <span className="min-w-0">{calmText(t)}</span>
                     </li>
                   ))}
                 </ul>
@@ -192,12 +194,12 @@ export function SectionCard({
             )}
             {wins.length > 0 && (
               <div>
-                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Working well</p>
+                <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-emerald-600">Working well</p>
                 <ul className="space-y-1">
                   {wins.slice(0, 2).map((t, i) => (
                     <li key={i} className="flex gap-1.5 text-xs leading-snug text-muted-foreground">
-                      <span className="text-emerald-500">▸</span>
-                      <span className="min-w-0">{t}</span>
+                      <span className="text-emerald-400">▸</span>
+                      <span className="min-w-0">{calmText(t)}</span>
                     </li>
                   ))}
                 </ul>

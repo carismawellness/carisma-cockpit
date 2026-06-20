@@ -26,10 +26,6 @@ export interface CeoRollup {
   loading: boolean;
 }
 
-function ragEmoji(rag: RAG): string {
-  return rag === "GREEN" ? "🟢" : rag === "YELLOW" ? "🟡" : rag === "RED" ? "🔴" : "⚪";
-}
-
 /** Worst (highest-severity) RAG across the provided list. */
 function worstRag(rags: RAG[]): RAG {
   if (rags.length === 0) return "NEUTRAL";
@@ -80,7 +76,6 @@ export function computeCeoRollup(summaries: DeptSummary[]): CeoRollup {
   const reds = ready.filter((s) => s.rag === "RED").map((s) => s.label);
   const yellows = ready.filter((s) => s.rag === "YELLOW").map((s) => s.label);
   const greens = ready.filter((s) => s.rag === "GREEN").map((s) => s.label);
-  const emoji = ragEmoji(overallRag);
 
   const list = (xs: string[]) =>
     xs.length === 0
@@ -89,13 +84,15 @@ export function computeCeoRollup(summaries: DeptSummary[]): CeoRollup {
         ? xs[0]
         : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`;
 
+  // Measured, calm phrasing — the colour dot carries the urgency, the words
+  // stay even-keeled.
   let verdict: string;
   if (overallRag === "GREEN") {
-    verdict = `${emoji} Business healthy this period — ${greens.length} of ${ready.length} dashboards at or above target with no critical flags. ${list(greens)} are performing well.`;
+    verdict = `Healthy period overall — ${greens.length} of ${ready.length} dashboards at or above target. ${list(greens)} are performing well.`;
   } else if (overallRag === "YELLOW") {
-    verdict = `${emoji} Business broadly on track, with watch-items — ${list(yellows)} ${yellows.length === 1 ? "needs" : "need"} attention${greens.length ? `, while ${list(greens)} ${greens.length === 1 ? "is" : "are"} on target` : ""}. Address the priorities below before they escalate.`;
+    verdict = `On track overall, with a few things to watch — ${list(yellows)} ${yellows.length === 1 ? "could use" : "could use"} attention${greens.length ? `, while ${list(greens)} ${greens.length === 1 ? "is" : "are"} on target` : ""}. See where to focus below.`;
   } else {
-    verdict = `${emoji} Action required this period — ${list(reds)} ${reds.length === 1 ? "is" : "are"} in the red${yellows.length ? `; ${list(yellows)} also need monitoring` : ""}. Start with the priorities below.`;
+    verdict = `Mostly steady, with ${list(reds)} ${reds.length === 1 ? "needing" : "needing"} focus this period${yellows.length ? `; ${list(yellows)} worth keeping an eye on too` : ""}. Suggested priorities below.`;
   }
 
   return {

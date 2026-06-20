@@ -13,8 +13,8 @@ import type { DeptSummary, RAG } from "@/lib/types/executive-summary";
 
 const DOT: Record<RAG, string> = {
   GREEN: "bg-emerald-500",
-  YELLOW: "bg-amber-500",
-  RED: "bg-red-500",
+  YELLOW: "bg-amber-400",
+  RED: "bg-rose-400",
   NEUTRAL: "bg-slate-400",
 };
 
@@ -62,7 +62,7 @@ export function HeroKpiStrip({ summaries }: { summaries: Record<string, DeptSumm
                 <span
                   className={cn(
                     "inline-flex shrink-0 items-center text-[10px] font-semibold",
-                    good ? "text-emerald-600" : "text-red-500",
+                    good ? "text-emerald-600" : "text-rose-500",
                   )}
                 >
                   <Arrow className="h-2.5 w-2.5" />

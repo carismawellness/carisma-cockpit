@@ -35,6 +35,20 @@ export const RAG_SEVERITY: Record<RAG, number> = {
   NEUTRAL: 0,
 };
 
+/** Strip alarm emojis (🚨 🔴 🟡 🟢 ⚠️ 🔥 📈 …) and collapse whitespace, so the
+ *  commentary engines' verdict/insight text reads calmly in the Executive
+ *  Summary instead of shouting in red. Meaning is unchanged — colour is carried
+ *  by the RAG badge, not by emoji. */
+export function calmText(s: string): string {
+  return s
+    .replace(
+      /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}\u{FE00}-\u{FE0F}\u{200D}]/gu,
+      "",
+    )
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export interface DeptHeadlineKpi {
   label: string;
   /** Pre-formatted display string, e.g. "€1.2M", "18.4%", "4.6★". */
