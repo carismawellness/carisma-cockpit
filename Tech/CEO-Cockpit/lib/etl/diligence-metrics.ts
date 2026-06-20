@@ -36,6 +36,7 @@ const LOCATION_MAP: Record<string, number> = {
   "INTER":                        1,
   "RAMLA":                        4,
   "SUNNY COAST":                  6,
+  "QAWRA":                        6,
   "SALES POINT OF EXCELSIOR":     7,
   "HYATT":                        3,
   "LABRANDA GENERAL SALES POINT": 5,

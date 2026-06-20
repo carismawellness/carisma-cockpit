@@ -34,6 +34,7 @@ const COCKPIT_VENUE_TO_SLUG: Record<string, string> = {
   "INTER":                        "intercontinental",
   "RAMLA":                        "ramla",
   "SUNNY COAST":                  "sunny_coast",
+  "QAWRA":                        "sunny_coast",
   "SALES POINT OF EXCELSIOR":     "excelsior",
   "HYATT":                        "hyatt",
   "LABRANDA GENERAL SALES POINT": "labranda",

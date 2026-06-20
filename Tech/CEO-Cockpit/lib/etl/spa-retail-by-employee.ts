@@ -23,7 +23,7 @@ const REQUIRED_HEADERS = ["Date", "VAT Exclusive Amount", "Point of Sales", "Bra
 // Spa Sales Point → location_id. Copied verbatim from `spa-revenue.ts`
 // (COCKPIT_SPA_LOCATION_MAP). Do not refactor — see task spec.
 const SPA_LOC_MAP: Record<string, number> = {
-  "HUGOS": 2, "INTER": 1, "RAMLA": 4, "SUNNY COAST": 6,
+  "HUGOS": 2, "INTER": 1, "RAMLA": 4, "SUNNY COAST": 6, "QAWRA": 6,
   "SALES POINT OF EXCELSIOR": 7, "HYATT": 3,
   "LABRANDA GENERAL SALES POINT": 5, "SALES POINT OF NOV": 8,
 };
