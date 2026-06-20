@@ -540,16 +540,6 @@ function MarketingMasterContent({
             </Card>
           </section>
 
-          {/* -- Section 1b: Ad Spend YoY + ROAS Chart -- */}
-          <section>
-            <AdSpendYoYChart
-              rows={spendChartData}
-              roas={spendRoas}
-              loading={spaSpc.isLoading || aesSpc.isLoading || slimSpc.isLoading}
-              dateLabel={formatDateRangeLabel(dateFrom, dateTo)}
-            />
-          </section>
-
           {/* -- Section 2: Creative Fatigue by Brand -- */}
           <section>
             <Card className="p-3 md:p-6">
