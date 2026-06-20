@@ -14,6 +14,8 @@ import { BRAND as BRAND_TOKENS, type BrandKey } from "@/lib/constants/design-tok
 import type { CampaignData } from "@/lib/types/ads";
 import { computeMasterCommentary } from "@/lib/commentary/marketing-engine";
 import { MktCommentaryPanel } from "@/components/marketing/CommentaryPanel";
+import { AdSpendYoYChart } from "@/components/marketing/AdSpendYoYChart";
+import { useSpendComparison } from "@/lib/hooks/useSpendComparison";
 
 /* ---------- brand colours (canonical palette) ---------- */
 
@@ -134,6 +136,11 @@ function MarketingMasterContent({
   const { keywords: gscAes } = useGscRankings({ brand: "aesthetics", dateFrom, dateTo });
   const { keywords: gscSlim } = useGscRankings({ brand: "slimming", dateFrom, dateTo });
 
+  /* ---- YoY spend comparison (Supabase-backed, handles LY date calc) ---- */
+  const spaSpc  = useSpendComparison("spa",        dateFrom, dateTo);
+  const aesSpc  = useSpendComparison("aesthetics", dateFrom, dateTo);
+  const slimSpc = useSpendComparison("slimming",   dateFrom, dateTo);
+
   const isLoading =
     metaSpa.isLoading || metaAes.isLoading || metaSlim.isLoading ||
     googleSpa.isLoading || googleAes.isLoading || googleSlim.isLoading ||
@@ -180,6 +187,43 @@ function MarketingMasterContent({
       { metric: "CPL", spa: spa.cpl, aesthetics: aes.cpl, slimming: slim.cpl },
       { metric: "CPC", spa: spa.cpc, aesthetics: aes.cpc, slimming: slim.cpc },
     ];
+  }, [metaSpa.data, metaAes.data, metaSlim.data, googleSpa.data, googleAes.data, googleSlim.data]);
+
+  /* ---- Compute YoY spend chart data ---- */
+  const spendChartData = useMemo(() => {
+    function sumMonths(months: { metaTY: number; metaLY: number; googleTY: number; googleLY: number }[]) {
+      return months.reduce(
+        (acc, m) => ({
+          metaTY:   acc.metaTY   + m.metaTY,
+          metaLY:   acc.metaLY   + m.metaLY,
+          googleTY: acc.googleTY + m.googleTY,
+          googleLY: acc.googleLY + m.googleLY,
+        }),
+        { metaTY: 0, metaLY: 0, googleTY: 0, googleLY: 0 }
+      );
+    }
+    const spa  = sumMonths(spaSpc.data  ?? []);
+    const aes  = sumMonths(aesSpc.data  ?? []);
+    const slim = sumMonths(slimSpc.data ?? []);
+    return [
+      { brand: "Spa",        ...spa  },
+      { brand: "Aesthetics", ...aes  },
+      { brand: "Slimming",   ...slim },
+    ];
+  }, [spaSpc.data, aesSpc.data, slimSpc.data]);
+
+  /* ---- Compute ROAS per channel per brand ---- */
+  const spendRoas = useMemo(() => {
+    function channelRoas(campaigns: CampaignData[]): number | null {
+      const spend   = campaigns.reduce((s, c) => s + c.totalSpend,        0);
+      const revenue = campaigns.reduce((s, c) => s + c.attributedRevenue, 0);
+      return spend > 0 ? revenue / spend : null;
+    }
+    return {
+      spa:        { metaRoas: channelRoas(metaSpa.data?.campaigns  ?? []), googleRoas: channelRoas(googleSpa.data?.campaigns  ?? []) },
+      aesthetics: { metaRoas: channelRoas(metaAes.data?.campaigns  ?? []), googleRoas: channelRoas(googleAes.data?.campaigns  ?? []) },
+      slimming:   { metaRoas: channelRoas(metaSlim.data?.campaigns ?? []), googleRoas: channelRoas(googleSlim.data?.campaigns ?? []) },
+    };
   }, [metaSpa.data, metaAes.data, metaSlim.data, googleSpa.data, googleAes.data, googleSlim.data]);
 
   /* ---- Compute fatigue data ---- */
@@ -404,6 +448,16 @@ function MarketingMasterContent({
               <h2 className="text-lg font-semibold mb-4">Cross-Brand KPIs</h2>
               <BrandTable rows={crossBrandKpis} colorCodeRoas />
             </Card>
+          </section>
+
+          {/* -- Section 1b: Ad Spend YoY + ROAS Chart -- */}
+          <section>
+            <AdSpendYoYChart
+              rows={spendChartData}
+              roas={spendRoas}
+              loading={spaSpc.isLoading || aesSpc.isLoading || slimSpc.isLoading}
+              dateLabel={formatDateRangeLabel(dateFrom, dateTo)}
+            />
           </section>
 
           {/* -- Section 2: Creative Fatigue by Brand -- */}
