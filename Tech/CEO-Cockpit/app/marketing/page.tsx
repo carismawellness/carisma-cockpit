@@ -40,7 +40,8 @@ function BrandDot({ brand }: { brand: BrandKey }) {
   );
 }
 
-function roasColor(value: number): string {
+function roasColor(value: number | null): string {
+  if (value == null) return "";
   if (value >= 5) return "text-green-600";
   if (value >= 3) return "text-amber-600";
   return "text-red-600";
@@ -53,7 +54,9 @@ interface TableRow {
   spa: string;
   aesthetics: string;
   slimming: string;
-  roasValues?: { spa: number; aesthetics: number; slimming: number };
+  roasValues?: { spa: number | null; aesthetics: number | null; slimming: number | null };
+  sub?: boolean;       // indented sub-row under the preceding parent
+  lastSub?: boolean;   // last sub-row in a group — draws separator after
 }
 
 function BrandTable({
@@ -80,20 +83,26 @@ function BrandTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.metric} className="border-b last:border-b-0">
-              <td className="py-3 pr-4 text-muted-foreground">{row.metric}</td>
-              {BRAND_KEYS.map((key) => {
-                const isRoas = colorCodeRoas && row.roasValues;
-                const colorClass = isRoas ? roasColor(row.roasValues![key]) : "";
-                return (
-                  <td key={key} className={`py-3 px-4 text-right tabular-nums font-bold ${colorClass}`}>
-                    {row[key]}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
+          {rows.map((row, i) => {
+            const nextRow = rows[i + 1];
+            const showBorder = !row.sub || row.lastSub || !nextRow?.sub;
+            return (
+              <tr key={row.metric} className={showBorder ? "border-b last:border-b-0" : ""}>
+                <td className={`pr-4 text-muted-foreground ${row.sub ? "py-1.5 pl-5 text-xs" : "py-3"}`}>
+                  {row.sub ? <span className="opacity-60">↳ {row.metric}</span> : row.metric}
+                </td>
+                {BRAND_KEYS.map((key) => {
+                  const isRoas = colorCodeRoas && row.roasValues;
+                  const colorClass = isRoas ? roasColor(row.roasValues![key]) : "";
+                  return (
+                    <td key={key} className={`px-4 text-right tabular-nums ${row.sub ? "py-1.5 text-xs font-medium opacity-70" : "py-3 font-bold"} ${colorClass}`}>
+                      {row[key]}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -159,35 +168,60 @@ function MarketingMasterContent({
 
   /* ---- Compute cross-brand KPIs ---- */
   const crossBrandKpis = useMemo(() => {
-    function brandTotals(meta: CampaignData[], google: CampaignData[]) {
+    function brandData(meta: CampaignData[], google: CampaignData[]) {
       const all = [...meta, ...google];
-      const spend = all.reduce((s, c) => s + c.totalSpend, 0);
-      const revenue = all.reduce((s, c) => s + c.attributedRevenue, 0);
-      const metaLeads = meta.reduce((s, c) => s + c.totalLeads, 0);
-      const metaSpend = meta.reduce((s, c) => s + c.totalSpend, 0);
-      // CPC uses total clicks across Meta + Google (not leads/conversions)
+      const totalSpend  = all.reduce((s, c) => s + c.totalSpend, 0);
+      const metaSpend   = meta.reduce((s, c) => s + c.totalSpend, 0);
+      const googleSpend = google.reduce((s, c) => s + c.totalSpend, 0);
+      const revenue       = all.reduce((s, c) => s + c.attributedRevenue, 0);
+      const metaRevenue   = meta.reduce((s, c) => s + c.attributedRevenue, 0);
+      const googleRevenue = google.reduce((s, c) => s + c.attributedRevenue, 0);
+      const metaLeads  = meta.reduce((s, c) => s + c.totalLeads, 0);
       const totalClicks = all.reduce((s, c) => s + c.clicks, 0);
+      const blendedRoasNum = totalSpend > 0 ? revenue / totalSpend : 0;
+      const metaRoasNum    = metaSpend   > 0 ? metaRevenue   / metaSpend   : null;
+      const googleRoasNum  = googleSpend > 0 ? googleRevenue / googleSpend : null;
       return {
-        revenue: formatCurrency(revenue),
-        spend: formatCurrency(spend),
-        roas: spend > 0 ? `${(revenue / spend).toFixed(1)}x` : "—",
-        roasNum: spend > 0 ? revenue / spend : 0,
-        cpl: metaLeads > 0 ? `€${(metaSpend / metaLeads).toFixed(1)}` : "—",
-        cpc: totalClicks > 0 ? `€${(spend / totalClicks).toFixed(2)}` : "—",
+        revenue:      formatCurrency(revenue),
+        totalSpend:   formatCurrency(totalSpend),
+        metaSpend:    formatCurrency(metaSpend),
+        googleSpend:  formatCurrency(googleSpend),
+        blendedRoas:  totalSpend  > 0 ? `${blendedRoasNum.toFixed(1)}x` : "—",
+        blendedRoasNum,
+        metaRoas:     metaRoasNum   != null ? `${metaRoasNum.toFixed(1)}x`   : "—",
+        metaRoasNum,
+        googleRoas:   googleRoasNum != null ? `${googleRoasNum.toFixed(1)}x` : "—",
+        googleRoasNum,
+        cpl: metaLeads   > 0 ? `€${(metaSpend / metaLeads).toFixed(1)}`    : "—",
+        cpc: totalClicks > 0 ? `€${(totalSpend / totalClicks).toFixed(2)}`  : "—",
       };
     }
 
-    const spa = brandTotals(metaSpa.data?.campaigns ?? [], googleSpa.data?.campaigns ?? []);
-    const aes = brandTotals(metaAes.data?.campaigns ?? [], googleAes.data?.campaigns ?? []);
-    const slim = brandTotals(metaSlim.data?.campaigns ?? [], googleSlim.data?.campaigns ?? []);
+    const spa  = brandData(metaSpa.data?.campaigns  ?? [], googleSpa.data?.campaigns  ?? []);
+    const aes  = brandData(metaAes.data?.campaigns  ?? [], googleAes.data?.campaigns  ?? []);
+    const slim = brandData(metaSlim.data?.campaigns ?? [], googleSlim.data?.campaigns ?? []);
 
     return [
-      { metric: "Revenue", spa: spa.revenue, aesthetics: aes.revenue, slimming: slim.revenue },
-      { metric: "Total Spend", spa: spa.spend, aesthetics: aes.spend, slimming: slim.spend },
+      { metric: "Revenue",     spa: spa.revenue,    aesthetics: aes.revenue,    slimming: slim.revenue    },
+      { metric: "Total Spend", spa: spa.totalSpend, aesthetics: aes.totalSpend, slimming: slim.totalSpend },
+      { metric: "Meta",   spa: spa.metaSpend,   aesthetics: aes.metaSpend,   slimming: slim.metaSpend,   sub: true },
+      { metric: "Google", spa: spa.googleSpend, aesthetics: aes.googleSpend, slimming: slim.googleSpend, sub: true, lastSub: true },
       {
         metric: "Blended ROAS",
-        spa: spa.roas, aesthetics: aes.roas, slimming: slim.roas,
-        roasValues: { spa: spa.roasNum, aesthetics: aes.roasNum, slimming: slim.roasNum },
+        spa: spa.blendedRoas, aesthetics: aes.blendedRoas, slimming: slim.blendedRoas,
+        roasValues: { spa: spa.blendedRoasNum, aesthetics: aes.blendedRoasNum, slimming: slim.blendedRoasNum },
+      },
+      {
+        metric: "Meta",
+        spa: spa.metaRoas, aesthetics: aes.metaRoas, slimming: slim.metaRoas,
+        roasValues: { spa: spa.metaRoasNum, aesthetics: aes.metaRoasNum, slimming: slim.metaRoasNum },
+        sub: true,
+      },
+      {
+        metric: "Google",
+        spa: spa.googleRoas, aesthetics: "—", slimming: "—",
+        roasValues: { spa: spa.googleRoasNum, aesthetics: null, slimming: null },
+        sub: true, lastSub: true,
       },
       { metric: "CPL", spa: spa.cpl, aesthetics: aes.cpl, slimming: slim.cpl },
       { metric: "CPC", spa: spa.cpc, aesthetics: aes.cpc, slimming: slim.cpc },
@@ -243,29 +277,34 @@ function MarketingMasterContent({
     return { ty, ly, yoyPct, hasData: inRange.length > 0 };
   }, [wixStats.data, dateFrom, dateTo]);
 
-  /* ---- Compute fatigue data ---- */
+  /* ---- Compute fatigue data (Meta campaigns only) ----
+   * Primary signal  : frequency > 2   → fatigued
+   * Secondary signal: current CPL > 1.75× campaign CPL at launch week → fatigued
+   *   (secondary requires launchWeekCpl field on CampaignData — omitted until API enriched)
+   * Watch   : frequency 1.5–2
+   * Healthy : frequency < 1.5
+   */
   const fatigueData = useMemo(() => {
     function countFatigue(campaigns: CampaignData[]) {
       let healthy = 0, watch = 0, fatigued = 0;
       for (const c of campaigns) {
-        const ctrDrop = c.peakCtr > 0 ? (c.peakCtr - c.ctr) / c.peakCtr : 0;
-        if (c.frequency > 3.0 && ctrDrop > 0.2) fatigued++;
-        else if (c.frequency >= 2.0 && ctrDrop >= 0.1) watch++;
-        else healthy++;
+        if (c.frequency > 2) {
+          fatigued++;
+        } else if (c.frequency >= 1.5) {
+          watch++;
+        } else {
+          healthy++;
+        }
       }
       return { healthy, watch, fatigued };
     }
 
-    const allSpa = [...(metaSpa.data?.campaigns ?? []), ...(googleSpa.data?.campaigns ?? [])];
-    const allAes = [...(metaAes.data?.campaigns ?? []), ...(googleAes.data?.campaigns ?? [])];
-    const allSlim = [...(metaSlim.data?.campaigns ?? []), ...(googleSlim.data?.campaigns ?? [])];
-
     return [
-      { brand: "spa" as const, ...countFatigue(allSpa) },
-      { brand: "aesthetics" as const, ...countFatigue(allAes) },
-      { brand: "slimming" as const, ...countFatigue(allSlim) },
+      { brand: "spa"        as const, ...countFatigue(metaSpa.data?.campaigns  ?? []) },
+      { brand: "aesthetics" as const, ...countFatigue(metaAes.data?.campaigns  ?? []) },
+      { brand: "slimming"   as const, ...countFatigue(metaSlim.data?.campaigns ?? []) },
     ];
-  }, [metaSpa.data, metaAes.data, metaSlim.data, googleSpa.data, googleAes.data, googleSlim.data]);
+  }, [metaSpa.data, metaAes.data, metaSlim.data]);
 
   /* ---- Compute channel performance ---- */
   const channelByBrand = useMemo(() => {
@@ -514,7 +553,12 @@ function MarketingMasterContent({
           {/* -- Section 2: Creative Fatigue by Brand -- */}
           <section>
             <Card className="p-3 md:p-6">
-              <h2 className="text-lg font-semibold mb-4 md:mb-6 text-center">Creative Fatigue by Brand</h2>
+              <div className="text-center mb-4 md:mb-6">
+                <h2 className="text-lg font-semibold">Creative Fatigue — Meta Campaigns</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Fatigued = frequency &gt; 2 &nbsp;·&nbsp; Watch = frequency 1.5–2 &nbsp;·&nbsp; Healthy = frequency &lt; 1.5
+                </p>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
                 {fatigueData.map((f) => {
                   const b = BRAND[f.brand];
