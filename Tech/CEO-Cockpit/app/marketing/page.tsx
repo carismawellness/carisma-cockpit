@@ -55,6 +55,7 @@ interface TableRow {
   aesthetics: string;
   slimming: string;
   roasValues?: { spa: number | null; aesthetics: number | null; slimming: number | null };
+  lyDisplay?: { spa: string; aesthetics: string; slimming: string };  // "vs LY" line below main value
   sub?: boolean;       // indented sub-row under the preceding parent
   lastSub?: boolean;   // last sub-row in a group — draws separator after
 }
@@ -97,6 +98,11 @@ function BrandTable({
                   return (
                     <td key={key} className={`px-4 text-right tabular-nums ${row.sub ? "py-1.5 text-xs font-medium opacity-70" : "py-3 font-bold"} ${colorClass}`}>
                       {row[key]}
+                      {row.lyDisplay && (
+                        <div className="text-[10px] font-normal text-muted-foreground leading-tight mt-0.5">
+                          vs {row.lyDisplay[key]} LY
+                        </div>
+                      )}
                     </td>
                   );
                 })}
@@ -201,11 +207,31 @@ function MarketingMasterContent({
     const aes  = brandData(metaAes.data?.campaigns  ?? [], googleAes.data?.campaigns  ?? []);
     const slim = brandData(metaSlim.data?.campaigns ?? [], googleSlim.data?.campaigns ?? []);
 
+    // LY spend from Supabase spend-comparison data (same period prior year)
+    function sumLY(months: { metaLY: number; googleLY: number }[] | undefined) {
+      if (!months?.length) return { meta: 0, google: 0 };
+      return months.reduce((a, m) => ({ meta: a.meta + m.metaLY, google: a.google + m.googleLY }), { meta: 0, google: 0 });
+    }
+    const spaLY  = sumLY(spaSpc.data);
+    const aesLY  = sumLY(aesSpc.data);
+    const slimLY = sumLY(slimSpc.data);
+    const hasLY  = (spaSpc.data?.length ?? 0) > 0;
+
     return [
       { metric: "Revenue",     spa: spa.revenue,    aesthetics: aes.revenue,    slimming: slim.revenue    },
       { metric: "Total Spend", spa: spa.totalSpend, aesthetics: aes.totalSpend, slimming: slim.totalSpend },
-      { metric: "Meta",   spa: spa.metaSpend,   aesthetics: aes.metaSpend,   slimming: slim.metaSpend,   sub: true },
-      { metric: "Google", spa: spa.googleSpend, aesthetics: aes.googleSpend, slimming: slim.googleSpend, sub: true, lastSub: true },
+      {
+        metric: "Meta",
+        spa: spa.metaSpend, aesthetics: aes.metaSpend, slimming: slim.metaSpend,
+        ...(hasLY && { lyDisplay: { spa: formatCurrency(spaLY.meta), aesthetics: formatCurrency(aesLY.meta), slimming: formatCurrency(slimLY.meta) } }),
+        sub: true,
+      },
+      {
+        metric: "Google",
+        spa: spa.googleSpend, aesthetics: aes.googleSpend, slimming: slim.googleSpend,
+        ...(hasLY && { lyDisplay: { spa: formatCurrency(spaLY.google), aesthetics: formatCurrency(aesLY.google), slimming: formatCurrency(slimLY.google) } }),
+        sub: true, lastSub: true,
+      },
       {
         metric: "Blended ROAS",
         spa: spa.blendedRoas, aesthetics: aes.blendedRoas, slimming: slim.blendedRoas,
@@ -226,7 +252,7 @@ function MarketingMasterContent({
       { metric: "CPL", spa: spa.cpl, aesthetics: aes.cpl, slimming: slim.cpl },
       { metric: "CPC", spa: spa.cpc, aesthetics: aes.cpc, slimming: slim.cpc },
     ];
-  }, [metaSpa.data, metaAes.data, metaSlim.data, googleSpa.data, googleAes.data, googleSlim.data]);
+  }, [metaSpa.data, metaAes.data, metaSlim.data, googleSpa.data, googleAes.data, googleSlim.data, spaSpc.data, aesSpc.data, slimSpc.data]);
 
   /* ---- Compute YoY spend chart data ---- */
   const spendChartData = useMemo(() => {
