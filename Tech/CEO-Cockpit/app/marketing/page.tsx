@@ -17,6 +17,7 @@ import { MktCommentaryPanel } from "@/components/marketing/CommentaryPanel";
 import { AdSpendYoYChart } from "@/components/marketing/AdSpendYoYChart";
 import { useSpendComparison } from "@/lib/hooks/useSpendComparison";
 import { useWixOrdersStats } from "@/lib/hooks/useWixOrders";
+import { useMetaFatigue } from "@/lib/hooks/useMetaFatigue";
 import { format } from "date-fns";
 
 /* ---------- brand colours (canonical palette) ---------- */
@@ -291,6 +292,11 @@ function MarketingMasterContent({
     };
   }, [metaSpa.data, metaAes.data, metaSlim.data, googleSpa.data, googleAes.data, googleSlim.data]);
 
+  /* ---- Real-time creative fatigue (independent of date filter) ---- */
+  const fatigueSpa  = useMetaFatigue("spa");
+  const fatigueAes  = useMetaFatigue("aesthetics");
+  const fatigueSlim = useMetaFatigue("slimming");
+
   /* ---- Wix Spa revenue for selected period (TY + LY) ---- */
   const wixPeriodRevenue = useMemo(() => {
     const months = wixStats.data?.monthly ?? [];
@@ -303,39 +309,12 @@ function MarketingMasterContent({
     return { ty, ly, yoyPct, hasData: inRange.length > 0 };
   }, [wixStats.data, dateFrom, dateTo]);
 
-  /* ---- Compute fatigue data (Meta campaigns only) ----
-   * Primary  : current CPL > 1.75× launch-week CPL (75% above baseline) → fatigued
-   *            current CPL > 1.25× launch-week CPL (25% above baseline) → watch
-   * Fallback : if no CPL data (no leads), use frequency > 2 → fatigued, ≥1.5 → watch
-   */
-  const fatigueData = useMemo(() => {
-    function countFatigue(campaigns: CampaignData[]) {
-      let healthy = 0, watch = 0, fatigued = 0;
-      for (const c of campaigns) {
-        const currentCpl = c.totalLeads > 0 ? c.totalSpend / c.totalLeads : null;
-        const launchCpl  = c.launchWeekCpl ?? null;
-
-        if (currentCpl != null && launchCpl != null && launchCpl > 0) {
-          // CPL-based signal
-          if (currentCpl > launchCpl * 1.75)       fatigued++;
-          else if (currentCpl > launchCpl * 1.25)  watch++;
-          else                                       healthy++;
-        } else {
-          // Fallback: frequency (no lead data to compute CPL)
-          if (c.frequency > 2)         fatigued++;
-          else if (c.frequency >= 1.5) watch++;
-          else                          healthy++;
-        }
-      }
-      return { healthy, watch, fatigued };
-    }
-
-    return [
-      { brand: "spa"        as const, ...countFatigue(metaSpa.data?.campaigns  ?? []) },
-      { brand: "aesthetics" as const, ...countFatigue(metaAes.data?.campaigns  ?? []) },
-      { brand: "slimming"   as const, ...countFatigue(metaSlim.data?.campaigns ?? []) },
-    ];
-  }, [metaSpa.data, metaAes.data, metaSlim.data]);
+  /* ---- Fatigue data — always real-time, from dedicated /meta/fatigue endpoint ---- */
+  const fatigueData = useMemo(() => [
+    { brand: "spa"        as const, ...(fatigueSpa.data?.summary  ?? { healthy: 0, watch: 0, fatigued: 0, newCampaigns: 0 }) },
+    { brand: "aesthetics" as const, ...(fatigueAes.data?.summary  ?? { healthy: 0, watch: 0, fatigued: 0, newCampaigns: 0 }) },
+    { brand: "slimming"   as const, ...(fatigueSlim.data?.summary ?? { healthy: 0, watch: 0, fatigued: 0, newCampaigns: 0 }) },
+  ], [fatigueSpa.data, fatigueAes.data, fatigueSlim.data]);
 
   /* ---- Compute channel performance ---- */
   const channelByBrand = useMemo(() => {
@@ -524,6 +503,66 @@ function MarketingMasterContent({
         </Card>
       )}
 
+      {/* ── Creative Fatigue — always real-time, not date-filtered ─────── */}
+      <Card className="p-3 md:p-6">
+        <div className="text-center mb-4 md:mb-6">
+          <h2 className="text-lg font-semibold">Creative Fatigue — Meta Campaigns</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Real-time &nbsp;·&nbsp; Fatigued = current CPL &gt;75% above launch week &nbsp;·&nbsp; Watch = &gt;50% above &nbsp;·&nbsp; Healthy = within 50%
+          </p>
+        </div>
+        {(fatigueSpa.isLoading || fatigueAes.isLoading || fatigueSlim.isLoading) ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-pulse">
+            {[0, 1, 2].map((i) => <div key={i} className="h-20 bg-muted rounded-full" />)}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+            {fatigueData.map((f) => {
+              const b = BRAND[f.brand];
+              const total = f.healthy + f.watch + f.fatigued;
+              if (total === 0) return (
+                <div key={f.brand} className="flex flex-col items-center gap-2">
+                  <div className="flex items-center gap-2">
+                    <BrandDot brand={f.brand} />
+                    <span className="font-semibold text-base">{b.name}</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">No ads tracked</p>
+                </div>
+              );
+              const healthyPct  = (f.healthy  / total) * 100;
+              const watchPct    = (f.watch    / total) * 100;
+              const fatiguedPct = (f.fatigued / total) * 100;
+              return (
+                <div key={f.brand} className="flex flex-col items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <BrandDot brand={f.brand} />
+                    <span className="font-semibold text-base">{b.name}</span>
+                  </div>
+                  <div className="w-full h-6 rounded-full overflow-hidden flex bg-muted">
+                    {healthyPct  > 0 && <div className="h-full bg-green-500 transition-all" style={{ width: `${healthyPct}%`  }} title={`${f.healthy} Healthy`}  />}
+                    {watchPct    > 0 && <div className="h-full bg-amber-400 transition-all" style={{ width: `${watchPct}%`    }} title={`${f.watch} Watch`}    />}
+                    {fatiguedPct > 0 && <div className="h-full bg-red-500   transition-all" style={{ width: `${fatiguedPct}%` }} title={`${f.fatigued} Fatigued`} />}
+                  </div>
+                  <div className="flex items-center gap-3 text-xs font-medium flex-wrap justify-center">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-full bg-green-500" />{f.healthy} Healthy
+                    </span>
+                    <span className="text-muted-foreground">|</span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />{f.watch} Watch
+                    </span>
+                    <span className="text-muted-foreground">|</span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-full bg-red-500" />{f.fatigued} Fatigued
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
       {/* ── Wix Spa Revenue (always shown when data available) ─────────── */}
       {(wixPeriodRevenue.hasData || wixStats.isLoading) && (
         <Card className="p-4 flex flex-col md:flex-row items-start md:items-center gap-4 md:gap-8">
@@ -571,73 +610,7 @@ function MarketingMasterContent({
             </Card>
           </section>
 
-          {/* -- Section 2: Creative Fatigue by Brand -- */}
-          <section>
-            <Card className="p-3 md:p-6">
-              <div className="text-center mb-4 md:mb-6">
-                <h2 className="text-lg font-semibold">Creative Fatigue — Meta Campaigns</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Fatigued = CPL &gt;75% above launch week &nbsp;·&nbsp; Watch = CPL &gt;25% above launch week &nbsp;·&nbsp; Healthy = within 25%
-                </p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
-                {fatigueData.map((f) => {
-                  const b = BRAND[f.brand];
-                  const total = f.healthy + f.watch + f.fatigued;
-                  if (total === 0) return (
-                    <div key={f.brand} className="flex flex-col items-center gap-2">
-                      <div className="flex items-center gap-2">
-                        <BrandDot brand={f.brand} />
-                        <span className="font-semibold text-base">{b.name}</span>
-                      </div>
-                      <p className="text-sm text-muted-foreground">No ads tracked</p>
-                    </div>
-                  );
-                  const healthyPct = (f.healthy / total) * 100;
-                  const watchPct = (f.watch / total) * 100;
-                  const fatiguedPct = (f.fatigued / total) * 100;
-
-                  return (
-                    <div key={f.brand} className="flex flex-col items-center gap-4">
-                      <div className="flex items-center gap-2">
-                        <BrandDot brand={f.brand} />
-                        <span className="font-semibold text-base">{b.name}</span>
-                      </div>
-                      <div className="w-full h-6 rounded-full overflow-hidden flex bg-muted">
-                        {healthyPct > 0 && (
-                          <div className="h-full bg-green-500 transition-all" style={{ width: `${healthyPct}%` }} title={`${f.healthy} Healthy`} />
-                        )}
-                        {watchPct > 0 && (
-                          <div className="h-full bg-amber-400 transition-all" style={{ width: `${watchPct}%` }} title={`${f.watch} Watch`} />
-                        )}
-                        {fatiguedPct > 0 && (
-                          <div className="h-full bg-red-500 transition-all" style={{ width: `${fatiguedPct}%` }} title={`${f.fatigued} Fatigued`} />
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3 text-xs font-medium flex-wrap justify-center">
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
-                          {f.healthy} Healthy
-                        </span>
-                        <span className="text-muted-foreground">|</span>
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
-                          {f.watch} Watch
-                        </span>
-                        <span className="text-muted-foreground">|</span>
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
-                          {f.fatigued} Fatigued
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-          </section>
-
-          {/* -- Section 3: Channel Performance by Brand -- */}
+          {/* -- Section 2: Channel Performance by Brand -- */}
           <section className="space-y-4 md:space-y-6">
             <h2 className="text-lg font-semibold">Channel Performance by Brand</h2>
             {channelByBrand.map((ch) => (
