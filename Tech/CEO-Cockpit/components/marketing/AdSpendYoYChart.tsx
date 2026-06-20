@@ -115,9 +115,9 @@ export function AdSpendYoYChart({ rows, roas, loading, dateLabel }: Props) {
             tickLine={false}
           />
           <Tooltip
-            formatter={(value: number, name: string) => [
-              `€${value.toLocaleString("en-EU", { minimumFractionDigits: 0 })}`,
-              name,
+            formatter={(value, name) => [
+              `€${(value as number).toLocaleString("en-EU", { minimumFractionDigits: 0 })}`,
+              name as string,
             ]}
             cursor={{ fill: "rgba(0,0,0,0.03)" }}
           />
