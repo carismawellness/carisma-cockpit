@@ -501,14 +501,8 @@ export interface NegativeReview {
 }
 
 /**
- * Returns individual reviews that qualify as "negative":
- *   - rating <= 3 (always include, text optional)
- *   - rating == 4 AND text is non-empty (noteworthy with context)
- *
- * Filtered to reviews published within [dateFrom, dateTo].
- * Falls back to the most recent 90 days of negative reviews if none
- * exist in the selected window (so the section is never empty when
- * there IS data).
+ * Returns all reviews rated below 5 stars published within [dateFrom, dateTo].
+ * Every non-5-star review is surfaced verbatim — 1-3★ as critical, 4★ as needs attention.
  */
 export function useNegativeReviews(dateFrom: Date, dateTo: Date) {
   const lookup = useLocationsLookup();
@@ -521,13 +515,12 @@ export function useNegativeReviews(dateFrom: Date, dateTo: Date) {
     queryFn: async () => {
       const supabase = createClient();
 
-      // Fetch reviews in the selected date window (using published_at date part)
       const { data, error } = await supabase
         .from("google_review_texts")
         .select("review_name, location_id, rating, text, author_name, published_at")
         .gte("published_at", fromStr)
         .lte("published_at", toStr + "T23:59:59Z")
-        .or("rating.lte.3,and(rating.eq.4,text.neq.)")
+        .lt("rating", 5)
         .order("published_at", { ascending: false })
         .limit(200);
 
@@ -539,10 +532,6 @@ export function useNegativeReviews(dateFrom: Date, dateTo: Date) {
       for (const row of data ?? []) {
         const rating = row.rating as number;
         const text   = (row.text as string | null) ?? "";
-        // rating ≤3 always included; rating=4 only with meaningful text
-        if (rating > 4) continue;
-        if (rating === 4 && text.trim().length === 0) continue;
-
         const loc = byId.get(row.location_id as number);
         results.push({
           reviewName:   row.review_name as string,

@@ -51,6 +51,7 @@ export async function POST(req: NextRequest) {
       status: result.errors.length === 0 ? "ok" : "partial",
       date: result.date,
       rows_upserted: result.rows_upserted,
+      texts_upserted: result.texts_upserted,
       errors: result.errors.length > 0 ? result.errors : undefined,
       log: result.log.join("\n"),
     });

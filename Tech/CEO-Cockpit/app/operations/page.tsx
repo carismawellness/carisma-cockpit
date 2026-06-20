@@ -848,24 +848,24 @@ function NegativeReviewsCard({
   dateTo: Date;
 }) {
   const periodLabel = `${format(dateFrom, "d MMM")}–${format(dateTo, "d MMM yyyy")}`;
-  const critical    = reviews.filter((r) => r.rating <= 3);
-  const noteworthy  = reviews.filter((r) => r.rating === 4 && r.text.trim().length > 0);
+  const critical      = reviews.filter((r) => r.rating <= 3);
+  const needsAttention = reviews.filter((r) => r.rating === 4);
 
   return (
     <Card className="p-3 md:p-6">
       <div className="flex items-center gap-2 mb-1">
         <MessageSquareX className="h-5 w-5 text-[#EF4444]" />
-        <h2 className="text-lg font-semibold text-foreground">Negative Reviews</h2>
+        <h2 className="text-lg font-semibold text-foreground">Below 5-Star Reviews</h2>
       </div>
       <p className="text-sm text-muted-foreground mb-4">
-        {periodLabel} — reviews ≤3 stars + 4-star reviews with written feedback
+        {periodLabel} — all reviews rated below 5 stars, verbatim
       </p>
 
       {loading && <ChartSkeleton />}
 
       {!loading && reviews.length === 0 && (
         <div className="py-8 text-center text-sm text-muted-foreground">
-          No qualifying negative reviews found for this period.{" "}
+          No below-5-star reviews found for this period.{" "}
           <span className="text-xs">(Data populates nightly via Google Places API)</span>
         </div>
       )}
@@ -873,11 +873,11 @@ function NegativeReviewsCard({
       {!loading && reviews.length > 0 && (
         <div className="space-y-6">
 
-          {/* Critical: ≤3 stars */}
+          {/* Critical: 1–3 stars */}
           {critical.length > 0 && (
             <div>
               <p className="text-xs font-semibold text-red-600 uppercase tracking-wide mb-3">
-                Critical — ≤ 3 Stars ({critical.length})
+                Critical — 3 Stars &amp; Below ({critical.length})
               </p>
               <div className="space-y-3">
                 {critical.map((r) => (
@@ -887,14 +887,14 @@ function NegativeReviewsCard({
             </div>
           )}
 
-          {/* Noteworthy: 4-star with text */}
-          {noteworthy.length > 0 && (
+          {/* Needs Attention: 4 stars */}
+          {needsAttention.length > 0 && (
             <div>
               <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-3">
-                Noteworthy — 4 Stars with Feedback ({noteworthy.length})
+                Needs Attention — 4 Stars ({needsAttention.length})
               </p>
               <div className="space-y-3">
-                {noteworthy.map((r) => (
+                {needsAttention.map((r) => (
                   <ReviewBlurb key={r.reviewName} review={r} />
                 ))}
               </div>
@@ -911,10 +911,6 @@ function ReviewBlurb({ review }: { review: NegativeReview }) {
   const dateStr = review.publishedAt
     ? format(new Date(review.publishedAt), "d MMM yyyy")
     : null;
-  // Truncate long reviews at 400 chars with an ellipsis
-  const blurb = review.text.length > 400
-    ? review.text.slice(0, 400).trimEnd() + "…"
-    : review.text;
 
   return (
     <div className="border border-border rounded-lg p-3 bg-background">
@@ -930,8 +926,10 @@ function ReviewBlurb({ review }: { review: NegativeReview }) {
           {dateStr && <span>· {dateStr}</span>}
         </div>
       </div>
-      {blurb && (
-        <p className="text-sm text-foreground leading-relaxed">{blurb}</p>
+      {review.text ? (
+        <p className="text-sm text-foreground leading-relaxed">{review.text}</p>
+      ) : (
+        <p className="text-sm text-muted-foreground italic">No written feedback</p>
       )}
     </div>
   );

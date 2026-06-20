@@ -16,6 +16,8 @@ import { computeMasterCommentary } from "@/lib/commentary/marketing-engine";
 import { MktCommentaryPanel } from "@/components/marketing/CommentaryPanel";
 import { AdSpendYoYChart } from "@/components/marketing/AdSpendYoYChart";
 import { useSpendComparison } from "@/lib/hooks/useSpendComparison";
+import { useWixOrdersStats } from "@/lib/hooks/useWixOrders";
+import { format } from "date-fns";
 
 /* ---------- brand colours (canonical palette) ---------- */
 
@@ -141,6 +143,9 @@ function MarketingMasterContent({
   const aesSpc  = useSpendComparison("aesthetics", dateFrom, dateTo);
   const slimSpc = useSpendComparison("slimming",   dateFrom, dateTo);
 
+  /* ---- Wix Spa online revenue ---- */
+  const wixStats = useWixOrdersStats();
+
   const isLoading =
     metaSpa.isLoading || metaAes.isLoading || metaSlim.isLoading ||
     googleSpa.isLoading || googleAes.isLoading || googleSlim.isLoading ||
@@ -225,6 +230,18 @@ function MarketingMasterContent({
       slimming:   { metaRoas: channelRoas(metaSlim.data?.campaigns ?? []), googleRoas: channelRoas(googleSlim.data?.campaigns ?? []) },
     };
   }, [metaSpa.data, metaAes.data, metaSlim.data, googleSpa.data, googleAes.data, googleSlim.data]);
+
+  /* ---- Wix Spa revenue for selected period (TY + LY) ---- */
+  const wixPeriodRevenue = useMemo(() => {
+    const months = wixStats.data?.monthly ?? [];
+    const fromStr = format(dateFrom, "yyyy-MM");
+    const toStr   = format(dateTo,   "yyyy-MM");
+    const inRange = months.filter((m) => m.month >= fromStr && m.month <= toStr);
+    const ty = inRange.reduce((s, m) => s + m.current, 0);
+    const ly = inRange.reduce((s, m) => s + m.ly, 0);
+    const yoyPct = ly > 0 ? ((ty - ly) / ly) * 100 : null;
+    return { ty, ly, yoyPct, hasData: inRange.length > 0 };
+  }, [wixStats.data, dateFrom, dateTo]);
 
   /* ---- Compute fatigue data ---- */
   const fatigueData = useMemo(() => {
@@ -434,6 +451,40 @@ function MarketingMasterContent({
               ? "Refresh your ad platform tokens to restore live data."
               : "Data is fetched directly from Meta Ads, Google Ads, and Klaviyo APIs."}
           </p>
+        </Card>
+      )}
+
+      {/* ── Wix Spa Revenue (always shown when data available) ─────────── */}
+      {(wixPeriodRevenue.hasData || wixStats.isLoading) && (
+        <Card className="p-4 flex flex-col md:flex-row items-start md:items-center gap-4 md:gap-8">
+          <div className="shrink-0">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">Wix Revenue — Spa</p>
+            <p className="text-xs text-muted-foreground">Online store sales</p>
+          </div>
+          {wixStats.isLoading ? (
+            <div className="flex gap-6 animate-pulse">
+              <div className="h-8 w-24 bg-muted rounded" />
+              <div className="h-8 w-24 bg-muted rounded" />
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-6 md:gap-10">
+              <div>
+                <p className="text-xs text-muted-foreground mb-0.5">This period</p>
+                <p className="text-2xl font-bold tabular-nums">{formatCurrency(wixPeriodRevenue.ty)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-0.5">Same period LY</p>
+                <p className="text-2xl font-bold tabular-nums text-muted-foreground">{formatCurrency(wixPeriodRevenue.ly)}</p>
+              </div>
+              {wixPeriodRevenue.yoyPct !== null && (
+                <div className="flex items-end pb-1">
+                  <span className={`text-base font-semibold ${wixPeriodRevenue.yoyPct >= 0 ? "text-green-600" : "text-red-600"}`}>
+                    {wixPeriodRevenue.yoyPct >= 0 ? "▲" : "▼"} {Math.abs(wixPeriodRevenue.yoyPct).toFixed(1)}% YoY
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
         </Card>
       )}
 

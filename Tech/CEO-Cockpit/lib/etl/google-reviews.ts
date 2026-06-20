@@ -1,11 +1,13 @@
 /**
  * Google Reviews ETL
  *
- * Pulls rating + review count for all 10 Carisma locations from the
- * Places API (New) and upserts one snapshot row per location per day
- * into google_reviews (UNIQUE on date,location_id).
+ * Two jobs per run:
+ *   1. Aggregate snapshot  → google_reviews (one row per location per day)
+ *   2. Individual texts    → google_review_texts (one row per review, longitudinal)
  *
  * Place IDs live in lib/constants/google-places.ts (verified 2026-06-10).
+ * The Places API (New) returns at most 5 most-recent reviews per place.
+ * Running nightly accumulates new reviews over time via UNIQUE(review_name).
  *
  * Env vars required:
  *   GOOGLE_PLACES_API_KEY
@@ -21,10 +23,19 @@ import {
 
 const PLACES_BASE = "https://places.googleapis.com/v1/places";
 
+interface PlaceReview {
+  name?: string;          // "places/{placeId}/reviews/{reviewId}" — unique key
+  rating?: number;
+  text?: { text?: string; languageCode?: string };
+  authorAttribution?: { displayName?: string };
+  publishTime?: string;   // ISO timestamp e.g. "2026-04-15T10:23:00Z"
+}
+
 interface PlaceDetails {
   rating?: number;
   userRatingCount?: number;
   displayName?: { text?: string; languageCode?: string };
+  reviews?: PlaceReview[];
 }
 
 interface GoogleReviewRow {
@@ -36,11 +47,22 @@ interface GoogleReviewRow {
   source:        string;
 }
 
+interface GoogleReviewTextRow {
+  review_name:  string;
+  location_id:  number;
+  brand_id:     number;
+  rating:       number;
+  text:         string | null;
+  author_name:  string | null;
+  published_at: string | null;
+}
+
 export interface GoogleReviewsEtlResult {
-  date:          string;
-  rows_upserted: number;
-  log:           string[];
-  errors:        string[];
+  date:           string;
+  rows_upserted:  number;
+  texts_upserted: number;
+  log:            string[];
+  errors:         string[];
 }
 
 /** Today's date (YYYY-MM-DD) in Europe/Malta. */
@@ -57,7 +79,7 @@ async function fetchPlace(
   const resp = await fetch(`${PLACES_BASE}/${loc.placeId}`, {
     headers: {
       "X-Goog-Api-Key":   apiKey,
-      "X-Goog-FieldMask": "rating,userRatingCount,displayName",
+      "X-Goog-FieldMask": "rating,userRatingCount,displayName,reviews",
     },
   });
   if (!resp.ok) {
@@ -78,9 +100,10 @@ export async function runGoogleReviewsEtl(): Promise<GoogleReviewsEtlResult> {
   }
 
   const date = maltaToday();
-  const rows: GoogleReviewRow[] = [];
-  const log: string[]    = [];
-  const errors: string[] = [];
+  const rows: GoogleReviewRow[]         = [];
+  const textRows: GoogleReviewTextRow[] = [];
+  const log: string[]                   = [];
+  const errors: string[]                = [];
 
   for (const loc of GOOGLE_PLACES_LOCATIONS) {
     try {
@@ -90,6 +113,8 @@ export async function runGoogleReviewsEtl(): Promise<GoogleReviewsEtlResult> {
           `Places API returned no rating data (displayName="${place.displayName?.text ?? "?"}")`,
         );
       }
+
+      // Aggregate snapshot row
       rows.push({
         date,
         location_id:   loc.locationId,
@@ -98,7 +123,26 @@ export async function runGoogleReviewsEtl(): Promise<GoogleReviewsEtlResult> {
         avg_rating:    place.rating,
         source:        "places_api",
       });
-      log.push(`${loc.slug}: ${place.userRatingCount} reviews @ ${place.rating}`);
+
+      // Individual review text rows (up to 5 per place from Places API)
+      const reviews = place.reviews ?? [];
+      for (const review of reviews) {
+        if (!review.name || review.rating == null) continue;
+        textRows.push({
+          review_name:  review.name,
+          location_id:  loc.locationId,
+          brand_id:     loc.brandId,
+          rating:       review.rating,
+          text:         review.text?.text ?? null,
+          author_name:  review.authorAttribution?.displayName ?? null,
+          published_at: review.publishTime ?? null,
+        });
+      }
+
+      log.push(
+        `${loc.slug}: ${place.userRatingCount} reviews @ ${place.rating}` +
+        (reviews.length > 0 ? ` (${reviews.length} texts fetched)` : ""),
+      );
     } catch (e) {
       const msg = `${loc.slug}: ${e instanceof Error ? e.message : String(e)}`;
       errors.push(msg);
@@ -106,7 +150,21 @@ export async function runGoogleReviewsEtl(): Promise<GoogleReviewsEtlResult> {
     }
   }
 
-  const rowsUpserted = await upsert("google_reviews", rows as unknown as Record<string, unknown>[], "date,location_id");
+  const rowsUpserted = await upsert(
+    "google_reviews",
+    rows as unknown as Record<string, unknown>[],
+    "date,location_id",
+  );
 
-  return { date, rows_upserted: rowsUpserted, log, errors };
+  let textsUpserted = 0;
+  if (textRows.length > 0) {
+    textsUpserted = await upsert(
+      "google_review_texts",
+      textRows as unknown as Record<string, unknown>[],
+      "review_name",
+    );
+    log.push(`Upserted ${textsUpserted} review text rows`);
+  }
+
+  return { date, rows_upserted: rowsUpserted, texts_upserted: textsUpserted, log, errors };
 }
