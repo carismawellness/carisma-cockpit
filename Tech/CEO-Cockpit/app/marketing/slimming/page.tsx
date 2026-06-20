@@ -11,9 +11,11 @@ import { formatCurrency } from "@/lib/charts/config";
 import { formatDateRangeLabel } from "@/lib/utils/mock-date-filter";
 import { useMetaCampaignsFromDb as useMetaCampaigns, useGoogleCampaignsFromDb as useGoogleCampaigns } from "@/lib/hooks/useAdsCampaigns";
 import { useKlaviyoOverview } from "@/lib/hooks/useKlaviyoOverview";
+import { useKlaviyoPopup } from "@/lib/hooks/useKlaviyoPopup";
 import { FlowsTable } from "@/components/marketing/FlowsTable";
 import { isNonRevenueCampaign } from "@/lib/funnel/aov";
 import { KeywordRankingsTable } from "@/components/marketing/KeywordRankingsTable";
+import { WebChannelSection } from "@/components/marketing/WebChannelSection";
 import { BRAND } from "@/lib/constants/design-tokens";
 import type { CampaignData } from "@/lib/types/ads";
 import {
@@ -214,6 +216,7 @@ function SlimmingMarketingContent({
     dateFrom,
     dateTo,
   });
+  const { popup: klaviyoPopup, loading: popupLoading } = useKlaviyoPopup("slimming", dateFrom, dateTo);
 
   /* ---------- Strategic commentary ---------- */
   const commentaryResult = useMemo(() => {
@@ -434,6 +437,18 @@ function SlimmingMarketingContent({
               <EmailRateBar label="Click Rate" value={parseFloat((klaviyo.clickRate * 100).toFixed(1))} max={10} color={BRAND_COLOR} benchmark={EMAIL_BENCHMARKS.click} />
               <div className="hidden md:block w-px self-stretch" style={{ backgroundColor: `${BRAND_FILL}` }} />
               <EmailRateBar label="Unsubscribe Rate" value={parseFloat((klaviyo.unsubscribeRate * 100).toFixed(1))} max={2} color="#EF4444" benchmark={EMAIL_BENCHMARKS.unsub} />
+              {(klaviyoPopup.hasData || popupLoading) && (
+                <>
+                  <div className="hidden md:block w-px self-stretch" style={{ backgroundColor: `${BRAND_FILL}` }} />
+                  <EmailRateBar
+                    label="Popup Capture Rate"
+                    value={popupLoading ? 0 : (klaviyoPopup.captureRatePct ?? 0)}
+                    max={16}
+                    color={klaviyoPopup.captureRatePct == null ? "#9CA3AF" : klaviyoPopup.captureRatePct >= 8 ? "#22C55E" : klaviyoPopup.captureRatePct >= 5 ? "#F59E0B" : "#EF4444"}
+                    benchmark={8}
+                  />
+                </>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -461,6 +476,15 @@ function SlimmingMarketingContent({
         </p>
         <KeywordRankingsTable brand="slimming" brandColor={BRAND_COLOR} dateFrom={dateFrom} dateTo={dateTo} />
       </Card>
+
+      {/* ── Section 4c: Web Analytics (GA4) ──────────────────────────── */}
+      <WebChannelSection
+        brand="slimming"
+        brandColor={BRAND_COLOR}
+        brandFill={BRAND_FILL}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+      />
 
       {/* ── Section 5: Profitability Matrix ─────────────────────────── */}
       <Card className="p-5 md:p-6">
