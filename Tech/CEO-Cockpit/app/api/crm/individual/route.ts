@@ -36,13 +36,12 @@ const AGENT_NAMES: Record<string, string> = {
   nicci:    "Nicci",
   nathalia: "Nathalia",
   april:    "April",
-  rey:      "Rey",
   queenee:  "Queenee",
 };
 
 const AGENT_ORDER = [
   "adeel", "rana", "abid", "km", "vj",
-  "dorianne", "juliana", "anni", "nicci", "nathalia", "april", "rey", "queenee",
+  "dorianne", "juliana", "anni", "nicci", "nathalia", "april", "queenee",
 ];
 
 // ── Types ─────────────────────────────────────────────────────────────────────

@@ -48,7 +48,6 @@ const AGENTS: [string, string, string][] = [
   ["nicci",    "Nicci",    "2054161680"],
   ["nathalia", "Nathalia", "1658710608"],
   ["april",    "April",    "1955992165"],
-  ["rey",      "Rey",      "992572180"],
   ["queenee",  "Queenee",  "703206369"],
 ];
 
@@ -57,7 +56,7 @@ const AGENTS: [string, string, string][] = [
 //   Chat layout: abid, rana, km, adeel
 //   SDR layout:  everyone else
 const SDR_AGENTS = new Set([
-  "vj", "nicci", "dorianne", "juliana", "anni", "april", "rey", "queenee", "nathalia",
+  "vj", "nicci", "dorianne", "juliana", "anni", "april", "queenee", "nathalia",
 ]);
 const CHUNK_SIZE = 200;
 

@@ -19,7 +19,6 @@ export const SEED_AGENTS = [
   { agent_slug: "april",    display_name: "April",    position: "sdr",  brand_slug: "aesthetics", is_active: true  },
   { agent_slug: "nathalia", display_name: "Nathalia", position: "sdr",  brand_slug: "aesthetics", is_active: true  },
   { agent_slug: "rana",     display_name: "Rana",     position: "chat", brand_slug: "aesthetics", is_active: true  },
-  { agent_slug: "rey",      display_name: "Rey",      position: "sdr",  brand_slug: "aesthetics", is_active: true  },
   // ── Slimming ─────────────────────────────────────────────────────────
   { agent_slug: "dorianne", display_name: "Dorianne", position: "sdr",  brand_slug: "slimming",   is_active: true  },
   { agent_slug: "queenee",  display_name: "Queenee",  position: "sdr",  brand_slug: "slimming",   is_active: true  },

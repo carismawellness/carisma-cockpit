@@ -21,7 +21,6 @@ export const AGENT_META: AgentMeta[] = [
   { slug: "juliana",  name: "Juliana",  brand: "SPA",        role: "SDR",  inactive: false, commissionRate: 0.01  },
   { slug: "nathalia", name: "Nathalia", brand: "AESTHETICS", role: "SDR",  inactive: false, commissionRate: 0.01  },
   { slug: "april",    name: "April",    brand: "AESTHETICS", role: "SDR",  inactive: false, commissionRate: 0.01  },
-  { slug: "rey",      name: "Rey",      brand: "AESTHETICS", role: "SDR",  inactive: false, commissionRate: 0.01  },
   { slug: "anni",     name: "Anni",     brand: "AESTHETICS", role: "SDR",  inactive: true,  commissionRate: 0.01  },
   // ── SLIMMING ─────────────────────────────────────────────────────────────
   { slug: "dorianne", name: "Dorianne", brand: "SLIMMING",   role: "SDR",  inactive: false, commissionRate: 0.01  },
