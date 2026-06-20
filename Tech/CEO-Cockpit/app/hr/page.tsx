@@ -775,6 +775,15 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   ]);
 
   // ── KPI cards ─────────────────────────────────────────────────────────────
+  const sickLeaveCard: HRMetricData | null =
+    !sickLeaveKPI.isLoading && !sickLeaveKPI.isError
+      ? {
+          label: "Sick Leave Days",
+          value: String(sickLeaveKPI.totalDays),
+          note: `${sickLeaveKPI.uniqueEmployees} employee${sickLeaveKPI.uniqueEmployees !== 1 ? "s" : ""} — approved requests in period`,
+        }
+      : null;
+
   const kpis: HRMetricData[] = [
     {
       label: "Human Capital %",
@@ -807,13 +816,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
       value: String(isFinancialsReal ? financialsQ.data!.totalHeadcount : resolvedHeadcount),
       note: "Talexio staff only. Freelancers & contractors not in Talexio are excluded.",
     },
-    {
-      label: "Sick Leave Days",
-      value: sickLeaveKPI.isLoading ? "…" : sickLeaveKPI.isError ? "N/A" : String(sickLeaveKPI.totalDays),
-      note: sickLeaveKPI.isError
-        ? "Talexio query failed"
-        : `${sickLeaveKPI.uniqueEmployees} employee${sickLeaveKPI.uniqueEmployees !== 1 ? "s" : ""} — approved requests in period`,
-    },
+    ...(sickLeaveCard ? [sickLeaveCard] : []),
     {
       label: "On-Time %",
       value: `${onTimePct}%`,
