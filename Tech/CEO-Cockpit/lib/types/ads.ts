@@ -12,6 +12,8 @@ export interface CampaignData {
   frequency: number;
   attributedRevenue: number;
   peakCtr: number;
+  /** CPL during the campaign's first 7 days — used for fatigue detection */
+  launchWeekCpl?: number;
 }
 
 /** Response shape from /api/ads/meta and /api/ads/google */

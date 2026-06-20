@@ -304,22 +304,27 @@ function MarketingMasterContent({
   }, [wixStats.data, dateFrom, dateTo]);
 
   /* ---- Compute fatigue data (Meta campaigns only) ----
-   * Primary signal  : frequency > 2   → fatigued
-   * Secondary signal: current CPL > 1.75× campaign CPL at launch week → fatigued
-   *   (secondary requires launchWeekCpl field on CampaignData — omitted until API enriched)
-   * Watch   : frequency 1.5–2
-   * Healthy : frequency < 1.5
+   * Primary  : current CPL > 1.75× launch-week CPL (75% above baseline) → fatigued
+   *            current CPL > 1.25× launch-week CPL (25% above baseline) → watch
+   * Fallback : if no CPL data (no leads), use frequency > 2 → fatigued, ≥1.5 → watch
    */
   const fatigueData = useMemo(() => {
     function countFatigue(campaigns: CampaignData[]) {
       let healthy = 0, watch = 0, fatigued = 0;
       for (const c of campaigns) {
-        if (c.frequency > 2) {
-          fatigued++;
-        } else if (c.frequency >= 1.5) {
-          watch++;
+        const currentCpl = c.totalLeads > 0 ? c.totalSpend / c.totalLeads : null;
+        const launchCpl  = c.launchWeekCpl ?? null;
+
+        if (currentCpl != null && launchCpl != null && launchCpl > 0) {
+          // CPL-based signal
+          if (currentCpl > launchCpl * 1.75)       fatigued++;
+          else if (currentCpl > launchCpl * 1.25)  watch++;
+          else                                       healthy++;
         } else {
-          healthy++;
+          // Fallback: frequency (no lead data to compute CPL)
+          if (c.frequency > 2)         fatigued++;
+          else if (c.frequency >= 1.5) watch++;
+          else                          healthy++;
         }
       }
       return { healthy, watch, fatigued };
@@ -572,7 +577,7 @@ function MarketingMasterContent({
               <div className="text-center mb-4 md:mb-6">
                 <h2 className="text-lg font-semibold">Creative Fatigue — Meta Campaigns</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Fatigued = frequency &gt; 2 &nbsp;·&nbsp; Watch = frequency 1.5–2 &nbsp;·&nbsp; Healthy = frequency &lt; 1.5
+                  Fatigued = CPL &gt;75% above launch week &nbsp;·&nbsp; Watch = CPL &gt;25% above launch week &nbsp;·&nbsp; Healthy = within 25%
                 </p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
