@@ -109,7 +109,7 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json({
-    period: { dateFrom, dateTo },
+    period:  { dateFrom, dateTo },
     transactions_raw: {
       total_rows: txnRows.length,
       total_amount: +txnRows.reduce((s, r) => s + r.amount, 0).toFixed(2),
@@ -127,4 +127,33 @@ export async function GET(req: NextRequest) {
       rows: suppRows,
     },
   });
+}
+
+// POST /api/etl/debug-wages
+// Body: { assignments: Array<{ contact_name: string; role: string }> }
+// Bulk-upserts wage_role_mapping rows using service role key (bypasses session auth).
+export async function POST(req: NextRequest) {
+  const VALID_ROLES = ["manager", "reception", "practitioner", "therapist", "crm"] as const;
+  const body = await req.json().catch(() => ({})) as { assignments?: Array<{ contact_name: string; role: string }> };
+  const assignments = body.assignments ?? [];
+  if (!Array.isArray(assignments) || assignments.length === 0) {
+    return NextResponse.json({ error: "assignments array required" }, { status: 400 });
+  }
+  const rows = assignments
+    .filter(a => typeof a.contact_name === "string" && VALID_ROLES.includes(a.role as typeof VALID_ROLES[number]))
+    .map(a => ({
+      contact_key:  a.contact_name.trim().toLowerCase().replace(/\s+/g, " "),
+      contact_name: a.contact_name.trim(),
+      role:         a.role,
+      updated_at:   new Date().toISOString(),
+    }));
+  if (rows.length === 0) return NextResponse.json({ error: "No valid assignments" }, { status: 400 });
+
+  const resp = await fetch(
+    `${sbUrl("wage_role_mapping")}?on_conflict=contact_key`,
+    { method: "POST", headers: { ...sbHeaders(), Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify(rows) }
+  );
+  if (!resp.ok) return NextResponse.json({ error: await resp.text() }, { status: 500 });
+  const saved = await resp.json() as unknown[];
+  return NextResponse.json({ ok: true, saved: saved.length, rows });
 }
