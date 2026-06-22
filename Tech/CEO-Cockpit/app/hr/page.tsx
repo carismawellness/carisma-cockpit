@@ -936,79 +936,136 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
       />
 
       {/* ══════════════════════════════════════════════════════════════════
-          SECTION: Net Employee Movement (KPI bubbles + trend chart)
+          SECTION: Human Capital % by Location & Business Unit
           ══════════════════════════════════════════════════════════════════ */}
-      {(() => {
-        const mv = movementQ.data;
-        const s  = mv?.summary;
-        const hasData = mv && mv.weeks.length > 0;
-        return (
-          <Card className="p-3 md:p-6">
-            <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
-              <div>
-                <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-                  Net Employee Movement
-                  {hasData ? (
-                    <span className="inline-flex items-center gap-1.5 text-xs text-green-700 bg-green-50 rounded-full px-2.5 py-0.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />Live from Talexio
-                    </span>
-                  ) : movementQ.isLoading ? (
-                    <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 rounded-full px-2.5 py-0.5 animate-pulse">Loading…</span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 rounded-full px-2.5 py-0.5">Backfill needed</span>
-                  )}
-                </h2>
-                <p className="text-xs text-muted-foreground mt-0.5">Weekly joiners &amp; leavers — last 26 weeks</p>
-              </div>
-            </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+        <Card className="p-3 md:p-6">
+          <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
+            Human Capital % by Location
+            {isFinancialsReal ? <LiveBadge source="supabase" /> : <SampleDataBadge />}
+          </h2>
+          <p className="text-xs text-muted-foreground mb-4">
+            Payroll as % of revenue — lower is more efficient
+          </p>
+          <ResponsiveContainer width="100%" height={hcByLocation.length * 48 + 50}>
+            <BarChart
+              data={hcByLocation}
+              layout="vertical"
+              margin={{ top: 5, right: 80, left: 10, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
+              <XAxis type="number" tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11 }} />
+              <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 12 }} />
+              <Tooltip
+                formatter={(v, name) => [`${v}%`, String(name)]}
+                labelFormatter={(label) => {
+                  const item = hcByLocation.find((d) => d.name === label);
+                  return item
+                    ? `${label} — Payroll: ${formatCurrency(item.payroll)} | Revenue: ${formatCurrency(item.revenue)}`
+                    : String(label);
+                }}
+              />
+              <ReferenceLine
+                x={HC_PCT_TARGET}
+                stroke={TARGET_AMBER}
+                strokeDasharray="6 3"
+                strokeWidth={1.5}
+                label={{ value: `Target ${HC_PCT_TARGET}%`, position: "top", fill: TARGET_AMBER, fontSize: 11 }}
+              />
+              <Bar dataKey="hcPct" name="HC %" barSize={28}>
+                {hcByLocation.map((entry) => (
+                  <Cell key={entry.name} fill={locationColor(entry.name)} />
+                ))}
+                <LabelList
+                  dataKey="hcPct"
+                  content={(props) => {
+                    const { x, width, y, height, value } = props as Record<string, unknown>;
+                    return (
+                      <text
+                        x={Number(x) + Number(width) + 6}
+                        y={Number(y) + Number(height) / 2}
+                        textAnchor="start"
+                        dominantBaseline="middle"
+                        fontSize={11}
+                        fontWeight={600}
+                        fill="currentColor"
+                      >
+                        {String(value)}%
+                      </text>
+                    );
+                  }}
+                />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
 
-            {/* KPI chips */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-              {[
-                { label: "Active Employees",  value: s?.currentTotal ?? displayHeadcount, color: "text-slate-900" },
-                { label: "Net Movement",       value: s ? (s.netMovement >= 0 ? `+${s.netMovement}` : String(s.netMovement)) : "—", color: s && s.netMovement > 0 ? "text-emerald-700" : s && s.netMovement < 0 ? "text-red-700" : "text-slate-900" },
-                { label: "Joiners (26 wks)",   value: s ? `+${s.totalJoiners}` : "—", color: "text-emerald-700" },
-                { label: "Leavers (26 wks)",   value: s ? `-${s.totalLeavers}` : "—", color: "text-red-600" },
-              ].map((chip) => (
-                <div key={chip.label} className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
-                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">{chip.label}</p>
-                  <p className={`text-2xl font-bold ${chip.color}`}>{chip.value}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Movement chart */}
-            {hasData ? (
-              <ResponsiveContainer width="100%" height={200}>
-                <ComposedChart data={mv.weeks} margin={{ top: 8, right: 50, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" />
-                  <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-                  <YAxis yAxisId="left" tick={{ fontSize: 10 }} width={25} allowDecimals={false} />
-                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} width={35} domain={["auto", "auto"]} />
-                  <Tooltip labelFormatter={(label: unknown) => `Week of ${label}`} />
-                  <Legend />
-                  <ReferenceLine yAxisId="left" y={0} stroke="#e2e8f0" />
-                  <Bar yAxisId="left" dataKey="joiners" name="Joiners" fill="#10b981" radius={[2,2,0,0]}>
-                    <LabelList dataKey="joiners" position="top" style={{ fontSize: 9, fill: "#065f46" }} formatter={(v: unknown) => v ? `+${v}` : ""} />
-                  </Bar>
-                  <Bar yAxisId="left" dataKey="leavers" name="Leavers" fill="#ef4444" radius={[2,2,0,0]}>
-                    <LabelList dataKey="leavers" position="top" style={{ fontSize: 9, fill: "#991b1b" }} formatter={(v: unknown) => v ? `-${v}` : ""} />
-                  </Bar>
-                  <Line yAxisId="right" type="monotone" dataKey="total" name="Total headcount" stroke="#6366f1" strokeWidth={2} dot={false} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-12 gap-3 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                <p className="text-sm font-medium text-slate-600">No movement data yet</p>
-                <p className="text-xs text-slate-400 max-w-sm">
-                  Run the ETL backfill to populate this chart:<br />
-                  <code className="bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-600">POST /api/etl/employee-movement-weekly</code>
-                </p>
-              </div>
-            )}
-          </Card>
-        );
-      })()}
+        <Card className="p-3 md:p-6">
+          <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
+            Human Capital % by Business Unit
+            {isFinancialsReal ? <LiveBadge source="supabase" /> : <SampleDataBadge />}
+          </h2>
+          <p className="text-xs text-muted-foreground mb-4">
+            Group HC%: {groupHcPct.toFixed(1)}% — Total payroll / Total revenue
+          </p>
+          <ResponsiveContainer width="100%" height={hcByBU.length * 60 + 50}>
+            <BarChart
+              data={hcByBU}
+              layout="vertical"
+              margin={{ top: 5, right: 80, left: 10, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
+              <XAxis type="number" tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11 }} />
+              <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 12 }} />
+              <Tooltip
+                formatter={(v, name) => [`${v}%`, String(name)]}
+                labelFormatter={(label) => {
+                  const item = hcByBU.find((d) => d.name === label);
+                  return item
+                    ? `${label} — Payroll: ${formatCurrency(item.payroll)} | Revenue: ${formatCurrency(item.revenue)}`
+                    : String(label);
+                }}
+              />
+              <ReferenceLine
+                x={HC_PCT_TARGET}
+                stroke={TARGET_AMBER}
+                strokeDasharray="6 3"
+                strokeWidth={1.5}
+                label={{ value: `Target ${HC_PCT_TARGET}%`, position: "top", fill: TARGET_AMBER, fontSize: 11 }}
+              />
+              <Bar dataKey="hcPct" name="HC %">
+                {hcByBU.map((entry, i) => (
+                  <Cell
+                    key={entry.name}
+                    fill={[BRAND.spa.soft, BRAND.aesthetics.soft, BRAND.slimming.soft][i % 3]}
+                  />
+                ))}
+                <LabelList
+                  dataKey="hcPct"
+                  content={(props) => {
+                    const { x, width, y, height, index } = props as Record<string, unknown>;
+                    const entry = hcByBU[Number(index)];
+                    if (!entry) return <></>;
+                    return (
+                      <text
+                        x={Number(x) + Number(width) + 6}
+                        y={Number(y) + Number(height) / 2}
+                        textAnchor="start"
+                        dominantBaseline="middle"
+                        fontSize={11}
+                        fontWeight={600}
+                        fill="currentColor"
+                      >
+                        {entry.hcPct}% — {formatCurrency(entry.payroll)}
+                      </text>
+                    );
+                  }}
+                />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+      </div>
 
       {/* ══════════════════════════════════════════════════════════════════
           SECTION 1: Attendance snapshot chips (compact)
@@ -1418,136 +1475,79 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
       </Card>
 
       {/* ══════════════════════════════════════════════════════════════════
-          SECTION 2: Human Capital %
+          SECTION: Net Employee Movement (KPI bubbles + trend chart)
           ══════════════════════════════════════════════════════════════════ */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-        <Card className="p-3 md:p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
-            Human Capital % by Location
-            {isFinancialsReal ? <LiveBadge source="supabase" /> : <SampleDataBadge />}
-          </h2>
-          <p className="text-xs text-muted-foreground mb-4">
-            Payroll as % of revenue — lower is more efficient
-          </p>
-          <ResponsiveContainer width="100%" height={hcByLocation.length * 48 + 50}>
-            <BarChart
-              data={hcByLocation}
-              layout="vertical"
-              margin={{ top: 5, right: 80, left: 10, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
-              <XAxis type="number" tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11 }} />
-              <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 12 }} />
-              <Tooltip
-                formatter={(v, name) => [`${v}%`, String(name)]}
-                labelFormatter={(label) => {
-                  const item = hcByLocation.find((d) => d.name === label);
-                  return item
-                    ? `${label} — Payroll: ${formatCurrency(item.payroll)} | Revenue: ${formatCurrency(item.revenue)}`
-                    : String(label);
-                }}
-              />
-              <ReferenceLine
-                x={HC_PCT_TARGET}
-                stroke={TARGET_AMBER}
-                strokeDasharray="6 3"
-                strokeWidth={1.5}
-                label={{ value: `Target ${HC_PCT_TARGET}%`, position: "top", fill: TARGET_AMBER, fontSize: 11 }}
-              />
-              <Bar dataKey="hcPct" name="HC %" barSize={28}>
-                {hcByLocation.map((entry) => (
-                  <Cell key={entry.name} fill={locationColor(entry.name)} />
-                ))}
-                <LabelList
-                  dataKey="hcPct"
-                  content={(props) => {
-                    const { x, width, y, height, value } = props as Record<string, unknown>;
-                    return (
-                      <text
-                        x={Number(x) + Number(width) + 6}
-                        y={Number(y) + Number(height) / 2}
-                        textAnchor="start"
-                        dominantBaseline="middle"
-                        fontSize={11}
-                        fontWeight={600}
-                        fill="currentColor"
-                      >
-                        {String(value)}%
-                      </text>
-                    );
-                  }}
-                />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </Card>
+      {(() => {
+        const mv = movementQ.data;
+        const s  = mv?.summary;
+        const hasData = mv && mv.weeks.length > 0;
+        return (
+          <Card className="p-3 md:p-6">
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                  Net Employee Movement
+                  {hasData ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs text-green-700 bg-green-50 rounded-full px-2.5 py-0.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />Live from Talexio
+                    </span>
+                  ) : movementQ.isLoading ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 rounded-full px-2.5 py-0.5 animate-pulse">Loading…</span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 rounded-full px-2.5 py-0.5">Backfill needed</span>
+                  )}
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">Weekly joiners &amp; leavers — last 26 weeks</p>
+              </div>
+            </div>
 
-        <Card className="p-3 md:p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center">
-            Human Capital % by Business Unit
-            {isFinancialsReal ? <LiveBadge source="supabase" /> : <SampleDataBadge />}
-          </h2>
-          <p className="text-xs text-muted-foreground mb-4">
-            Group HC%: {groupHcPct.toFixed(1)}% — Total payroll / Total revenue
-          </p>
-          <ResponsiveContainer width="100%" height={hcByBU.length * 60 + 50}>
-            <BarChart
-              data={hcByBU}
-              layout="vertical"
-              margin={{ top: 5, right: 80, left: 10, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
-              <XAxis type="number" tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11 }} />
-              <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 12 }} />
-              <Tooltip
-                formatter={(v, name) => [`${v}%`, String(name)]}
-                labelFormatter={(label) => {
-                  const item = hcByBU.find((d) => d.name === label);
-                  return item
-                    ? `${label} — Payroll: ${formatCurrency(item.payroll)} | Revenue: ${formatCurrency(item.revenue)}`
-                    : String(label);
-                }}
-              />
-              <ReferenceLine
-                x={HC_PCT_TARGET}
-                stroke={TARGET_AMBER}
-                strokeDasharray="6 3"
-                strokeWidth={1.5}
-                label={{ value: `Target ${HC_PCT_TARGET}%`, position: "top", fill: TARGET_AMBER, fontSize: 11 }}
-              />
-              <Bar dataKey="hcPct" name="HC %">
-                {hcByBU.map((entry, i) => (
-                  <Cell
-                    key={entry.name}
-                    fill={[BRAND.spa.soft, BRAND.aesthetics.soft, BRAND.slimming.soft][i % 3]}
-                  />
-                ))}
-                <LabelList
-                  dataKey="hcPct"
-                  content={(props) => {
-                    const { x, width, y, height, index } = props as Record<string, unknown>;
-                    const entry = hcByBU[Number(index)];
-                    if (!entry) return <></>;
-                    return (
-                      <text
-                        x={Number(x) + Number(width) + 6}
-                        y={Number(y) + Number(height) / 2}
-                        textAnchor="start"
-                        dominantBaseline="middle"
-                        fontSize={11}
-                        fontWeight={600}
-                        fill="currentColor"
-                      >
-                        {entry.hcPct}% — {formatCurrency(entry.payroll)}
-                      </text>
-                    );
-                  }}
-                />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </Card>
-      </div>
+            {/* KPI chips */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+              {[
+                { label: "Active Employees",  value: s?.currentTotal ?? displayHeadcount, color: "text-slate-900" },
+                { label: "Net Movement",       value: s ? (s.netMovement >= 0 ? `+${s.netMovement}` : String(s.netMovement)) : "—", color: s && s.netMovement > 0 ? "text-emerald-700" : s && s.netMovement < 0 ? "text-red-700" : "text-slate-900" },
+                { label: "Joiners (26 wks)",   value: s ? `+${s.totalJoiners}` : "—", color: "text-emerald-700" },
+                { label: "Leavers (26 wks)",   value: s ? `-${s.totalLeavers}` : "—", color: "text-red-600" },
+              ].map((chip) => (
+                <div key={chip.label} className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">{chip.label}</p>
+                  <p className={`text-2xl font-bold ${chip.color}`}>{chip.value}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Movement chart */}
+            {hasData ? (
+              <ResponsiveContainer width="100%" height={200}>
+                <ComposedChart data={mv.weeks} margin={{ top: 8, right: 50, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" />
+                  <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+                  <YAxis yAxisId="left" tick={{ fontSize: 10 }} width={25} allowDecimals={false} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} width={35} domain={["auto", "auto"]} />
+                  <Tooltip labelFormatter={(label: unknown) => `Week of ${label}`} />
+                  <Legend />
+                  <ReferenceLine yAxisId="left" y={0} stroke="#e2e8f0" />
+                  <Bar yAxisId="left" dataKey="joiners" name="Joiners" fill="#10b981" radius={[2,2,0,0]}>
+                    <LabelList dataKey="joiners" position="top" style={{ fontSize: 9, fill: "#065f46" }} formatter={(v: unknown) => v ? `+${v}` : ""} />
+                  </Bar>
+                  <Bar yAxisId="left" dataKey="leavers" name="Leavers" fill="#ef4444" radius={[2,2,0,0]}>
+                    <LabelList dataKey="leavers" position="top" style={{ fontSize: 9, fill: "#991b1b" }} formatter={(v: unknown) => v ? `-${v}` : ""} />
+                  </Bar>
+                  <Line yAxisId="right" type="monotone" dataKey="total" name="Total headcount" stroke="#6366f1" strokeWidth={2} dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 gap-3 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                <p className="text-sm font-medium text-slate-600">No movement data yet</p>
+                <p className="text-xs text-slate-400 max-w-sm">
+                  Run the ETL backfill to populate this chart:<br />
+                  <code className="bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-600">POST /api/etl/employee-movement-weekly</code>
+                </p>
+              </div>
+            )}
+          </Card>
+        );
+      })()}
 
       {/* ══════════════════════════════════════════════════════════════════
           SECTION 5: Productivity Leaderboard (WE360)
