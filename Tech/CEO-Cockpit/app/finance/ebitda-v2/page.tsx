@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, ChevronRight, X, Database, CheckCircle2, AlertCircle } from "lucide-react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { TableSkeleton } from "@/components/ui/skeleton";
@@ -571,19 +572,19 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
   type DrillOpts = { subLine?: string; wageRole?: string; adChannel?: string };
 
   function openDrill(slug: string, label: string, line: string, displayLabel: string, opts: DrillOpts = {}) {
-    if (slug === "__spa__") return;
     setDrill({ venue: slug, venueLabel: label, line, label: displayLabel, ...opts });
   }
 
   function cellCls(slug: string, extra = ""): string {
-    const drillable = slug !== "__spa__";
-    return `text-right tabular-nums px-2 py-1.5 text-xs
-      ${drillable ? "cursor-pointer hover:bg-amber-50 hover:ring-1 hover:ring-inset hover:ring-amber-300 rounded transition-colors" : ""}
-      ${extra}`;
+    void slug;
+    return `text-right tabular-nums px-2 py-1.5 text-xs cursor-pointer hover:bg-amber-50 hover:ring-1 hover:ring-inset hover:ring-amber-300 rounded transition-colors ${extra}`;
   }
 
   function cellClick(slug: string, label: string, line: string, display: string, opts: DrillOpts = {}) {
-    return slug !== "__spa__" ? () => openDrill(slug, label, line, display, opts) : undefined;
+    return (e: { stopPropagation: () => void }) => {
+      e.stopPropagation();
+      openDrill(slug, label, line, display, opts);
+    };
   }
 
   const cols = displayedVenues;
@@ -893,14 +894,16 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
         </>
       )}
 
-      {/* Drill dialog */}
-      {drill && (
+      {/* Drill dialog — rendered via portal so fixed positioning works regardless of
+          any transform on ancestor elements (e.g. animate-fade-in-up on <main>) */}
+      {drill && createPortal(
         <DrillDialog
           target={drill}
           dateFrom={dfStr}
           dateTo={dtStr}
           onClose={() => setDrill(null)}
-        />
+        />,
+        document.body
       )}
     </div>
   );

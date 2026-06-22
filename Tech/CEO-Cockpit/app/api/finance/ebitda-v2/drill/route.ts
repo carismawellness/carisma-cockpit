@@ -58,7 +58,12 @@ export async function GET(req: Request) {
 
   const supabase = await createServerSupabaseClient();
 
-  // ── Hardwired rule check ──────────────────────────────────────────────────
+  // "__spa__" is the collapsed Spa aggregate — queries span all 8 venues
+  const SPA_VENUE_SLUGS = ["intercontinental","hugos","hyatt","ramla","labranda","sunny_coast","excelsior","novotel"];
+  const isSpaAgg = venue === "__spa__";
+
+  // ── Hardwired rule check (skipped for Spa aggregate — rules are per-venue) ──
+  if (!isSpaAgg) {
   const { data: hwRules } = await supabase
     .from("ebitda_v2_hardwired_rules")
     .select("rule_type, params, note")
@@ -131,6 +136,7 @@ export async function GET(req: Request) {
       contacts: [], transactions: [], wage_roles: [], ad_channels: [],
     });
   }
+  } // end !isSpaAgg hardwired check
 
   // ── Revenue cells: use spa_revenue_monthly (Cockpit), not transactions_raw ──
   // Revenue in V2 comes from the Google Sheet / Cockpit system, not from Zoho.
@@ -138,17 +144,16 @@ export async function GET(req: Request) {
   // should be excluded (sales accounts are excluded in COA mapping but the ETL
   // still writes income-section lines unless explicitly excluded).
   if (ebitdaLine === "revenue") {
-    // Determine location_id from venue slug
     const LOC_SLUG_TO_ID: Record<string, number> = {
       intercontinental: 1, hugos: 2, hyatt: 3, ramla: 4,
       labranda: 5, sunny_coast: 6, excelsior: 7, novotel: 8,
     };
-    const locationId = LOC_SLUG_TO_ID[venue];
-    if (!locationId) {
+    const SPA_LOC_IDS = [1, 2, 3, 4, 5, 6, 7, 8];
+    const locationId = isSpaAgg ? null : LOC_SLUG_TO_ID[venue!];
+    if (!isSpaAgg && !locationId) {
       return NextResponse.json({ is_fallback: false, total: 0, contacts: [], transactions: [], wage_roles: [], ad_channels: [] });
     }
 
-    // Months overlapping with the period (pure string arithmetic — no UTC parsing)
     const months: string[] = [];
     let y = parseInt(dateFrom!.slice(0, 4), 10), m = parseInt(dateFrom!.slice(5, 7), 10);
     const ey = parseInt(dateTo!.slice(0, 4), 10), em = parseInt(dateTo!.slice(5, 7), 10);
@@ -157,11 +162,16 @@ export async function GET(req: Request) {
       m++; if (m > 12) { m = 1; y++; }
     }
 
-    const { data: revRows } = await supabase
+    let revQuery = supabase
       .from("spa_revenue_monthly")
       .select("month, services, product_phytomer, product_purest, product_other, wholesale, sales_discount, sales_refund")
-      .eq("location_id", locationId)
       .in("month", months);
+    if (isSpaAgg) {
+      revQuery = revQuery.in("location_id", SPA_LOC_IDS);
+    } else {
+      revQuery = revQuery.eq("location_id", locationId!);
+    }
+    const { data: revRows } = await revQuery;
 
     const txns: Array<Record<string, unknown>> = [];
     let total = 0;
@@ -205,11 +215,17 @@ export async function GET(req: Request) {
   // ── Fetch transactions ────────────────────────────────────────────────────
   let query = supabase
     .from("transactions_raw")
-    .select("txn_id, date, account_code, account_name, contact_name, transaction_type, ebitda_sub_line, amount, venue")
-    .eq("venue", venue)
-    .eq("ebitda_line", ebitdaLine)
-    .gte("date", dateFrom)
-    .lte("date", dateTo)
+    .select("txn_id, date, account_code, account_name, contact_name, transaction_type, ebitda_sub_line, amount, venue");
+
+  if (isSpaAgg) {
+    query = query.in("venue", SPA_VENUE_SLUGS);
+  } else {
+    query = query.eq("venue", venue!);
+  }
+  query = query
+    .eq("ebitda_line", ebitdaLine!)
+    .gte("date", dateFrom!)
+    .lte("date", dateTo!)
     .order("date", { ascending: false });
 
   if (ebitdaSubLine) query = query.eq("ebitda_sub_line", ebitdaSubLine);
@@ -240,12 +256,17 @@ export async function GET(req: Request) {
       curM++; if (curM > 12) { curM = 1; curY++; }
     }
 
-    const { data: sd } = await supabase
+    let sdQuery = supabase
       .from("salary_supplement_monthly")
       .select("month, employee_name, amount, role")
-      .eq("spa_slug", venue)
       .eq("is_frozen", true)
       .in("month", suppMonths);
+    if (isSpaAgg) {
+      sdQuery = sdQuery.in("spa_slug", SPA_VENUE_SLUGS);
+    } else {
+      sdQuery = sdQuery.eq("spa_slug", venue!);
+    }
+    const { data: sd } = await sdQuery;
 
     for (const s of (sd ?? [])) {
       const m     = (s.month as string).slice(0, 10);
@@ -313,8 +334,8 @@ export async function GET(req: Request) {
   const basisMap = new Map<string, string>(); // account_code → label
 
   if (uniqueCodes.length > 0) {
-    // Determine org from venue
-    const isAesthetics = ["aesthetics", "slimming"].includes(venue);
+    // Determine org from venue (__spa__ and all individual Spa venues → "spa")
+    const isAesthetics = ["aesthetics", "slimming"].includes(venue!);
     const org = isAesthetics ? "aesthetics" : "spa";
 
     const { data: coaRows } = await supabase
@@ -348,7 +369,7 @@ export async function GET(req: Request) {
   // no transactions for THAT channel specifically, not that the line is empty.
   // Showing advertising-wide TTM estimates on a Klaviyo-specific drill is
   // misleading — the user needs to see "no data" not "estimated €X".
-  if (total === 0 && ebitdaLine !== "revenue" && !adChannel && !wageRole) {
+  if (total === 0 && ebitdaLine !== "revenue" && !adChannel && !wageRole && !isSpaAgg) {
     function shiftMonthStr(d: string, n: number): string {
       let y = parseInt(d.slice(0, 4), 10), m = parseInt(d.slice(5, 7), 10);
       m += n;
@@ -378,13 +399,15 @@ export async function GET(req: Request) {
       // TTM history for this venue + line
       const histAll: HR[] = [];
       for (let off = 0; off < 500_000; off += PAGE) {
-        const { data: pg } = await supabase.from("transactions_raw")
+        let histQ = supabase.from("transactions_raw")
           .select("account_code, date, amount")
-          .eq("venue", venue!).eq("ebitda_line", ebitdaLine!)
+          .eq("ebitda_line", ebitdaLine!)
           .in("account_code", activeCodes)
           .gte("date", ttmFrom).lt("date", dateFrom!)
           .order("date").order("account_code")
           .range(off, off + PAGE - 1);
+        histQ = isSpaAgg ? histQ.in("venue", SPA_VENUE_SLUGS) : histQ.eq("venue", venue!);
+        const { data: pg } = await histQ;
         if (!pg || pg.length === 0) break;
         histAll.push(...(pg as HR[]));
       }
@@ -401,13 +424,15 @@ export async function GET(req: Request) {
       const prevAll: HR[] = [];
       if (activeRules.some(r => r.rule_type === "previous_month")) {
         for (let off = 0; off < 500_000; off += PAGE) {
-          const { data: pg } = await supabase.from("transactions_raw")
+        let prevQ = supabase.from("transactions_raw")
             .select("account_code, date, amount")
-            .eq("venue", venue!).eq("ebitda_line", ebitdaLine!)
+            .eq("ebitda_line", ebitdaLine!)
             .in("account_code", activeCodes)
             .gte("date", prevFrom).lt("date", dateFrom!)
             .order("date")
             .range(off, off + PAGE - 1);
+          prevQ = isSpaAgg ? prevQ.in("venue", SPA_VENUE_SLUGS) : prevQ.eq("venue", venue!);
+          const { data: pg } = await prevQ;
           if (!pg || pg.length === 0) break;
           prevAll.push(...(pg as HR[]));
         }
