@@ -95,9 +95,6 @@ export async function GET(req: NextRequest) {
     conversions:     number;
     conversionValue: number;
     peakCtr:         number;
-    ctrSum:          number;
-    cpmSum:          number;
-    dayCount:        number;
   }>();
 
   for (const r of rows) {
@@ -109,9 +106,6 @@ export async function GET(req: NextRequest) {
       existing.conversions     += r.conversions ?? 0;
       existing.conversionValue += r.conversion_value ?? 0;
       existing.peakCtr          = Math.max(existing.peakCtr, r.peak_ctr ?? 0);
-      existing.ctrSum          += r.ctr_pct ?? 0;
-      existing.cpmSum          += r.cpm ?? 0;
-      existing.dayCount        += 1;
     } else {
       map.set(r.campaign_id, {
         name:            r.campaign_name,
@@ -121,16 +115,15 @@ export async function GET(req: NextRequest) {
         conversions:     r.conversions ?? 0,
         conversionValue: r.conversion_value ?? 0,
         peakCtr:         r.peak_ctr ?? 0,
-        ctrSum:          r.ctr_pct ?? 0,
-        cpmSum:          r.cpm ?? 0,
-        dayCount:        1,
       });
     }
   }
 
   const campaigns: CampaignData[] = [];
   for (const [campaignId, agg] of map) {
-    const n = agg.dayCount;
+    // CTR and CPM derived from period totals — matches Google Ads calculation
+    const ctr = agg.impressions > 0 ? Math.round((agg.clicks / agg.impressions) * 100 * 100) / 100 : 0;
+    const cpm = agg.impressions > 0 ? Math.round((agg.spend / agg.impressions * 1000) * 100) / 100 : 0;
     campaigns.push({
       campaign:          agg.name,
       campaignId,
@@ -138,8 +131,8 @@ export async function GET(req: NextRequest) {
       totalSpend:        Math.round(agg.spend * 100) / 100,
       totalLeads:        Math.round(agg.conversions),
       clicks:            agg.clicks,
-      ctr:               n > 0 ? Math.round((agg.ctrSum / n) * 100) / 100 : 0,
-      cpm:               n > 0 ? Math.round((agg.cpmSum / n) * 100) / 100 : 0,
+      ctr,
+      cpm,
       frequency:         1, // Google doesn't track frequency the same way
       attributedRevenue: Math.round(agg.conversionValue * 100) / 100,
       peakCtr:           Math.round(agg.peakCtr * 100) / 100,
@@ -152,7 +145,7 @@ export async function GET(req: NextRequest) {
     (acc, c) => ({
       spend:       acc.spend + c.totalSpend,
       leads:       acc.leads + c.totalLeads,
-      impressions: acc.impressions,
+      impressions: acc.impressions + (map.get(c.campaignId)?.impressions ?? 0),
       clicks:      acc.clicks + c.clicks,
       revenue:     acc.revenue + c.attributedRevenue,
     }),
