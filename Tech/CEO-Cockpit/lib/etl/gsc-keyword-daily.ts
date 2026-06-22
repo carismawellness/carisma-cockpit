@@ -187,15 +187,17 @@ export async function runGscKeywordEtl(opts: RunOpts = {}): Promise<GscEtlResult
           for (const r of rows) {
             const date = r.keys[0];
             const existing = byDate.get(date);
+            // GSC positions are 1-based (1=top). Treat 0 as invalid/missing.
+            const rowPos = (r.position != null && r.position > 0) ? r.position : null;
             if (!existing) {
               byDate.set(date, {
                 clicks: r.clicks ?? 0,
                 impressions: r.impressions ?? 0,
-                position: r.position ?? null,
+                position: rowPos,
               });
             } else {
               // Sum clicks/impressions across domains; keep the best (lowest) position
-              const pos = r.position ?? null;
+              const pos = rowPos;
               byDate.set(date, {
                 clicks: existing.clicks + (r.clicks ?? 0),
                 impressions: existing.impressions + (r.impressions ?? 0),

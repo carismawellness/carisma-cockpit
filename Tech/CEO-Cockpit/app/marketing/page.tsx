@@ -647,7 +647,7 @@ function MarketingMasterContent({
                                 return a.position - b.position;
                               })
                               .map((k) => {
-                                const posStr = k.position === null ? "—" : k.position.toFixed(1);
+                                const posStr = (k.position === null || k.position <= 0) ? "—" : k.position.toFixed(1);
                                 let chgEl;
                                 if (k.positionChange === null) {
                                   chgEl = <span className="text-gray-400">—</span>;

@@ -58,8 +58,9 @@ function aggregate(rows: DailyRow[]): {
   for (const r of rows) {
     totalClicks += r.clicks ?? 0;
     totalImpressions += r.impressions ?? 0;
-    if (r.position !== null && (r.impressions ?? 0) > 0) {
-      weighted += Number(r.position) * Number(r.impressions);
+    const pos = Number(r.position);
+    if (r.position !== null && pos > 0 && (r.impressions ?? 0) > 0) {
+      weighted += pos * Number(r.impressions);
       weight += Number(r.impressions);
     }
   }
