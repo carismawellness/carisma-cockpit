@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
-import { useGhlFunnel, type FunnelMode } from "@/lib/hooks/useGhlFunnel";
+import { useGhlFunnel, type FunnelMode, type FunnelSource } from "@/lib/hooks/useGhlFunnel";
 import { BRAND } from "@/lib/constants/design-tokens";
 
 const BRAND_LABELS: Record<string, string> = {
@@ -14,7 +14,6 @@ const BRAND_LABELS: Record<string, string> = {
 const FUNNEL_STAGES = ["New Leads", "Call Back", "Contacted", "Booking Won", "Active Member"];
 const OUTCOME_STAGES = ["Booking Lost", "No Show", "Nurturing"];
 
-// Canonical brand palette — soft fills for bars/swatches on light backgrounds.
 const BRAND_ACCENT: Record<string, string> = {
   spa:        BRAND.spa.soft,
   aesthetics: BRAND.aesthetics.soft,
@@ -88,7 +87,6 @@ function BrandFunnel({
       <div className="space-y-2.5">
         {orderedStages.map(({ stage, value }, idx) => {
           const widthPct = maxValue > 0 ? (value / maxValue) * 100 : 0;
-          // Conversion to prior stage — first stage has no prior, so blank.
           const prior = idx > 0 ? orderedStages[idx - 1].value : 0;
           const stagePct = idx > 0 && prior > 0 ? (value / prior) * 100 : null;
           return (
@@ -152,7 +150,12 @@ export function PipelineFunnel({
   brandFilter: string | null;
 }) {
   const [mode, setMode] = useState<FunnelMode>("cohort");
-  const { data, isLoading } = useGhlFunnel(dateFrom, dateTo, mode);
+  const [source, setSource] = useState<FunnelSource>("all");
+
+  // Flow mode is unavailable when Meta filter is on (stage_events has no source column).
+  const effectiveMode: FunnelMode = source === "meta" ? "cohort" : mode;
+
+  const { data, isLoading } = useGhlFunnel(dateFrom, dateTo, effectiveMode, source);
 
   const brands = brandFilter ? [brandFilter] : ["spa", "aesthetics", "slimming"];
 
@@ -181,28 +184,59 @@ export function PipelineFunnel({
 
   return (
     <Card className="p-5 md:p-6">
-      <div className="mb-5 flex items-start justify-between gap-4">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h3 className="text-lg font-semibold text-foreground">Pipeline Funnel</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             {data?.subtitle ?? "Call Pipeline · GHL CRM"}
           </p>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          {(["cohort", "flow"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                mode === m
-                  ? "bg-gray-900 text-white"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
-            >
-              {m.charAt(0).toUpperCase() + m.slice(1)}
-            </button>
-          ))}
+
+        {/* Source + mode toggles */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Meta / All source filter */}
+          <div className="flex items-center gap-1 rounded-md border border-gray-200 p-0.5">
+            {(["all", "meta"] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setSource(s)}
+                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                  source === s
+                    ? s === "meta"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-900 text-white"
+                    : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                }`}
+                title={s === "meta" ? "Facebook & Instagram leads only" : "All lead sources"}
+              >
+                {s === "meta" ? "Meta only" : "All sources"}
+              </button>
+            ))}
+          </div>
+
+          {/* Cohort / Flow mode toggle — disabled when Meta filter is on */}
+          <div className="flex items-center gap-1">
+            {(["cohort", "flow"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => source !== "meta" && setMode(m)}
+                disabled={source === "meta"}
+                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                  source === "meta"
+                    ? "bg-gray-50 text-gray-300 cursor-not-allowed"
+                    : effectiveMode === m
+                      ? "bg-gray-900 text-white"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+                title={source === "meta" ? "Cohort mode only when Meta filter is active" : undefined}
+              >
+                {m.charAt(0).toUpperCase() + m.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
+
+        {/* Group-level KPIs */}
         <div className="flex gap-6 text-right shrink-0">
           <div>
             <p className="text-xs text-muted-foreground">Group Active</p>
@@ -223,13 +257,30 @@ export function PipelineFunnel({
             </p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Lead Conv.</p>
+            <p className="text-xs text-muted-foreground">
+              {source === "meta" ? "Meta Conv." : "Lead Conv."}
+            </p>
             <p className="text-2xl font-bold text-blue-600 tabular-nums">
               {groupLeadConv === "—" ? "—" : `${groupLeadConv}%`}
             </p>
           </div>
         </div>
       </div>
+
+      {/* Meta filter info banner */}
+      {source === "meta" && (
+        <div className="mb-4 rounded-lg bg-blue-50 border border-blue-200 px-4 py-2 flex items-center gap-2">
+          <span className="text-blue-600 text-sm">
+            Showing Meta (Facebook &amp; Instagram) leads only · cohort mode
+          </span>
+          <button
+            onClick={() => setSource("all")}
+            className="ml-auto text-xs text-blue-500 hover:text-blue-700 font-medium"
+          >
+            Clear filter
+          </button>
+        </div>
+      )}
 
       <div className={`grid ${cols} gap-4`}>
         {brands.map((b) => {

@@ -1,11 +1,16 @@
 /**
- * GET /api/crm/ghl-funnel?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD&mode=cohort|flow
+ * GET /api/crm/ghl-funnel?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD&mode=cohort|flow&source=all|meta
  *
  * mode=cohort (default): leads whose date_added falls in the period, grouped by
  *   their CURRENT stage. "Of leads acquired in this window, where are they now?"
  *
  * mode=flow: stage transitions (changed_at) that occurred in the period.
  *   "How many opportunities entered each stage in this window?"
+ *
+ * source=meta: filter to Meta (Facebook/Instagram) leads only, based on the
+ *   GHL opportunity's source field stored in the raw JSONB column.
+ *   Works for both backfill records (raw->>'source') and webhook records
+ *   (raw->'opportunity'->>'source').
  *
  * Falls back to the GHL snapshot API if the Supabase mirror tables are empty,
  * so the widget stays functional during migration.
@@ -99,21 +104,40 @@ async function fetchGhlSnapshot(): Promise<Record<string, Record<string, number>
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SbClient = any;
 
+// Meta source values in GHL: Facebook Lead Ads, Instagram, Meta campaigns.
+// We check both the backfill path (raw->>'source') and the webhook path
+// (raw->'opportunity'->>'source') because the two ingestion paths store raw
+// differently — backfill stores the opportunity object at root, webhooks nest it.
+const META_SOURCE_FILTER =
+  "raw->>source.ilike.%facebook%," +
+  "raw->>source.ilike.%instagram%," +
+  "raw->>source.ilike.%meta%," +
+  "raw->opportunity->>source.ilike.%facebook%," +
+  "raw->opportunity->>source.ilike.%instagram%," +
+  "raw->opportunity->>source.ilike.%meta%";
+
 async function queryCohort(
   sb: SbClient,
   brandSlug: string,
   brandId: number,
   dateFrom: string,
   dateTo: string,
+  sourceFilter?: string,
 ): Promise<Record<string, number>> {
   // Opportunities whose date_added is within the window, by current stage
-  const { data, error } = await sb
+  let query = sb
     .from("ghl_opportunities")
     .select("stage_normalized, date_added")
     .eq("brand_id", brandId)
     .neq("status", "deleted")
     .gte("date_added", dateFrom)
     .lte("date_added", dateTo + "T23:59:59Z");
+
+  if (sourceFilter === "meta") {
+    query = query.or(META_SOURCE_FILTER);
+  }
+
+  const { data, error } = await query;
 
   if (error) throw new Error(`cohort ${brandSlug}: ${error.message}`);
 
@@ -155,9 +179,14 @@ async function queryFlow(
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const dateFrom = searchParams.get("dateFrom") ?? new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0];
-  const dateTo   = searchParams.get("dateTo")   ?? new Date().toISOString().split("T")[0];
-  const mode     = (searchParams.get("mode") ?? "cohort") as "cohort" | "flow";
+  const dateFrom     = searchParams.get("dateFrom") ?? new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0];
+  const dateTo       = searchParams.get("dateTo")   ?? new Date().toISOString().split("T")[0];
+  const rawMode      = (searchParams.get("mode") ?? "cohort") as "cohort" | "flow";
+  const sourceFilter = searchParams.get("source") ?? "all"; // "all" | "meta"
+
+  // Flow mode cannot be source-filtered (stage_events table has no source column).
+  // When Meta filter is active, lock to cohort.
+  const mode = sourceFilter === "meta" ? "cohort" : rawMode;
 
   const sb: SbClient = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -169,12 +198,13 @@ export async function GET(req: NextRequest) {
     .from("ghl_opportunities")
     .select("ghl_opportunity_id", { count: "exact", head: true });
 
-  // If no data in mirror, fall back to GHL snapshot
+  // If no data in mirror, fall back to GHL snapshot (source filter not available in snapshot)
   if (!mirrorCount || mirrorCount === 0) {
     const brands = await fetchGhlSnapshot();
     return NextResponse.json({
       dateFrom, dateTo, mode: "snapshot",
       subtitle: "Current snapshot · Call Pipeline · from GHL CRM (backfill pending)",
+      sourceFilter: "all",
       brands,
     });
   }
@@ -193,16 +223,17 @@ export async function GET(req: NextRequest) {
       try {
         result[slug] = mode === "flow"
           ? await queryFlow(sb, slug, brandId, dateFrom, dateTo)
-          : await queryCohort(sb, slug, brandId, dateFrom, dateTo);
+          : await queryCohort(sb, slug, brandId, dateFrom, dateTo, sourceFilter === "meta" ? "meta" : undefined);
       } catch (e) {
         console.error(`ghl-funnel ${slug}:`, (e as Error).message);
       }
     }),
   );
 
+  const sourceLabel = sourceFilter === "meta" ? " · Meta leads only" : "";
   const subtitle = mode === "flow"
-    ? "Stage transitions in selected period · Call Pipeline"
-    : "Leads acquired in selected period · by current stage";
+    ? `Stage transitions in selected period · Call Pipeline${sourceLabel}`
+    : `Leads acquired in selected period · by current stage${sourceLabel}`;
 
-  return NextResponse.json({ dateFrom, dateTo, mode, subtitle, brands: result });
+  return NextResponse.json({ dateFrom, dateTo, mode, subtitle, sourceFilter, brands: result });
 }
