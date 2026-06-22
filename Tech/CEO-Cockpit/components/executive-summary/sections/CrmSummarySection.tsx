@@ -61,7 +61,7 @@ export function CrmSummarySection({ dateFrom, dateTo, onSummary }: SectionProps)
 
   // ── Date-ranged hooks (no brand filter — group-wide roll-up) ─────────────────
   const { data: stl, isLoading: stlLoading } = useSpeedToLead(dateFrom, dateTo, null);
-  const { data: funnel, isLoading: funnelLoading } = useGhlFunnel(dateFrom, dateTo, "cohort");
+  const { data: funnel, isLoading: funnelLoading } = useGhlFunnel(dateFrom, dateTo, "cohort", "meta");
   const { brandMap } = useLookups();
   const { data: reconRows, loading: reconLoading } = useKPIData<LeadReconRow>({
     table: "crm_lead_reconciliation",
@@ -121,7 +121,7 @@ export function CrmSummarySection({ dateFrom, dateTo, onSummary }: SectionProps)
         value: crmLeads.toLocaleString("en-GB"),
       },
       {
-        label: "Lead Conversion",
+        label: "Meta Conv.",
         value: leadConvPct !== null ? `${leadConvPct.toFixed(1)}%` : "—",
       },
       {

@@ -12,6 +12,7 @@ import { CrmSummarySection } from "@/components/executive-summary/sections/CrmSu
 import { FunnelSummarySection } from "@/components/executive-summary/sections/FunnelSummarySection";
 import { OperationsSummarySection } from "@/components/executive-summary/sections/OperationsSummarySection";
 import { HrSummarySection } from "@/components/executive-summary/sections/HrSummarySection";
+import { PipelineFunnel } from "@/components/crm/PipelineFunnel";
 import { computeCeoRollup } from "@/lib/commentary/ceo-rollup";
 import type { DeptSummary } from "@/lib/types/executive-summary";
 
@@ -58,6 +59,7 @@ function ExecutiveSummaryContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo:
         <FinanceSummarySection {...sectionProps} />
         <MarketingSummarySection {...sectionProps} />
         <CrmSummarySection {...sectionProps} />
+        <PipelineFunnel dateFrom={dateFrom} dateTo={dateTo} brandFilter={null} />
         <FunnelSummarySection {...sectionProps} />
         <OperationsSummarySection {...sectionProps} />
         <HrSummarySection {...sectionProps} />

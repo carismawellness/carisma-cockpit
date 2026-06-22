@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Card } from "@/components/ui/card";
-import { useGhlFunnel, type FunnelMode, type FunnelSource } from "@/lib/hooks/useGhlFunnel";
+import { useGhlFunnel } from "@/lib/hooks/useGhlFunnel";
 import { BRAND } from "@/lib/constants/design-tokens";
 
 const BRAND_LABELS: Record<string, string> = {
@@ -50,7 +50,7 @@ function BrandFunnel({
   const totalInPeriod =
     active + won + (stages["Active Member"] ?? 0) +
     (outcomes["Booking Lost"] ?? 0) + (outcomes["No Show"] ?? 0) + (outcomes["Nurturing"] ?? 0);
-  const leadConvRate = totalInPeriod > 0 ? ((won / totalInPeriod) * 100).toFixed(1) : "—";
+  const metaConvRate = totalInPeriod > 0 ? ((won / totalInPeriod) * 100).toFixed(1) : "—";
 
   return (
     <div className="rounded-xl border border-gray-200 p-4">
@@ -77,9 +77,9 @@ function BrandFunnel({
           </p>
         </div>
         <div>
-          <p className="text-[10px] uppercase tracking-wide text-gray-500">Lead Conv.</p>
+          <p className="text-[10px] uppercase tracking-wide text-gray-500">Meta Conv.</p>
           <p className="text-lg font-bold text-blue-600 tabular-nums">
-            {leadConvRate === "—" ? "—" : `${leadConvRate}%`}
+            {metaConvRate === "—" ? "—" : `${metaConvRate}%`}
           </p>
         </div>
       </div>
@@ -149,13 +149,8 @@ export function PipelineFunnel({
   dateTo: Date;
   brandFilter: string | null;
 }) {
-  const [mode, setMode] = useState<FunnelMode>("cohort");
-  const [source, setSource] = useState<FunnelSource>("all");
-
-  // Flow mode is unavailable when Meta filter is on (stage_events has no source column).
-  const effectiveMode: FunnelMode = source === "meta" ? "cohort" : mode;
-
-  const { data, isLoading } = useGhlFunnel(dateFrom, dateTo, effectiveMode, source);
+  // Always Meta only, cohort mode — shows true Meta-to-Booking-Won conversion rate.
+  const { data, isLoading } = useGhlFunnel(dateFrom, dateTo, "cohort", "meta");
 
   const brands = brandFilter ? [brandFilter] : ["spa", "aesthetics", "slimming"];
 
@@ -173,7 +168,7 @@ export function PipelineFunnel({
   const winRate          = closeDen > 0 ? ((totalWon / closeDen) * 100).toFixed(1) : "—";
 
   const totalAllLeads    = sumByStages(["New Leads", "Call Back", "Contacted", "Booking Won", "Active Member", "Booking Lost", "No Show", "Nurturing"]);
-  const groupLeadConv    = totalAllLeads > 0 ? ((totalWon / totalAllLeads) * 100).toFixed(1) : "—";
+  const groupMetaConv    = totalAllLeads > 0 ? ((totalWon / totalAllLeads) * 100).toFixed(1) : "—";
 
   if (isLoading) {
     return <div className="h-[500px] rounded-xl bg-gray-100 animate-pulse" />;
@@ -186,54 +181,10 @@ export function PipelineFunnel({
     <Card className="p-5 md:p-6">
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h3 className="text-lg font-semibold text-foreground">Pipeline Funnel</h3>
+          <h3 className="text-lg font-semibold text-foreground">Meta Lead Pipeline</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {data?.subtitle ?? "Call Pipeline · GHL CRM"}
+            Facebook &amp; Instagram leads · {data?.subtitle?.split(" · ").slice(0, 1).join("") ?? "Call Pipeline"}
           </p>
-        </div>
-
-        {/* Source + mode toggles */}
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Meta / All source filter */}
-          <div className="flex items-center gap-1 rounded-md border border-gray-200 p-0.5">
-            {(["all", "meta"] as const).map((s) => (
-              <button
-                key={s}
-                onClick={() => setSource(s)}
-                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                  source === s
-                    ? s === "meta"
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-900 text-white"
-                    : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-                }`}
-                title={s === "meta" ? "Facebook & Instagram leads only" : "All lead sources"}
-              >
-                {s === "meta" ? "Meta only" : "All sources"}
-              </button>
-            ))}
-          </div>
-
-          {/* Cohort / Flow mode toggle — disabled when Meta filter is on */}
-          <div className="flex items-center gap-1">
-            {(["cohort", "flow"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => source !== "meta" && setMode(m)}
-                disabled={source === "meta"}
-                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                  source === "meta"
-                    ? "bg-gray-50 text-gray-300 cursor-not-allowed"
-                    : effectiveMode === m
-                      ? "bg-gray-900 text-white"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                }`}
-                title={source === "meta" ? "Cohort mode only when Meta filter is active" : undefined}
-              >
-                {m.charAt(0).toUpperCase() + m.slice(1)}
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Group-level KPIs */}
@@ -251,36 +202,19 @@ export function PipelineFunnel({
             </p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Group Win Rate</p>
+            <p className="text-xs text-muted-foreground">Win Rate</p>
             <p className="text-2xl font-bold text-foreground tabular-nums">
               {winRate === "—" ? "—" : `${winRate}%`}
             </p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">
-              {source === "meta" ? "Meta Conv." : "Lead Conv."}
-            </p>
+            <p className="text-xs text-muted-foreground">Meta Conv.</p>
             <p className="text-2xl font-bold text-blue-600 tabular-nums">
-              {groupLeadConv === "—" ? "—" : `${groupLeadConv}%`}
+              {groupMetaConv === "—" ? "—" : `${groupMetaConv}%`}
             </p>
           </div>
         </div>
       </div>
-
-      {/* Meta filter info banner */}
-      {source === "meta" && (
-        <div className="mb-4 rounded-lg bg-blue-50 border border-blue-200 px-4 py-2 flex items-center gap-2">
-          <span className="text-blue-600 text-sm">
-            Showing Meta (Facebook &amp; Instagram) leads only · cohort mode
-          </span>
-          <button
-            onClick={() => setSource("all")}
-            className="ml-auto text-xs text-blue-500 hover:text-blue-700 font-medium"
-          >
-            Clear filter
-          </button>
-        </div>
-      )}
 
       <div className={`grid ${cols} gap-4`}>
         {brands.map((b) => {
