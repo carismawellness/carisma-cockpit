@@ -12,7 +12,7 @@ function sbUrl(table: string): string {
 }
 function sbHeaders(): Record<string, string> {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  return { apikey: key, Authorization: `Bearer ${key}` };
+  return { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
 }
 
 async function fetchAll<T>(url: string): Promise<T[]> {
