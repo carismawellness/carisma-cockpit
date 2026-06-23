@@ -31,9 +31,12 @@ const CHUNK_DAYS = 7; // max days per fetchTransactionLines call
 const SGA_SUB_FIX: [string[], string][] = [
   [["software", "subscription", "saas", "license", "licence", "system", "fresha"], "software"],
   [["travel", "transport", "flight", "hotel", "accommodation", "taxi", "uber", "airbnb", "parking", "car hire", "car rental", "vehicle hire", "airline", "airways"], "travel"],
-  [["laundry", "linen", "fresh & clean", "fresh&clean", "fresh clean"], "laundry"],
   [["fuel", "petrol", "diesel", "gas station"], "fuel"],
   [["clean", "hygiene", "sanitiz", "pest"], "cleaning"],
+  // Laundry runs AFTER cleaning so its keywords win over the bare "clean" match above.
+  // "fresh&clean" would otherwise be reclassified from "laundry" → "cleaning" by the
+  // contact_name.ilike.*clean* filter in the cleaning pass.
+  [["laundry", "linen", "fresh & clean", "fresh&clean", "fresh clean"], "laundry"],
   [["insur"], "insurance"],
   [["event", "function", "catering", "hospitality"], "events"],
   [["maintenance", "repair", "service contract"], "maintenance"],
