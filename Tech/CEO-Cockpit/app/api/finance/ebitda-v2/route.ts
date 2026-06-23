@@ -970,11 +970,14 @@ export async function GET(req: Request) {
   // EBITDA mapping, filtering, or hardwired-rule overrides. Used for cost QC.
   const zohoRawExpenses = +(allRawCosts.reduce((sum, r) => sum + r.amount, 0)).toFixed(2);
 
+  const debugOverrides = Object.fromEntries(wageVenueOverrideMap);
+
   return NextResponse.json({
     date_from:          dateFrom,
     date_to:            dateTo,
     days_in_period:     daysInPeriod,
-    debug_raw_row_count: allRawCosts.length,   // temporary: confirms pagination fetched all rows
+    debug_raw_row_count: allRawCosts.length,
+    debug_wage_overrides: debugOverrides,   // temporary: shows active venue_override entries
     venues,
     group,
     fallback_applied:   fallbackApplied,
