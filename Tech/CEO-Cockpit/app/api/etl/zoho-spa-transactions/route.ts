@@ -31,7 +31,7 @@ const CHUNK_DAYS = 7; // max days per fetchTransactionLines call
 const SGA_SUB_FIX: [string[], string][] = [
   [["software", "subscription", "saas", "license", "licence", "system", "fresha"], "software"],
   [["travel", "transport", "flight", "hotel", "accommodation", "taxi", "uber", "airbnb", "parking", "car hire", "car rental", "vehicle hire", "airline", "airways"], "travel"],
-  [["fresh&clean", "fresh clean"], "laundry"],
+  [["laundry", "linen", "fresh & clean", "fresh&clean", "fresh clean"], "laundry"],
   [["fuel", "petrol", "diesel", "gas station"], "fuel"],
   [["clean", "hygiene", "sanitiz", "pest"], "cleaning"],
   [["insur"], "insurance"],
@@ -56,9 +56,11 @@ async function fixSgaSubLines(dateFrom: string, dateTo: string): Promise<number>
     // Check both account_name (COA) and contact_name (vendor) — some vendors like
     // Fresha use generic COA accounts (e.g. "Service Charges") so the vendor name
     // is the only reliable signal.
+    // URL-encode & so it doesn't split the query string before PostgREST sees it.
+    const encKw = keywords.map(k => k.replace(/&/g, "%26"));
     const orParts = [
-      ...keywords.map(k => `account_name.ilike.*${k}*`),
-      ...keywords.map(k => `contact_name.ilike.*${k}*`),
+      ...encKw.map(k => `account_name.ilike.*${k}*`),
+      ...encKw.map(k => `contact_name.ilike.*${k}*`),
     ].join(",");
     const filter = `org=eq.spa&ebitda_line=eq.sga&ebitda_sub_line=neq.${subLine}&date=gte.${dateFrom}&date=lte.${dateTo}&or=(${orParts})`;
     const resp = await fetch(`${sbUrl("transactions_raw")}?${filter}`, {
