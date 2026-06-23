@@ -213,7 +213,7 @@ export async function GET(req: Request) {
 
   // ── 1. Load all config tables in parallel ─────────────────────────────────
   const [allRawCosts, revenueDaily, revenueMonthly, aestheticsSales, slimmingSales,
-         supplement, wageRoles, adPatterns, fallbackRules, hardwiredRules] =
+         supplement, wageRoles, adPatterns, fallbackRules, hardwiredRules, specialPersons] =
     await Promise.all([
       fetchAllRawCosts(),
 
@@ -273,7 +273,7 @@ export async function GET(req: Request) {
       // Wage role mapping: contact_key → role + optional venue_override + prof fee flags
       supabase
         .from("wage_role_mapping")
-        .select("contact_key, role, venue_override, is_prof_fee, monthly_floor"),
+        .select("contact_key, role, venue_override, is_prof_fee, monthly_floor, sga_sub_line"),
 
       // Advertising contact patterns: pattern → channel
       supabase
@@ -290,12 +290,19 @@ export async function GET(req: Request) {
       supabase
         .from("ebitda_v2_hardwired_rules")
         .select("*"),
+
+      // Special persons: always wages, default to HQ if no venue on transaction
+      supabase
+        .from("ebitda_v2_special_persons")
+        .select("contact_key")
+        .eq("active", true),
     ]);
 
   // Error checks (rawCosts, spa_revenue_daily, aesthetics_sales_daily, slimming_sales_daily
   // errors thrown inside fetchAll/fetchAllRawCosts; only non-paginated queries need checking here)
   for (const [label, res] of [
     ["spa_revenue_monthly", revenueMonthly],
+    ["ebitda_v2_special_persons", specialPersons],
   ] as Array<[string, {error: {message: string} | null}]>) {
     if (res.error) return NextResponse.json({ error: `${label}: ${res.error.message}` }, { status: 500 });
   }
@@ -306,8 +313,8 @@ export async function GET(req: Request) {
   const wageRoleMap = new Map<string, WageRole>();
   // Venue override: contact whose wages should show in a different venue than posted
   const wageVenueOverrideMap = new Map<string, string>();
-  // Prof fee contacts: re-routed from wages → sga.prof_services with optional min floor
-  const profFeeMap = new Map<string, { monthly_floor: number; venue: string }>();
+  // Prof fee contacts: re-routed from wages → sga.<sub_line> with optional min floor
+  const profFeeMap = new Map<string, { monthly_floor: number; venue: string; sga_sub: string }>();
   for (const row of (wageRoles.data ?? [])) {
     const key = (row.contact_key as string).toLowerCase().trim();
     wageRoleMap.set(key, row.role as WageRole);
@@ -316,8 +323,21 @@ export async function GET(req: Request) {
       profFeeMap.set(key, {
         monthly_floor: Number(row.monthly_floor ?? 0),
         venue: (row.venue_override as string) ?? "hq",
+        sga_sub: (row.sga_sub_line as string) || "prof_services",
       });
     }
+  }
+
+  // Special persons: substring keys — contact whose name contains any key is always wages + HQ
+  const specialPersonKeysList = (specialPersons.data ?? []).map(
+    (r: { contact_key: string }) => (r.contact_key as string).toLowerCase().trim(),
+  );
+  function isSpecialPerson(contact: string): boolean {
+    const lower = contact.toLowerCase().trim();
+    for (const key of specialPersonKeysList) {
+      if (lower.includes(key)) return true;
+    }
+    return false;
   }
 
   // Ad channel lookup: contact name → channel
@@ -408,26 +428,34 @@ export async function GET(req: Request) {
     const sub       = (row.ebitda_sub_line as string) ?? line;
     const contact   = (row.contact_name  as string) ?? "";
     const amount    = Number(row.amount  ?? 0);
+    const roleKey   = contact.toLowerCase().trim();
+    const isSP      = isSpecialPerson(contact);
 
-    if (!venues[venue]) continue;     // unknown venue (e.g. 'unallocated')
+    // Special persons: force to wages and default to HQ when venue is unallocated/unknown.
+    // For everyone else, skip rows whose venue isn't in our venue config.
+    const resolvedVenue = venues[venue] ? venue : (isSP ? "hq" : null);
+    if (!resolvedVenue) continue;
+
     if (line === "revenue") continue; // revenue handled from google-sheet sources above
 
-    const hwKey = `${venue}|${line}`;
+    const effectiveLine = (isSP && line !== "revenue") ? "wages" : line;
+    const hwKey = `${resolvedVenue}|${effectiveLine}`;
     if (hardwiredMap.has(hwKey)) continue; // overridden by hardwired rule below
 
-    switch (line) {
+    switch (effectiveLine) {
       case "wages": {
-        const roleKey = contact.toLowerCase().trim();
-        // Prof fee contractors: re-route from wages → sga.prof_services
+        // Prof fee contractors: re-route from wages → sga.<sub_line>
         if (profFeeMap.has(roleKey)) {
-          const pfVenue = profFeeMap.get(roleKey)!.venue;
+          const pf = profFeeMap.get(roleKey)!;
+          const pfVenue = pf.venue;
+          const sgaSub  = pf.sga_sub;
           if (!venues[pfVenue]) break;
           venues[pfVenue].sga += amount;
-          venues[pfVenue].sga_by_sub["prof_services"] = (venues[pfVenue].sga_by_sub["prof_services"] ?? 0) + amount;
+          venues[pfVenue].sga_by_sub[sgaSub] = (venues[pfVenue].sga_by_sub[sgaSub] ?? 0) + amount;
           break;
         }
-        // Venue override: re-route SPA-payroll staff who work for another brand
-        const effectiveVenue = wageVenueOverrideMap.get(roleKey) ?? venue;
+        // Venue override → explicit override → special person default → transaction venue
+        const effectiveVenue = wageVenueOverrideMap.get(roleKey) ?? (isSP ? "hq" : resolvedVenue);
         if (!venues[effectiveVenue]) break;
         venues[effectiveVenue].wages += amount;
         const role: WageRole = wageRoleMap.get(roleKey) ?? "unassigned";
@@ -437,7 +465,7 @@ export async function GET(req: Request) {
       case "advertising": {
         const ch = resolveAdChannel(contact);
         // Klaviyo billed to HQ → split across 8 SPA venues by cockpit_revenue ratio
-        if (ch === "klaviyo" && venue === "hq") {
+        if (ch === "klaviyo" && resolvedVenue === "hq") {
           const SPA_SLUGS = ["intercontinental","hugos","hyatt","ramla","labranda","sunny_coast","excelsior","novotel"] as const;
           const totalSpaRev = SPA_SLUGS.reduce((s, sv) => s + (venues[sv]?.cockpit_revenue ?? 0), 0);
           for (const sv of SPA_SLUGS) {
@@ -449,25 +477,25 @@ export async function GET(req: Request) {
           }
           break;
         }
-        venues[venue].advertising += amount;
-        venues[venue].ad_by_channel[ch] = (venues[venue].ad_by_channel[ch] ?? 0) + amount;
+        venues[resolvedVenue].advertising += amount;
+        venues[resolvedVenue].ad_by_channel[ch] = (venues[resolvedVenue].ad_by_channel[ch] ?? 0) + amount;
         break;
       }
       case "sga": {
-        venues[venue].sga += amount;
-        venues[venue].sga_by_sub[sub] = (venues[venue].sga_by_sub[sub] ?? 0) + amount;
+        venues[resolvedVenue].sga += amount;
+        venues[resolvedVenue].sga_by_sub[sub] = (venues[resolvedVenue].sga_by_sub[sub] ?? 0) + amount;
         break;
       }
       case "cogs": {
-        venues[venue].cogs += amount;
+        venues[resolvedVenue].cogs += amount;
         break;
       }
       case "rent": {
-        venues[venue].rent += amount;
+        venues[resolvedVenue].rent += amount;
         break;
       }
       case "utilities": {
-        venues[venue].utilities += amount;
+        venues[resolvedVenue].utilities += amount;
         break;
       }
     }
@@ -603,12 +631,13 @@ export async function GET(req: Request) {
   }
 
   // ── 6b-pre-2. Prof fee contact min_monthly floors ────────────────────────
-  // Contacts in profFeeMap are re-routed wages → sga.prof_services above.
+  // Contacts in profFeeMap are re-routed wages → sga.<sub_line> above.
   // Apply their monthly_floor as a minimum (deficit only — never discard actual).
   {
     for (const [contactKey, pf] of profFeeMap) {
       if (!pf.monthly_floor) continue;
       const targetVenue = pf.venue;
+      const sgaSub      = pf.sga_sub;
       if (!venues[targetVenue]) continue;
 
       let floor = 0;
@@ -627,8 +656,8 @@ export async function GET(req: Request) {
       if (supplement === 0) continue;
 
       venues[targetVenue].sga += supplement;
-      venues[targetVenue].sga_by_sub["prof_services"] = (venues[targetVenue].sga_by_sub["prof_services"] ?? 0) + supplement;
-      fallbackApplied.push({ venue: targetVenue, ebitda_line: "prof_services", rule_type: "min_monthly", value: Math.round(supplement) });
+      venues[targetVenue].sga_by_sub[sgaSub] = (venues[targetVenue].sga_by_sub[sgaSub] ?? 0) + supplement;
+      fallbackApplied.push({ venue: targetVenue, ebitda_line: sgaSub, rule_type: "min_monthly", value: Math.round(supplement) });
     }
   }
 
