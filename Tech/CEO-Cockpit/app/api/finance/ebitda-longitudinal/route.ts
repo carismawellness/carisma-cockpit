@@ -606,6 +606,18 @@ async function aggregateRange(
           break;
         }
         const effectiveVenue = wageVenueOverride.get(roleKey) ?? venue;
+        // spa_split: distribute proportionally across spa venues by cockpit revenue ratio
+        if (effectiveVenue === "spa_split") {
+          const totalSpaRev = SPA_SLUGS.reduce(
+            (s, sv) => s + (acc.get(`${period}|${sv}`)?.cockpit_revenue ?? 0), 0,
+          );
+          for (const sv of SPA_SLUGS) {
+            const spaRev = acc.get(`${period}|${sv}`)?.cockpit_revenue ?? 0;
+            const ratio  = totalSpaRev > 0 ? spaRev / totalSpaRev : 1 / 8;
+            getVM(acc, period, sv).wages += amount * ratio;
+          }
+          break;
+        }
         if (!allSlugs.has(effectiveVenue)) break;
         getVM(acc, period, effectiveVenue).wages += amount;
         break;

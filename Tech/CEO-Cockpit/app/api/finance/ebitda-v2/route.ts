@@ -478,10 +478,23 @@ export async function GET(req: Request) {
         }
         // Venue override → explicit override → special person default → transaction venue
         const effectiveVenue = wageVenueOverrideMap.get(roleKey) ?? (isSP ? "hq" : resolvedVenue);
+        const wageRole: WageRole = wageRoleMap.get(roleKey) ?? "unassigned";
+        // spa_split: distribute proportionally across all 8 spa venues by cockpit revenue ratio
+        if (effectiveVenue === "spa_split") {
+          const SPA_SLUGS = ["intercontinental","hugos","hyatt","ramla","labranda","sunny_coast","excelsior","novotel"] as const;
+          const totalSpaRev = SPA_SLUGS.reduce((s, sv) => s + (venues[sv]?.cockpit_revenue ?? 0), 0);
+          for (const sv of SPA_SLUGS) {
+            if (!venues[sv]) continue;
+            const ratio = totalSpaRev > 0 ? (venues[sv].cockpit_revenue ?? 0) / totalSpaRev : 1 / 8;
+            const share = amount * ratio;
+            venues[sv].wages += share;
+            venues[sv].wage_by_role[wageRole] = (venues[sv].wage_by_role[wageRole] ?? 0) + share;
+          }
+          break;
+        }
         if (!venues[effectiveVenue]) break;
         venues[effectiveVenue].wages += amount;
-        const role: WageRole = wageRoleMap.get(roleKey) ?? "unassigned";
-        venues[effectiveVenue].wage_by_role[role] += amount;
+        venues[effectiveVenue].wage_by_role[wageRole] += amount;
         break;
       }
       case "advertising": {
