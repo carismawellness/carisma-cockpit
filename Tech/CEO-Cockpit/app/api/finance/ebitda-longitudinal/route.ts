@@ -904,10 +904,13 @@ async function aggregateRange(
       const factor      = daysInRange / totalDaysInMonth(targetMonthStr);
 
       for (const row of rows) {
-        if (!row.spa_slug || !allSlugs.has(row.spa_slug)) continue;
+        // salary_supplement_monthly uses short slug "inter"; VENUE_CONFIG uses "intercontinental"
+        const SLUG_NORM: Record<string, string> = { inter: "intercontinental" };
+        const venueKey = SLUG_NORM[row.spa_slug] ?? row.spa_slug;
+        if (!venueKey || !allSlugs.has(venueKey)) continue;
         const suppRole = (WAGE_ROLES as readonly string[]).includes(row.role) ? row.role : "unassigned";
         void suppRole; // role detail is not tracked in longitudinal (top-level only)
-        getVM(acc, yyyyMM, row.spa_slug).wages += row.amount * factor;
+        getVM(acc, yyyyMM, venueKey).wages += row.amount * factor;
       }
     }
   } else {
@@ -939,10 +942,13 @@ async function aggregateRange(
         const factor = overlapDays / daysInMo;
 
         for (const row of rows) {
-          if (!row.spa_slug || !allSlugs.has(row.spa_slug)) continue;
+          // salary_supplement_monthly uses short slug "inter"; VENUE_CONFIG uses "intercontinental"
+          const SLUG_NORM: Record<string, string> = { inter: "intercontinental" };
+          const venueKey = SLUG_NORM[row.spa_slug] ?? row.spa_slug;
+          if (!venueKey || !allSlugs.has(venueKey)) continue;
           const suppRole = (WAGE_ROLES as readonly string[]).includes(row.role) ? row.role : "unassigned";
           void suppRole;
-          getVM(acc, wk, row.spa_slug).wages += row.amount * factor;
+          getVM(acc, wk, venueKey).wages += row.amount * factor;
         }
       }
     }
