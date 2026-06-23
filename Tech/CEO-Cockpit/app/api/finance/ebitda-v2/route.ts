@@ -891,7 +891,11 @@ export async function GET(req: Request) {
     const factor      = daysInRange / totalDaysInMonth(targetMonth);
 
     for (const row of rows) {
-      if (!row.spa_slug || !venues[row.spa_slug]) continue;
+      // salary_supplement_monthly uses short slugs (e.g. "inter") that differ from
+      // the venue keys in this route (e.g. "intercontinental"). Normalise before lookup.
+      const SLUG_NORM: Record<string, string> = { inter: "intercontinental" };
+      const venueKey = SLUG_NORM[row.spa_slug] ?? row.spa_slug;
+      if (!venueKey || !venues[venueKey]) continue;
       const amount = row.amount * factor;
       // Role comes exclusively from the frozen supplement record's role column.
       // wage_role_mapping is NOT used for supplement — frozen cell is authoritative.
@@ -899,8 +903,8 @@ export async function GET(req: Request) {
       const suppRole: WageRole = (WAGE_ROLES as readonly string[]).includes(suppRoleRaw)
         ? (suppRoleRaw as WageRole)
         : "unassigned";
-      venues[row.spa_slug].wages                  += amount;
-      venues[row.spa_slug].wage_by_role[suppRole] += amount;
+      venues[venueKey].wages                  += amount;
+      venues[venueKey].wage_by_role[suppRole] += amount;
     }
 
     if (isFallback) {
