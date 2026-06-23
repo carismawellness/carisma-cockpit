@@ -465,7 +465,7 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
   const [spaCollapsed, setSpaCollapsed] = useState(false);
   const [wagesOpen, setWagesOpen]       = useState(true);
   const [advOpen, setAdvOpen]           = useState(true);
-  const [sgaOpen, setSgaOpen]           = useState(false);
+  const [sgaOpen, setSgaOpen]           = useState(true);
   const [rentOpen, setRentOpen]         = useState(false);
   const [drill, setDrill]               = useState<DrillTarget | null>(null);
 
