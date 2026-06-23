@@ -129,6 +129,47 @@ export async function GET(req: NextRequest) {
   });
 }
 
+// DELETE /api/etl/debug-wages
+// Body: { contact_names: string[] }
+// Removes entries from wage_role_mapping by contact_key.
+export async function DELETE(req: NextRequest) {
+  const body = await req.json().catch(() => ({})) as { contact_names?: string[] };
+  const names = body.contact_names ?? [];
+  if (!Array.isArray(names) || names.length === 0) {
+    return NextResponse.json({ error: "contact_names array required" }, { status: 400 });
+  }
+  const keys = names.map(n => n.trim().toLowerCase().replace(/\s+/g, " "));
+  const resp = await fetch(
+    `${sbUrl("wage_role_mapping")}?contact_key=in.(${keys.map(k => `"${k}"`).join(",")})`,
+    { method: "DELETE", headers: sbHeaders() }
+  );
+  if (!resp.ok) return NextResponse.json({ error: await resp.text() }, { status: 500 });
+  return NextResponse.json({ ok: true, deleted_keys: keys });
+}
+
+// PATCH /api/etl/debug-wages
+// Body: { contact_name: string; ebitda_line: string; ebitda_sub_line: string; org?: string }
+// Fixes ebitda_line/ebitda_sub_line on transactions_raw rows for a given contact.
+export async function PATCH(req: NextRequest) {
+  const body = await req.json().catch(() => ({})) as {
+    contact_name?: string; ebitda_line?: string; ebitda_sub_line?: string; org?: string;
+  };
+  if (!body.contact_name || !body.ebitda_line) {
+    return NextResponse.json({ error: "contact_name and ebitda_line required" }, { status: 400 });
+  }
+  const org = body.org ?? "spa";
+  const qs = `contact_name=eq.${encodeURIComponent(body.contact_name)}&org=eq.${org}`;
+  const patch: Record<string, string> = { ebitda_line: body.ebitda_line };
+  if (body.ebitda_sub_line) patch.ebitda_sub_line = body.ebitda_sub_line;
+  const resp = await fetch(
+    `${sbUrl("transactions_raw")}?${qs}`,
+    { method: "PATCH", headers: sbHeaders(), body: JSON.stringify(patch) }
+  );
+  if (!resp.ok) return NextResponse.json({ error: await resp.text() }, { status: 500 });
+  const rows = await resp.json() as unknown[];
+  return NextResponse.json({ ok: true, patched: rows.length, rows });
+}
+
 // POST /api/etl/debug-wages
 // Body: { assignments: Array<{ contact_name: string; role: string }> }
 // Bulk-upserts wage_role_mapping rows using service role key (bypasses session auth).
