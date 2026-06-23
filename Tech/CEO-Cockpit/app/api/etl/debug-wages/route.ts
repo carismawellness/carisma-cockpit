@@ -46,8 +46,8 @@ export async function GET(req: NextRequest) {
     fetchAll<{ date: string; contact_name: string; account_name: string; account_code: string; amount: number; venue: string }>(
       `${sbUrl("transactions_raw")}?${txnParams.join("&")}`
     ),
-    fetchAll<{ contact_key: string; role: string; venue_override?: string; is_prof_fee?: boolean }>(
-      `${sbUrl("wage_role_mapping")}?select=contact_key,role,venue_override,is_prof_fee&limit=1000`
+    fetchAll<{ contact_key: string; role: string; is_prof_fee?: boolean }>(
+      `${sbUrl("wage_role_mapping")}?select=contact_key,role,is_prof_fee&limit=1000`
     ),
     fetchAll<{ month: string; employee_name: string; amount: number; spa_slug: string; role: string; is_frozen: boolean }>(
       `${sbUrl("salary_supplement_monthly")}?month=gte.${month}-01&month=lte.${month}-28&is_frozen=eq.true&select=month,employee_name,amount,spa_slug,role&order=spa_slug.asc&limit=500`
@@ -225,11 +225,10 @@ export async function POST(req: NextRequest) {
   const rows = assignments
     .filter(a => typeof a.contact_name === "string" && VALID_ROLES.includes(a.role as typeof VALID_ROLES[number]))
     .map(a => ({
-      contact_key:     a.contact_name.trim().toLowerCase().replace(/\s+/g, " "),
-      contact_name:    a.contact_name.trim(),
-      role:            a.role,
-      ...(a.venue_override ? { venue_override: a.venue_override } : {}),
-      updated_at:      new Date().toISOString(),
+      contact_key:  a.contact_name.trim().toLowerCase().replace(/\s+/g, " "),
+      contact_name: a.contact_name.trim(),
+      role:         a.role,
+      updated_at:   new Date().toISOString(),
     }));
   if (rows.length === 0) return NextResponse.json({ error: "No valid assignments" }, { status: 400 });
 
