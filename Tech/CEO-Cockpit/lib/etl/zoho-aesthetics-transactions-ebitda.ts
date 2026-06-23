@@ -269,8 +269,9 @@ export async function runAestheticsEbitdaMonthFromTransactions(
   // ── 2. Per-line classify ─────────────────────────────────────────────────
   const VALID_LINES = new Set(["revenue", "cogs", "wages", "advertising", "rent", "utilities", "sga"]);
 
-  function resolveSubLine(line: string, account_name: string): string {
-    const low = account_name.toLowerCase();
+  function resolveSubLine(line: string, account_name: string, contact_name = ""): string {
+    const low  = account_name.toLowerCase();
+    const clow = contact_name.toLowerCase();
     if (line === "wages")       return "wages";
     if (line === "cogs")        return "cogs";
     if (line === "rent")        return "rent";
@@ -285,7 +286,7 @@ export async function runAestheticsEbitdaMonthFromTransactions(
     if (line === "sga") {
       if (/professional|legal|audit|accounting|consultant|advisory/.test(low)) return "prof_services";
       if (/fuel|petrol|diesel|gas station/.test(low))                          return "fuel";
-      if (/laundry|linen|uniform/.test(low))                                   return "laundry";
+      if (/fresh&clean|fresh clean/.test(clow))                                return "laundry";
       if (/software|subscription|saas|licen[cs]e|system|fresha/.test(low))    return "software";
       if (/clean|hygiene|sanitiz|pest/.test(low))                              return "cleaning";
       if (/travel|transport|flight|hotel|accommodation|taxi|uber|airbnb|parking|car hire|car rental|vehicle hire|airline|airways/.test(low)) return "travel";
@@ -343,7 +344,7 @@ export async function runAestheticsEbitdaMonthFromTransactions(
     classified.push({
       date:         ln.date,
       line,
-      sub_line:     (line === "sga" && coaSub) ? coaSub : resolveSubLine(line, ln.account_name),
+      sub_line:     (line === "sga" && coaSub) ? coaSub : resolveSubLine(line, ln.account_name, ln.contact_name),
       rule,
       tagDept:      tagsToDept(ln.tags),
       nameDept:     detectDept(ln.account_name),

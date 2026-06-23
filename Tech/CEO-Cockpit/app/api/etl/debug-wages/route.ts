@@ -167,7 +167,7 @@ export async function PATCH(req: NextRequest) {
     const SGA_SUB_FIX: [string[], string][] = [
       [["software", "subscription", "saas", "license", "licence", "system", "fresha"], "software"],
       [["travel", "transport", "flight", "hotel", "accommodation", "taxi", "uber", "airbnb", "parking", "car hire", "car rental", "vehicle hire", "airline", "airways"], "travel"],
-      [["laundry", "linen", "uniform"], "laundry"],
+      [["fresh&clean", "fresh clean"], "laundry"],
       [["fuel", "petrol", "diesel", "gas station"], "fuel"],
       [["clean", "hygiene", "sanitiz", "pest"], "cleaning"],
       [["insur"], "insurance"],
