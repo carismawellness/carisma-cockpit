@@ -171,11 +171,11 @@ export async function PATCH(req: NextRequest) {
 }
 
 // POST /api/etl/debug-wages
-// Body: { assignments: Array<{ contact_name: string; role: string }> }
+// Body: { assignments: Array<{ contact_name: string; role: string; venue_override?: string }> }
 // Bulk-upserts wage_role_mapping rows using service role key (bypasses session auth).
 export async function POST(req: NextRequest) {
   const VALID_ROLES = ["manager", "reception", "practitioner", "therapist", "crm"] as const;
-  const body = await req.json().catch(() => ({})) as { assignments?: Array<{ contact_name: string; role: string }> };
+  const body = await req.json().catch(() => ({})) as { assignments?: Array<{ contact_name: string; role: string; venue_override?: string }> };
   const assignments = body.assignments ?? [];
   if (!Array.isArray(assignments) || assignments.length === 0) {
     return NextResponse.json({ error: "assignments array required" }, { status: 400 });
@@ -183,10 +183,11 @@ export async function POST(req: NextRequest) {
   const rows = assignments
     .filter(a => typeof a.contact_name === "string" && VALID_ROLES.includes(a.role as typeof VALID_ROLES[number]))
     .map(a => ({
-      contact_key:  a.contact_name.trim().toLowerCase().replace(/\s+/g, " "),
-      contact_name: a.contact_name.trim(),
-      role:         a.role,
-      updated_at:   new Date().toISOString(),
+      contact_key:     a.contact_name.trim().toLowerCase().replace(/\s+/g, " "),
+      contact_name:    a.contact_name.trim(),
+      role:            a.role,
+      ...(a.venue_override ? { venue_override: a.venue_override } : {}),
+      updated_at:      new Date().toISOString(),
     }));
   if (rows.length === 0) return NextResponse.json({ error: "No valid assignments" }, { status: 400 });
 
