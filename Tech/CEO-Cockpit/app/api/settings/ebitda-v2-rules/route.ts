@@ -8,7 +8,7 @@ export const maxDuration = 60;
 export async function GET() {
   const supabase = await createServerSupabaseClient();
 
-  const [persons, rules, fallback] = await Promise.all([
+  const [persons, rules, fallback, cogsContacts] = await Promise.all([
     supabase
       .from("ebitda_v2_special_persons")
       .select("*")
@@ -22,16 +22,22 @@ export async function GET() {
       .select("id, account_code, account_name, rule_type, active, params")
       .eq("rule_type", "min_monthly")
       .order("account_code"),
+    supabase
+      .from("ebitda_v2_cogs_contacts")
+      .select("*")
+      .order("contact_key"),
   ]);
 
-  if (persons.error)  return NextResponse.json({ error: persons.error.message },  { status: 500 });
-  if (rules.error)    return NextResponse.json({ error: rules.error.message },     { status: 500 });
-  if (fallback.error) return NextResponse.json({ error: fallback.error.message },  { status: 500 });
+  if (persons.error)     return NextResponse.json({ error: persons.error.message },     { status: 500 });
+  if (rules.error)       return NextResponse.json({ error: rules.error.message },       { status: 500 });
+  if (fallback.error)    return NextResponse.json({ error: fallback.error.message },    { status: 500 });
+  if (cogsContacts.error) return NextResponse.json({ error: cogsContacts.error.message }, { status: 500 });
 
   return NextResponse.json({
     special_persons: persons.data,
     hardwired_rules: rules.data,
     fallback_rules:  fallback.data,
+    cogs_contacts:   cogsContacts.data,
   });
 }
 
@@ -86,6 +92,41 @@ export async function POST(req: Request) {
     const { error } = await supabase
       .from("ebitda_v2_hardwired_rules")
       .update({ params, note })
+      .eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "add_cogs_contact") {
+    const contact_key  = String(body.contact_key  ?? "").toLowerCase().trim();
+    const display_name = String(body.display_name ?? "").trim();
+    if (!contact_key || !display_name)
+      return NextResponse.json({ error: "contact_key and display_name required" }, { status: 400 });
+
+    const { data, error } = await supabase
+      .from("ebitda_v2_cogs_contacts")
+      .insert({ contact_key, display_name })
+      .select()
+      .single();
+    if (error) return NextResponse.json({ error: error.message }, { status: 409 });
+    return NextResponse.json({ contact: data });
+  }
+
+  if (action === "toggle_cogs_contact") {
+    const { id, active } = body;
+    const { error } = await supabase
+      .from("ebitda_v2_cogs_contacts")
+      .update({ active })
+      .eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "delete_cogs_contact") {
+    const { id } = body;
+    const { error } = await supabase
+      .from("ebitda_v2_cogs_contacts")
+      .delete()
       .eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true });

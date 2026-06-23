@@ -30,6 +30,13 @@ type SpecialPerson = {
   active: boolean;
 };
 
+type CogsContact = {
+  id: string;
+  contact_key: string;
+  display_name: string;
+  active: boolean;
+};
+
 type HardwiredRule = {
   id: string;
   venue: string;
@@ -73,21 +80,27 @@ function venueLabel(params: Record<string, unknown>): string {
 }
 
 function HardcodedRulesSection() {
-  const [persons, setPersons]         = useState<SpecialPerson[]>([]);
-  const [rules, setRules]             = useState<HardwiredRule[]>([]);
-  const [fallback, setFallback]       = useState<CostFloorRule[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [error, setError]             = useState<string | null>(null);
+  const [persons, setPersons]           = useState<SpecialPerson[]>([]);
+  const [cogsContacts, setCogsContacts] = useState<CogsContact[]>([]);
+  const [rules, setRules]               = useState<HardwiredRule[]>([]);
+  const [fallback, setFallback]         = useState<CostFloorRule[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState<string | null>(null);
 
-  const [showAdd, setShowAdd]         = useState(false);
-  const [newKey, setNewKey]           = useState("");
-  const [newName, setNewName]         = useState("");
-  const [saving, setSaving]           = useState(false);
+  const [showAdd, setShowAdd]           = useState(false);
+  const [newKey, setNewKey]             = useState("");
+  const [newName, setNewName]           = useState("");
+  const [saving, setSaving]             = useState(false);
 
-  const [editRuleId, setEditRuleId]   = useState<string | null>(null);
-  const [editNote, setEditNote]       = useState("");
+  const [showAddCogs, setShowAddCogs]   = useState(false);
+  const [newCogsKey, setNewCogsKey]     = useState("");
+  const [newCogsName, setNewCogsName]   = useState("");
+  const [savingCogs, setSavingCogs]     = useState(false);
 
-  const [editFloorId, setEditFloorId] = useState<number | null>(null);
+  const [editRuleId, setEditRuleId]     = useState<string | null>(null);
+  const [editNote, setEditNote]         = useState("");
+
+  const [editFloorId, setEditFloorId]   = useState<number | null>(null);
   const [editFloorAmt, setEditFloorAmt] = useState("");
 
   const load = useCallback(async () => {
@@ -97,6 +110,7 @@ function HardcodedRulesSection() {
     if (!res.ok) { setError("Failed to load"); setLoading(false); return; }
     const data = await res.json();
     setPersons(data.special_persons ?? []);
+    setCogsContacts(data.cogs_contacts ?? []);
     setRules(data.hardwired_rules ?? []);
     setFallback(data.fallback_rules ?? []);
     setLoading(false);
@@ -137,6 +151,29 @@ function HardcodedRulesSection() {
   async function deletePerson(id: string) {
     if (!confirm("Remove this special person?")) return;
     await post({ action: "delete_person", id });
+    await load();
+  }
+
+  async function addCogsContact() {
+    if (!newCogsKey.trim() || !newCogsName.trim()) return;
+    setSavingCogs(true);
+    try {
+      await post({ action: "add_cogs_contact", contact_key: newCogsKey.trim(), display_name: newCogsName.trim() });
+      setNewCogsKey(""); setNewCogsName(""); setShowAddCogs(false);
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Error");
+    } finally { setSavingCogs(false); }
+  }
+
+  async function toggleCogsContact(id: string, active: boolean) {
+    await post({ action: "toggle_cogs_contact", id, active });
+    await load();
+  }
+
+  async function deleteCogsContact(id: string) {
+    if (!confirm("Remove this COGS contact?")) return;
+    await post({ action: "delete_cogs_contact", id });
     await load();
   }
 
@@ -252,6 +289,103 @@ function HardcodedRulesSection() {
                 <tr>
                   <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground text-xs">
                     No special persons defined.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </Card>
+      </section>
+
+      {/* ── COGS Contacts ───────────────────────────────────────────────── */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-medium">COGS Contacts</h2>
+            <p className="text-xs text-muted-foreground">
+              Contacts always classified as COGS, regardless of which Zoho account they were posted to.
+              Venue is taken from the venue tag on the transaction (e.g. POS fee charges per branch).
+            </p>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => setShowAddCogs(v => !v)}>
+            <Plus className="h-3.5 w-3.5 mr-1" />Add
+          </Button>
+        </div>
+
+        {showAddCogs && (
+          <Card className="p-4">
+            <div className="flex gap-2 items-end">
+              <div className="flex-1 space-y-1">
+                <label className="text-xs text-muted-foreground">Match key (lowercase, substring)</label>
+                <input
+                  className="w-full border rounded px-2 py-1 text-sm"
+                  placeholder="e.g. pos fee"
+                  value={newCogsKey}
+                  onChange={e => setNewCogsKey(e.target.value)}
+                />
+              </div>
+              <div className="flex-1 space-y-1">
+                <label className="text-xs text-muted-foreground">Display name</label>
+                <input
+                  className="w-full border rounded px-2 py-1 text-sm"
+                  placeholder="POS Fee"
+                  value={newCogsName}
+                  onChange={e => setNewCogsName(e.target.value)}
+                />
+              </div>
+              <Button size="sm" onClick={addCogsContact} disabled={savingCogs || !newCogsKey.trim() || !newCogsName.trim()}>
+                {savingCogs ? "…" : "Save"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setShowAddCogs(false)}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              The match key is checked as a substring against the contact name in Zoho (case-insensitive).
+            </p>
+          </Card>
+        )}
+
+        <Card>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-xs text-muted-foreground">
+                <th className="text-left px-4 py-2">Display name</th>
+                <th className="text-left px-4 py-2">Match key</th>
+                <th className="text-center px-4 py-2 w-20">Active</th>
+                <th className="px-4 py-2 w-10" />
+              </tr>
+            </thead>
+            <tbody>
+              {cogsContacts.map(c => (
+                <tr key={c.id} className="border-b last:border-0 hover:bg-muted/30">
+                  <td className="px-4 py-2 font-medium">{c.display_name}</td>
+                  <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{c.contact_key}</td>
+                  <td className="px-4 py-2 text-center">
+                    <button
+                      onClick={() => toggleCogsContact(c.id, !c.active)}
+                      className="text-muted-foreground hover:text-foreground transition-colors"
+                      title={c.active ? "Disable" : "Enable"}
+                    >
+                      {c.active
+                        ? <ToggleRight className="h-5 w-5 text-green-600" />
+                        : <ToggleLeft  className="h-5 w-5" />}
+                    </button>
+                  </td>
+                  <td className="px-4 py-2">
+                    <button
+                      onClick={() => deleteCogsContact(c.id)}
+                      className="text-muted-foreground hover:text-destructive transition-colors"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {cogsContacts.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground text-xs">
+                    No COGS contacts defined.
                   </td>
                 </tr>
               )}

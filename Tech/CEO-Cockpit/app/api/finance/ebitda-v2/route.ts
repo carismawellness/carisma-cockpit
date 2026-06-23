@@ -213,7 +213,8 @@ export async function GET(req: Request) {
 
   // ── 1. Load all config tables in parallel ─────────────────────────────────
   const [allRawCosts, revenueDaily, revenueMonthly, aestheticsSales, slimmingSales,
-         supplement, wageRoles, adPatterns, fallbackRules, hardwiredRules, specialPersons] =
+         supplement, wageRoles, adPatterns, fallbackRules, hardwiredRules, specialPersons,
+         cogsContacts] =
     await Promise.all([
       fetchAllRawCosts(),
 
@@ -296,6 +297,12 @@ export async function GET(req: Request) {
         .from("ebitda_v2_special_persons")
         .select("contact_key")
         .eq("active", true),
+
+      // COGS contacts: always COGS, venue taken from transaction tag
+      supabase
+        .from("ebitda_v2_cogs_contacts")
+        .select("contact_key")
+        .eq("active", true),
     ]);
 
   // Error checks (rawCosts, spa_revenue_daily, aesthetics_sales_daily, slimming_sales_daily
@@ -303,6 +310,7 @@ export async function GET(req: Request) {
   for (const [label, res] of [
     ["spa_revenue_monthly", revenueMonthly],
     ["ebitda_v2_special_persons", specialPersons],
+    ["ebitda_v2_cogs_contacts", cogsContacts],
   ] as Array<[string, {error: {message: string} | null}]>) {
     if (res.error) return NextResponse.json({ error: `${label}: ${res.error.message}` }, { status: 500 });
   }
@@ -335,6 +343,18 @@ export async function GET(req: Request) {
   function isSpecialPerson(contact: string): boolean {
     const lower = contact.toLowerCase().trim();
     for (const key of specialPersonKeysList) {
+      if (lower.includes(key)) return true;
+    }
+    return false;
+  }
+
+  // COGS contacts: always COGS, venue tag on transaction is preserved
+  const cogsContactKeysList = (cogsContacts.data ?? []).map(
+    (r: { contact_key: string }) => (r.contact_key as string).toLowerCase().trim(),
+  );
+  function isCogsContact(contact: string): boolean {
+    const lower = contact.toLowerCase().trim();
+    for (const key of cogsContactKeysList) {
       if (lower.includes(key)) return true;
     }
     return false;
@@ -430,15 +450,17 @@ export async function GET(req: Request) {
     const amount    = Number(row.amount  ?? 0);
     const roleKey   = contact.toLowerCase().trim();
     const isSP      = isSpecialPerson(contact);
+    const isCC      = isCogsContact(contact);
 
-    // Special persons: force to wages and default to HQ when venue is unallocated/unknown.
-    // For everyone else, skip rows whose venue isn't in our venue config.
+    // Special persons: force to wages, default to HQ when venue is unallocated/unknown.
+    // COGS contacts: force to COGS, no HQ fallback (they always have venue tags).
+    // All others: skip rows whose venue isn't in our venue config.
     const resolvedVenue = venues[venue] ? venue : (isSP ? "hq" : null);
     if (!resolvedVenue) continue;
 
     if (line === "revenue") continue; // revenue handled from google-sheet sources above
 
-    const effectiveLine = (isSP && line !== "revenue") ? "wages" : line;
+    const effectiveLine = isCC ? "cogs" : ((isSP && line !== "revenue") ? "wages" : line);
     const hwKey = `${resolvedVenue}|${effectiveLine}`;
     if (hardwiredMap.has(hwKey)) continue; // overridden by hardwired rule below
 
