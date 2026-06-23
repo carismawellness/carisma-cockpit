@@ -401,13 +401,19 @@ export function useSlimmingSales(dateFrom: Date, dateTo: Date, { skipSync = fals
     let ex = 0, inc = 0, paid = 0;
     let svcEx = 0, svcInc = 0, svcPaid = 0;
     let retEx = 0, retInc = 0, retPaid = 0;
+    // Retail signal — same rule the "Revenue by Staff — Retail" chart uses on
+    // the Slimming page (filters `/retail/i.test(staff)`). The ETL doesn't tag
+    // service_type="product" today, so without the staff-name fallback the
+    // retail KPI is permanently €0 even when the bar chart shows real numbers.
     for (const r of rows) {
       const e = r.price_ex_vat ?? 0;
       const i = r.full_price   ?? 0;
       const p = r.paid         ?? 0;
       ex  += e; inc += i; paid += p;
-      if (r.service_type === "product") { retEx += e; retInc += i; retPaid += p; }
-      else                              { svcEx += e; svcInc += i; svcPaid += p; }
+      const isRetail = r.service_type === "product"
+        || /retail/i.test(r.sales_staff ?? "");
+      if (isRetail) { retEx += e; retInc += i; retPaid += p; }
+      else          { svcEx += e; svcInc += i; svcPaid += p; }
     }
     const last = rows.reduce((best, r) => {
       if (!r.synced_at) return best;
