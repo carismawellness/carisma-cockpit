@@ -148,16 +148,58 @@ export async function DELETE(req: NextRequest) {
 }
 
 // PATCH /api/etl/debug-wages
-// Body: { contact_name: string; ebitda_line: string; ebitda_sub_line: string; org?: string }
-// Fixes ebitda_line/ebitda_sub_line on transactions_raw rows for a given contact.
+// Two modes:
+//   1. { contact_name, ebitda_line, ebitda_sub_line?, org? } — fix a specific contact's rows
+//   2. { fix_sga_sublines: true, date_from, date_to, org? } — run the full SGA sub-line keyword pass
+//      (same logic as fixSgaSubLines in zoho-spa-transactions, but on-demand for any org/date)
 export async function PATCH(req: NextRequest) {
   const body = await req.json().catch(() => ({})) as {
     contact_name?: string; ebitda_line?: string; ebitda_sub_line?: string; org?: string;
+    fix_sga_sublines?: boolean; date_from?: string; date_to?: string;
   };
-  if (!body.contact_name || !body.ebitda_line) {
-    return NextResponse.json({ error: "contact_name and ebitda_line required" }, { status: 400 });
-  }
   const org = body.org ?? "spa";
+
+  // Mode 2: keyword-based SGA sub-line correction
+  if (body.fix_sga_sublines) {
+    if (!body.date_from || !body.date_to) {
+      return NextResponse.json({ error: "date_from and date_to required for fix_sga_sublines" }, { status: 400 });
+    }
+    const SGA_SUB_FIX: [string[], string][] = [
+      [["software", "subscription", "saas", "license", "licence", "system", "fresha"], "software"],
+      [["travel", "transport", "flight", "hotel", "accommodation", "taxi", "uber", "airbnb", "parking", "car hire", "car rental", "vehicle hire", "airline", "airways"], "travel"],
+      [["laundry", "linen", "uniform"], "laundry"],
+      [["fuel", "petrol", "diesel", "gas station"], "fuel"],
+      [["clean", "hygiene", "sanitiz", "pest"], "cleaning"],
+      [["insur"], "insurance"],
+      [["event", "function", "catering", "hospitality"], "events"],
+      [["maintenance", "repair", "service contract"], "maintenance"],
+      [["telecom", "telephone", "mobile", "internet", "broadband", "phone"], "telecom"],
+      [["professional", "legal", "audit", "accounting", "consultant", "advisory"], "prof_services"],
+    ];
+    let total = 0;
+    const results: { sub_line: string; patched: number }[] = [];
+    for (const [keywords, subLine] of SGA_SUB_FIX) {
+      const orParts = [
+        ...keywords.map(k => `account_name.ilike.*${k}*`),
+        ...keywords.map(k => `contact_name.ilike.*${k}*`),
+      ].join(",");
+      const filter = `org=eq.${org}&ebitda_line=eq.sga&ebitda_sub_line=neq.${subLine}&date=gte.${body.date_from}&date=lte.${body.date_to}&or=(${orParts})`;
+      const resp = await fetch(`${sbUrl("transactions_raw")}?${filter}`, {
+        method: "PATCH", headers: sbHeaders(), body: JSON.stringify({ ebitda_sub_line: subLine }),
+      });
+      if (resp.ok) {
+        const rows = await resp.json() as unknown[];
+        total += rows.length;
+        if (rows.length) results.push({ sub_line: subLine, patched: rows.length });
+      }
+    }
+    return NextResponse.json({ ok: true, total_patched: total, by_sub_line: results });
+  }
+
+  // Mode 1: single contact fix
+  if (!body.contact_name || !body.ebitda_line) {
+    return NextResponse.json({ error: "contact_name and ebitda_line required (or fix_sga_sublines: true)" }, { status: 400 });
+  }
   const qs = `contact_name=eq.${encodeURIComponent(body.contact_name)}&org=eq.${org}`;
   const patch: Record<string, string> = { ebitda_line: body.ebitda_line };
   if (body.ebitda_sub_line) patch.ebitda_sub_line = body.ebitda_sub_line;
