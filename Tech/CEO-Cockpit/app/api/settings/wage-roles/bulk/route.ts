@@ -11,12 +11,12 @@ function normalizeContact(name: string): string {
 }
 
 // POST — bulk upsert role mappings.
-// Body: { assignments: Array<{ contact_name: string; role: Role }> }
+// Body: { assignments: Array<{ contact_name: string; role: Role; is_prof_fee?: boolean; sga_sub_line?: string }> }
 export async function POST(req: NextRequest) {
   const supabase = getAdminClient();
   const body = await req.json().catch(() => ({}));
 
-  const assignments: Array<{ contact_name: string; role: Role }> = body.assignments ?? [];
+  const assignments: Array<{ contact_name: string; role: Role; is_prof_fee?: boolean; sga_sub_line?: string | null }> = body.assignments ?? [];
   if (!Array.isArray(assignments) || assignments.length === 0) {
     return NextResponse.json({ error: "assignments array required" }, { status: 400 });
   }
@@ -27,6 +27,8 @@ export async function POST(req: NextRequest) {
       contact_key:  normalizeContact(a.contact_name),
       contact_name: a.contact_name.trim(),
       role:         a.role,
+      is_prof_fee:  a.is_prof_fee ?? false,
+      sga_sub_line: a.is_prof_fee ? (a.sga_sub_line || "prof_services") : null,
       updated_at:   new Date().toISOString(),
     }))
     .filter((r) => r.contact_key);
@@ -35,10 +37,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No valid assignments found" }, { status: 400 });
   }
 
-  const { error } = await supabase
+  let { error } = await supabase
     .from("wage_role_mapping")
     .upsert(rows, { onConflict: "contact_key" });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error && error.code === "42703") {
+    // Migration 089 not yet applied — strip new columns and retry.
+    console.error("[wage-roles/bulk] migration 089 not applied — upserting without is_prof_fee/sga_sub_line:", error.message);
+    const baseRows = rows.map(({ contact_key, contact_name, role, updated_at }) => ({
+      contact_key, contact_name, role, updated_at,
+    }));
+    ({ error } = await supabase
+      .from("wage_role_mapping")
+      .upsert(baseRows, { onConflict: "contact_key" }));
+  }
+  if (error) {
+    console.error("[wage-roles/bulk] POST error:", error.message);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
   return NextResponse.json({ ok: true, saved: rows.length });
 }

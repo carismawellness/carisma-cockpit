@@ -7,6 +7,8 @@ export const maxDuration = 60;
 const ROLES = ["manager", "reception", "practitioner", "therapist", "crm"] as const;
 type Role = (typeof ROLES)[number];
 
+const SGA_SUBS = ["prof_services","fuel","laundry","software","cleaning","travel","misc","insurance","events","maintenance","telecom"] as const;
+
 // Normalise a Zoho contact name into the join key used as the table's unique
 // key. MUST stay in lockstep with the client normaliser in lib/hooks/useWageRoles.ts:
 // lowercase, trim, and collapse any run of inner whitespace to a single space.
@@ -21,10 +23,36 @@ export async function GET() {
   const supabase = getAdminClient();
   const { data, error } = await supabase
     .from("wage_role_mapping")
-    .select("contact_key, contact_name, role")
+    .select("contact_key, contact_name, role, is_prof_fee, sga_sub_line")
     .order("contact_name");
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  // Migration 089 adds is_prof_fee and sga_sub_line. If it hasn't been applied
+  // to production yet (error code 42703 = undefined_column), fall back to the
+  // base columns so the route stays functional until the migration runs.
+  // Apply via Supabase dashboard SQL editor:
+  //   ALTER TABLE wage_role_mapping ADD COLUMN IF NOT EXISTS is_prof_fee boolean NOT NULL DEFAULT false;
+  //   ALTER TABLE wage_role_mapping ADD COLUMN IF NOT EXISTS sga_sub_line text DEFAULT 'prof_services';
+  if (error) {
+    if (error.code === "42703") {
+      console.error("[wage-roles] GET: migration 089 not applied — falling back to base columns:", error.message);
+      const fallback = await supabase
+        .from("wage_role_mapping")
+        .select("contact_key, contact_name, role")
+        .order("contact_name");
+      if (fallback.error) {
+        console.error("[wage-roles] GET fallback error:", fallback.error.message);
+        return NextResponse.json({ error: fallback.error.message }, { status: 500 });
+      }
+      const rows = (fallback.data ?? []).map((r) => ({
+        ...r,
+        is_prof_fee: false,
+        sga_sub_line: null,
+      }));
+      return NextResponse.json(rows);
+    }
+    console.error("[wage-roles] GET error:", error.message);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
   return NextResponse.json(data ?? []);
 }
 
@@ -42,7 +70,10 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "contact_name required" }, { status: 400 });
   }
 
-  const rawRole = body.role;
+  const rawRole    = body.role;
+  const isProfFee  = body.is_prof_fee === true;
+  const rawSgaSub  = typeof body.sga_sub_line === "string" ? body.sga_sub_line : null;
+  const sgaSubLine = rawSgaSub && (SGA_SUBS as readonly string[]).includes(rawSgaSub) ? rawSgaSub : "prof_services";
 
   // Clear → Unassigned: delete the row so the employee falls into the implicit
   // Unassigned bucket on the dashboard (keeps reconciliation exact).
@@ -60,12 +91,28 @@ export async function PATCH(req: NextRequest) {
   }
   const role = rawRole as Role;
 
-  const { error } = await supabase
+  const upsertRow = {
+    contact_key:  contactKey,
+    contact_name: contactName.trim(),
+    role,
+    is_prof_fee:  isProfFee,
+    sga_sub_line: isProfFee ? sgaSubLine : null,
+    updated_at:   new Date().toISOString(),
+  };
+  let { error } = await supabase
     .from("wage_role_mapping")
-    .upsert(
-      { contact_key: contactKey, contact_name: contactName.trim(), role, updated_at: new Date().toISOString() },
-      { onConflict: "contact_key" },
-    );
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ ok: true, contact_key: contactKey, role });
+    .upsert(upsertRow, { onConflict: "contact_key" });
+  if (error && error.code === "42703") {
+    // Migration 089 not yet applied — upsert without the new columns.
+    console.error("[wage-roles] PATCH: migration 089 not applied — upserting without is_prof_fee/sga_sub_line:", error.message);
+    const { contact_key, contact_name, role: r, updated_at } = upsertRow;
+    ({ error } = await supabase
+      .from("wage_role_mapping")
+      .upsert({ contact_key, contact_name, role: r, updated_at }, { onConflict: "contact_key" }));
+  }
+  if (error) {
+    console.error("[wage-roles] PATCH error:", error.message);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true, contact_key: contactKey, role, is_prof_fee: isProfFee, sga_sub_line: isProfFee ? sgaSubLine : null });
 }

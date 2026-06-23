@@ -25,6 +25,8 @@ export interface WageRoleMapping {
   contact_key:  string;
   contact_name: string;
   role:         WageRole;
+  is_prof_fee:  boolean;
+  sga_sub_line: string | null;
 }
 
 // MUST match the server normaliser in app/api/settings/wage-roles/route.ts:
@@ -70,11 +72,31 @@ export function useWageRoles() {
     return m;
   }, [query.data]);
 
+  const profFeeByContact = useMemo(() => {
+    const m = new Map<string, { is_prof_fee: boolean; sga_sub_line: string | null }>();
+    for (const row of query.data ?? []) {
+      if (row.is_prof_fee) {
+        m.set(normalizeContact(row.contact_name) || row.contact_key, {
+          is_prof_fee:  row.is_prof_fee,
+          sga_sub_line: row.sga_sub_line,
+        });
+      }
+    }
+    return m;
+  }, [query.data]);
+
   const setRole = useMutation({
-    mutationFn: ({ contactName, role }: { contactName: string; role: WageRole | null }) =>
+    mutationFn: ({
+      contactName, role, is_prof_fee, sga_sub_line,
+    }: {
+      contactName:  string;
+      role:         WageRole | null;
+      is_prof_fee?: boolean;
+      sga_sub_line?: string | null;
+    }) =>
       apiFetch("/api/settings/wage-roles", {
         method: "PATCH",
-        body: JSON.stringify({ contact_name: contactName, role }),
+        body: JSON.stringify({ contact_name: contactName, role, is_prof_fee, sga_sub_line }),
       }),
     // Optimistic-ish: just invalidate so every consumer (settings page +
     // EBITDA page) re-reads the canonical mapping after a change.
@@ -83,6 +105,7 @@ export function useWageRoles() {
 
   return {
     roleByContact,
+    profFeeByContact,
     setRole,
     isLoading:  query.isLoading,
     isFetching: query.isFetching,

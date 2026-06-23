@@ -464,8 +464,23 @@ function normalizeKey(name: string): string {
   return (name || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+const SGA_SUB_OPTIONS: { value: string; label: string }[] = [
+  { value: "misc",          label: "Misc" },
+  { value: "prof_services", label: "Prof Services" },
+  { value: "marketing",     label: "Marketing" },
+  { value: "software",      label: "Software" },
+  { value: "travel",        label: "Travel" },
+  { value: "insurance",     label: "Insurance" },
+  { value: "events",        label: "Events" },
+  { value: "maintenance",   label: "Maintenance" },
+  { value: "telecom",       label: "Telecom" },
+  { value: "cleaning",      label: "Cleaning" },
+  { value: "laundry",       label: "Laundry" },
+  { value: "fuel",          label: "Fuel" },
+];
+
 function ContactImportSection({
-  title, subtitle, apiEndpoint, cacheKey, emptyMessage, showDelete = false, noCache = false, roleByContact, setRole,
+  title, subtitle, apiEndpoint, cacheKey, emptyMessage, showDelete = false, noCache = false, roleByContact, profFeeByContact, setRole,
 }: {
   title: string;
   subtitle: string;
@@ -475,6 +490,7 @@ function ContactImportSection({
   showDelete?: boolean;
   noCache?: boolean;
   roleByContact: Map<string, WageRole>;
+  profFeeByContact: Map<string, { is_prof_fee: boolean; sga_sub_line: string | null }>;
   setRole: ReturnType<typeof useWageRoles>["setRole"];
 }) {
   const [importedContacts, setImportedContacts] = useState<ImportedContact[] | null>(() => {
@@ -498,8 +514,20 @@ function ContactImportSection({
     return draft;
   }, [importedContacts, roleByContact]);
 
+  const draftProfFee = useMemo(() => {
+    const draft: Record<string, { is_prof_fee: boolean; sga_sub_line: string }> = {};
+    for (const c of importedContacts ?? []) {
+      const key = normalizeKey(c.contact_name);
+      const pf = profFeeByContact.get(key);
+      draft[c.contact_name] = { is_prof_fee: pf?.is_prof_fee ?? false, sga_sub_line: pf?.sga_sub_line ?? "misc" };
+    }
+    return draft;
+  }, [importedContacts, profFeeByContact]);
+
   const [localRoles, setLocalRoles] = useState<Record<string, WageRole | "">>({});
-  const mergedRoles = { ...draftRoles, ...localRoles };
+  const [localProfFee, setLocalProfFee] = useState<Record<string, { is_prof_fee: boolean; sga_sub_line: string }>>({});
+  const mergedRoles   = { ...draftRoles,   ...localRoles };
+  const mergedProfFee = { ...draftProfFee, ...localProfFee };
 
   async function handleLoad() {
     setIsImporting(true);
@@ -518,6 +546,7 @@ function ContactImportSection({
       const data: ImportedContact[] = json.contacts ?? [];
       setImportedContacts(data);
       setLocalRoles({});
+      setLocalProfFee({});
       try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch { /* ignore */ }
     } catch (err) {
       setImportError(err instanceof Error ? err.message : String(err));
@@ -526,7 +555,13 @@ function ContactImportSection({
 
   function saveOne(contactName: string) {
     const role = mergedRoles[contactName];
-    setRole.mutate({ contactName, role: (role || null) as WageRole | null });
+    const pf   = mergedProfFee[contactName];
+    setRole.mutate({
+      contactName,
+      role:         (role || null) as WageRole | null,
+      is_prof_fee:  pf?.is_prof_fee ?? false,
+      sga_sub_line: pf?.is_prof_fee ? (pf.sga_sub_line || "misc") : null,
+    });
   }
 
   function deleteRow(contactName: string) {
@@ -543,7 +578,15 @@ function ContactImportSection({
     setIsSavingAll(true);
     try {
       const assignments = importedContacts
-        .map((c) => ({ contact_name: c.contact_name, role: mergedRoles[c.contact_name] || null }))
+        .map((c) => {
+          const pf = mergedProfFee[c.contact_name];
+          return {
+            contact_name: c.contact_name,
+            role: mergedRoles[c.contact_name] || null,
+            is_prof_fee: pf?.is_prof_fee ?? false,
+            sga_sub_line: pf?.is_prof_fee ? (pf.sga_sub_line || "misc") : null,
+          };
+        })
         .filter((a) => a.role);
       if (assignments.length > 0) {
         const res = await fetch("/api/settings/wage-roles/bulk", {
@@ -586,18 +629,23 @@ function ContactImportSection({
                 <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Employee</th>
                 <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Zoho Org</th>
                 <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Role / Designation</th>
+                <th className="text-left py-2 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">SG&amp;A Reclassify</th>
                 <th className="py-2 px-4" />
               </tr>
             </thead>
             <tbody>
               {importedContacts.map((c) => {
-                const mapped = roleByContact.has(normalizeKey(c.contact_name));
+                const mapped   = roleByContact.has(normalizeKey(c.contact_name));
+                const pfState  = mergedProfFee[c.contact_name] ?? { is_prof_fee: false, sga_sub_line: "misc" };
                 return (
                   <tr key={c.contact_name} className="border-b border-border/40 last:border-0 hover:bg-muted/30 transition-colors">
                     <td className="py-1.5 px-4">
                       <span className="text-foreground">{c.contact_name}</span>
                       {mapped && (
                         <span className="ml-2 inline-flex items-center rounded-sm border border-green-300 bg-green-50 px-1 py-px text-[9px] font-medium text-green-700">mapped</span>
+                      )}
+                      {pfState.is_prof_fee && (
+                        <span className="ml-1 inline-flex items-center rounded-sm border border-purple-300 bg-purple-50 px-1 py-px text-[9px] font-medium text-purple-700">SG&amp;A</span>
                       )}
                     </td>
                     <td className="py-1.5 px-4 text-xs text-muted-foreground">{orgsLabel(c.orgs)}</td>
@@ -609,6 +657,29 @@ function ContactImportSection({
                         <option value="">Unassigned</option>
                         {WAGE_ROLES.map((r) => <option key={r} value={r}>{WAGE_ROLE_LABEL[r]}</option>)}
                       </select>
+                    </td>
+                    <td className="py-1.5 px-4">
+                      <div className="flex items-center gap-2">
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input type="checkbox" checked={pfState.is_prof_fee}
+                            onChange={(ev) => setLocalProfFee((prev) => ({
+                              ...prev,
+                              [c.contact_name]: { ...pfState, is_prof_fee: ev.target.checked },
+                            }))}
+                            className="h-3.5 w-3.5 rounded border-border accent-purple-600" />
+                          <span className="text-xs text-muted-foreground">SG&amp;A</span>
+                        </label>
+                        {pfState.is_prof_fee && (
+                          <select value={pfState.sga_sub_line || "misc"}
+                            onChange={(ev) => setLocalProfFee((prev) => ({
+                              ...prev,
+                              [c.contact_name]: { ...pfState, sga_sub_line: ev.target.value },
+                            }))}
+                            className="text-xs border border-purple-300 rounded px-2 py-1 bg-background text-purple-700">
+                            {SGA_SUB_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </select>
+                        )}
+                      </div>
                     </td>
                     <td className="py-1.5 px-4">
                       <div className="flex items-center gap-1.5">
@@ -803,13 +874,14 @@ function SalaryBreakdown() {
 }
 
 function EmployeeMappingSection() {
-  const { roleByContact, setRole } = useWageRoles();
+  const { roleByContact, profFeeByContact, setRole } = useWageRoles();
   return (
     <div className="space-y-6">
       <p className="text-sm text-muted-foreground max-w-2xl">
         Assign each employee a role (Manager, Reception, Practitioner, CRM). The EBITDA cockpit&apos;s
         Wages &amp; Salaries row uses these mappings to break payroll down by role for the selected period.
         Unassigned employees are counted separately. Employees are loaded from the last 2 years of payroll data.
+        Enable <strong>SG&amp;A</strong> to reclassify a wage contact out of Wages into an SG&amp;A sub-bucket (e.g. Misc).
       </p>
       <ContactImportSection
         title="Wages & Salary COA"
@@ -818,6 +890,7 @@ function EmployeeMappingSection() {
         cacheKey="wage-contacts-cache"
         emptyMessage="No wage contacts found for the selected period."
         roleByContact={roleByContact}
+        profFeeByContact={profFeeByContact}
         setRole={setRole}
       />
       <ContactImportSection
@@ -828,6 +901,7 @@ function EmployeeMappingSection() {
         cacheKey="prof-fee-contacts-cache"
         emptyMessage="No professional fee contacts found for the selected period."
         roleByContact={roleByContact}
+        profFeeByContact={profFeeByContact}
         setRole={setRole}
       />
       <SalaryBreakdown />
