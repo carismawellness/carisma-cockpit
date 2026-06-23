@@ -256,15 +256,20 @@ export async function GET(req: Request) {
       curM++; if (curM > 12) { curM = 1; curY++; }
     }
 
+    // salary_supplement_monthly uses "inter" for InterContinental; VENUE_CONFIG uses "intercontinental".
+    // Normalise before querying so we don't miss supplement rows.
+    const VENUE_TO_SUPP: Record<string, string> = { intercontinental: "inter" };
+    const SPA_SUPP_SLUGS = SPA_VENUE_SLUGS.map(s => VENUE_TO_SUPP[s] ?? s);
+
     let sdQuery = supabase
       .from("salary_supplement_monthly")
       .select("month, employee_name, amount, role")
       .eq("is_frozen", true)
       .in("month", suppMonths);
     if (isSpaAgg) {
-      sdQuery = sdQuery.in("spa_slug", SPA_VENUE_SLUGS);
+      sdQuery = sdQuery.in("spa_slug", SPA_SUPP_SLUGS);
     } else {
-      sdQuery = sdQuery.eq("spa_slug", venue!);
+      sdQuery = sdQuery.eq("spa_slug", VENUE_TO_SUPP[venue!] ?? venue!);
     }
     const { data: sd } = await sdQuery;
 
