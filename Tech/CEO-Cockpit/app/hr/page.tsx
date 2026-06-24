@@ -12,6 +12,48 @@ import { BRAND } from "@/lib/constants/design-tokens";
 
 const TARGET_AMBER = "#D97706"; // target reference-line marker (not a brand color)
 
+// ── HC% drill-down: location name → slug mapping ──────────────────────────
+const LOCATION_NAME_TO_SLUG: Record<string, string> = {
+  "Hugo's":        "hugos",
+  "Hugos":         "hugos",
+  "InterCon":      "inter",
+  "Inter":         "inter",
+  "InterContinental": "inter",
+  "Ramla":         "ramla",
+  "Ramla Bay":     "ramla",
+  "Hyatt":         "hyatt",
+  "Excelsior":     "excelsior",
+  "ODYCY":         "odycy",
+  "Odycy":         "odycy",
+  "Sunny Coast":   "odycy",
+  "Labranda":      "labranda",
+  "Riviera":       "labranda",
+  "Riveira":       "labranda",
+  "Novotel":       "novotel",
+  "HQ":            "hq",
+  "Aesthetics":    "aesthetics",
+  "Slimming":      "slimming",
+  "Spa":           "hugos", // fallback for brand-level "Spa" BU
+};
+
+const SLUG_DISPLAY: Record<string, string> = {
+  hugos:       "Hugo's Lounge",
+  inter:       "InterContinental",
+  ramla:       "Ramla Bay",
+  hyatt:       "Hyatt",
+  excelsior:   "Excelsior",
+  odycy:       "ODYCY",
+  labranda:    "Labranda Riviera",
+  novotel:     "Novotel",
+  hq:          "HQ / Management",
+  aesthetics:  "Aesthetics",
+  slimming:    "Slimming",
+};
+
+function locationNameToSlug(name: string): string {
+  return LOCATION_NAME_TO_SLUG[name] ?? name.toLowerCase().replace(/\s+/g, "");
+}
+
 import { SPA_LOCATION_COLOR_BY_NAME, SPA_LOCATION_FALLBACK_COLOR } from "@/lib/constants/spa-locations";
 import {
   useTalexioHeadcount,
@@ -22,7 +64,7 @@ import {
   useTalexioSickLeave,
   type TalexioEmployeeWithLeaveRequests,
 } from "@/lib/hooks/useTalexio";
-import { useHRFinancials, useHRRevPAH, useWe360Productivity, useHREmployeeMovement } from "@/lib/hooks/useHRData";
+import { useHRFinancials, useHRRevPAH, useWe360Productivity, useHREmployeeMovement, useLocationSplits, type EmployeeLocationSplit } from "@/lib/hooks/useHRData";
 import { computeHRCommentary, type HRCommentaryInput, type HRCommentaryOutput } from "@/lib/commentary/engine";
 import { normaliseLocation, LOCATION_TO_BRAND } from "@/lib/constants/hr-mapping";
 import { useAttendance, type AttendanceFilter } from "@/lib/hooks/useAttendance";
@@ -486,6 +528,9 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const [modalIssueFilter, setModalIssueFilter] = useState<"late" | "early">("late");
   const attendanceHistoryRef = useRef<HTMLDivElement>(null);
 
+  // ── HC% drill-down state ──────────────────────────────────────────────────
+  const [drillLocation, setDrillLocation] = useState<string | null>(null);
+
   // ── Live data: Talexio ────────────────────────────────────────────────────
   const headcountQ = useTalexioHeadcount();
   const timeLogsQ = useTalexioTimeLogs();
@@ -509,6 +554,9 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const revpahQ      = useHRRevPAH(month);
   const we360Q       = useWe360Productivity(fromISO, toISO);
   const movementQ    = useHREmployeeMovement(26);
+
+  // ── HC% drill-down: location-level wage attribution ───────────────────────
+  const locationSplitsQ = useLocationSplits(month, drillLocation ?? undefined);
 
   // ── Talexio-derived views (memoized) ──────────────────────────────────────
   const activeEmployees = useMemo(
@@ -946,12 +994,19 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           </h2>
           <p className="text-xs text-muted-foreground mb-4">
             Payroll as % of revenue — lower is more efficient
+            <span className="ml-2 text-sky-600 font-medium">· Click a bar to see employee breakdown</span>
           </p>
           <ResponsiveContainer width="100%" height={hcByLocation.length * 48 + 50}>
             <BarChart
               data={hcByLocation}
               layout="vertical"
               margin={{ top: 5, right: 80, left: 10, bottom: 5 }}
+              onClick={(data) => {
+                if (data?.activeLabel) {
+                  setDrillLocation(locationNameToSlug(String(data.activeLabel)));
+                }
+              }}
+              style={{ cursor: "pointer" }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
               <XAxis type="number" tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11 }} />
@@ -1651,6 +1706,170 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
       {/* ══════════════════════════════════════════════════════════════════
           CLOCKED IN TODAY MODAL — live Talexio data
           ══════════════════════════════════════════════════════════════════ */}
+      {/* ══════════════════════════════════════════════════════════════════
+          HC% DRILL-DOWN SLIDE-OVER — per-employee wage attribution
+          Opened by clicking a bar in the HC% by Location chart.
+          ══════════════════════════════════════════════════════════════════ */}
+      {drillLocation !== null && (() => {
+        const displayName = SLUG_DISPLAY[drillLocation] ?? drillLocation;
+        const splitsData  = locationSplitsQ.data;
+        const locTotal    = splitsData?.locationTotals?.[drillLocation] ?? 0;
+        const totalPay    = splitsData?.totalPayroll ?? 0;
+        const groupPct    = totalPay > 0 ? ((locTotal / totalPay) * 100).toFixed(1) : "—";
+
+        // Employees that have any attribution to this location
+        const employees: EmployeeLocationSplit[] = (splitsData?.employees ?? []).filter(
+          (e) => (e.wageAttribution?.[drillLocation] ?? 0) > 0,
+        );
+
+        return (
+          <div
+            className="fixed inset-0 z-50 flex"
+            onClick={() => setDrillLocation(null)}
+            onKeyDown={(e) => e.key === "Escape" && setDrillLocation(null)}
+          >
+            {/* Backdrop */}
+            <div className="flex-1 bg-black/40 backdrop-blur-sm" />
+            {/* Panel */}
+            <div
+              className="relative bg-white shadow-2xl flex flex-col overflow-hidden"
+              style={{ width: "min(640px, 95vw)" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">
+                    {displayName}
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Employee wage attribution · {month}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setDrillLocation(null)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors text-lg font-light mt-0.5"
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* Summary chips */}
+              {splitsData && (
+                <div className="flex flex-wrap gap-3 px-6 py-3 border-b border-slate-100 bg-slate-50 shrink-0">
+                  <div className="flex flex-col items-center bg-white rounded-lg border border-slate-200 px-4 py-2 min-w-[100px]">
+                    <span className="text-xs text-muted-foreground">Wage attributed</span>
+                    <span className="text-sm font-bold text-slate-900 mt-0.5">{formatCurrency(locTotal)}</span>
+                  </div>
+                  <div className="flex flex-col items-center bg-white rounded-lg border border-slate-200 px-4 py-2 min-w-[100px]">
+                    <span className="text-xs text-muted-foreground">Employees</span>
+                    <span className="text-sm font-bold text-slate-900 mt-0.5">{employees.length}</span>
+                  </div>
+                  <div className="flex flex-col items-center bg-white rounded-lg border border-slate-200 px-4 py-2 min-w-[100px]">
+                    <span className="text-xs text-muted-foreground">% of group payroll</span>
+                    <span className="text-sm font-bold text-slate-900 mt-0.5">{groupPct}%</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Employee table */}
+              <div className="flex-1 overflow-auto px-4 py-3">
+                {locationSplitsQ.isLoading ? (
+                  <TableSkeleton rows={8} columns={5} />
+                ) : locationSplitsQ.isError ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center gap-2">
+                    <p className="text-sm text-red-500 font-medium">Failed to load attribution data</p>
+                    <p className="text-xs text-muted-foreground">Try again or check the API endpoint.</p>
+                  </div>
+                ) : employees.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center gap-2">
+                    <p className="text-sm text-muted-foreground font-medium">No employee attributions found for {displayName}</p>
+                    <p className="text-xs text-muted-foreground">This location may not have wage split data for {month}.</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-200">
+                        <th className="text-left py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Employee</th>
+                        <th className="text-left py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Home</th>
+                        <th className="text-right py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Gross</th>
+                        <th className="text-right py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Split%</th>
+                        <th className="text-right py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Attributed</th>
+                        <th className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Source</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {employees
+                        .sort((a, b) => (b.wageAttribution?.[drillLocation] ?? 0) - (a.wageAttribution?.[drillLocation] ?? 0))
+                        .map((emp) => {
+                          const splitPct  = ((emp.locationSplits?.[drillLocation] ?? 0) * 100).toFixed(1);
+                          const attributed = emp.wageAttribution?.[drillLocation] ?? 0;
+                          const isCross   = emp.homeLocationSlug !== drillLocation;
+                          const sourceLabel = emp.attributionSource === "gps_timelogs"
+                            ? "GPS"
+                            : emp.attributionSource === "org_unit_static"
+                            ? "Org Unit"
+                            : "No data";
+                          const sourceCls = emp.attributionSource === "gps_timelogs"
+                            ? "bg-emerald-50 text-emerald-700"
+                            : emp.attributionSource === "org_unit_static"
+                            ? "bg-sky-50 text-sky-700"
+                            : "bg-slate-50 text-slate-500";
+                          return (
+                            <tr key={emp.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                              <td className="py-2.5 px-2 font-medium text-slate-900">{emp.employeeName}</td>
+                              <td className="py-2.5 px-2">
+                                {isCross ? (
+                                  <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 text-xs px-2 py-0.5 font-medium">
+                                    {SLUG_DISPLAY[emp.homeLocationSlug] ?? emp.homeLocation}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-500 text-xs">Home</span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-2 text-right text-slate-700">{formatCurrency(emp.grossWage)}</td>
+                              <td className="py-2.5 px-2 text-right font-semibold text-slate-900">{splitPct}%</td>
+                              <td className="py-2.5 px-2 text-right font-bold text-slate-900">{formatCurrency(attributed)}</td>
+                              <td className="py-2.5 px-2 text-center">
+                                <span className={`inline-flex items-center rounded-full text-xs px-2 py-0.5 font-medium ${sourceCls}`}>
+                                  {sourceLabel}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                    {employees.length > 1 && (
+                      <tfoot>
+                        <tr className="border-t-2 border-slate-300 bg-slate-50">
+                          <td colSpan={4} className="py-2.5 px-2 text-xs font-semibold text-slate-700 uppercase tracking-wide">Total</td>
+                          <td className="py-2.5 px-2 text-right font-bold text-slate-900">{formatCurrency(locTotal)}</td>
+                          <td />
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                )}
+              </div>
+
+              {/* Footer link */}
+              <div className="px-6 py-3 border-t border-slate-100 shrink-0 flex items-center justify-between bg-slate-50">
+                <span className="text-xs text-muted-foreground">
+                  Attribution method: GPS shift logs where available, org-unit static otherwise.
+                </span>
+                <a
+                  href={`/hr/location-attribution?month=${month}`}
+                  className="text-xs font-medium text-sky-600 hover:text-sky-800 hover:underline transition-colors whitespace-nowrap ml-4"
+                >
+                  View full attribution page →
+                </a>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {clockedInModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-start justify-center pt-12 pb-8 px-4 bg-black/50 backdrop-blur-sm"
