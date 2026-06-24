@@ -6,7 +6,7 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { Card } from "@/components/ui/card";
 import {
   RefreshCw, Download, Plus, Trash2, ChevronDown, ChevronUp,
-  CheckCircle2, AlertCircle, Settings2, Loader2, Users,
+  CheckCircle2, AlertCircle, Settings2, Loader2, Users, MapPin,
 } from "lucide-react";
 import {
   useWageRoles,
@@ -1162,6 +1162,301 @@ function SalarySupplementSection() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// LOCATION SPLITS
+// ══════════════════════════════════════════════════════════════════════════════
+
+const LOCATION_DISPLAY: Record<string, string> = {
+  hugos:      "Hugo's Lounge",
+  inter:      "InterContinental",
+  ramla:      "Ramla Bay",
+  hyatt:      "Hyatt",
+  excelsior:  "Excelsior",
+  odycy:      "ODYCY",
+  labranda:   "Labranda Riviera",
+  novotel:    "Novotel",
+  hq:         "HQ / Management",
+  aesthetics: "Aesthetics",
+  slimming:   "Slimming",
+};
+
+interface LocationSplitRow {
+  employee_id: number;
+  employee_name: string;
+  home_location: string | null;
+  gross_wage: number;
+  splits: Record<string, number>; // slug → fraction (0-1)
+  attribution_source: "org unit" | "GPS" | "no position";
+}
+
+interface LocationSplitsData {
+  month: string;
+  rows: LocationSplitRow[];
+}
+
+interface LocationTotal {
+  slug: string;
+  label: string;
+  total: number;
+  employeeCount: number;
+}
+
+function buildLocationTotals(rows: LocationSplitRow[]): LocationTotal[] {
+  const map = new Map<string, { total: number; employees: Set<number> }>();
+  for (const row of rows) {
+    for (const [slug, frac] of Object.entries(row.splits)) {
+      if (!map.has(slug)) map.set(slug, { total: 0, employees: new Set() });
+      const entry = map.get(slug)!;
+      entry.total += row.gross_wage * frac;
+      entry.employees.add(row.employee_id);
+    }
+  }
+  return Array.from(map.entries())
+    .map(([slug, { total, employees }]) => ({
+      slug,
+      label: LOCATION_DISPLAY[slug] ?? slug,
+      total,
+      employeeCount: employees.size,
+    }))
+    .sort((a, b) => b.total - a.total);
+}
+
+function sourceBadge(source: LocationSplitRow["attribution_source"]) {
+  if (source === "org unit") return (
+    <span className="inline-flex items-center rounded-sm border border-blue-200 bg-blue-50 px-1.5 py-px text-[10px] font-medium text-blue-700">org unit</span>
+  );
+  if (source === "GPS") return (
+    <span className="inline-flex items-center rounded-sm border border-emerald-200 bg-emerald-50 px-1.5 py-px text-[10px] font-medium text-emerald-700">GPS</span>
+  );
+  return (
+    <span className="inline-flex items-center rounded-sm border border-amber-200 bg-amber-50 px-1.5 py-px text-[10px] font-medium text-amber-700">no position</span>
+  );
+}
+
+function splitSummary(row: LocationSplitRow): string {
+  const entries = Object.entries(row.splits).sort((a, b) => b[1] - a[1]);
+  if (entries.length === 0) return "—";
+  const [homeSlug, homeFrac] = entries[0];
+  const homeLabel = LOCATION_DISPLAY[homeSlug] ?? homeSlug;
+  const parts = [`Home: ${Math.round(homeFrac * 100)}%`];
+  for (const [slug, frac] of entries.slice(1)) {
+    if (frac > 0) parts.push(`Cross: ${Math.round(frac * 100)}% @ ${LOCATION_DISPLAY[slug] ?? slug}`);
+  }
+  return parts.join(" · ");
+}
+
+const LOCATION_SPLITS_MONTH_OPTIONS: Array<{ value: string; label: string }> = (() => {
+  const opts: Array<{ value: string; label: string }> = [];
+  for (let y = 2025; y <= 2027; y++) {
+    for (let m = 1; m <= 12; m++) {
+      const mm = String(m).padStart(2, "0");
+      opts.push({ value: `${y}-${mm}`, label: `${MONTH_NAMES[m - 1]} ${y}` });
+    }
+  }
+  return opts;
+})();
+
+function LocationSplitsSection() {
+  const [month, setMonth] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [data, setData]           = useState<LocationSplitsData | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isComputing, setIsComputing] = useState(false);
+  const [error, setError]         = useState<string | null>(null);
+  const [computeMsg, setComputeMsg] = useState<string | null>(null);
+
+  // Load display data
+  async function loadData(m: string) {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/hr/location-splits?month=${m}`);
+      if (!res.ok) {
+        const text = await res.text().catch(() => res.statusText);
+        throw new Error(`Server error ${res.status}: ${text}`);
+      }
+      const json = await res.json();
+      setData(json);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  // Compute from Talexio then reload
+  async function handleCompute() {
+    setIsComputing(true);
+    setComputeMsg(null);
+    setError(null);
+    try {
+      const res = await fetch(`/api/etl/talexio-location-splits?month=${month}`, { method: "POST" });
+      if (!res.ok) {
+        const text = await res.text().catch(() => res.statusText);
+        throw new Error(`Compute error ${res.status}: ${text}`);
+      }
+      const json = await res.json();
+      const count = json.employees_computed ?? json.count ?? json.rows ?? "?";
+      setComputeMsg(`Computed for ${count} employees`);
+      await loadData(month);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsComputing(false);
+    }
+  }
+
+  // Auto-load when month changes
+  useEffect(() => {
+    loadData(month);
+  }, [month]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const rows = data?.rows ?? [];
+  const locationTotals = buildLocationTotals(rows);
+  const grandTotal = rows.reduce((s, r) => s + r.gross_wage, 0);
+
+  return (
+    <div className="space-y-6">
+      {/* Header row */}
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+        <div>
+          <p className="text-sm text-muted-foreground">
+            Per-employee wage attribution computed from Talexio org units and GPS clock-ins.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <select
+            value={month}
+            onChange={(e) => { setMonth(e.target.value); setComputeMsg(null); }}
+            className="text-sm border border-border rounded-md px-3 py-1.5 bg-background text-foreground"
+          >
+            {LOCATION_SPLITS_MONTH_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          {computeMsg && (
+            <span className="text-xs px-2 py-1 rounded-md bg-green-50 text-green-700">{computeMsg}</span>
+          )}
+          <button
+            onClick={handleCompute}
+            disabled={isComputing || isLoading}
+            className="inline-flex items-center gap-2 rounded-md bg-gold px-4 py-1.5 text-sm font-medium text-white hover:bg-gold/90 disabled:opacity-50 transition-colors"
+          >
+            {isComputing
+              ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Computing…</>
+              : <><RefreshCw className="h-3.5 w-3.5" />Compute from Talexio</>
+            }
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="px-4 py-3 text-sm text-red-700 bg-red-50/60 border border-red-200 rounded-md">{error}</div>
+      )}
+
+      {/* Loading state */}
+      {isLoading && (
+        <div className="flex items-center justify-center py-16 text-text-secondary gap-2">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          <span className="text-sm">Loading…</span>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!isLoading && rows.length === 0 && !error && (
+        <Card className="p-12 text-center">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-12 w-12 rounded-full bg-warm-gray flex items-center justify-center">
+              <MapPin className="h-6 w-6 text-text-secondary" />
+            </div>
+            <div>
+              <p className="font-semibold text-charcoal">No data for this month</p>
+              <p className="text-sm text-text-secondary mt-1">
+                Click <strong>Compute from Talexio</strong> to generate location splits.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Summary cards */}
+      {!isLoading && locationTotals.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-3">Location Totals</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            {locationTotals.map((loc) => (
+              <Card key={loc.slug} className="p-3">
+                <p className="text-xs text-muted-foreground truncate">{loc.label}</p>
+                <p className="text-lg font-bold text-foreground mt-1">{fmtCurrency(loc.total)}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{loc.employeeCount} employee{loc.employeeCount !== 1 ? "s" : ""}</p>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Employee attribution table */}
+      {!isLoading && rows.length > 0 && (
+        <Card className="overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-warm-border bg-warm-white flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-charcoal">Employee Attribution</h2>
+              <p className="text-xs text-text-secondary mt-0.5">
+                {rows.length} employees · Grand total: {fmtCurrency(grandTotal)}
+              </p>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-warm-border bg-warm-gray/50">
+                  <th className="text-left py-2.5 px-4 text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Employee</th>
+                  <th className="text-left py-2.5 px-4 text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Home Location</th>
+                  <th className="text-right py-2.5 px-4 text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Gross Wage</th>
+                  <th className="text-left py-2.5 px-4 text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Split %</th>
+                  <th className="text-left py-2.5 px-4 text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.employee_id} className="border-b border-warm-border last:border-0 hover:bg-warm-gray/30 transition-colors">
+                    <td className="py-2 px-4 text-foreground font-medium whitespace-nowrap">{row.employee_name}</td>
+                    <td className="py-2 px-4 text-xs text-muted-foreground whitespace-nowrap">
+                      {row.home_location ? (LOCATION_DISPLAY[row.home_location] ?? row.home_location) : <span className="italic text-text-secondary">—</span>}
+                    </td>
+                    <td className="py-2 px-4 text-right text-xs tabular-nums font-medium text-foreground whitespace-nowrap">
+                      {fmtCurrency(row.gross_wage)}
+                    </td>
+                    <td className="py-2 px-4 text-xs text-muted-foreground">
+                      {splitSummary(row)}
+                    </td>
+                    <td className="py-2 px-4">
+                      {sourceBadge(row.attribution_source)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-warm-border bg-warm-gray/30">
+                  <td colSpan={2} className="py-2.5 px-4 text-xs font-medium text-text-secondary">
+                    Total ({rows.length} employees)
+                  </td>
+                  <td className="py-2.5 px-4 text-right text-xs tabular-nums font-bold text-foreground whitespace-nowrap">
+                    {fmtCurrency(grandTotal)}
+                  </td>
+                  <td colSpan={2} />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // PAGE
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -1169,6 +1464,7 @@ const TABS = [
   { key: "coa",        label: "COA Mapping"       },
   { key: "employee",   label: "Employee Mapping"   },
   { key: "supplement", label: "Salary Supplement"  },
+  { key: "location",   label: "Location Splits"    },
 ] as const;
 
 type Tab = (typeof TABS)[number]["key"];
@@ -1210,6 +1506,7 @@ export default function EbitdaMappingPage() {
           {tab === "coa"        && <CoaMappingSection        />}
           {tab === "employee"   && <EmployeeMappingSection   />}
           {tab === "supplement" && <SalarySupplementSection  />}
+          {tab === "location"   && <LocationSplitsSection    />}
         </div>
       )}
     </DashboardShell>
