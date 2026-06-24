@@ -124,7 +124,7 @@ export async function GET(req: NextRequest) {
   const [revenueRes, spaRes, aestheticsRes, crmAgentsRes, ghlCrmRes,
          metaCampaignsRes, googleCampaignsRes, klaviyoRes, klaviyoFlowsRes, talexioHrRes, we360Res,
          googleReviewsRes, diligenceAuditRes, brandStandardsRes, gscRes,
-         attendanceDailyRes, therapistShiftsRes, wixOrdersRes] = await Promise.allSettled([
+         attendanceDailyRes, therapistShiftsRes, wixOrdersRes, talexioLocationSplitsRes] = await Promise.allSettled([
     fetch(`${BASE_URL}/api/etl/revenue-refresh`,              { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/zoho-spa-transactions`,        { method: "POST", headers, body: payload }),
     fetch(`${BASE_URL}/api/etl/zoho-aesthetics-transactions`, { method: "POST", headers, body: payload }),
@@ -144,6 +144,8 @@ export async function GET(req: NextRequest) {
     // Therapist shift hours for RevPAH denominator (current month only)
     fetch(`${BASE_URL}/api/etl/therapist-shifts-monthly?month=${currentMonth}`, { method: "POST", headers }),
     fetch(`${BASE_URL}/api/etl/wix-orders-sync`,              { method: "POST", headers, body: payload }),
+    // Talexio location-splits: employee headcount breakdown by location for current month
+    fetch(`${BASE_URL}/api/etl/talexio-location-splits?month=${currentMonth}`, { method: "POST", headers }),
   ]);
 
   // Phase 2: runs after Phase 1 completes.
@@ -190,8 +192,9 @@ export async function GET(req: NextRequest) {
     ["gsc_keywords",        gscRes],
     ["attendance_daily",        attendanceDailyRes],
     ["therapist_shifts_monthly", therapistShiftsRes],
-    ["wix_spa_orders",          wixOrdersRes],
-    ["lead_reconciliation",     leadReconRes],
+    ["wix_spa_orders",               wixOrdersRes],
+    ["talexio_location_splits",      talexioLocationSplitsRes],
+    ["lead_reconciliation",          leadReconRes],
     ["diligence_metrics",       diligenceMetricsRes],
     ["speed_to_lead",           speedToLeadRes],
   ];
