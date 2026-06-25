@@ -392,7 +392,7 @@ async function fetchRangeData(
     return all;
   }
 
-  const [revDaily, revMonthly, aesSales, slimSales, supplement] = await Promise.all([
+  const [revDaily, revMonthly, aesSales, slimSales] = await Promise.all([
     supabase
       .from("spa_revenue_daily")
       .select("location_id, date, services, product_phytomer, product_purest, product_other")
@@ -408,20 +408,11 @@ async function fetchRangeData(
 
     paginateSalesDaily("slimming_sales_daily"),
 
-    supabase
-      .from("salary_supplement_monthly")
-      .select("month, employee_name, amount, spa_slug, role")
-      .in("month", [
-        ...overlappingMonths(shiftMonth(dateFrom, -3), dateFrom.slice(0, 7) + "-01"),
-        ...months,
-      ].filter((v, i, a) => a.indexOf(v) === i))
-      .eq("is_frozen", true),
   ]);
 
   for (const [label, res] of [
     ["spa_revenue_daily",   revDaily],
     ["spa_revenue_monthly", revMonthly],
-    ["salary_supplement_monthly", supplement],
   ] as Array<[string, { error: { message: string } | null }]>) {
     if (res.error) throw new Error(`${label}: ${res.error.message}`);
   }
@@ -877,83 +868,6 @@ async function aggregateRange(
   }
 
   // ── 6. Salary supplement → wages (with prior-month fallback) ─────────────
-  type SuppEntry = { spa_slug: string; amount: number; role: string };
-  const suppByMonth = new Map<string, SuppEntry[]>();
-  for (const row of supplement) {
-    const m = (row.month as string).slice(0, 10); // "YYYY-MM-01"
-    if (!suppByMonth.has(m)) suppByMonth.set(m, []);
-    suppByMonth.get(m)!.push({
-      spa_slug: row.spa_slug ?? "",
-      amount:   Number(row.amount ?? 0),
-      role:     ((row.role as string) || "").toLowerCase().trim() || "unassigned",
-    });
-  }
-  const frozenMonths = Array.from(suppByMonth.keys()).sort();
-
-  if (granularity === "monthly") {
-    for (const targetMonthStr of overlappingMonths(dateFrom, dateTo)) {
-      const yyyyMM = targetMonthStr.slice(0, 7);
-      let rows = suppByMonth.get(targetMonthStr);
-      if (!rows || rows.length === 0) {
-        const candidate = [...frozenMonths].reverse().find(m => m < targetMonthStr);
-        if (candidate) rows = suppByMonth.get(candidate)!;
-      }
-      if (!rows || rows.length === 0) continue;
-
-      const daysInRange = daysOfMonthInRange(targetMonthStr, dateFrom, dateTo);
-      const factor      = daysInRange / totalDaysInMonth(targetMonthStr);
-
-      for (const row of rows) {
-        // salary_supplement_monthly uses short slug "inter"; VENUE_CONFIG uses "intercontinental"
-        const SLUG_NORM: Record<string, string> = { inter: "intercontinental" };
-        const venueKey = SLUG_NORM[row.spa_slug] ?? row.spa_slug;
-        if (!venueKey || !allSlugs.has(venueKey)) continue;
-        const suppRole = (WAGE_ROLES as readonly string[]).includes(row.role) ? row.role : "unassigned";
-        void suppRole; // role detail is not tracked in longitudinal (top-level only)
-        getVM(acc, yyyyMM, venueKey).wages += row.amount * factor;
-      }
-    }
-  } else {
-    // Weekly: pro-rate supplement into weeks (using the same month-resolution fallback)
-    for (const wk of overlappingWeeks(dateFrom, dateTo)) {
-      const [wMon, wSun] = weekBounds(wk);
-      const monthsForWeek = overlappingMonths(
-        wMon > dateFrom ? wMon : dateFrom,
-        wSun < dateTo   ? wSun : dateTo,
-      );
-      for (const targetMonthStr of monthsForWeek) {
-        const monthEnd    = lastDayOfMonth(targetMonthStr);
-        const daysInMo    = totalDaysInMonth(targetMonthStr);
-
-        let rows = suppByMonth.get(targetMonthStr);
-        if (!rows || rows.length === 0) {
-          const candidate = [...frozenMonths].reverse().find(m => m < targetMonthStr);
-          if (candidate) rows = suppByMonth.get(candidate)!;
-        }
-        if (!rows || rows.length === 0) continue;
-
-        // How many days of this month fall within this week (clamped to overall range)
-        const overlapStart = (wMon > targetMonthStr ? wMon : targetMonthStr);
-        const overlapEnd   = (wSun < monthEnd ? wSun : monthEnd);
-        const clampedStart = overlapStart > dateFrom ? overlapStart : dateFrom;
-        const clampedEnd   = overlapEnd   < dateTo   ? overlapEnd   : dateTo;
-        if (clampedStart > clampedEnd) continue;
-        const overlapDays = daysBetween(clampedStart, clampedEnd);
-        const factor = overlapDays / daysInMo;
-
-        for (const row of rows) {
-          // salary_supplement_monthly uses short slug "inter"; VENUE_CONFIG uses "intercontinental"
-          const SLUG_NORM: Record<string, string> = { inter: "intercontinental" };
-          const venueKey = SLUG_NORM[row.spa_slug] ?? row.spa_slug;
-          if (!venueKey || !allSlugs.has(venueKey)) continue;
-          const suppRole = (WAGE_ROLES as readonly string[]).includes(row.role) ? row.role : "unassigned";
-          void suppRole;
-          getVM(acc, wk, venueKey).wages += row.amount * factor;
-        }
-      }
-    }
-  }
-
   // ── 7. TTM-based fallback for partial/missing months ──────────────────────
   // For each active fallback rule: if no real transaction exists for that
   // account+venue in a given month, apply TTM/previous_month/manual estimate.

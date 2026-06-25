@@ -236,9 +236,7 @@ export async function GET(req: Request) {
   // mutable — wage_role and ad_channel filters may narrow this later
   let txnRows = (rows ?? []) as Array<Record<string, unknown>>;
 
-  // ── Wage role mapping + supplement ─────────────────────────────────────────
-  type SuppRow = { employee_name: string; amount: number; month: string; role?: string };
-  let suppRows: SuppRow[] = [];
+  // ── Wage role mapping ─────────────────────────────────────────────────────
   let wageRoleMap = new Map<string, string>();
 
   if (ebitdaLine === "wages") {
@@ -247,61 +245,11 @@ export async function GET(req: Request) {
       wageRoleMap.set((r.contact_key as string).toLowerCase().trim(), r.role as string);
     }
 
-    // Build overlapping months — pure string arithmetic to avoid UTC/local timezone bugs
-    const suppMonths: string[] = [];
-    let curY = parseInt(dateFrom.slice(0, 4), 10), curM = parseInt(dateFrom.slice(5, 7), 10);
-    const endY = parseInt(dateTo.slice(0, 4), 10),  endM = parseInt(dateTo.slice(5, 7), 10);
-    while (curY < endY || (curY === endY && curM <= endM)) {
-      suppMonths.push(`${curY}-${String(curM).padStart(2, "0")}-01`);
-      curM++; if (curM > 12) { curM = 1; curY++; }
-    }
-
-    // salary_supplement_monthly uses "inter" for InterContinental; VENUE_CONFIG uses "intercontinental".
-    // Normalise before querying so we don't miss supplement rows.
-    const VENUE_TO_SUPP: Record<string, string> = { intercontinental: "inter" };
-    const SPA_SUPP_SLUGS = SPA_VENUE_SLUGS.map(s => VENUE_TO_SUPP[s] ?? s);
-
-    let sdQuery = supabase
-      .from("salary_supplement_monthly")
-      .select("month, employee_name, amount, role")
-      .eq("is_frozen", true)
-      .in("month", suppMonths);
-    if (isSpaAgg) {
-      sdQuery = sdQuery.in("spa_slug", SPA_SUPP_SLUGS);
-    } else {
-      sdQuery = sdQuery.eq("spa_slug", VENUE_TO_SUPP[venue!] ?? venue!);
-    }
-    const { data: sd } = await sdQuery;
-
-    for (const s of (sd ?? [])) {
-      const m     = (s.month as string).slice(0, 10);
-      const mY    = parseInt(m.slice(0, 4), 10), mMo = parseInt(m.slice(5, 7), 10);
-      const lastD = new Date(mY, mMo, 0).getDate();
-      const mEnd  = `${mY}-${String(mMo).padStart(2, "0")}-${String(lastD).padStart(2, "0")}`;
-      const rangeStart  = dateFrom! > m    ? dateFrom! : m;
-      const rangeEnd    = dateTo!   < mEnd ? dateTo!   : mEnd;
-      const parseLocal  = (s: string) => { const [y,mo,d] = s.split("-").map(Number); return new Date(y,mo-1,d); };
-      const daysInRange = rangeStart > rangeEnd ? 0 : Math.round((parseLocal(rangeEnd).getTime() - parseLocal(rangeStart).getTime()) / 86_400_000) + 1;
-      const daysInMonth = lastD;
-      const prorated = Number(s.amount ?? 0) * (daysInRange / daysInMonth);
-      if (prorated > 0) suppRows.push({
-        employee_name: s.employee_name as string,
-        amount: +prorated.toFixed(2),
-        month: m,
-        role: ((s.role as string) || "").toLowerCase().trim() || undefined,
-      });
-    }
-
     // ── Wage role filter — apply BEFORE any totals ──────────────────────────
     if (wageRole) {
-      txnRows  = txnRows.filter(r => {
+      txnRows = txnRows.filter(r => {
         const key = ((r.contact_name as string) || "").toLowerCase().trim();
         return (wageRoleMap.get(key) ?? "unassigned") === wageRole;
-      });
-      suppRows = suppRows.filter(s => {
-        // Supplement role from frozen record only — not wage_role_mapping
-        const role = (s.role || "unassigned");
-        return role === wageRole;
       });
     }
   }
@@ -507,45 +455,29 @@ export async function GET(req: Request) {
   }
 
   // ── Contact breakdown ─────────────────────────────────────────────────────
-  type ContactAcc = { zoho: number; supplement: number; bases: Set<string> };
+  type ContactAcc = { zoho: number; bases: Set<string> };
   const contactMap = new Map<string, ContactAcc>();
 
   for (const r of txnRows) {
     const c = (r.contact_name as string) || "Unknown";
-    const existing = contactMap.get(c) ?? { zoho: 0, supplement: 0, bases: new Set() };
+    const existing = contactMap.get(c) ?? { zoho: 0, bases: new Set() };
     existing.zoho += Number(r.amount ?? 0);
     existing.bases.add(txnBasis(r));
     contactMap.set(c, existing);
   }
-  for (const s of suppRows) {
-    const existing = contactMap.get(s.employee_name) ?? { zoho: 0, supplement: 0, bases: new Set() };
-    existing.supplement += s.amount;
-    existing.bases.add("Supplement");
-    contactMap.set(s.employee_name, existing);
-  }
 
   const contacts = Array.from(contactMap.entries())
     .map(([contact, acc]) => {
-      const amount  = acc.zoho + acc.supplement;
-      const role    = ebitdaLine === "wages"
-        ? (() => {
-            // For supplement-only contacts, use the supplement's role field
-            const suppRole = suppRows.find(s => s.employee_name === contact)?.role;
-            if (suppRole) return suppRole;
-            return wageRoleMap.get(contact.toLowerCase().trim()) ?? "unassigned";
-          })()
+      const amount = acc.zoho;
+      const role   = ebitdaLine === "wages"
+        ? (wageRoleMap.get(contact.toLowerCase().trim()) ?? "unassigned")
         : undefined;
-      const source  = acc.zoho > 0 && acc.supplement > 0 ? "both"
-                    : acc.supplement > 0                  ? "salary_supplement"
-                    :                                       "zoho";
       const basesArr = Array.from(acc.bases);
-      const basis   = basesArr.length === 1 ? basesArr[0] : "Mixed";
+      const basis    = basesArr.length === 1 ? basesArr[0] : "Mixed";
       return {
         contact, amount: +amount.toFixed(2),
         share: total > 0 ? +(amount / total * 100).toFixed(1) : 0,
-        role, source, basis,
-        zoho_amount: +acc.zoho.toFixed(2),
-        supplement_amount: +acc.supplement.toFixed(2),
+        role, source: "zoho", basis,
       };
     })
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
@@ -557,11 +489,6 @@ export async function GET(req: Request) {
       const key  = ((r.contact_name as string) || "").toLowerCase().trim();
       const role = wageRoleMap.get(key) ?? "unassigned";
       wageRoleAcc.set(role, (wageRoleAcc.get(role) ?? 0) + Number(r.amount ?? 0));
-    }
-    for (const s of suppRows) {
-      // Supplement role from frozen record only
-      const role = (s.role || "unassigned");
-      wageRoleAcc.set(role, (wageRoleAcc.get(role) ?? 0) + s.amount);
     }
   }
   const wageRoles = Array.from(wageRoleAcc.entries())
@@ -581,32 +508,18 @@ export async function GET(req: Request) {
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
 
   // ── Individual transactions ───────────────────────────────────────────────
-  const transactions = [
-    ...txnRows.map(r => ({
-      txn_id:       r.txn_id as string,
-      date:         r.date as string,
-      contact:      (r.contact_name as string) || "—",
-      account_code: r.account_code as string,
-      account_name: r.account_name as string,
-      txn_type:     r.transaction_type as string,
-      sub_line:     r.ebitda_sub_line as string,
-      amount:       +Number(r.amount ?? 0).toFixed(2),
-      source:       "zoho",
-      basis:        txnBasis(r),
-    })),
-    ...suppRows.map(s => ({
-      txn_id:       `supp-${s.month}-${s.employee_name}`,
-      date:         s.month.slice(0, 10),
-      contact:      s.employee_name,
-      account_code: "SUPPLEMENT",
-      account_name: "Salary Supplement",
-      txn_type:     "salary_supplement",
-      sub_line:     "wages",
-      amount:       s.amount,
-      source:       "salary_supplement",
-      basis:        "Supplement",
-    })),
-  ];
+  const transactions = txnRows.map(r => ({
+    txn_id:       r.txn_id as string,
+    date:         r.date as string,
+    contact:      (r.contact_name as string) || "—",
+    account_code: r.account_code as string,
+    account_name: r.account_name as string,
+    txn_type:     r.transaction_type as string,
+    sub_line:     r.ebitda_sub_line as string,
+    amount:       +Number(r.amount ?? 0).toFixed(2),
+    source:       "zoho",
+    basis:        txnBasis(r),
+  }));
 
   return NextResponse.json({
     is_fallback: false,

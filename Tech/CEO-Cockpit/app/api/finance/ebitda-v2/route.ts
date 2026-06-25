@@ -213,7 +213,7 @@ export async function GET(req: Request) {
 
   // ── 1. Load all config tables in parallel ─────────────────────────────────
   const [allRawCosts, revenueDaily, revenueMonthly, aestheticsSales, slimmingSales,
-         supplement, wageRoles, adPatterns, fallbackRules, hardwiredRules, specialPersons,
+         wageRoles, adPatterns, fallbackRules, hardwiredRules, specialPersons,
          cogsContacts] =
     await Promise.all([
       fetchAllRawCosts(),
@@ -259,17 +259,6 @@ export async function GET(req: Request) {
             .range(off, off + lim - 1),
         "slimming_sales_daily",
       ),
-
-      // Salary supplement — fetch up to 3 months before period start so we can
-      // fall back to the most recent frozen month when the period month has no data.
-      supabase
-        .from("salary_supplement_monthly")
-        .select("month, employee_name, amount, spa_slug, role")   // role = designation from Talexio
-        .in("month", [
-          ...overlappingMonths(shiftMonth(dateFrom, -3), dateFrom.slice(0, 7) + "-01"),
-          ...overlappingMonths(dateFrom, dateTo),
-        ].filter((v, i, a) => a.indexOf(v) === i))   // dedupe
-        .eq("is_frozen", true),
 
       // Wage role mapping: contact_key → role + optional venue_override + prof fee flags
       supabase
@@ -864,76 +853,7 @@ export async function GET(req: Request) {
     }
   }
 
-  // ── 7. Salary supplement → wages (with prior-month fallback) ────────────
-  // Group all fetched supplement rows by month key (YYYY-MM-01).
-  type SuppRow = { spa_slug: string; employee_name: string; amount: number; role?: string };
-  const suppByMonth = new Map<string, SuppRow[]>();
-  for (const row of (supplement.data ?? [])) {
-    const m = (row.month as string).slice(0, 10);
-    if (!suppByMonth.has(m)) suppByMonth.set(m, []);
-    suppByMonth.get(m)!.push({
-      spa_slug:      (row.spa_slug      as string) ?? "",
-      employee_name: (row.employee_name as string) ?? "",
-      amount:        Number(row.amount  ?? 0),
-      role:          ((row.role as string) || "").toLowerCase().trim() || undefined,
-    });
-  }
-
-  // Sorted list of months that have frozen data (for fallback lookup).
-  const frozenMonths = Array.from(suppByMonth.keys()).sort();
-
-  for (const targetMonth of overlappingMonths(dateFrom, dateTo)) {
-    let rows = suppByMonth.get(targetMonth);
-    let sourceMonth = targetMonth;
-    let isFallback  = false;
-
-    if (!rows || rows.length === 0) {
-      // Find the most recent prior frozen month (walk backwards from targetMonth).
-      const candidate = [...frozenMonths].reverse().find(m => m < targetMonth);
-      if (candidate) {
-        rows        = suppByMonth.get(candidate)!;
-        sourceMonth = candidate;
-        isFallback  = true;
-      }
-    }
-
-    if (!rows || rows.length === 0) continue;
-
-    // Pro-rate by days of targetMonth that fall in [dateFrom, dateTo].
-    const daysInRange = daysOfMonthInRange(targetMonth, dateFrom, dateTo);
-    const factor      = daysInRange / totalDaysInMonth(targetMonth);
-
-    for (const row of rows) {
-      // salary_supplement_monthly uses short slugs (e.g. "inter") that differ from
-      // the venue keys in this route (e.g. "intercontinental"). Normalise before lookup.
-      const SLUG_NORM: Record<string, string> = { inter: "intercontinental" };
-      const venueKey = SLUG_NORM[row.spa_slug] ?? row.spa_slug;
-      if (!venueKey || !venues[venueKey]) continue;
-      const amount = row.amount * factor;
-      // Role comes exclusively from the frozen supplement record's role column.
-      // wage_role_mapping is NOT used for supplement — frozen cell is authoritative.
-      const suppRoleRaw = ((row.role as string) || "").toLowerCase().trim() || "unassigned";
-      const suppRole: WageRole = (WAGE_ROLES as readonly string[]).includes(suppRoleRaw)
-        ? (suppRoleRaw as WageRole)
-        : "unassigned";
-      venues[venueKey].wages                  += amount;
-      venues[venueKey].wage_by_role[suppRole] += amount;
-    }
-
-    if (isFallback) {
-      const label = targetMonth.slice(0, 7);
-      const src   = sourceMonth.slice(0, 7);
-      warnings.push(`Salary supplement ${label}: no frozen data — using ${src} as fallback`);
-      fallbackApplied.push({
-        venue:       "all_spa",
-        ebitda_line: "wages_supplement",
-        rule_type:   `prior_month_fallback (${src})`,
-        value:       rows.reduce((s, r) => s + r.amount, 0) * factor,
-      });
-    }
-  }
-
-  // ── 8. Compute EBITDA per venue ───────────────────────────────────────────
+  // ── 7. Compute EBITDA per venue ───────────────────────────────────────────
   for (const vc of VENUE_CONFIG) {
     const v = venues[vc.slug];
     v.ebitda = v.revenue - v.wages - v.advertising - v.sga - v.cogs - v.rent - v.utilities;
