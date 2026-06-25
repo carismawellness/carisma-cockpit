@@ -262,6 +262,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Skip employees with no salary to attribute (no payslip for the month and
+    // no prior payslip to extrapolate from). They contribute €0 to every
+    // location and would otherwise (a) emit zero-wage rows that clutter the
+    // per-location employee lists and (b) be mislabeled wage_source='payslip'
+    // despite having no payslip. QC 2026-06-25.
+    if (monthlyGross <= 0) continue;
+
     // ── Working shifts (SHIFT | FLEXIBLE_SHIFT only) ──────────────────────────
     const workingShifts = (emp.workShifts ?? [])
       .filter((s) => WORKING_SHIFT_TYPES.has(s.type))
