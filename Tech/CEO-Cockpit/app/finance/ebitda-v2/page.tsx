@@ -357,9 +357,13 @@ function DrillDialog({
                           </thead>
                           <tbody>
                             {data.contacts.map(c => {
-                              const srcCls = "bg-blue-100 text-blue-700";
+                              const srcCls =
+                                c.source === "cash_salary" ? "bg-purple-100 text-purple-700" :
+                                c.source === "both"        ? "bg-indigo-100 text-indigo-700" :
+                                "bg-blue-100 text-blue-700";
                               const srcLabel =
                                 c.source === "cash_salary" ? "Cash" :
+                                c.source === "both"        ? "Zoho + Cash" :
                                 "Zoho";
                               const basisCls =
                                 (c.basis ?? "").includes("split") || (c.basis ?? "").includes("Split")
