@@ -182,43 +182,57 @@ export function useWe360Productivity(from: string, to: string) {
 }
 
 // ── Talexio location splits (payroll attribution by work location) ────────────
+// Source of truth: DAILY table `employee_location_splits_daily`, aggregated over
+// an arbitrary date range by the /api/hr/location-splits route.
 
 export interface EmployeeLocationSplit {
-  id: number;
   talexioId: number;
   employeeName: string;
   homeLocation: string;
   homeLocationSlug: string;
+  /** Sum of this employee's wage_share in range = attributed pay (2dp). */
   grossWage: number;
-  totalEvents: number;
+  /** Rostered working shifts in range (shift_type != 'NO_ROSTER'). */
+  rosteredDays: number;
+  /** slug -> fraction of grossWage (sums to ~1.0), 4dp. */
   locationSplits: Record<string, number>;
+  /** slug -> euros attributed (2dp). */
   wageAttribution: Record<string, number>;
-  shiftBreakdown: Record<string, number> | null;
-  attributionSource: "gps_timelogs" | "org_unit_static" | "no_position";
+  /** slug -> number of days/shifts in range. */
+  dayCounts: Record<string, number>;
+  wageSource: "payslip" | "extrapolated" | "mixed";
+  /** true if any row in range is extrapolated. */
+  isExtrapolated: boolean;
+  attributionSource:
+    | "cost_centre"
+    | "org_unit_fallback"
+    | "no_roster"
+    | "mixed";
   computedAt: string;
 }
 
 export interface LocationSplitsData {
-  month: string;
+  from: string;
+  to: string;
   employees: EmployeeLocationSplit[];
   locationTotals: Record<string, number>;
   totalPayroll: number;
   employeeCount: number;
-  crossLocationCount: number;
+  extrapolatedCount: number;
   lastComputed: string | null;
 }
 
-export function useLocationSplits(month: string, location?: string) {
+export function useLocationSplits(from: string, to: string, location?: string) {
   return useQuery<LocationSplitsData>({
-    queryKey: ["location-splits", month, location ?? "all"],
+    queryKey: ["location-splits", from, to, location ?? "all"],
     queryFn: async () => {
-      const params = new URLSearchParams({ month });
+      const params = new URLSearchParams({ from, to });
       if (location) params.set("location", location);
       const res = await fetch(`/api/hr/location-splits?${params}`);
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
-    enabled: !!month,
+    enabled: !!from && !!to,
     staleTime: 5 * 60 * 1000,
   });
 }

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   BarChart,
   Bar,
@@ -63,12 +64,29 @@ function slugColor(slug: string): string {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// MONTH HELPERS
+// DATE HELPERS
 // ════════════════════════════════════════════════════════════════════════════
 
-function getDefaultMonth(): string {
+function pad(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function toISO(d: Date): string {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function currentMonthRange(): { from: string; to: string } {
   const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const from = new Date(now.getFullYear(), now.getMonth(), 1);
+  const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return { from: toISO(from), to: toISO(to) };
+}
+
+function monthToRange(ym: string): { from: string; to: string } {
+  const [y, m] = ym.split("-").map(Number);
+  const from = new Date(y, m - 1, 1);
+  const to = new Date(y, m, 0);
+  return { from: toISO(from), to: toISO(to) };
 }
 
 function lastSixMonths(): string[] {
@@ -76,9 +94,7 @@ function lastSixMonths(): string[] {
   const now = new Date();
   for (let i = 0; i < 6; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push(
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-    );
+    months.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}`);
   }
   return months;
 }
@@ -125,23 +141,30 @@ function SourceBadge({
 }: {
   source: EmployeeLocationSplit["attributionSource"];
 }) {
-  if (source === "gps_timelogs") {
+  if (source === "cost_centre") {
     return (
-      <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-800">
-        GPS
+      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
+        roster
       </span>
     );
   }
-  if (source === "org_unit_static") {
+  if (source === "org_unit_fallback") {
     return (
-      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
+      <span className="inline-flex items-center rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-semibold text-sky-800">
         org unit
+      </span>
+    );
+  }
+  if (source === "mixed") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-violet-100 px-2.5 py-0.5 text-xs font-semibold text-violet-800">
+        mixed
       </span>
     );
   }
   return (
     <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
-      no position
+      no roster
     </span>
   );
 }
@@ -151,8 +174,8 @@ function SourceBadge({
 // ════════════════════════════════════════════════════════════════════════════
 
 function SummaryBar({ data }: { data: LocationSplitsData }) {
-  const staticCount = data.employees.filter(
-    (e) => e.attributionSource === "org_unit_static"
+  const rosterCount = data.employees.filter(
+    (e) => e.attributionSource === "cost_centre"
   ).length;
 
   return (
@@ -161,14 +184,14 @@ function SummaryBar({ data }: { data: LocationSplitsData }) {
         { label: "Total Payroll", value: fmtCurrency(data.totalPayroll) },
         { label: "Employees", value: String(data.employeeCount) },
         {
-          label: "Cross-location (GPS)",
-          value: String(data.crossLocationCount),
-          accent: "text-blue-600",
+          label: "Roster-based",
+          value: String(rosterCount),
+          accent: "text-emerald-600",
         },
         {
-          label: "Static (org unit)",
-          value: String(staticCount),
-          accent: "text-emerald-600",
+          label: "Estimated wages",
+          value: String(data.extrapolatedCount),
+          accent: data.extrapolatedCount > 0 ? "text-amber-600" : "text-slate-900",
         },
       ].map((item) => (
         <div
@@ -354,22 +377,30 @@ function WageAttributionCell({
 }
 
 function EmployeeRow({ emp }: { emp: EmployeeLocationSplit }) {
-  const isGPS = emp.attributionSource === "gps_timelogs";
+  const isRoster = emp.attributionSource === "cost_centre";
 
   return (
     <tr
       className={`border-b border-slate-100 transition-colors hover:bg-slate-50 ${
-        isGPS ? "border-l-4 border-l-blue-400 bg-blue-50/30" : ""
+        isRoster ? "border-l-4 border-l-emerald-400 bg-emerald-50/30" : ""
       }`}
     >
       <td className="py-3 pl-4 pr-2">
         <span className="font-medium text-slate-900">{emp.employeeName}</span>
+        {emp.isExtrapolated && (
+          <span className="ml-1.5 inline-flex items-center rounded-sm bg-amber-50 px-1 py-px text-[9px] font-medium text-amber-700">
+            est.
+          </span>
+        )}
       </td>
       <td className="px-2 py-3 text-sm text-slate-600">
-        {emp.homeLocation || slugDisplay(emp.homeLocationSlug)}
+        {slugDisplay(emp.homeLocationSlug) || "—"}
       </td>
       <td className="px-2 py-3 text-right text-sm font-semibold tabular-nums text-slate-900">
         {fmtCurrency(emp.grossWage)}
+      </td>
+      <td className="px-2 py-3 text-right text-sm tabular-nums text-slate-600">
+        {emp.rosteredDays}
       </td>
       <td className="px-2 py-3">
         <LocationSplitCell splits={emp.locationSplits} />
@@ -421,7 +452,10 @@ function EmployeeTable({
               Home Location
             </th>
             <th className="px-2 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Gross Wage
+              Wage (range)
+            </th>
+            <th className="px-2 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Rostered Days
             </th>
             <th className="px-2 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
               Location Split
@@ -436,7 +470,7 @@ function EmployeeTable({
         </thead>
         <tbody>
           {filtered.map((emp) => (
-            <EmployeeRow key={emp.id} emp={emp} />
+            <EmployeeRow key={emp.talexioId} emp={emp} />
           ))}
         </tbody>
       </table>
@@ -456,7 +490,7 @@ function EmptyState() {
   return (
     <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-8 py-16 text-center">
       <p className="text-base font-semibold text-slate-600">
-        No attribution data for this month.
+        No attribution data for this range.
       </p>
       <p className="mt-2 text-sm text-slate-400">
         Go to{" "}
@@ -473,23 +507,41 @@ function EmptyState() {
 // PAGE
 // ════════════════════════════════════════════════════════════════════════════
 
-export default function LocationAttributionPage() {
-  const [month, setMonth] = useState<string>(getDefaultMonth);
+function LocationAttributionContent() {
+  const searchParams = useSearchParams();
+
+  // Seed the range from URL params (from/to or month), else current month.
+  const initial = (() => {
+    const f = searchParams.get("from");
+    const t = searchParams.get("to");
+    if (f && t) return { from: f, to: t };
+    const m = searchParams.get("month");
+    if (m && /^\d{4}-\d{2}$/.test(m)) return monthToRange(m);
+    return currentMonthRange();
+  })();
+
+  // URL params (from drill-down links) seed the initial range on mount; after
+  // that the user drives the range via the date inputs / quick-select.
+  const [from, setFrom] = useState<string>(initial.from);
+  const [to, setTo] = useState<string>(initial.to);
   const [activeSlug, setActiveSlug] = useState<string>("all");
 
-  const { data, isLoading, error } = useLocationSplits(month);
+  const { data, isLoading, error } = useLocationSplits(from, to);
 
   const months = lastSixMonths();
 
   // Derive ordered list of slugs present in data for filter buttons
   const allSlugs: string[] = data
-    ? Object.keys(data.locationTotals).sort((a, b) =>
-        (data.locationTotals[b] ?? 0) - (data.locationTotals[a] ?? 0)
+    ? Object.keys(data.locationTotals).sort(
+        (a, b) =>
+          (data.locationTotals[b] ?? 0) - (data.locationTotals[a] ?? 0)
       )
     : [];
 
-  function handleMonthChange(m: string) {
-    setMonth(m);
+  function handleMonthQuickSelect(m: string) {
+    const r = monthToRange(m);
+    setFrom(r.from);
+    setTo(r.to);
     setActiveSlug("all");
   }
 
@@ -497,7 +549,7 @@ export default function LocationAttributionPage() {
     <div className="min-h-screen bg-slate-50">
       {/* ── HEADER ─────────────────────────────────────────────────────── */}
       <div className="border-b border-slate-200 bg-white px-6 py-4">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <Link
               href="/hr"
@@ -517,23 +569,60 @@ export default function LocationAttributionPage() {
                 Last computed: {fmtDate(data.lastComputed)}
               </span>
             )}
+            {/* Quick-select month */}
             <select
-              value={month}
-              onChange={(e) => handleMonthChange(e.target.value)}
+              onChange={(e) => handleMonthQuickSelect(e.target.value)}
+              value=""
               className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
             >
+              <option value="" disabled>
+                Quick month…
+              </option>
               {months.map((m) => (
                 <option key={m} value={m}>
                   {formatMonthLabel(m)}
                 </option>
               ))}
             </select>
+            {/* Arbitrary date range */}
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                value={from}
+                max={to}
+                onChange={(e) => {
+                  setFrom(e.target.value);
+                  setActiveSlug("all");
+                }}
+                className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+              />
+              <span className="text-slate-400">→</span>
+              <input
+                type="date"
+                value={to}
+                min={from}
+                onChange={(e) => {
+                  setTo(e.target.value);
+                  setActiveSlug("all");
+                }}
+                className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+              />
+            </div>
           </div>
         </div>
       </div>
 
       {/* ── CONTENT ────────────────────────────────────────────────────── */}
       <div className="mx-auto max-w-7xl space-y-6 px-6 py-6">
+        {/* Extrapolated notice */}
+        {!isLoading && !error && data && data.extrapolatedCount > 0 && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Salaries for this period are estimated from the most recent payslip
+            for {data.extrapolatedCount} employee
+            {data.extrapolatedCount !== 1 ? "s" : ""}.
+          </div>
+        )}
+
         {isLoading && (
           <div className="space-y-4">
             {/* Summary skeleton */}
@@ -608,21 +697,42 @@ export default function LocationAttributionPage() {
             {/* Legend */}
             <div className="flex flex-wrap gap-4 text-xs text-slate-500">
               <div className="flex items-center gap-1.5">
-                <span className="inline-block h-3 w-3 rounded-sm bg-blue-100 ring-1 ring-blue-400" />
-                GPS (cross-location employee — timelogs used for split)
-              </div>
-              <div className="flex items-center gap-1.5">
                 <span className="inline-block h-3 w-3 rounded-sm bg-emerald-100 ring-1 ring-emerald-400" />
-                org unit (static assignment from Talexio org structure)
+                roster (location from shift cost-centre)
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="inline-block h-3 w-3 rounded-sm bg-slate-100 ring-1 ring-slate-400" />
-                no position (employee has no org unit — not yet assigned)
+                <span className="inline-block h-3 w-3 rounded-sm bg-sky-100 ring-1 ring-sky-400" />
+                org unit (fallback from Talexio org structure when no roster)
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded-sm bg-violet-100 ring-1 ring-violet-400" />
+                mixed (more than one source across the range)
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded-sm bg-amber-100 ring-1 ring-amber-400" />
+                est. (wage extrapolated from most recent payslip)
               </div>
             </div>
           </>
         )}
       </div>
     </div>
+  );
+}
+
+export default function LocationAttributionPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-50 px-6 py-6">
+          <div className="mx-auto max-w-7xl space-y-4">
+            <div className="h-20 animate-pulse rounded-xl bg-slate-200" />
+            <div className="h-64 animate-pulse rounded-xl bg-slate-200" />
+          </div>
+        </div>
+      }
+    >
+      <LocationAttributionContent />
+    </Suspense>
   );
 }

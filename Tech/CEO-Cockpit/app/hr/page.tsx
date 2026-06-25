@@ -580,7 +580,9 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   // For a single-slug drill we fetch that location only; for a multi-slug
   // business unit (e.g. Spa) we fetch ALL employees and aggregate client-side.
   const drillFetchSlug = drill && drill.slugs.length === 1 ? drill.slugs[0] : undefined;
-  const locationSplitsQ = useLocationSplits(month, drillFetchSlug);
+  // Use the dashboard's active date range so the drill-down matches every other
+  // metric on the page (arbitrary windows, not just whole months).
+  const locationSplitsQ = useLocationSplits(fromISO, toISO, drillFetchSlug);
 
   // ── Talexio-derived views (memoized) ──────────────────────────────────────
   const activeEmployees = useMemo(
@@ -1760,6 +1762,8 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
         const employees: EmployeeLocationSplit[] = (splitsData?.employees ?? []).filter(
           (e) => sumSlugs(e.wageAttribution) > 0,
         );
+        // True when the selected range has no payslip yet (salaries estimated).
+        const periodExtrapolated = (splitsData?.extrapolatedCount ?? 0) > 0;
 
         return (
           <div
@@ -1782,8 +1786,13 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
                     {displayName}
                   </h2>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Employee wage attribution · {month}
+                    Employee wage attribution · {fromISO} → {toISO}
                   </p>
+                  {periodExtrapolated && (
+                    <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                      Salaries for this period are estimated from the most recent payslip.
+                    </p>
+                  )}
                 </div>
                 <button
                   onClick={() => setDrill(null)}
@@ -1824,7 +1833,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
                 ) : employees.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 text-center gap-2">
                     <p className="text-sm text-muted-foreground font-medium">No employee attributions found for {displayName}</p>
-                    <p className="text-xs text-muted-foreground">This location may not have wage split data for {month}.</p>
+                    <p className="text-xs text-muted-foreground">This location may not have wage split data for {fromISO} → {toISO}.</p>
                   </div>
                 ) : (
                   <table className="w-full text-sm border-collapse">
@@ -1845,19 +1854,28 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
                           const splitPct  = (sumSlugs(emp.locationSplits) * 100).toFixed(1);
                           const attributed = sumSlugs(emp.wageAttribution);
                           const isCross   = !drillSlugs.includes(emp.homeLocationSlug);
-                          const sourceLabel = emp.attributionSource === "gps_timelogs"
-                            ? "GPS"
-                            : emp.attributionSource === "org_unit_static"
+                          const sourceLabel = emp.attributionSource === "cost_centre"
+                            ? "Roster"
+                            : emp.attributionSource === "org_unit_fallback"
                             ? "Org Unit"
-                            : "No data";
-                          const sourceCls = emp.attributionSource === "gps_timelogs"
+                            : emp.attributionSource === "mixed"
+                            ? "Mixed"
+                            : "No roster";
+                          const sourceCls = emp.attributionSource === "cost_centre"
                             ? "bg-emerald-50 text-emerald-700"
-                            : emp.attributionSource === "org_unit_static"
+                            : emp.attributionSource === "org_unit_fallback"
                             ? "bg-sky-50 text-sky-700"
+                            : emp.attributionSource === "mixed"
+                            ? "bg-violet-50 text-violet-700"
                             : "bg-slate-50 text-slate-500";
                           return (
-                            <tr key={emp.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                              <td className="py-2.5 px-2 font-medium text-slate-900">{emp.employeeName}</td>
+                            <tr key={emp.talexioId} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                              <td className="py-2.5 px-2 font-medium text-slate-900">
+                                {emp.employeeName}
+                                {emp.isExtrapolated && (
+                                  <span className="ml-1.5 inline-flex items-center rounded-sm bg-amber-50 px-1 py-px text-[9px] font-medium text-amber-700">est.</span>
+                                )}
+                              </td>
                               <td className="py-2.5 px-2">
                                 {isCross ? (
                                   <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 text-xs px-2 py-0.5 font-medium">
@@ -1895,10 +1913,10 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
               {/* Footer link */}
               <div className="px-6 py-3 border-t border-slate-100 shrink-0 flex items-center justify-between bg-slate-50">
                 <span className="text-xs text-muted-foreground">
-                  Attribution method: GPS shift logs where available, org-unit static otherwise.
+                  Attribution method: roster cost-centre where available, org-unit fallback otherwise.
                 </span>
                 <a
-                  href={`/hr/location-attribution?month=${month}`}
+                  href={`/hr/location-attribution?from=${fromISO}&to=${toISO}`}
                   className="text-xs font-medium text-sky-600 hover:text-sky-800 hover:underline transition-colors whitespace-nowrap ml-4"
                 >
                   View full attribution page →

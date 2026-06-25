@@ -1179,18 +1179,32 @@ const LOCATION_DISPLAY: Record<string, string> = {
   slimming:   "Slimming",
 };
 
-interface LocationSplitRow {
-  employee_id: number;
-  employee_name: string;
-  home_location: string | null;
-  gross_wage: number;
-  splits: Record<string, number>; // slug → fraction (0-1)
-  attribution_source: "org unit" | "GPS" | "no position";
+// Shape returned by the daily-aggregated /api/hr/location-splits route.
+interface ApiEmployeeSplit {
+  talexioId: number;
+  employeeName: string;
+  homeLocation: string;
+  homeLocationSlug: string;
+  grossWage: number;
+  rosteredDays: number;
+  locationSplits: Record<string, number>;   // slug → fraction (0-1)
+  wageAttribution: Record<string, number>;  // slug → euros
+  dayCounts: Record<string, number>;
+  wageSource: "payslip" | "extrapolated" | "mixed";
+  isExtrapolated: boolean;
+  attributionSource: "cost_centre" | "org_unit_fallback" | "no_roster" | "mixed";
+  computedAt: string;
 }
 
-interface LocationSplitsData {
-  month: string;
-  rows: LocationSplitRow[];
+interface LocationSplitsApiData {
+  from: string;
+  to: string;
+  employees: ApiEmployeeSplit[];
+  locationTotals: Record<string, number>;
+  totalPayroll: number;
+  employeeCount: number;
+  extrapolatedCount: number;
+  lastComputed: string | null;
 }
 
 interface LocationTotal {
@@ -1200,14 +1214,15 @@ interface LocationTotal {
   employeeCount: number;
 }
 
-function buildLocationTotals(rows: LocationSplitRow[]): LocationTotal[] {
+function buildLocationTotals(emps: ApiEmployeeSplit[]): LocationTotal[] {
   const map = new Map<string, { total: number; employees: Set<number> }>();
-  for (const row of rows) {
-    for (const [slug, frac] of Object.entries(row.splits)) {
+  for (const emp of emps) {
+    for (const [slug, euros] of Object.entries(emp.wageAttribution)) {
+      if (euros <= 0) continue;
       if (!map.has(slug)) map.set(slug, { total: 0, employees: new Set() });
       const entry = map.get(slug)!;
-      entry.total += row.gross_wage * frac;
-      entry.employees.add(row.employee_id);
+      entry.total += euros;
+      entry.employees.add(emp.talexioId);
     }
   }
   return Array.from(map.entries())
@@ -1220,28 +1235,36 @@ function buildLocationTotals(rows: LocationSplitRow[]): LocationTotal[] {
     .sort((a, b) => b.total - a.total);
 }
 
-function sourceBadge(source: LocationSplitRow["attribution_source"]) {
-  if (source === "org unit") return (
+function sourceBadge(source: ApiEmployeeSplit["attributionSource"]) {
+  if (source === "cost_centre") return (
+    <span className="inline-flex items-center rounded-sm border border-emerald-200 bg-emerald-50 px-1.5 py-px text-[10px] font-medium text-emerald-700">roster</span>
+  );
+  if (source === "org_unit_fallback") return (
     <span className="inline-flex items-center rounded-sm border border-blue-200 bg-blue-50 px-1.5 py-px text-[10px] font-medium text-blue-700">org unit</span>
   );
-  if (source === "GPS") return (
-    <span className="inline-flex items-center rounded-sm border border-emerald-200 bg-emerald-50 px-1.5 py-px text-[10px] font-medium text-emerald-700">GPS</span>
+  if (source === "mixed") return (
+    <span className="inline-flex items-center rounded-sm border border-violet-200 bg-violet-50 px-1.5 py-px text-[10px] font-medium text-violet-700">mixed</span>
   );
   return (
-    <span className="inline-flex items-center rounded-sm border border-amber-200 bg-amber-50 px-1.5 py-px text-[10px] font-medium text-amber-700">no position</span>
+    <span className="inline-flex items-center rounded-sm border border-amber-200 bg-amber-50 px-1.5 py-px text-[10px] font-medium text-amber-700">no roster</span>
   );
 }
 
-function splitSummary(row: LocationSplitRow): string {
-  const entries = Object.entries(row.splits).sort((a, b) => b[1] - a[1]);
+function splitSummary(emp: ApiEmployeeSplit): string {
+  const entries = Object.entries(emp.locationSplits).sort((a, b) => b[1] - a[1]);
   if (entries.length === 0) return "—";
   const [homeSlug, homeFrac] = entries[0];
-  const homeLabel = LOCATION_DISPLAY[homeSlug] ?? homeSlug;
-  const parts = [`Home: ${Math.round(homeFrac * 100)}%`];
+  const parts = [`${LOCATION_DISPLAY[homeSlug] ?? homeSlug}: ${Math.round(homeFrac * 100)}%`];
   for (const [slug, frac] of entries.slice(1)) {
-    if (frac > 0) parts.push(`Cross: ${Math.round(frac * 100)}% @ ${LOCATION_DISPLAY[slug] ?? slug}`);
+    if (frac > 0) parts.push(`${LOCATION_DISPLAY[slug] ?? slug}: ${Math.round(frac * 100)}%`);
   }
   return parts.join(" · ");
+}
+
+function monthToRange(ym: string): { from: string; to: string } {
+  const [y, m] = ym.split("-").map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  return { from: `${ym}-01`, to: `${ym}-${String(lastDay).padStart(2, "0")}` };
 }
 
 const LOCATION_SPLITS_MONTH_OPTIONS: Array<{ value: string; label: string }> = (() => {
@@ -1260,18 +1283,19 @@ function LocationSplitsSection() {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   });
-  const [data, setData]           = useState<LocationSplitsData | null>(null);
+  const [data, setData]           = useState<LocationSplitsApiData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isComputing, setIsComputing] = useState(false);
   const [error, setError]         = useState<string | null>(null);
   const [computeMsg, setComputeMsg] = useState<string | null>(null);
 
-  // Load display data
+  // Load display data — expand the selected month → from..to and hit the daily API.
   async function loadData(m: string) {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/hr/location-splits?month=${m}`);
+      const { from, to } = monthToRange(m);
+      const res = await fetch(`/api/hr/location-splits?from=${from}&to=${to}`);
       if (!res.ok) {
         const text = await res.text().catch(() => res.statusText);
         throw new Error(`Server error ${res.status}: ${text}`);
@@ -1312,9 +1336,10 @@ function LocationSplitsSection() {
     loadData(month);
   }, [month]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const rows = data?.rows ?? [];
-  const locationTotals = buildLocationTotals(rows);
-  const grandTotal = rows.reduce((s, r) => s + r.gross_wage, 0);
+  const emps = data?.employees ?? [];
+  const locationTotals = buildLocationTotals(emps);
+  const grandTotal = data?.totalPayroll ?? emps.reduce((s, e) => s + e.grossWage, 0);
+  const extrapolatedCount = data?.extrapolatedCount ?? 0;
 
   return (
     <div className="space-y-6">
@@ -1355,6 +1380,13 @@ function LocationSplitsSection() {
         <div className="px-4 py-3 text-sm text-red-700 bg-red-50/60 border border-red-200 rounded-md">{error}</div>
       )}
 
+      {/* Extrapolated notice */}
+      {!isLoading && !error && extrapolatedCount > 0 && (
+        <div className="px-4 py-3 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md">
+          Salaries for this period are estimated from the most recent payslip for {extrapolatedCount} employee{extrapolatedCount !== 1 ? "s" : ""}.
+        </div>
+      )}
+
       {/* Loading state */}
       {isLoading && (
         <div className="flex items-center justify-center py-16 text-text-secondary gap-2">
@@ -1364,7 +1396,7 @@ function LocationSplitsSection() {
       )}
 
       {/* Empty state */}
-      {!isLoading && rows.length === 0 && !error && (
+      {!isLoading && emps.length === 0 && !error && (
         <Card className="p-12 text-center">
           <div className="flex flex-col items-center gap-3">
             <div className="h-12 w-12 rounded-full bg-warm-gray flex items-center justify-center">
@@ -1397,13 +1429,13 @@ function LocationSplitsSection() {
       )}
 
       {/* Employee attribution table */}
-      {!isLoading && rows.length > 0 && (
+      {!isLoading && emps.length > 0 && (
         <Card className="overflow-hidden">
           <div className="px-5 py-3.5 border-b border-warm-border bg-warm-white flex items-center justify-between">
             <div>
               <h2 className="text-sm font-semibold text-charcoal">Employee Attribution</h2>
               <p className="text-xs text-text-secondary mt-0.5">
-                {rows.length} employees · Grand total: {fmtCurrency(grandTotal)}
+                {emps.length} employees · Grand total: {fmtCurrency(grandTotal)}
               </p>
             </div>
           </div>
@@ -1413,26 +1445,35 @@ function LocationSplitsSection() {
                 <tr className="border-b border-warm-border bg-warm-gray/50">
                   <th className="text-left py-2.5 px-4 text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Employee</th>
                   <th className="text-left py-2.5 px-4 text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Home Location</th>
-                  <th className="text-right py-2.5 px-4 text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Gross Wage</th>
+                  <th className="text-right py-2.5 px-4 text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Wage (month)</th>
+                  <th className="text-right py-2.5 px-4 text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Rostered Days</th>
                   <th className="text-left py-2.5 px-4 text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Split %</th>
                   <th className="text-left py-2.5 px-4 text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Source</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => (
-                  <tr key={row.employee_id} className="border-b border-warm-border last:border-0 hover:bg-warm-gray/30 transition-colors">
-                    <td className="py-2 px-4 text-foreground font-medium whitespace-nowrap">{row.employee_name}</td>
+                {emps.map((emp) => (
+                  <tr key={emp.talexioId} className="border-b border-warm-border last:border-0 hover:bg-warm-gray/30 transition-colors">
+                    <td className="py-2 px-4 text-foreground font-medium whitespace-nowrap">
+                      {emp.employeeName}
+                      {emp.isExtrapolated && (
+                        <span className="ml-1.5 inline-flex items-center rounded-sm border border-amber-200 bg-amber-50 px-1 py-px text-[9px] font-medium text-amber-700">est.</span>
+                      )}
+                    </td>
                     <td className="py-2 px-4 text-xs text-muted-foreground whitespace-nowrap">
-                      {row.home_location ? (LOCATION_DISPLAY[row.home_location] ?? row.home_location) : <span className="italic text-text-secondary">—</span>}
+                      {emp.homeLocationSlug ? (LOCATION_DISPLAY[emp.homeLocationSlug] ?? emp.homeLocationSlug) : <span className="italic text-text-secondary">—</span>}
                     </td>
                     <td className="py-2 px-4 text-right text-xs tabular-nums font-medium text-foreground whitespace-nowrap">
-                      {fmtCurrency(row.gross_wage)}
+                      {fmtCurrency(emp.grossWage)}
+                    </td>
+                    <td className="py-2 px-4 text-right text-xs tabular-nums text-muted-foreground whitespace-nowrap">
+                      {emp.rosteredDays}
                     </td>
                     <td className="py-2 px-4 text-xs text-muted-foreground">
-                      {splitSummary(row)}
+                      {splitSummary(emp)}
                     </td>
                     <td className="py-2 px-4">
-                      {sourceBadge(row.attribution_source)}
+                      {sourceBadge(emp.attributionSource)}
                     </td>
                   </tr>
                 ))}
@@ -1440,12 +1481,12 @@ function LocationSplitsSection() {
               <tfoot>
                 <tr className="border-t-2 border-warm-border bg-warm-gray/30">
                   <td colSpan={2} className="py-2.5 px-4 text-xs font-medium text-text-secondary">
-                    Total ({rows.length} employees)
+                    Total ({emps.length} employees)
                   </td>
                   <td className="py-2.5 px-4 text-right text-xs tabular-nums font-bold text-foreground whitespace-nowrap">
                     {fmtCurrency(grandTotal)}
                   </td>
-                  <td colSpan={2} />
+                  <td colSpan={3} />
                 </tr>
               </tfoot>
             </table>
