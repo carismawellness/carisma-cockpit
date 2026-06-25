@@ -54,6 +54,26 @@ function locationNameToSlug(name: string): string {
   return LOCATION_NAME_TO_SLUG[name] ?? name.toLowerCase().replace(/\s+/g, "");
 }
 
+// Spa business unit = all hotel-spa locations (no single slug).
+const SPA_HOTEL_SLUGS = ["inter", "hugos", "hyatt", "novotel", "excelsior", "ramla", "odycy", "labranda"];
+
+// HC% drill-down target: either a single location slug or a business unit
+// (which may aggregate multiple location slugs, e.g. "Spa").
+type DrillTarget = {
+  label: string;
+  /** Location slugs whose wage attribution should be aggregated in the panel. */
+  slugs: string[];
+};
+
+// Map a Business Unit bar label → drill target. "Spa" expands to all hotel
+// locations; Aesthetics / Slimming map to their single slug.
+function businessUnitToDrill(name: string): DrillTarget {
+  if (/aesthetic/i.test(name)) return { label: "Aesthetics", slugs: ["aesthetics"] };
+  if (/slimming/i.test(name))  return { label: "Slimming",   slugs: ["slimming"] };
+  // Default: Spa (group of all hotel-spa locations)
+  return { label: "Spa", slugs: SPA_HOTEL_SLUGS };
+}
+
 import { SPA_LOCATION_COLOR_BY_NAME, SPA_LOCATION_FALLBACK_COLOR } from "@/lib/constants/spa-locations";
 import {
   useTalexioHeadcount,
@@ -529,7 +549,8 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const attendanceHistoryRef = useRef<HTMLDivElement>(null);
 
   // ── HC% drill-down state ──────────────────────────────────────────────────
-  const [drillLocation, setDrillLocation] = useState<string | null>(null);
+  // Either a single location (one slug) or a business unit (one or many slugs).
+  const [drill, setDrill] = useState<DrillTarget | null>(null);
 
   // ── Live data: Talexio ────────────────────────────────────────────────────
   const headcountQ = useTalexioHeadcount();
@@ -556,7 +577,10 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const movementQ    = useHREmployeeMovement(26);
 
   // ── HC% drill-down: location-level wage attribution ───────────────────────
-  const locationSplitsQ = useLocationSplits(month, drillLocation ?? undefined);
+  // For a single-slug drill we fetch that location only; for a multi-slug
+  // business unit (e.g. Spa) we fetch ALL employees and aggregate client-side.
+  const drillFetchSlug = drill && drill.slugs.length === 1 ? drill.slugs[0] : undefined;
+  const locationSplitsQ = useLocationSplits(month, drillFetchSlug);
 
   // ── Talexio-derived views (memoized) ──────────────────────────────────────
   const activeEmployees = useMemo(
@@ -1003,7 +1027,9 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
               margin={{ top: 5, right: 80, left: 10, bottom: 5 }}
               onClick={(data) => {
                 if (data?.activeLabel) {
-                  setDrillLocation(locationNameToSlug(String(data.activeLabel)));
+                  const label = String(data.activeLabel);
+                  const slug = locationNameToSlug(label);
+                  setDrill({ label: SLUG_DISPLAY[slug] ?? label, slugs: [slug] });
                 }
               }}
               style={{ cursor: "pointer" }}
@@ -1062,12 +1088,19 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           </h2>
           <p className="text-xs text-muted-foreground mb-4">
             Group HC%: {groupHcPct.toFixed(1)}% — Total payroll / Total revenue
+            <span className="ml-2 text-sky-600 font-medium">· Click a bar to see employee breakdown</span>
           </p>
           <ResponsiveContainer width="100%" height={hcByBU.length * 60 + 50}>
             <BarChart
               data={hcByBU}
               layout="vertical"
               margin={{ top: 5, right: 80, left: 10, bottom: 5 }}
+              onClick={(data) => {
+                if (data?.activeLabel) {
+                  setDrill(businessUnitToDrill(String(data.activeLabel)));
+                }
+              }}
+              style={{ cursor: "pointer" }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
               <XAxis type="number" tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11 }} />
@@ -1708,32 +1741,38 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
           ══════════════════════════════════════════════════════════════════ */}
       {/* ══════════════════════════════════════════════════════════════════
           HC% DRILL-DOWN SLIDE-OVER — per-employee wage attribution
-          Opened by clicking a bar in the HC% by Location chart.
+          Opened by clicking a bar in the HC% by Location OR by Business Unit
+          chart. A business unit may aggregate several location slugs (e.g. Spa).
           ══════════════════════════════════════════════════════════════════ */}
-      {drillLocation !== null && (() => {
-        const displayName = SLUG_DISPLAY[drillLocation] ?? drillLocation;
+      {drill !== null && (() => {
+        const drillSlugs  = drill.slugs;
+        const displayName = drill.label;
         const splitsData  = locationSplitsQ.data;
-        const locTotal    = splitsData?.locationTotals?.[drillLocation] ?? 0;
+        // Sum a per-slug record across all slugs in this drill target.
+        const sumSlugs = (rec: Record<string, number> | undefined | null) =>
+          rec ? drillSlugs.reduce((s, slug) => s + (rec[slug] ?? 0), 0) : 0;
+
+        const locTotal    = sumSlugs(splitsData?.locationTotals);
         const totalPay    = splitsData?.totalPayroll ?? 0;
         const groupPct    = totalPay > 0 ? ((locTotal / totalPay) * 100).toFixed(1) : "—";
 
-        // Employees that have any attribution to this location
+        // Employees with any attribution to the location(s) in this drill target.
         const employees: EmployeeLocationSplit[] = (splitsData?.employees ?? []).filter(
-          (e) => (e.wageAttribution?.[drillLocation] ?? 0) > 0,
+          (e) => sumSlugs(e.wageAttribution) > 0,
         );
 
         return (
           <div
-            className="fixed inset-0 z-50 flex"
-            onClick={() => setDrillLocation(null)}
-            onKeyDown={(e) => e.key === "Escape" && setDrillLocation(null)}
+            className="fixed inset-0 z-50 flex items-center justify-end"
+            onClick={() => setDrill(null)}
+            onKeyDown={(e) => e.key === "Escape" && setDrill(null)}
           >
-            {/* Backdrop */}
-            <div className="flex-1 bg-black/40 backdrop-blur-sm" />
-            {/* Panel */}
+            {/* Backdrop — fixed to the viewport so it covers wherever the user scrolled */}
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+            {/* Panel — vertically centred in the current viewport, capped to its height */}
             <div
-              className="relative bg-white shadow-2xl flex flex-col overflow-hidden"
-              style={{ width: "min(640px, 95vw)" }}
+              className="relative bg-white shadow-2xl rounded-l-2xl flex flex-col overflow-hidden m-0 max-h-screen"
+              style={{ width: "min(640px, 95vw)", height: "min(100vh, 720px)" }}
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
@@ -1747,7 +1786,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
                   </p>
                 </div>
                 <button
-                  onClick={() => setDrillLocation(null)}
+                  onClick={() => setDrill(null)}
                   className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors text-lg font-light mt-0.5"
                   aria-label="Close"
                 >
@@ -1801,11 +1840,11 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
                     </thead>
                     <tbody>
                       {employees
-                        .sort((a, b) => (b.wageAttribution?.[drillLocation] ?? 0) - (a.wageAttribution?.[drillLocation] ?? 0))
+                        .sort((a, b) => sumSlugs(b.wageAttribution) - sumSlugs(a.wageAttribution))
                         .map((emp) => {
-                          const splitPct  = ((emp.locationSplits?.[drillLocation] ?? 0) * 100).toFixed(1);
-                          const attributed = emp.wageAttribution?.[drillLocation] ?? 0;
-                          const isCross   = emp.homeLocationSlug !== drillLocation;
+                          const splitPct  = (sumSlugs(emp.locationSplits) * 100).toFixed(1);
+                          const attributed = sumSlugs(emp.wageAttribution);
+                          const isCross   = !drillSlugs.includes(emp.homeLocationSlug);
                           const sourceLabel = emp.attributionSource === "gps_timelogs"
                             ? "GPS"
                             : emp.attributionSource === "org_unit_static"
