@@ -241,10 +241,14 @@ export async function GET(req: Request) {
   let cashRows: CashRow[] = [];
   let wageRoleMap = new Map<string, string>();
 
+  const venueOverrideMap = new Map<string, string>();
+
   if (ebitdaLine === "wages") {
-    const { data: roleData } = await supabase.from("wage_role_mapping").select("contact_key, role");
+    const { data: roleData } = await supabase.from("wage_role_mapping").select("contact_key, role, venue_override");
     for (const r of (roleData ?? [])) {
-      wageRoleMap.set((r.contact_key as string).toLowerCase().trim(), r.role as string);
+      const key = (r.contact_key as string).toLowerCase().trim();
+      wageRoleMap.set(key, r.role as string);
+      if (r.venue_override) venueOverrideMap.set(key, r.venue_override as string);
     }
 
     // Fetch cash salary rows (is_frozen=true) for this venue + date range
@@ -287,6 +291,41 @@ export async function GET(req: Request) {
         month: m,
         role: ((s.role as string) || "").toLowerCase().trim() || undefined,
       });
+    }
+
+    // ── Venue override: reroute contacts whose wages belong to a different venue ──
+    // Some employees are paid via HQ in Zoho but belong to a specific venue
+    // (venue_override in wage_role_mapping). Without this filter they appear in
+    // both HQ's drill and every venue where they have FS5 payroll splits.
+    if (!isSpaAgg) {
+      // Remove rows for contacts whose override points elsewhere
+      txnRows = txnRows.filter(r => {
+        const key = ((r.contact_name as string) || "").toLowerCase().trim();
+        const ov = venueOverrideMap.get(key);
+        return !ov || ov === venue;
+      });
+
+      // Pull in their transactions from other venues (typically HQ salary posting)
+      const overridedHere = [...venueOverrideMap.entries()]
+        .filter(([, ov]) => ov === venue)
+        .map(([k]) => k);
+
+      if (overridedHere.length > 0) {
+        const { data: extraRows } = await supabase
+          .from("transactions_raw")
+          .select("txn_id, date, account_code, account_name, contact_name, transaction_type, ebitda_sub_line, amount, venue")
+          .eq("org", "spa")
+          .eq("ebitda_line", ebitdaLine!)
+          .neq("venue", venue)
+          .gte("date", dateFrom!)
+          .lte("date", dateTo!);
+
+        const extra = ((extraRows ?? []) as Array<Record<string, unknown>>).filter(r => {
+          const key = ((r.contact_name as string) || "").toLowerCase().trim();
+          return venueOverrideMap.get(key) === venue;
+        });
+        txnRows = [...txnRows, ...extra];
+      }
     }
 
     // ── Wage role filter ────────────────────────────────────────────────────
@@ -356,7 +395,7 @@ export async function GET(req: Request) {
   }
 
   // ── Totals ────────────────────────────────────────────────────────────────
-  const suppTotal = suppRows.reduce((s, r) => s + r.amount, 0);
+  const suppTotal = cashRows.reduce((s, r) => s + r.amount, 0);
   const total = txnRows.reduce((s, r) => s + Number(r.amount ?? 0), 0) + suppTotal;
 
   // ── Fallback breakdown (when no actual transactions found) ────────────────

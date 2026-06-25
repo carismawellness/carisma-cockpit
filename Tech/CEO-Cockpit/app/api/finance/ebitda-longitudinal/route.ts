@@ -432,7 +432,7 @@ async function fetchRangeData(
     revMonthly: (revMonthly.data ?? []) as RevMonthlyRow[],
     aesSales,
     slimSales,
-    supplement: (supplement.data ?? []) as SuppRow[],
+    supplement: (cashSalaries.data ?? []) as SuppRow[],
   };
 }
 
@@ -880,7 +880,7 @@ async function aggregateRange(
   // ── 6b. Cash salaries → wages ────────────────────────────────────────────
   type CashEntry = { spa_slug: string; amount: number; role: string };
   const cashByMonth = new Map<string, CashEntry[]>();
-  for (const row of (cashSalaries.data ?? [])) {
+  for (const row of supplement) {
     const m = (row.month as string).slice(0, 10);
     if (!cashByMonth.has(m)) cashByMonth.set(m, []);
     cashByMonth.get(m)!.push({
