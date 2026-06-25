@@ -236,7 +236,9 @@ export async function GET(req: Request) {
   // mutable — wage_role and ad_channel filters may narrow this later
   let txnRows = (rows ?? []) as Array<Record<string, unknown>>;
 
-  // ── Wage role mapping ─────────────────────────────────────────────────────
+  // ── Wage role mapping + cash salaries ────────────────────────────────────
+  type CashRow = { employee_name: string; amount: number; month: string; role?: string };
+  let cashRows: CashRow[] = [];
   let wageRoleMap = new Map<string, string>();
 
   if (ebitdaLine === "wages") {
@@ -245,12 +247,55 @@ export async function GET(req: Request) {
       wageRoleMap.set((r.contact_key as string).toLowerCase().trim(), r.role as string);
     }
 
-    // ── Wage role filter — apply BEFORE any totals ──────────────────────────
+    // Fetch cash salary rows (is_frozen=true) for this venue + date range
+    const suppMonths: string[] = [];
+    let curY = parseInt(dateFrom.slice(0, 4), 10), curM = parseInt(dateFrom.slice(5, 7), 10);
+    const endY = parseInt(dateTo.slice(0, 4), 10),  endM = parseInt(dateTo.slice(5, 7), 10);
+    while (curY < endY || (curY === endY && curM <= endM)) {
+      suppMonths.push(`${curY}-${String(curM).padStart(2, "0")}-01`);
+      curM++; if (curM > 12) { curM = 1; curY++; }
+    }
+
+    const VENUE_TO_SUPP: Record<string, string> = { intercontinental: "inter" };
+    const SPA_SUPP_SLUGS = SPA_VENUE_SLUGS.map(s => VENUE_TO_SUPP[s] ?? s);
+
+    let sdQuery = supabase
+      .from("salary_supplement_monthly")
+      .select("month, employee_name, amount, role")
+      .eq("is_frozen", true)
+      .in("month", suppMonths);
+    if (isSpaAgg) {
+      sdQuery = sdQuery.in("spa_slug", SPA_SUPP_SLUGS);
+    } else {
+      sdQuery = sdQuery.eq("spa_slug", VENUE_TO_SUPP[venue!] ?? venue!);
+    }
+    const { data: sd } = await sdQuery;
+
+    for (const s of (sd ?? [])) {
+      const m     = (s.month as string).slice(0, 10);
+      const mY    = parseInt(m.slice(0, 4), 10), mMo = parseInt(m.slice(5, 7), 10);
+      const lastD = new Date(mY, mMo, 0).getDate();
+      const mEnd  = `${mY}-${String(mMo).padStart(2, "0")}-${String(lastD).padStart(2, "0")}`;
+      const rangeStart  = dateFrom! > m    ? dateFrom! : m;
+      const rangeEnd    = dateTo!   < mEnd ? dateTo!   : mEnd;
+      const parseLocal  = (ds: string) => { const [y,mo,d] = ds.split("-").map(Number); return new Date(y,mo-1,d); };
+      const daysInRange = rangeStart > rangeEnd ? 0 : Math.round((parseLocal(rangeEnd).getTime() - parseLocal(rangeStart).getTime()) / 86_400_000) + 1;
+      const prorated = Number(s.amount ?? 0) * (daysInRange / lastD);
+      if (prorated > 0) cashRows.push({
+        employee_name: s.employee_name as string,
+        amount: +prorated.toFixed(2),
+        month: m,
+        role: ((s.role as string) || "").toLowerCase().trim() || undefined,
+      });
+    }
+
+    // ── Wage role filter ────────────────────────────────────────────────────
     if (wageRole) {
-      txnRows = txnRows.filter(r => {
+      txnRows  = txnRows.filter(r => {
         const key = ((r.contact_name as string) || "").toLowerCase().trim();
         return (wageRoleMap.get(key) ?? "unassigned") === wageRole;
       });
+      cashRows = cashRows.filter(s => (s.role || "unassigned") === wageRole);
     }
   }
 
@@ -455,29 +500,42 @@ export async function GET(req: Request) {
   }
 
   // ── Contact breakdown ─────────────────────────────────────────────────────
-  type ContactAcc = { zoho: number; bases: Set<string> };
+  type ContactAcc = { zoho: number; cash: number; bases: Set<string> };
   const contactMap = new Map<string, ContactAcc>();
 
   for (const r of txnRows) {
     const c = (r.contact_name as string) || "Unknown";
-    const existing = contactMap.get(c) ?? { zoho: 0, bases: new Set() };
+    const existing = contactMap.get(c) ?? { zoho: 0, cash: 0, bases: new Set() };
     existing.zoho += Number(r.amount ?? 0);
     existing.bases.add(txnBasis(r));
     contactMap.set(c, existing);
   }
+  for (const s of cashRows) {
+    const existing = contactMap.get(s.employee_name) ?? { zoho: 0, cash: 0, bases: new Set() };
+    existing.cash += s.amount;
+    existing.bases.add("Cash");
+    contactMap.set(s.employee_name, existing);
+  }
 
   const contacts = Array.from(contactMap.entries())
     .map(([contact, acc]) => {
-      const amount = acc.zoho;
+      const amount = acc.zoho + acc.cash;
       const role   = ebitdaLine === "wages"
-        ? (wageRoleMap.get(contact.toLowerCase().trim()) ?? "unassigned")
+        ? (() => {
+            const cashRole = cashRows.find(s => s.employee_name === contact)?.role;
+            if (cashRole) return cashRole;
+            return wageRoleMap.get(contact.toLowerCase().trim()) ?? "unassigned";
+          })()
         : undefined;
+      const source  = acc.zoho > 0 && acc.cash > 0 ? "both"
+                    : acc.cash > 0                  ? "cash_salary"
+                    :                                 "zoho";
       const basesArr = Array.from(acc.bases);
       const basis    = basesArr.length === 1 ? basesArr[0] : "Mixed";
       return {
         contact, amount: +amount.toFixed(2),
         share: total > 0 ? +(amount / total * 100).toFixed(1) : 0,
-        role, source: "zoho", basis,
+        role, source, basis,
       };
     })
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
@@ -489,6 +547,10 @@ export async function GET(req: Request) {
       const key  = ((r.contact_name as string) || "").toLowerCase().trim();
       const role = wageRoleMap.get(key) ?? "unassigned";
       wageRoleAcc.set(role, (wageRoleAcc.get(role) ?? 0) + Number(r.amount ?? 0));
+    }
+    for (const s of cashRows) {
+      const role = (s.role || "unassigned");
+      wageRoleAcc.set(role, (wageRoleAcc.get(role) ?? 0) + s.amount);
     }
   }
   const wageRoles = Array.from(wageRoleAcc.entries())
@@ -508,18 +570,32 @@ export async function GET(req: Request) {
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
 
   // ── Individual transactions ───────────────────────────────────────────────
-  const transactions = txnRows.map(r => ({
-    txn_id:       r.txn_id as string,
-    date:         r.date as string,
-    contact:      (r.contact_name as string) || "—",
-    account_code: r.account_code as string,
-    account_name: r.account_name as string,
-    txn_type:     r.transaction_type as string,
-    sub_line:     r.ebitda_sub_line as string,
-    amount:       +Number(r.amount ?? 0).toFixed(2),
-    source:       "zoho",
-    basis:        txnBasis(r),
-  }));
+  const transactions = [
+    ...txnRows.map(r => ({
+      txn_id:       r.txn_id as string,
+      date:         r.date as string,
+      contact:      (r.contact_name as string) || "—",
+      account_code: r.account_code as string,
+      account_name: r.account_name as string,
+      txn_type:     r.transaction_type as string,
+      sub_line:     r.ebitda_sub_line as string,
+      amount:       +Number(r.amount ?? 0).toFixed(2),
+      source:       "zoho",
+      basis:        txnBasis(r),
+    })),
+    ...cashRows.map(s => ({
+      txn_id:       `cash-${s.month}-${s.employee_name}`,
+      date:         s.month.slice(0, 10),
+      contact:      s.employee_name,
+      account_code: "CASH",
+      account_name: "Cash Salary",
+      txn_type:     "cash_salary",
+      sub_line:     "wages",
+      amount:       s.amount,
+      source:       "cash_salary",
+      basis:        "Cash",
+    })),
+  ];
 
   return NextResponse.json({
     is_fallback: false,

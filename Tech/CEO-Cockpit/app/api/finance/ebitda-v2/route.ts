@@ -213,7 +213,7 @@ export async function GET(req: Request) {
 
   // ── 1. Load all config tables in parallel ─────────────────────────────────
   const [allRawCosts, revenueDaily, revenueMonthly, aestheticsSales, slimmingSales,
-         wageRoles, adPatterns, fallbackRules, hardwiredRules, specialPersons,
+         cashSalaries, wageRoles, adPatterns, fallbackRules, hardwiredRules, specialPersons,
          cogsContacts] =
     await Promise.all([
       fetchAllRawCosts(),
@@ -259,6 +259,17 @@ export async function GET(req: Request) {
             .range(off, off + lim - 1),
         "slimming_sales_daily",
       ),
+
+      // Cash salaries from Cockpit datasheet — wages paid in cash, not in Zoho.
+      // Synced monthly from the "Cash" column of the salary sheet.
+      supabase
+        .from("salary_supplement_monthly")
+        .select("month, employee_name, amount, spa_slug, role")
+        .in("month", [
+          ...overlappingMonths(shiftMonth(dateFrom, -3), dateFrom.slice(0, 7) + "-01"),
+          ...overlappingMonths(dateFrom, dateTo),
+        ].filter((v, i, a) => a.indexOf(v) === i))
+        .eq("is_frozen", true),
 
       // Wage role mapping: contact_key → role + optional venue_override + prof fee flags
       supabase
@@ -853,7 +864,71 @@ export async function GET(req: Request) {
     }
   }
 
-  // ── 7. Compute EBITDA per venue ───────────────────────────────────────────
+  // ── 7. Cash salaries → wages ─────────────────────────────────────────────
+  // Employees paid in cash don't appear in Zoho transactions_raw.
+  // Their wages are synced monthly from the Cockpit datasheet "Cash" column
+  // into salary_supplement_monthly (is_frozen=true rows only).
+  type CashSalaryRow = { spa_slug: string; employee_name: string; amount: number; role?: string };
+  const cashByMonth = new Map<string, CashSalaryRow[]>();
+  for (const row of (cashSalaries.data ?? [])) {
+    const m = (row.month as string).slice(0, 10);
+    if (!cashByMonth.has(m)) cashByMonth.set(m, []);
+    cashByMonth.get(m)!.push({
+      spa_slug:      (row.spa_slug      as string) ?? "",
+      employee_name: (row.employee_name as string) ?? "",
+      amount:        Number(row.amount  ?? 0),
+      role:          ((row.role as string) || "").toLowerCase().trim() || undefined,
+    });
+  }
+
+  const frozenCashMonths = Array.from(cashByMonth.keys()).sort();
+
+  for (const targetMonth of overlappingMonths(dateFrom, dateTo)) {
+    let rows = cashByMonth.get(targetMonth);
+    let sourceMonth = targetMonth;
+    let isFallback  = false;
+
+    if (!rows || rows.length === 0) {
+      const candidate = [...frozenCashMonths].reverse().find(m => m < targetMonth);
+      if (candidate) {
+        rows        = cashByMonth.get(candidate)!;
+        sourceMonth = candidate;
+        isFallback  = true;
+      }
+    }
+
+    if (!rows || rows.length === 0) continue;
+
+    const daysInRange = daysOfMonthInRange(targetMonth, dateFrom, dateTo);
+    const factor      = daysInRange / totalDaysInMonth(targetMonth);
+
+    for (const row of rows) {
+      const SLUG_NORM: Record<string, string> = { inter: "intercontinental" };
+      const venueKey = SLUG_NORM[row.spa_slug] ?? row.spa_slug;
+      if (!venueKey || !venues[venueKey]) continue;
+      const amount = row.amount * factor;
+      const cashRoleRaw = ((row.role as string) || "").toLowerCase().trim() || "unassigned";
+      const cashRole: WageRole = (WAGE_ROLES as readonly string[]).includes(cashRoleRaw)
+        ? (cashRoleRaw as WageRole)
+        : "unassigned";
+      venues[venueKey].wages                   += amount;
+      venues[venueKey].wage_by_role[cashRole]  += amount;
+    }
+
+    if (isFallback) {
+      const label = targetMonth.slice(0, 7);
+      const src   = sourceMonth.slice(0, 7);
+      warnings.push(`Cash salaries ${label}: no frozen data — using ${src} as fallback`);
+      fallbackApplied.push({
+        venue:       "all_spa",
+        ebitda_line: "wages_cash",
+        rule_type:   `prior_month_fallback (${src})`,
+        value:       rows.reduce((s, r) => s + r.amount, 0) * factor,
+      });
+    }
+  }
+
+  // ── 8. Compute EBITDA per venue ───────────────────────────────────────────
   for (const vc of VENUE_CONFIG) {
     const v = venues[vc.slug];
     v.ebitda = v.revenue - v.wages - v.advertising - v.sga - v.cogs - v.rent - v.utilities;
