@@ -67,7 +67,7 @@ type V2Data = {
 type DrillContact = {
   contact: string; amount: number; share: number;
   role?: string; source: string; basis?: string;
-  zoho_amount: number; supplement_amount: number;
+  zoho_amount: number; cash_amount: number;
 };
 type DrillTxn     = {
   txn_id: string; date: string; contact: string; account_code: string;
@@ -357,13 +357,9 @@ function DrillDialog({
                           </thead>
                           <tbody>
                             {data.contacts.map(c => {
-                              const srcCls =
-                                c.source === "salary_supplement" ? "bg-purple-100 text-purple-700" :
-                                c.source === "both"              ? "bg-indigo-100 text-indigo-700" :
-                                "bg-blue-100 text-blue-700";
+                              const srcCls = "bg-blue-100 text-blue-700";
                               const srcLabel =
-                                c.source === "salary_supplement" ? "Supplement" :
-                                c.source === "both"              ? "Zoho + Suppl." :
+                                c.source === "cash_salary" ? "Cash" :
                                 "Zoho";
                               const basisCls =
                                 (c.basis ?? "").includes("split") || (c.basis ?? "").includes("Split")
