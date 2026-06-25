@@ -41,6 +41,39 @@ Entry format:
 **Distilled to:** [file path where the rule was added]
 -->
 
+### 2026-06-25 — Talexio roster location lives in `workShifts.costCentre`, NOT labels or GPS (a wrong discovery conclusion cost a rebuild)
+
+**What happened:** The first Dynamic Location Wage Attribution ETL split wages by GPS clock-ins, producing wrong results (everyone ~100% to home, odd fractions like 94.4%). A prior "Agent 0" discovery had sampled shift `label` fields (all empty) and concluded "shifts carry no location," steering the design to GPS + org unit. The CEO rejected it: he wanted splits based on the ROSTER (days rostered per location). A second discovery agent found the location WAS on every shift all along — in `workShifts { costCentre { id name } }`, a field the original shift query never requested.
+
+**Root cause:** Agent 0 generalized "the `label` field is empty" into "there is no location on shifts" without probing other candidate fields on the `WorkShift` type. The Talexio GraphQL API has introspection DISABLED and hides field errors behind a generic "unexpected error", so the only way to map the schema is to TRY candidate sub-fields one at a time and see which return data. `costCentre` returns real data; `organisationUnit`/`location`/`businessUnit`/etc. on the shift all error.
+
+**Rule:** **NEVER** conclude a data field "doesn't exist" from one empty/queried field — on an introspection-disabled API, probe every plausible candidate field name one-by-one before declaring absence. A confident-but-unprobed "it's not there" sent an entire ETL down the wrong (GPS) path.
+
+**Rule:** **ALWAYS** split Talexio location attribution by the ROSTER: `split% at location L = rostered working shifts at L ÷ total working shifts in period`. Resolve each shift's location from `costCentre` (map id 8091-8096 / name → canonical slug), falling back to the employee's home `organisationUnit` when `costCentre` is null (~45% of shifts are untagged). Only `type ∈ {SHIFT, FLEXIBLE_SHIFT}` count as worked; exclude OFF/REST/APPROVAL_BLOCK.
+
+**Additional facts:**
+- costCentre names ≠ org-unit names ("Hyatt Regency Malta" cost centre vs "Hyatt" org unit) — normalize BOTH to a canonical slug or a single-location employee falsely looks split.
+- Talexio org unit spells it "Riveira" (NOT "Riviera"); costCentre "Sunny Coast" → slug `odycy`; "Labranda Riviera Hotel & Spa" → `labranda`.
+- Payslips run ~1 month behind: when a month has no payslip, EXTRAPOLATE from the most recent prior month's gross (`wage_source='extrapolated'`). June 2026 had ZERO real payslips — 100% extrapolated from May.
+- **Skip employees with €0 resolved gross entirely** — no payslip means no wage to attribute; emitting their rows clutters per-location lists and mislabels source. (QC caught zero-gross rows mislabeled `wage_source='payslip'`.)
+- For arbitrary date ranges (e.g. a 7-day dashboard view), store PER-DAY rows (`employee_location_splits_daily`, one row per working shift, `wage_share = gross ÷ working_shifts_in_month`) and SUM `wage_share` over `work_date BETWEEN from AND to`. Put the rounding remainder on the last row so each employee's sum == gross exactly (group invariant: total_attributed == total_monthly_gross to the cent).
+
+**Distilled to:** Talexio-specific; captured in `Tech/CEO-Cockpit/app/api/etl/talexio-location-splits/route.ts` comments + memory `project_talexio_location_attribution.md`.
+
+---
+
+### 2026-06-22 — GSC ETL failed due to `GOOGLE_REFRESH_TOKEN` shadowing `GOOGLE_SHEETS_REFRESH_TOKEN`
+
+**What happened:** GSC keyword positions showed as 0.0 in the CEO Cockpit marketing dashboard despite having data in Supabase. ETL calls returned `{"status":"error","error":"OAuth: invalid_grant"}` even after updating `GOOGLE_SHEETS_REFRESH_TOKEN` on Vercel.
+
+**Root cause:** The ETL code uses `process.env.GOOGLE_REFRESH_TOKEN ?? process.env.GOOGLE_SHEETS_REFRESH_TOKEN` — checking `GOOGLE_REFRESH_TOKEN` first. A separate `GOOGLE_REFRESH_TOKEN` env var was added to Vercel on Jun 11 and had since expired, silently overriding the still-valid `GOOGLE_SHEETS_REFRESH_TOKEN`.
+
+**Rule:** ALWAYS when GSC ETL returns `invalid_grant`, update BOTH `GOOGLE_REFRESH_TOKEN` and `GOOGLE_SHEETS_REFRESH_TOKEN` in Vercel — `GOOGLE_REFRESH_TOKEN` takes precedence in the ETL and will silently block auth if expired.
+
+**Distilled to:** Root CLAUDE.md `### Active Rules`
+
+---
+
 ### 2026-06-10 — Sheet-driven ETLs need per-tab header QC before deploy
 
 **What happened:** The CEO-Cockpit `/api/etl/crm-agents` ETL was treating 7 of 12 CRM agents as the wrong layout (Chat vs SDR), because `SDR_AGENTS` only contained `nathalia`. As a result the Team Performance Dashboard showed values like Juliana = 25,251 bookings (which was actually her revenue €25,251 — written into the wrong DB column for months).
