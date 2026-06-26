@@ -32,8 +32,10 @@ const LOCATION_NAME_TO_SLUG: Record<string, string> = {
   "Riveira":       "labranda",
   "Novotel":       "novotel",
   "HQ":            "hq",
-  "Aesthetics":    "aesthetics",
-  "Slimming":      "slimming",
+  "Aesthetics":        "aesthetics",
+  "Aesthetics Centre": "aesthetics",
+  "Slimming":          "slimming",
+  "Slimming Centre":   "slimming",
   "Spa":           "hugos", // fallback for brand-level "Spa" BU
 };
 
