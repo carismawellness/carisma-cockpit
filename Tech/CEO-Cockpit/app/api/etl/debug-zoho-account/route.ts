@@ -13,26 +13,32 @@ export async function POST(req: NextRequest) {
 
     const client = new ZohoBooksClient("spa");
 
-    // Get account ID from account code — paginate until found or exhausted
+    // Get account ID from account code — try active, then inactive (show_inactive_accounts)
     let acct: Record<string, string> | undefined;
-    let page = 1;
-    let totalFetched = 0;
-    while (!acct) {
-      const coaResp = await client.get("chartofaccounts", {
-        sort_column: "account_code",
-        per_page: "200",
-        page: String(page),
-      }) as Record<string, unknown>;
-      const batch = (coaResp.chartofaccounts ?? []) as Record<string, string>[];
-      if (batch.length === 0) break;
-      totalFetched += batch.length;
-      acct = batch.find(a => a.account_code === account_code);
-      const ctx = coaResp.page_context as Record<string, unknown> | undefined;
-      if (!ctx?.has_more_page) break;
-      page++;
+    let allAccounts: Record<string, string>[] = [];
+    for (const showInactive of ["false", "true"]) {
+      let page = 1;
+      while (true) {
+        const coaResp = await client.get("chartofaccounts", {
+          sort_column: "account_code",
+          per_page: "200",
+          page: String(page),
+          show_inactive_accounts: showInactive,
+        }) as Record<string, unknown>;
+        const batch = (coaResp.chartofaccounts ?? []) as Record<string, string>[];
+        if (batch.length === 0) break;
+        allAccounts = allAccounts.concat(batch);
+        const found = batch.find(a => a.account_code === account_code);
+        if (found) { acct = found; break; }
+        const ctx = coaResp.page_context as Record<string, unknown> | undefined;
+        if (!ctx?.has_more_page) break;
+        page++;
+      }
+      if (acct) break;
     }
     if (!acct) {
-      return NextResponse.json({ error: `Account ${account_code} not found after fetching ${totalFetched} accounts across ${page} pages` });
+      const fuelAccounts = allAccounts.filter(a => /fuel|car/i.test(a.account_name ?? ""));
+      return NextResponse.json({ error: `Account ${account_code} not found (fetched ${allAccounts.length} total)`, fuel_accounts: fuelAccounts });
     }
 
     // Pull account transactions report
