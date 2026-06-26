@@ -30,7 +30,7 @@ const CHUNK_DAYS = 7; // max days per fetchTransactionLines call
 // all rows are written so any missed rows are corrected before the route returns.
 const SGA_SUB_FIX: [string[], string][] = [
   [["software", "subscription", "saas", "license", "licence", "system", "fresha", "highlevel", "high level", "shopify", "openai", "open ai", "anthropic", "zoho corp", "talexio", "fera commerce"], "software"],
-  [["travel", "transport", "flight", "accommodation", "taxi", "uber", "airbnb", "parking", "car hire", "car rental", "vehicle hire", "airline", "airways"], "travel"],
+  [["travel", "transport", "flight", "accommodation", "taxi", "uber", "bolt", "airbnb", "parking", "car hire", "car rental", "vehicle hire", "airline", "airways"], "travel"],
   [["fuel", "petrol", "diesel", "gas station"], "fuel"],
   [["clean", "hygiene", "sanitiz", "pest"], "cleaning"],
   // Laundry runs AFTER cleaning so its keywords win over the bare "clean" match above.
