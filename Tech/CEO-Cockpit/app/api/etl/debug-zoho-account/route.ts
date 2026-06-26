@@ -13,15 +13,26 @@ export async function POST(req: NextRequest) {
 
     const client = new ZohoBooksClient("spa");
 
-    // Get account ID from account code — use default (active) accounts only
-    const coaResp = await client.get("chartofaccounts", {
-      sort_column: "account_code",
-      per_page: "200",
-    }) as Record<string, unknown>;
-    const accounts = (coaResp.chartofaccounts ?? []) as Record<string, string>[];
-    const acct = accounts.find(a => (a.account_code ?? a.code) === account_code);
+    // Get account ID from account code — paginate until found or exhausted
+    let acct: Record<string, string> | undefined;
+    let page = 1;
+    let totalFetched = 0;
+    while (!acct) {
+      const coaResp = await client.get("chartofaccounts", {
+        sort_column: "account_code",
+        per_page: "200",
+        page: String(page),
+      }) as Record<string, unknown>;
+      const batch = (coaResp.chartofaccounts ?? []) as Record<string, string>[];
+      if (batch.length === 0) break;
+      totalFetched += batch.length;
+      acct = batch.find(a => a.account_code === account_code);
+      const ctx = coaResp.page_context as Record<string, unknown> | undefined;
+      if (!ctx?.has_more_page) break;
+      page++;
+    }
     if (!acct) {
-      return NextResponse.json({ error: `Account ${account_code} not found in active accounts (got ${accounts.length})`, sample: accounts.slice(0, 5), rawKeys: accounts[0] ? Object.keys(accounts[0]) : [] });
+      return NextResponse.json({ error: `Account ${account_code} not found after fetching ${totalFetched} accounts across ${page} pages` });
     }
 
     // Pull account transactions report
