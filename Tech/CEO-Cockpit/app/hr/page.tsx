@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { SyncButton } from "@/components/dashboard/SyncButton";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
@@ -1765,7 +1766,11 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
         // True when the selected range has no payslip yet (salaries estimated).
         const periodExtrapolated = (splitsData?.extrapolatedCount ?? 0) > 0;
 
-        return (
+        // Portal to <body>: the dashboard's <main> has a CSS transform, which
+        // makes it the containing block for position:fixed — without the portal
+        // the overlay would size to the full-height page and center the panel
+        // far below the viewport (the "click does nothing but blur" bug).
+        return createPortal(
           <div
             className="fixed inset-0 z-50 flex items-center justify-end"
             onClick={() => setDrill(null)}
@@ -1923,11 +1928,12 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
                 </a>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body,
         );
       })()}
 
-      {clockedInModalOpen && (
+      {clockedInModalOpen && createPortal(
         <div
           className="fixed inset-0 z-50 flex items-start justify-center pt-12 pb-8 px-4 bg-black/50 backdrop-blur-sm"
           onClick={() => setClockedInModalOpen(false)}
@@ -1961,7 +1967,8 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
               />
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* ══════════════════════════════════════════════════════════════════
@@ -1978,7 +1985,7 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
         const badgeCls     = isLateModal
           ? "bg-red-50 text-red-600"
           : "bg-orange-50 text-orange-600";
-        return (
+        return createPortal(
           <div
             className="fixed inset-0 z-50 flex items-start justify-center pt-12 pb-8 px-4 bg-black/50 backdrop-blur-sm"
             onClick={() => setAttendanceModalOpen(false)}
@@ -2026,7 +2033,8 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
                 )}
               </div>
             </div>
-          </div>
+          </div>,
+          document.body,
         );
       })()}
     </>
