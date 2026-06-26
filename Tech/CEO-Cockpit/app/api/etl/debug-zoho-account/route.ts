@@ -26,6 +26,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ txn_id: body.txn_id, txn_type: type, detail: detail[cfg.key] ?? detail });
     }
 
+    // Usage C: account transactions report via known account_id
+    if (body.account_id && body.date_from && body.date_to) {
+      const txnResp = await client.get("reports/accounttransactions", {
+        account_id: body.account_id,
+        from_date:  body.date_from,
+        to_date:    body.date_to,
+      }) as Record<string, unknown>;
+      const transactions = ((txnResp.transactions ?? txnResp.account_transactions ?? []) as Record<string, unknown>[]);
+      const debit  = transactions.reduce((s, t) => s + Number(t.debit_amount  ?? 0), 0);
+      const credit = transactions.reduce((s, t) => s + Number(t.credit_amount ?? 0), 0);
+      return NextResponse.json({
+        account_id: body.account_id,
+        date_from: body.date_from,
+        date_to: body.date_to,
+        transaction_count: transactions.length,
+        debit_total:  Math.round(debit  * 100) / 100,
+        credit_total: Math.round(credit * 100) / 100,
+        net: Math.round((debit - credit) * 100) / 100,
+        raw_keys: Object.keys(txnResp),
+        transactions: transactions.map(t => ({
+          date:   t.transaction_date,
+          type:   t.transaction_type,
+          ref:    t.reference_number,
+          entity: t.entity_name,
+          debit:  t.debit_amount,
+          credit: t.credit_amount,
+          desc:   t.description,
+        })),
+      });
+    }
+
     // Usage B: scan all expenses for the date range, fetch detail for each
     const { account_code, date_from, date_to } = body;
     if (!account_code || !date_from || !date_to) {
