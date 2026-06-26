@@ -1,70 +1,78 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ZohoBooksClient } from "../../../../lib/etl/zoho-client";
 
-// Debug endpoint: scan Zoho expenses + bills for a given account_code in a date range.
-// Bypasses chart-of-accounts lookup (611151 not in COA API).
-// Usage: POST { account_code: "611151", date_from: "2026-05-01", date_to: "2026-05-31" }
+// Debug endpoint: inspect Zoho transactions for a given account_code.
+// Usage A: POST { txn_id: "128265000029661114", txn_type: "expense" }
+//   → fetch that specific transaction detail
+// Usage B: POST { account_code: "611151", date_from: "2026-05-01", date_to: "2026-05-31" }
+//   → list expenses for date range; for each, fetch detail and check line items
 export async function POST(req: NextRequest) {
   try {
-    const { account_code, date_from, date_to } = await req.json();
-    if (!account_code || !date_from || !date_to) {
-      return NextResponse.json({ error: "account_code, date_from, date_to required" }, { status: 400 });
-    }
-
+    const body = await req.json() as Record<string, string>;
     const client = new ZohoBooksClient("spa");
 
-    type Hit = {
-      source: string;
-      txn_id: string;
-      date: string;
-      status: string;
-      vendor: string;
-      line_account_code: string;
-      line_account_name: string;
-      amount: number;
-      debit_or_credit?: string;
-    };
+    // Usage A: fetch specific transaction by ID
+    if (body.txn_id) {
+      const type = body.txn_type ?? "expense";
+      const endpointMap: Record<string, { ep: string; key: string }> = {
+        expense:      { ep: "expenses",       key: "expense"      },
+        bill:         { ep: "bills",          key: "bill"         },
+        journal:      { ep: "journals",       key: "journal"      },
+        vendorcredit: { ep: "vendor_credits", key: "vendor_credit"},
+      };
+      const cfg = endpointMap[type];
+      if (!cfg) return NextResponse.json({ error: `Unknown txn_type: ${type}` }, { status: 400 });
+      const detail = await client.get(`${cfg.ep}/${body.txn_id}`) as Record<string, unknown>;
+      return NextResponse.json({ txn_id: body.txn_id, txn_type: type, detail: detail[cfg.key] ?? detail });
+    }
+
+    // Usage B: scan all expenses for the date range, fetch detail for each
+    const { account_code, date_from, date_to } = body;
+    if (!account_code || !date_from || !date_to) {
+      return NextResponse.json({ error: "Provide either txn_id+txn_type OR account_code+date_from+date_to" }, { status: 400 });
+    }
+
+    type Hit = { source: string; txn_id: string; date: string; status: string; vendor: string; account_code: string; account_name: string; amount: number; };
     const hits: Hit[] = [];
+    const sources = [
+      { source: "expense", ep: "expenses",      listKey: "expenses",      detailKey: "expense",      idField: "expense_id" },
+      { source: "bill",    ep: "bills",          listKey: "bills",         detailKey: "bill",         idField: "bill_id"    },
+      { source: "journal", ep: "journals",       listKey: "journals",      detailKey: "journal",      idField: "journal_id" },
+    ];
 
-    // Helper: scan a list endpoint, check line items for the target account_code
-    async function scanSource(source: string, endpoint: string, listKey: string, params: Record<string, string>) {
-      const items = await client.getAllPages(endpoint, listKey, params) as Record<string, unknown>[];
-
+    for (const src of sources) {
+      const items = await client.getAllPages(src.ep, src.listKey, { date_start: date_from, date_end: date_to }) as Record<string, unknown>[];
       for (const item of items) {
-        const lines = (item.line_items ?? []) as Record<string, unknown>[];
+        const id = String(item[src.idField] ?? "");
+        // Fetch detail to get full line items with account codes
+        let detail: Record<string, unknown>;
+        try {
+          const dr = await client.get(`${src.ep}/${id}`) as Record<string, unknown>;
+          detail = (dr[src.detailKey] ?? dr) as Record<string, unknown>;
+        } catch { continue; }
+
+        const lines = (detail.line_items ?? []) as Record<string, unknown>[];
         for (const ln of lines) {
-          const code = String(ln.account_code ?? ln.account_id ?? "");
-          if (code === account_code || String(ln.account_name ?? "").toLowerCase().includes("fuel")) {
+          const code = String(ln.account_code ?? "").trim();
+          const name = String(ln.account_name ?? "").toLowerCase();
+          if (code === account_code || name.includes("fuel")) {
             hits.push({
-              source,
-              txn_id:            String(item.expense_id ?? item.bill_id ?? item.journal_id ?? ""),
-              date:              String(item.date ?? ""),
-              status:            String(item.status ?? ""),
-              vendor:            String(item.vendor_name ?? item.payee ?? item.notes ?? ""),
-              line_account_code: code,
-              line_account_name: String(ln.account_name ?? ""),
-              amount:            Number(ln.amount ?? ln.debit_amount ?? 0),
-              debit_or_credit:   String(ln.debit_or_credit ?? ""),
+              source:       src.source,
+              txn_id:       id,
+              date:         String(detail.date ?? detail.journal_date ?? ""),
+              status:       String(detail.status ?? ""),
+              vendor:       String(detail.vendor_name ?? detail.contact_name ?? detail.payee ?? ""),
+              account_code: code,
+              account_name: String(ln.account_name ?? ""),
+              amount:       Number(ln.amount ?? ln.debit_amount ?? 0),
             });
           }
         }
       }
     }
 
-    await scanSource("expense", "expenses", "expenses", { date_start: date_from, date_end: date_to });
-    await scanSource("bill",    "bills",    "bills",    { date_start: date_from, date_end: date_to });
-    await scanSource("journal", "journals", "journals", { date_start: date_from, date_end: date_to });
-
     const total = hits.reduce((s, h) => s + h.amount, 0);
-
-    return NextResponse.json({
-      account_code,
-      date_from,
-      date_to,
-      hit_count: hits.length,
-      total_zoho: Math.round(total * 100) / 100,
-      hits,
-    });
+    return NextResponse.json({ account_code, date_from, date_to, hit_count: hits.length, total_zoho: Math.round(total * 100) / 100, hits });
   } catch (e) {
     return NextResponse.json({ error: String(e), stack: (e as Error).stack?.split("\n").slice(0, 5) }, { status: 500 });
   }
