@@ -33,33 +33,55 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Provide date_from and date_to" }, { status: 400 });
     }
 
-    // Fetch expenses filtered by account_id directly (single paginated list call, no detail fetches)
+    // Replicate ETL's loadAccountMeta: active pass + AccountType.Inactive pass
+    // Then look up the target account_id to see its type and section
+    const target_account_id = body.account_id ?? "";
     if (!target_account_id) {
-      return NextResponse.json({ error: "account_id required for this scan" }, { status: 400 });
+      return NextResponse.json({ error: "account_id required" }, { status: 400 });
     }
-    const filteredExpenses = await client.getAllPages("expenses", "expenses", {
-      account_id: target_account_id,
-      date_start: date_from,
-      date_end:   date_to,
-    }) as Record<string, unknown>[];
 
-    const total = filteredExpenses.reduce((s, e) => s + Number(e.total ?? e.amount ?? 0), 0);
+    type AccountEntry = { account_id: string; account_code: string; account_name: string; account_type: string; is_active: boolean; section: string; };
+    const allAccounts = new Map<string, AccountEntry>();
+
+    async function loadPass(extra: Record<string, string>, label: string) {
+      let page = 1;
+      while (true) {
+        const data = await client.get("chartofaccounts", { page: String(page), per_page: "200", ...extra }) as Record<string, unknown>;
+        const accounts = (data.chartofaccounts ?? []) as Record<string, unknown>[];
+        for (const a of accounts) {
+          const id = String(a.account_id ?? "");
+          if (!id || allAccounts.has(id)) continue;
+          const type = String(a.account_type ?? "").toLowerCase();
+          let section = "other";
+          if (type.includes("income") || type.includes("revenue")) section = "income";
+          else if (type.includes("expense") || type.includes("cost_of_goods") || type.includes("cogs")) section = "expense";
+          allAccounts.set(id, {
+            account_id: id,
+            account_code: String(a.account_code ?? "").trim(),
+            account_name: String(a.account_name ?? "").trim(),
+            account_type: type,
+            is_active: Boolean(a.is_active),
+            section,
+          });
+        }
+        const ctx = data.page_context as Record<string, unknown> | undefined;
+        if (!ctx?.has_more_page) break;
+        page++;
+      }
+    }
+
+    await loadPass({}, "active");
+    const afterActive = allAccounts.size;
+    await loadPass({ filter_by: "AccountType.Inactive" }, "inactive");
+
+    const targetAcct = allAccounts.get(target_account_id);
     return NextResponse.json({
-      date_from,
-      date_to,
-      account_id: target_account_id,
-      count: filteredExpenses.length,
-      total_zoho: Math.round(total * 100) / 100,
-      expenses: filteredExpenses.map(e => ({
-        id:      e.expense_id,
-        date:    e.date,
-        status:  e.status,
-        account: e.account_name,
-        amount:  e.total ?? e.amount,
-        vendor:  e.vendor_name ?? e.paid_through_account_name,
-        desc:    e.description,
-        created: e.created_time,
-      })),
+      target_account_id,
+      found: !!targetAcct,
+      account_detail: targetAcct ?? null,
+      total_accounts: allAccounts.size,
+      active_count: afterActive,
+      inactive_count: allAccounts.size - afterActive,
     });
   } catch (e) {
     return NextResponse.json({ error: String(e), stack: (e as Error).stack?.split("\n").slice(0, 5) }, { status: 500 });
