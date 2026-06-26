@@ -26,64 +26,57 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ txn_id: body.txn_id, txn_type: type, detail: detail[cfg.key] ?? detail });
     }
 
-    // Usage B: scan all expenses+bills+journals, match by account_id or account_name containing "fuel"
+    // Usage B: P&L report + expenses filtered by account_id (single API calls, no per-txn detail fetching)
     const { date_from, date_to } = body;
-    const target_account_id = body.account_id ?? "";  // can also pass account_id here
-    const account_code = body.account_code ?? "";
+    const target_account_id = body.account_id ?? "";
     if (!date_from || !date_to) {
-      return NextResponse.json({ error: "Provide date_from and date_to for a full scan" }, { status: 400 });
+      return NextResponse.json({ error: "Provide date_from and date_to" }, { status: 400 });
     }
 
-    type Hit = { source: string; txn_id: string; date: string; status: string; vendor: string; account_id: string; account_code: string; account_name: string; amount: number; };
-    const hits: Hit[] = [];
-    const sources = [
-      { source: "expense", ep: "expenses",      listKey: "expenses",      detailKey: "expense",      idField: "expense_id" },
-      { source: "bill",    ep: "bills",          listKey: "bills",         detailKey: "bill",         idField: "bill_id"    },
-      { source: "journal", ep: "journals",       listKey: "journals",      detailKey: "journal",      idField: "journal_id" },
-    ];
+    // 1. Fetch P&L report to see account totals
+    const plResp = await client.get("reports/profitandloss", {
+      from_date: date_from,
+      to_date:   date_to,
+      cash_based: "false",
+    }) as Record<string, unknown>;
 
-    for (const src of sources) {
-      const items = await client.getAllPages(src.ep, src.listKey, { date_start: date_from, date_end: date_to }) as Record<string, unknown>[];
-      for (const item of items) {
-        const id = String(item[src.idField] ?? "");
-        let detail: Record<string, unknown>;
-        try {
-          const dr = await client.get(`${src.ep}/${id}`) as Record<string, unknown>;
-          detail = (dr[src.detailKey] ?? dr) as Record<string, unknown>;
-        } catch { continue; }
-
-        // Also check top-level account_id/account_name for single-line expenses
-        const topAccountId   = String(detail.account_id ?? "");
-        const topAccountName = String(detail.account_name ?? "").toLowerCase();
-        const lines = (detail.line_items ?? []) as Record<string, unknown>[];
-
-        const allLines: Record<string, unknown>[] = lines.length > 0 ? lines : [detail];
-        for (const ln of allLines) {
-          const lid  = String(ln.account_id ?? topAccountId);
-          const code = String(ln.account_code ?? "").trim();
-          const name = String(ln.account_name ?? topAccountName).toLowerCase();
-          const matchesId   = target_account_id && lid  === target_account_id;
-          const matchesCode = account_code       && code === account_code;
-          const matchesFuel = name.includes("fuel");
-          if (matchesId || matchesCode || matchesFuel) {
-            hits.push({
-              source:       src.source,
-              txn_id:       id,
-              date:         String(detail.date ?? detail.journal_date ?? ""),
-              status:       String(detail.status ?? ""),
-              vendor:       String(detail.vendor_name ?? detail.contact_name ?? detail.payee ?? ""),
-              account_id:   lid,
-              account_code: code,
-              account_name: String(ln.account_name ?? topAccountName),
-              amount:       Number(ln.amount ?? ln.debit_amount ?? 0),
-            });
-          }
+    // Walk the P&L tree looking for "fuel" accounts
+    type PlLine = { account_id?: string; account_name?: string; total?: number; account_transactions?: PlLine[]; accounts?: PlLine[]; };
+    function findFuelLines(node: Record<string, unknown>): PlLine[] {
+      const results: PlLine[] = [];
+      const name = String(node.account_name ?? node.name ?? "").toLowerCase();
+      if (name.includes("fuel")) {
+        results.push({ account_id: String(node.account_id ?? ""), account_name: String(node.account_name ?? node.name ?? ""), total: Number(node.total ?? node.amount ?? 0) });
+      }
+      for (const key of ["account_transactions", "accounts", "line_items", "transactions"]) {
+        const children = node[key] as Record<string, unknown>[] | undefined;
+        if (Array.isArray(children)) {
+          for (const child of children) results.push(...findFuelLines(child));
         }
       }
+      return results;
+    }
+    const fuelLines = findFuelLines(plResp as Record<string, unknown>);
+
+    // 2. Fetch expenses filtered by account_id directly (Zoho supports this filter)
+    let filteredExpenses: Record<string, unknown>[] = [];
+    if (target_account_id) {
+      filteredExpenses = await client.getAllPages("expenses", "expenses", {
+        account_id:  target_account_id,
+        date_start:  date_from,
+        date_end:    date_to,
+      }) as Record<string, unknown>[];
     }
 
-    const total = hits.reduce((s, h) => s + h.amount, 0);
-    return NextResponse.json({ date_from, date_to, hit_count: hits.length, total_zoho: Math.round(total * 100) / 100, hits });
+    return NextResponse.json({
+      date_from,
+      date_to,
+      pl_fuel_lines: fuelLines,
+      pl_top_keys: Object.keys(plResp),
+      expenses_filtered_count: filteredExpenses.length,
+      expenses_filtered_total: Math.round(filteredExpenses.reduce((s, e) => s + Number(e.total ?? e.amount ?? 0), 0) * 100) / 100,
+      expenses_filtered: filteredExpenses.map(e => ({ id: e.expense_id, date: e.date, status: e.status, account: e.account_name, amount: e.total ?? e.amount, vendor: e.vendor_name ?? e.paid_through_account_name })),
+    });
   } catch (e) {
     return NextResponse.json({ error: String(e), stack: (e as Error).stack?.split("\n").slice(0, 5) }, { status: 500 });
   }
