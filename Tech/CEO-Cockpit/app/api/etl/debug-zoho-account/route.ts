@@ -22,37 +22,38 @@ export async function POST(req: NextRequest) {
       line_account_code: string;
       line_account_name: string;
       amount: number;
+      debit_or_credit?: string;
     };
     const hits: Hit[] = [];
 
     // Helper: scan a list endpoint, check line items for the target account_code
-    async function scanSource(source: string, endpoint: string, listKey: string, dateParam: { from: string; to: string; }) {
-      const items = await client.getAllPages(endpoint, listKey, {
-        date_start: dateParam.from,
-        date_end:   dateParam.to,
-      }) as Record<string, unknown>[];
+    async function scanSource(source: string, endpoint: string, listKey: string, params: Record<string, string>) {
+      const items = await client.getAllPages(endpoint, listKey, params) as Record<string, unknown>[];
 
       for (const item of items) {
         const lines = (item.line_items ?? []) as Record<string, unknown>[];
         for (const ln of lines) {
-          if (String(ln.account_code ?? "") === account_code) {
+          const code = String(ln.account_code ?? ln.account_id ?? "");
+          if (code === account_code || String(ln.account_name ?? "").toLowerCase().includes("fuel")) {
             hits.push({
               source,
               txn_id:            String(item.expense_id ?? item.bill_id ?? item.journal_id ?? ""),
               date:              String(item.date ?? ""),
               status:            String(item.status ?? ""),
-              vendor:            String(item.vendor_name ?? item.payee ?? ""),
-              line_account_code: String(ln.account_code ?? ""),
+              vendor:            String(item.vendor_name ?? item.payee ?? item.notes ?? ""),
+              line_account_code: code,
               line_account_name: String(ln.account_name ?? ""),
-              amount:            Number(ln.amount ?? 0),
+              amount:            Number(ln.amount ?? ln.debit_amount ?? 0),
+              debit_or_credit:   String(ln.debit_or_credit ?? ""),
             });
           }
         }
       }
     }
 
-    await scanSource("expense", "expenses", "expenses", { from: date_from, to: date_to });
-    await scanSource("bill",    "bills",    "bills",    { from: date_from, to: date_to });
+    await scanSource("expense", "expenses", "expenses", { date_start: date_from, date_end: date_to });
+    await scanSource("bill",    "bills",    "bills",    { date_start: date_from, date_end: date_to });
+    await scanSource("journal", "journals", "journals", { date_start: date_from, date_end: date_to });
 
     const total = hits.reduce((s, h) => s + h.amount, 0);
 
