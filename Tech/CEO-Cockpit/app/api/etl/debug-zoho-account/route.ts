@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ZohoBooksClient } from "../../../../lib/etl/zoho-client";
 
-// Debug endpoint: inspect Zoho transactions for a given account_code.
-// Usage A: POST { txn_id: "128265000029661114", txn_type: "expense" }
-//   → fetch that specific transaction detail
-// Usage B: POST { account_code: "611151", date_from: "2026-05-01", date_to: "2026-05-31" }
-//   → list expenses for date range; for each, fetch detail and check line items
+// Debug endpoint for Car-Fuel investigation.
+// Usage A: POST { txn_id: "...", txn_type: "expense" }  → fetch expense detail
+// Usage B: POST { account_id: "..." }                   → trace account through ETL's COA cache
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as Record<string, string>;
@@ -15,10 +13,10 @@ export async function POST(req: NextRequest) {
     if (body.txn_id) {
       const type = body.txn_type ?? "expense";
       const endpointMap: Record<string, { ep: string; key: string }> = {
-        expense:      { ep: "expenses",       key: "expense"      },
-        bill:         { ep: "bills",          key: "bill"         },
-        journal:      { ep: "journals",       key: "journal"      },
-        vendorcredit: { ep: "vendor_credits", key: "vendor_credit"},
+        expense:      { ep: "expenses",       key: "expense"       },
+        bill:         { ep: "bills",          key: "bill"          },
+        journal:      { ep: "journals",       key: "journal"       },
+        vendorcredit: { ep: "vendor_credits", key: "vendor_credit" },
       };
       const cfg = endpointMap[type];
       if (!cfg) return NextResponse.json({ error: `Unknown txn_type: ${type}` }, { status: 400 });
@@ -26,24 +24,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ txn_id: body.txn_id, txn_type: type, detail: detail[cfg.key] ?? detail });
     }
 
-    // Usage B: P&L report + expenses filtered by account_id (single API calls, no per-txn detail fetching)
-    const { date_from, date_to } = body;
+    // Usage B: replicate ETL's loadAccountMeta (active + inactive passes) and
+    // return what section the target account gets. This tells us whether the
+    // ETL would drop lines for this account at the "if (section === 'other')" gate.
     const target_account_id = body.account_id ?? "";
-    if (!date_from || !date_to) {
-      return NextResponse.json({ error: "Provide date_from and date_to" }, { status: 400 });
-    }
+    if (!target_account_id) return NextResponse.json({ error: "account_id or txn_id required" }, { status: 400 });
 
-    // Replicate ETL's loadAccountMeta: active pass + AccountType.Inactive pass
-    // Then look up the target account_id to see its type and section
-    const target_account_id = body.account_id ?? "";
-    if (!target_account_id) {
-      return NextResponse.json({ error: "account_id required" }, { status: 400 });
-    }
-
-    type AccountEntry = { account_id: string; account_code: string; account_name: string; account_type: string; is_active: boolean; section: string; };
+    type AccountEntry = {
+      account_id: string; account_code: string; account_name: string;
+      account_type: string; is_active: boolean; section: string; pass: string;
+    };
     const allAccounts = new Map<string, AccountEntry>();
 
-    async function loadPass(extra: Record<string, string>, label: string) {
+    async function loadPass(extra: Record<string, string>, passLabel: string) {
       let page = 1;
       while (true) {
         const data = await client.get("chartofaccounts", { page: String(page), per_page: "200", ...extra }) as Record<string, unknown>;
@@ -62,6 +55,7 @@ export async function POST(req: NextRequest) {
             account_type: type,
             is_active: Boolean(a.is_active),
             section,
+            pass: passLabel,
           });
         }
         const ctx = data.page_context as Record<string, unknown> | undefined;
@@ -79,6 +73,7 @@ export async function POST(req: NextRequest) {
       target_account_id,
       found: !!targetAcct,
       account_detail: targetAcct ?? null,
+      etl_would_drop: !targetAcct || targetAcct.section === "other",
       total_accounts: allAccounts.size,
       active_count: afterActive,
       inactive_count: allAccounts.size - afterActive,
