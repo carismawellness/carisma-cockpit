@@ -19,9 +19,9 @@ export async function POST(req: NextRequest) {
       per_page: "200",
     }) as Record<string, unknown>;
     const accounts = (coaResp.chartofaccounts ?? []) as Record<string, string>[];
-    const acct = accounts.find(a => a.account_code === account_code);
+    const acct = accounts.find(a => (a.account_code ?? a.code) === account_code);
     if (!acct) {
-      return NextResponse.json({ error: `Account ${account_code} not found in active accounts (got ${accounts.length})`, sample: accounts.slice(0, 5).map(a => ({ code: a.account_code, name: a.account_name })) });
+      return NextResponse.json({ error: `Account ${account_code} not found in active accounts (got ${accounts.length})`, sample: accounts.slice(0, 5), rawKeys: accounts[0] ? Object.keys(accounts[0]) : [] });
     }
 
     // Pull account transactions report
@@ -37,8 +37,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       account_code,
-      account_name: acct.account_name,
+      account_name: acct.account_name ?? acct.name,
       account_id: acct.account_id,
+      acct_raw: acct,
       date_from,
       date_to,
       transaction_count: transactions.length,
