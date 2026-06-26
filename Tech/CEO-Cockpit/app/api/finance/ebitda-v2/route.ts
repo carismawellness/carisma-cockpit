@@ -517,7 +517,7 @@ export async function GET(req: Request) {
         break;
       }
       case "sga": {
-        // Prof fee contacts: re-route to their configured venue (e.g. HQ) regardless of transaction venue
+        // Prof fee contacts (is_prof_fee=true): re-route to configured venue as SGA
         if (profFeeMap.has(roleKey)) {
           const pf = profFeeMap.get(roleKey)!;
           const pfVenue = pf.venue;
@@ -525,6 +525,17 @@ export async function GET(req: Request) {
           if (venues[pfVenue]) {
             venues[pfVenue].sga += amount;
             venues[pfVenue].sga_by_sub[sgaSub] = (venues[pfVenue].sga_by_sub[sgaSub] ?? 0) + amount;
+          }
+          break;
+        }
+        // Wage-mapped contacts with a venue_override: reclassify SGA → wages at override venue
+        // Used for CRM/consulting staff billed via professional-services CoA but tracked as headcount
+        if (wageRoleMap.has(roleKey) && wageVenueOverrideMap.has(roleKey)) {
+          const effectiveVenue = wageVenueOverrideMap.get(roleKey)!;
+          const wageRole = wageRoleMap.get(roleKey)!;
+          if (venues[effectiveVenue]) {
+            venues[effectiveVenue].wages += amount;
+            venues[effectiveVenue].wage_by_role[wageRole] = (venues[effectiveVenue].wage_by_role[wageRole] ?? 0) + amount;
           }
           break;
         }
