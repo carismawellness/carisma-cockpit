@@ -668,8 +668,11 @@ function HRContent({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const leaves      = leaveBalances ?? LEAVE_BALANCES_FALLBACK;
   const payrollData = payroll ?? PAYROLL_FALLBACK;
 
-  const hcByLocation    = financialsQ.data?.byLocation ?? HC_BY_LOCATION_FALLBACK;
-  const hcByBU          = financialsQ.data?.byBusinessUnit ?? HC_BY_BU_FALLBACK;
+  // Sorted highest → lowest HC% (copy first — never mutate the react-query cache).
+  const hcByLocation    = [...(financialsQ.data?.byLocation ?? HC_BY_LOCATION_FALLBACK)]
+    .sort((a, b) => b.hcPct - a.hcPct);
+  const hcByBU          = [...(financialsQ.data?.byBusinessUnit ?? HC_BY_BU_FALLBACK)]
+    .sort((a, b) => b.hcPct - a.hcPct);
   const groupHcPct      = financialsQ.data?.groupHcPct ?? GROUP_HC_PCT_FALLBACK;
   const totalRevenue    = financialsQ.data?.totalRevenue ?? TOTAL_REVENUE_FALLBACK;
   const payrollComplete = financialsQ.data?.payrollComplete ?? false;
