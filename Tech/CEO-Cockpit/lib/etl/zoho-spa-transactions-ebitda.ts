@@ -73,6 +73,7 @@ const WAGES_RECLASS_FUZZY = [
   "bast",     // Nicole Maria Bast (unique surname)
   "juliana",  // Juliana Maria Velasquez
   "adeel",    // Adeel Khan
+  "leoner",   // Leoner A Maldo (CRM consultant → HQ wages)
 ];
 
 function isWagesReclassContact(contactName: string): boolean {
