@@ -57,13 +57,15 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Usage B: scan all expenses for the date range, fetch detail for each
-    const { account_code, date_from, date_to } = body;
-    if (!account_code || !date_from || !date_to) {
-      return NextResponse.json({ error: "Provide either txn_id+txn_type OR account_code+date_from+date_to" }, { status: 400 });
+    // Usage B: scan all expenses+bills+journals, match by account_id or account_name containing "fuel"
+    const { date_from, date_to } = body;
+    const target_account_id = body.account_id ?? "";  // can also pass account_id here
+    const account_code = body.account_code ?? "";
+    if (!date_from || !date_to) {
+      return NextResponse.json({ error: "Provide date_from and date_to for a full scan" }, { status: 400 });
     }
 
-    type Hit = { source: string; txn_id: string; date: string; status: string; vendor: string; account_code: string; account_name: string; amount: number; };
+    type Hit = { source: string; txn_id: string; date: string; status: string; vendor: string; account_id: string; account_code: string; account_name: string; amount: number; };
     const hits: Hit[] = [];
     const sources = [
       { source: "expense", ep: "expenses",      listKey: "expenses",      detailKey: "expense",      idField: "expense_id" },
@@ -75,26 +77,35 @@ export async function POST(req: NextRequest) {
       const items = await client.getAllPages(src.ep, src.listKey, { date_start: date_from, date_end: date_to }) as Record<string, unknown>[];
       for (const item of items) {
         const id = String(item[src.idField] ?? "");
-        // Fetch detail to get full line items with account codes
         let detail: Record<string, unknown>;
         try {
           const dr = await client.get(`${src.ep}/${id}`) as Record<string, unknown>;
           detail = (dr[src.detailKey] ?? dr) as Record<string, unknown>;
         } catch { continue; }
 
+        // Also check top-level account_id/account_name for single-line expenses
+        const topAccountId   = String(detail.account_id ?? "");
+        const topAccountName = String(detail.account_name ?? "").toLowerCase();
         const lines = (detail.line_items ?? []) as Record<string, unknown>[];
-        for (const ln of lines) {
+
+        const allLines: Record<string, unknown>[] = lines.length > 0 ? lines : [detail];
+        for (const ln of allLines) {
+          const lid  = String(ln.account_id ?? topAccountId);
           const code = String(ln.account_code ?? "").trim();
-          const name = String(ln.account_name ?? "").toLowerCase();
-          if (code === account_code || name.includes("fuel")) {
+          const name = String(ln.account_name ?? topAccountName).toLowerCase();
+          const matchesId   = target_account_id && lid  === target_account_id;
+          const matchesCode = account_code       && code === account_code;
+          const matchesFuel = name.includes("fuel");
+          if (matchesId || matchesCode || matchesFuel) {
             hits.push({
               source:       src.source,
               txn_id:       id,
               date:         String(detail.date ?? detail.journal_date ?? ""),
               status:       String(detail.status ?? ""),
               vendor:       String(detail.vendor_name ?? detail.contact_name ?? detail.payee ?? ""),
+              account_id:   lid,
               account_code: code,
-              account_name: String(ln.account_name ?? ""),
+              account_name: String(ln.account_name ?? topAccountName),
               amount:       Number(ln.amount ?? ln.debit_amount ?? 0),
             });
           }
@@ -103,7 +114,7 @@ export async function POST(req: NextRequest) {
     }
 
     const total = hits.reduce((s, h) => s + h.amount, 0);
-    return NextResponse.json({ account_code, date_from, date_to, hit_count: hits.length, total_zoho: Math.round(total * 100) / 100, hits });
+    return NextResponse.json({ date_from, date_to, hit_count: hits.length, total_zoho: Math.round(total * 100) / 100, hits });
   } catch (e) {
     return NextResponse.json({ error: String(e), stack: (e as Error).stack?.split("\n").slice(0, 5) }, { status: 500 });
   }
