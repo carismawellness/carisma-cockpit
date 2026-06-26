@@ -517,6 +517,17 @@ export async function GET(req: Request) {
         break;
       }
       case "sga": {
+        // Prof fee contacts: re-route to their configured venue (e.g. HQ) regardless of transaction venue
+        if (profFeeMap.has(roleKey)) {
+          const pf = profFeeMap.get(roleKey)!;
+          const pfVenue = pf.venue;
+          const sgaSub  = pf.sga_sub;
+          if (venues[pfVenue]) {
+            venues[pfVenue].sga += amount;
+            venues[pfVenue].sga_by_sub[sgaSub] = (venues[pfVenue].sga_by_sub[sgaSub] ?? 0) + amount;
+          }
+          break;
+        }
         venues[resolvedVenue].sga += amount;
         venues[resolvedVenue].sga_by_sub[sub] = (venues[resolvedVenue].sga_by_sub[sub] ?? 0) + amount;
         break;
