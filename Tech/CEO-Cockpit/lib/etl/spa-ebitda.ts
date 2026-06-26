@@ -311,7 +311,7 @@ export const COA_MAP: Record<string, [string, string]> = {
   "616650":  ["equal",            "sga"],
   "616670":  ["sales_ratio",      "sga"],
   "616671":  ["ramla",            "sga"],
-  "616680":  ["equal",            "sga"],
+  "616680":  ["equal",            "sga_software"],
   "616681":  ["equal",            "sga"],
   "616700":  ["equal",            "sga"],
   "616710":  ["sales_ratio",      "sga"],
