@@ -101,13 +101,15 @@ function parseCurrency(val: string): number {
 }
 
 const PG_INT_MAX = 2_147_483_647; // PostgreSQL integer max (2^31 - 1)
+const MAX_DAILY_MESSAGES = 5_000;  // Sanity cap: no agent can have 5k+ conversations in one day
 
 function parseInteger(val: string): number {
-  const v = val.replace(/[^\d]/g, "");
-  if (!v) return 0;
-  const n = parseInt(v, 10) || 0;
+  // Strip currency symbols, commas, spaces, percent signs — but KEEP the decimal point
+  // so that "25,251.00" parses as 25,251 not 2,525,100 (old /[^\d]/ regex bug).
+  const clean = val.replace(/[€,\s%+]/g, "").trim();
+  if (!clean || clean === "#VALUE!" || clean === "OFF") return 0;
+  const n = Math.floor(Math.abs(parseFloat(clean) || 0));
   // Guard against corrupted cells (e.g. a phone number accidentally in a dial-count cell).
-  // Values above PG_INT_MAX would cause "out of range for type integer" upsert errors.
   return Math.min(n, PG_INT_MAX);
 }
 
@@ -193,7 +195,7 @@ function buildChatRow(slug: string, date: string, row: string[]): CrmRow {
     other_messages:      parseInteger(cell(row, 10)),
     other_booked:        parseInteger(cell(row, 11)),
     other_deposit:       parseInteger(cell(row, 12)),
-    total_messages:      parseInteger(cell(row, 13)),
+    total_messages:      Math.min(parseInteger(cell(row, 13)), MAX_DAILY_MESSAGES),
     total_booked:        parseInteger(cell(row, 14)),
     total_deposit_count: parseInteger(cell(row, 15)),
     conversion_rate_pct: parsePercent(cell(row, 16)),
@@ -236,7 +238,7 @@ function buildSdrRow(slug: string, date: string, row: string[]): CrmRow {
     other_messages:      outDials,                     // C
     other_booked:        parseInteger(cell(row, 5)),   // F (was 4)
     other_deposit:       parseInteger(cell(row, 6)),   // G (was 5)
-    total_messages:      Math.min(outDials + inRecv + chatConvs, PG_INT_MAX),
+    total_messages:      Math.min(outDials + inRecv + chatConvs, MAX_DAILY_MESSAGES),
     total_booked:        parseInteger(cell(row, 19)),  // T (was 17)
     total_deposit_count: parseInteger(cell(row, 20)),  // U (was 18)
     conversion_rate_pct: parsePercent(cell(row, 22)),  // W (was 19)
