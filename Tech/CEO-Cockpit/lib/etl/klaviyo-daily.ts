@@ -70,6 +70,28 @@ async function getBrandId(slug: string): Promise<string> {
   return rows[0].id as string;
 }
 
+/** Fetch profile_count for a single list, retrying 429s with real Retry-After
+ *  waits (capped at 30s, up to 5 attempts). Returns 0 on permanent failure so
+ *  the caller keeps summing the remaining lists instead of skipping silently. */
+async function fetchListProfileCount(apiKey: string, listId: string): Promise<number> {
+  const url = `${KLAVIYO_BASE}/lists/${listId}/?additional-fields%5Blist%5D=profile_count`;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const r = await fetch(url, { headers: klaviyoHeaders(apiKey) });
+    if (r.status === 429) {
+      const after = r.headers.get("Retry-After");
+      const waitMs = after
+        ? Math.min(parseInt(after, 10) * 1000, 30_000)
+        : Math.min(4_000 * (attempt + 1), 30_000);
+      await sleep(waitMs);
+      continue;
+    }
+    if (!r.ok) return 0;
+    const j = (await r.json()) as { data?: { attributes?: { profile_count?: number } } };
+    return j.data?.attributes?.profile_count ?? 0;
+  }
+  return 0; // gave up after 5 attempts
+}
+
 /** Get total subscriber count by summing per-list profile_count.
  *
  * Klaviyo's /lists/ collection endpoint does NOT expose profile_count as a
@@ -88,18 +110,8 @@ async function fetchSubscriberCount(apiKey: string): Promise<number> {
 
     let sum = 0;
     for (const list of lists) {
-      const url = `${KLAVIYO_BASE}/lists/${list.id}/?additional-fields%5Blist%5D=profile_count`;
-      const r = await fetchWithRetry(url, { headers: klaviyoHeaders(apiKey) });
-      if (!r.ok) {
-        // Skip this list on 429 rather than aborting all remaining ones.
-        if (r.status === 429) { await sleep(2000); continue; }
-        continue;
-      }
-      const j = (await r.json()) as {
-        data?: { attributes?: { profile_count?: number } };
-      };
-      sum += j.data?.attributes?.profile_count ?? 0;
-      await sleep(250);
+      sum += await fetchListProfileCount(apiKey, list.id);
+      await sleep(500); // 500ms gap — stays well within 75/sec burst limit
     }
     return sum;
   } catch {
