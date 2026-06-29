@@ -154,3 +154,8 @@ export async function POST(req: NextRequest) {
     total_crm_leads:  [...crmByKey.values()].reduce((a, b) => a + b, 0),
   });
 }
+
+// GET: Vercel cron entry-point — runs with the default 90-day window.
+export async function GET(req: NextRequest) {
+  return POST(new Request(req.url, { method: "POST", headers: req.headers }) as NextRequest);
+}

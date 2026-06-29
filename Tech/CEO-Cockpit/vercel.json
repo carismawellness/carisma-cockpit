@@ -9,6 +9,10 @@
       "schedule": "0 2 * * *"
     },
     {
+      "path": "/api/etl/lead-reconciliation",
+      "schedule": "30 2 * * *"
+    },
+    {
       "path": "/api/cron/ghl-opportunities-reconcile",
       "schedule": "*/30 * * * *"
     },

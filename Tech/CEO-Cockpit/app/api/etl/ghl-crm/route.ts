@@ -5,8 +5,12 @@
  *   - crm_daily            (total_leads, leads_meta, leads_crm, appointments_booked,
  *                            total_sales, unreplied_whatsapp, unworked_leads,
  *                            conversion_rate_pct, etl_synced_at)
- *   - crm_lead_reconciliation  (leads_meta vs leads_crm by date)
  *   - crm_booking_mix          (treatment names from opportunity titles)
+ *
+ * NOTE: crm_lead_reconciliation is intentionally NOT written here.
+ * The lead-reconciliation ETL (Phase 2 / dedicated 02:30 cron) is the
+ * sole writer — it uses the actual Meta Ads API lead counts from
+ * meta_campaigns_daily, which are more accurate than GHL attribution tags.
  *
  * Fields NOT populated (no GHL source — dashboard shows demo data):
  *   speed_to_lead_median_min, speed_to_lead_mean_min, total_calls,
@@ -379,7 +383,6 @@ export async function POST(req: NextRequest) {
 
       const dates = allDatesInRange(fromMs, toMs);
       const crmRows: object[] = [];
-      const reconRows: object[] = [];
 
       for (const dateStr of dates) {
         const cs = contactStats.get(dateStr) ?? { total: 0, meta: 0, unworked: 0 };
@@ -406,18 +409,10 @@ export async function POST(req: NextRequest) {
           conversion_rate_pct:  conversionPct,
           etl_synced_at:        syncedAt,
         });
-
-        reconRows.push({
-          date:      dateStr,
-          brand_id:  brandId,
-          leads_meta: cs.meta,
-          leads_crm:  cs.total,
-        });
       }
 
       await upsertRows(supabase, "crm_daily", crmRows, "date,brand_id");
-      await upsertRows(supabase, "crm_lead_reconciliation", reconRows, "date,brand_id");
-      totalRowsUpserted += crmRows.length + reconRows.length;
+      totalRowsUpserted += crmRows.length;
 
       // Build booking mix rows — aggregate treatment names from opportunity titles
       const mixRows: object[] = [];
