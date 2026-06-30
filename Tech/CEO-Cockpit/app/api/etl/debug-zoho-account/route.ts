@@ -2,12 +2,46 @@ import { NextRequest, NextResponse } from "next/server";
 import { ZohoBooksClient } from "../../../../lib/etl/zoho-client";
 
 // Debug endpoint for Car-Fuel investigation.
-// Usage A: POST { txn_id: "...", txn_type: "expense" }  → fetch expense detail
-// Usage B: POST { account_id: "..." }                   → trace account through ETL's COA cache
+// Usage A: POST { txn_id: "...", txn_type: "expense" }           → fetch expense detail
+// Usage B: POST { account_id: "..." }                            → trace account through ETL's COA cache
+// Usage C: POST { list_expenses: true, date_from: "...", date_to: "..." } → list all expense IDs in date range
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as Record<string, string>;
     const client = new ZohoBooksClient("spa");
+
+    // Usage C: list ALL expense IDs from Zoho for a date range (replicates listAllPages)
+    if (body.list_expenses) {
+      const dateFrom = body.date_from ?? "2026-05-01";
+      const dateTo   = body.date_to   ?? "2026-05-31";
+      const allExpenses: Array<{ id: string; date: string; status: string; account_name?: string; vendor?: string; total?: number }> = [];
+      let page = 1;
+      while (true) {
+        const data = await client.get("expenses", { page: String(page), per_page: "200", date_start: dateFrom, date_end: dateTo }) as Record<string, unknown>;
+        const items = (data.expenses ?? []) as Record<string, unknown>[];
+        for (const e of items) {
+          allExpenses.push({
+            id:           String(e.expense_id ?? ""),
+            date:         String(e.date ?? ""),
+            status:       String(e.status ?? ""),
+            account_name: String(e.account_name ?? ""),
+            vendor:       String(e.vendor_name ?? e.paid_through_account_name ?? ""),
+            total:        Number(e.total ?? 0),
+          });
+        }
+        const ctx = data.page_context as Record<string, unknown> | undefined;
+        if (!ctx?.has_more_page) break;
+        page++;
+      }
+      const TARGET_IDS = ["128265000029309134","128265000029294849","128265000029186704"];
+      return NextResponse.json({
+        date_from: dateFrom, date_to: dateTo,
+        total_expenses: allExpenses.length,
+        missing_in_list: TARGET_IDS.filter(id => !allExpenses.find(e => e.id === id)),
+        found_in_list: TARGET_IDS.filter(id => !!allExpenses.find(e => e.id === id)),
+        all_expense_ids: allExpenses.map(e => ({ id: e.id, date: e.date, status: e.status, vendor: e.vendor, total: e.total })),
+      });
+    }
 
     // Usage A: fetch specific transaction by ID
     if (body.txn_id) {
