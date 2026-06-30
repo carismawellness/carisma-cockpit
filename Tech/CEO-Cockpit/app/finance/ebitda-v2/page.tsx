@@ -905,6 +905,11 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
         />,
         document.body
       )}
+
+      {/* Page-level notes */}
+      <p className="mt-6 text-xs text-muted-foreground">
+        * Hyatt — Hotel is paying for Cleaning and Laundry hence no cost to Carisma
+      </p>
     </div>
   );
 }
