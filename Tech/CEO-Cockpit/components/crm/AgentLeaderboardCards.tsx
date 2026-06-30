@@ -75,8 +75,11 @@ type ChartRow = {
   other:       number;
   bkgBar:      number;
   bookings:    number;
-  bookingEff:  number;
-  bookingRate: number;
+  bookingEff:  number;   // "Lead conversion"  — sheet col H (avg_booking_eff, conv-rate fallback for Chat)
+  bookingRate: number;   // "Call conversion"  — sheet col I (avg_booking_rate)
+  talkTime:    number;   // "Talk time"        — total minutes, sheet col V (total_talk_time)
+  dials:       number;   // "Dials"            — outbound dials, SDR only (sum of other_messages / col C)
+  depositPct:  number;   // "Deposit %"        — sheet col Y (avg_deposit_pct)
   aov:         number;
   activeDays:  number;
 };
@@ -98,6 +101,12 @@ function toRow(agent: CrmAgent): ChartRow | null {
   const revBarTotal = isSlimming ? 0 : (channelSum > 0 ? channelSum : agent.totals.total_sales);
   const revenue     = channelSum > 0 ? channelSum : agent.totals.total_sales;
 
+  // Dials = outbound dials, an SDR-only metric (Chat agents don't dial — their
+  // `other_messages` field holds Other-channel message counts, not dials).
+  const dials = meta.role === "Chat"
+    ? 0
+    : agent.rows.reduce((s, r) => s + (r.other_messages ?? 0), 0);
+
   return {
     slug:        agent.slug,
     name:        agent.name,
@@ -111,6 +120,9 @@ function toRow(agent: CrmAgent): ChartRow | null {
     bookings:    agent.totals.total_bookings,
     bookingEff:  agent.totals.avg_booking_eff > 0 ? agent.totals.avg_booking_eff : agent.totals.avg_conversion_rate,
     bookingRate: agent.totals.avg_booking_rate,
+    talkTime:    agent.totals.total_talk_time,
+    dials,
+    depositPct:  agent.totals.avg_deposit_pct,
     aov:         agent.totals.avg_aov,
     activeDays:  agent.totals.active_days,
   };
@@ -119,6 +131,13 @@ function toRow(agent: CrmAgent): ChartRow | null {
 function sortByRevenue(rows: ChartRow[]): ChartRow[] {
   return [...rows].sort((a, b) => b.revenue - a.revenue);
 }
+
+// Talk Time is sourced from the CRM Master Sheet "Talk Time" column, which agents
+// currently fill in inconsistently (mixed HH:MM:SS / decimals / "OFF") and whose
+// total column frequently errors to #VALUE! — so the stored values are unreliable
+// (e.g. 6651m). Render "—" until the sheet column is standardized; flip to true to
+// surface the raw values. The metric is fully wired end-to-end and ready to enable.
+const TALK_TIME_RELIABLE = false;
 
 // ── Custom X-axis tick ────────────────────────────────────────────────────────
 
@@ -146,14 +165,16 @@ function MetricTick({
       </text>
       <text x={0} y={54}  textAnchor="middle" fontSize={10} fill={lc}>Bookings</text>
       <text x={0} y={68}  textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.bookings}</text>
-      <text x={0} y={86}  textAnchor="middle" fontSize={10} fill={lc}>Bkg Eff</text>
+      <text x={0} y={86}  textAnchor="middle" fontSize={10} fill={lc}>Lead Conv</text>
       <text x={0} y={100} textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.bookingEff > 0 ? `${row.bookingEff.toFixed(1)}%` : "—"}</text>
-      <text x={0} y={118} textAnchor="middle" fontSize={10} fill={lc}>Bkg Rate</text>
+      <text x={0} y={118} textAnchor="middle" fontSize={10} fill={lc}>Call Conv</text>
       <text x={0} y={132} textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.bookingRate > 0 ? `${row.bookingRate.toFixed(1)}%` : "—"}</text>
-      <text x={0} y={150} textAnchor="middle" fontSize={10} fill={lc}>AOV</text>
-      <text x={0} y={164} textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.aov > 0 ? `€${row.aov.toFixed(0)}` : "—"}</text>
-      <text x={0} y={182} textAnchor="middle" fontSize={10} fill={lc}>Active Days</text>
-      <text x={0} y={196} textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.activeDays}</text>
+      <text x={0} y={150} textAnchor="middle" fontSize={10} fill={lc}>Talk Time</text>
+      <text x={0} y={164} textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{TALK_TIME_RELIABLE && row.talkTime > 0 ? `${row.talkTime}m` : "—"}</text>
+      <text x={0} y={182} textAnchor="middle" fontSize={10} fill={lc}>Dials</text>
+      <text x={0} y={196} textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.dials > 0 ? row.dials.toLocaleString() : "—"}</text>
+      <text x={0} y={214} textAnchor="middle" fontSize={10} fill={lc}>Deposit %</text>
+      <text x={0} y={228} textAnchor="middle" fontSize={12} fontWeight={600} fill={vc}>{row.depositPct > 0 ? `${row.depositPct.toFixed(1)}%` : "—"}</text>
     </g>
   );
 }
@@ -205,8 +226,11 @@ function CustomTooltip({
         </>
       )}
       <div className="flex justify-between gap-4"><span>Total Bookings</span><span className="font-semibold tabular-nums">{row.bookings}</span></div>
-      <div className="flex justify-between gap-4"><span>Bkg Eff</span><span className="font-semibold tabular-nums">{row.bookingEff > 0 ? formatPercent(row.bookingEff) : "—"}</span></div>
-      <div className="flex justify-between gap-4"><span>Bkg Rate</span><span className="font-semibold tabular-nums">{row.bookingRate > 0 ? formatPercent(row.bookingRate) : "—"}</span></div>
+      <div className="flex justify-between gap-4"><span>Lead conversion</span><span className="font-semibold tabular-nums">{row.bookingEff > 0 ? formatPercent(row.bookingEff) : "—"}</span></div>
+      <div className="flex justify-between gap-4"><span>Call conversion</span><span className="font-semibold tabular-nums">{row.bookingRate > 0 ? formatPercent(row.bookingRate) : "—"}</span></div>
+      <div className="flex justify-between gap-4"><span>Talk time</span><span className="font-semibold tabular-nums">{TALK_TIME_RELIABLE && row.talkTime > 0 ? `${row.talkTime}m` : "—"}</span></div>
+      <div className="flex justify-between gap-4"><span>Dials</span><span className="font-semibold tabular-nums">{row.dials > 0 ? row.dials.toLocaleString() : "—"}</span></div>
+      <div className="flex justify-between gap-4"><span>Deposit %</span><span className="font-semibold tabular-nums">{row.depositPct > 0 ? formatPercent(row.depositPct) : "—"}</span></div>
       <div className="flex justify-between gap-4"><span>AOV</span><span className="font-semibold tabular-nums">{row.aov > 0 ? formatCurrency(row.aov) : "—"}</span></div>
     </div>
   );
@@ -251,7 +275,7 @@ function BrandPanel({
         </p>
       </div>
 
-      <div className="h-[460px]">
+      <div className="h-[490px]">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
             data={rows}
@@ -264,7 +288,7 @@ function BrandPanel({
               interval={0}
               tickLine={false}
               axisLine={{ stroke: "#E5E7EB" }}
-              height={210}
+              height={240}
               tick={<MetricTick rows={rows} onClick={onClick} />}
             />
 
