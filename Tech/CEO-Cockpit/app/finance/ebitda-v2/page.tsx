@@ -699,11 +699,11 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                     const v = vd(vc.slug);
                     return (
                       <td key={vc.slug} className={cellCls(vc.slug)} onClick={cellClick(vc.slug, vc.label, "wages", "Wages & Salaries")}>
-                        {fmtC(v.wages)}<span className="text-muted-foreground">{pctOf(v.wages, v.revenue)}</span>
+                        {fmtC(v.wages)}<span className="text-muted-foreground">{pctOf(v.wages, vc.slug === "hq" ? data.group.revenue : v.revenue)}</span>
                       </td>
                     );
                   })}
-                  <td className="text-right tabular-nums px-2 py-1.5 font-semibold">{fmtC(data.group.wages)}</td>
+                  <td className="text-right tabular-nums px-2 py-1.5 font-semibold">{fmtC(data.group.wages)}<span className="text-muted-foreground font-normal">{pctOf(data.group.wages, data.group.revenue)}</span></td>
                 </tr>
                 {wagesOpen && WAGE_ROLES.map(role => (
                   <tr key={role} className="border-b text-muted-foreground hover:bg-muted/10">
@@ -732,11 +732,11 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                     const v = vd(vc.slug);
                     return (
                       <td key={vc.slug} className={cellCls(vc.slug)} onClick={cellClick(vc.slug, vc.label, "advertising", "Marketing")}>
-                        {fmtC(v.advertising)}<span className="text-muted-foreground">{pctOf(v.advertising, v.revenue)}</span>
+                        {fmtC(v.advertising)}<span className="text-muted-foreground">{pctOf(v.advertising, vc.slug === "hq" ? data.group.revenue : v.revenue)}</span>
                       </td>
                     );
                   })}
-                  <td className="text-right tabular-nums px-2 py-1.5 font-semibold">{fmtC(data.group.advertising)}</td>
+                  <td className="text-right tabular-nums px-2 py-1.5 font-semibold">{fmtC(data.group.advertising)}<span className="text-muted-foreground font-normal">{pctOf(data.group.advertising, data.group.revenue)}</span></td>
                 </tr>
                 {advOpen && AD_CHANNELS.map(ch => (
                   <tr key={ch} className="border-b text-muted-foreground hover:bg-muted/10">
@@ -762,11 +762,11 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                     const v = vd(vc.slug);
                     return (
                       <td key={vc.slug} className={cellCls(vc.slug)} onClick={cellClick(vc.slug, vc.label, "sga", "SG&A")}>
-                        {fmtC(v.sga)}<span className="text-muted-foreground">{pctOf(v.sga, v.revenue)}</span>
+                        {fmtC(v.sga)}<span className="text-muted-foreground">{pctOf(v.sga, vc.slug === "hq" ? data.group.revenue : v.revenue)}</span>
                       </td>
                     );
                   })}
-                  <td className="text-right tabular-nums px-2 py-1.5 font-semibold">{fmtC(data.group.sga)}</td>
+                  <td className="text-right tabular-nums px-2 py-1.5 font-semibold">{fmtC(data.group.sga)}<span className="text-muted-foreground font-normal">{pctOf(data.group.sga, data.group.revenue)}</span></td>
                 </tr>
                 {sgaOpen && SGA_SUBS.map(sub => {
                   const lbl = { prof_services: "Prof services", fuel: "Fuel", laundry: "Laundry",
@@ -793,11 +793,11 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                     const v = vd(vc.slug);
                     return (
                       <td key={vc.slug} className={cellCls(vc.slug)} onClick={cellClick(vc.slug, vc.label, "cogs", "COGS")}>
-                        {fmtC(v.cogs)}<span className="text-muted-foreground">{pctOf(v.cogs, v.revenue)}</span>
+                        {fmtC(v.cogs)}<span className="text-muted-foreground">{pctOf(v.cogs, vc.slug === "hq" ? data.group.revenue : v.revenue)}</span>
                       </td>
                     );
                   })}
-                  <td className="text-right tabular-nums px-2 py-1.5 font-semibold">{fmtC(data.group.cogs)}</td>
+                  <td className="text-right tabular-nums px-2 py-1.5 font-semibold">{fmtC(data.group.cogs)}<span className="text-muted-foreground font-normal">{pctOf(data.group.cogs, data.group.revenue)}</span></td>
                 </tr>
 
                 {/* Rent Plus */}
@@ -812,12 +812,12 @@ function EbitdaV2Content({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date })
                     const tot = v.rent + v.utilities;
                     return (
                       <td key={vc.slug} className="text-right tabular-nums px-2 py-1.5 text-xs">
-                        {fmtC(tot)}<span className="text-muted-foreground">{pctOf(tot, v.revenue)}</span>
+                        {fmtC(tot)}<span className="text-muted-foreground">{pctOf(tot, vc.slug === "hq" ? data.group.revenue : v.revenue)}</span>
                       </td>
                     );
                   })}
                   <td className="text-right tabular-nums px-2 py-1.5 font-semibold">
-                    {fmtC(data.group.rent + data.group.utilities)}
+                    {fmtC(data.group.rent + data.group.utilities)}<span className="text-muted-foreground font-normal">{pctOf(data.group.rent + data.group.utilities, data.group.revenue)}</span>
                   </td>
                 </tr>
                 {rentOpen && (["rent", "utilities"] as const).map(line => (
