@@ -1,14 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ZohoBooksClient } from "../../../../lib/etl/zoho-client";
+import { loadSpaCoaFromSupabase, COA_MAP } from "../../../../lib/etl/spa-ebitda";
 
 // Debug endpoint for Car-Fuel investigation.
 // Usage A: POST { txn_id: "...", txn_type: "expense" }           → fetch expense detail
 // Usage B: POST { account_id: "..." }                            → trace account through ETL's COA cache
 // Usage C: POST { list_expenses: true, date_from: "...", date_to: "..." } → list all expense IDs in date range
+// Usage D: POST { coa_check: true }                              → show runtime coaMap for fuel accounts (611151, 611152)
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as Record<string, string>;
     const client = new ZohoBooksClient("spa");
+
+    // Usage D: check runtime coaMap for fuel accounts
+    if (body.coa_check) {
+      const supabaseMap = await loadSpaCoaFromSupabase().catch(() => null);
+      const runtimeMap = supabaseMap ?? COA_MAP;
+      const accounts = ["611151", "611152", "611539"];
+      const result: Record<string, unknown> = {};
+      for (const code of accounts) {
+        result[code] = {
+          hardcoded:   COA_MAP[code as keyof typeof COA_MAP] ?? null,
+          supabase:    supabaseMap ? (supabaseMap[code] ?? null) : "SUPABASE_LOAD_FAILED",
+          runtime:     runtimeMap[code as keyof typeof runtimeMap] ?? null,
+        };
+      }
+      return NextResponse.json({ supabase_loaded: !!supabaseMap, supabase_total_accounts: supabaseMap ? Object.keys(supabaseMap).length : 0, accounts: result });
+    }
 
     // Usage C: list ALL expense IDs from Zoho for a date range (replicates listAllPages)
     if (body.list_expenses) {
