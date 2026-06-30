@@ -7,10 +7,40 @@ import { loadSpaCoaFromSupabase, COA_MAP } from "../../../../lib/etl/spa-ebitda"
 // Usage B: POST { account_id: "..." }                            → trace account through ETL's COA cache
 // Usage C: POST { list_expenses: true, date_from: "...", date_to: "..." } → list all expense IDs in date range
 // Usage D: POST { coa_check: true }                              → show runtime coaMap for fuel accounts (611151, 611152)
+// Usage E: POST { fix_fuel_rule: true }                          → change 611151 split rule salary_cost→equal in Supabase zoho_coa_mapping
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as Record<string, string>;
     const client = new ZohoBooksClient("spa");
+
+    // Usage E: fix 611151 split rule in Supabase (salary_cost → equal)
+    if (body.fix_fuel_rule) {
+      const base = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL!;
+      const key  = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+      const hdrs = { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "return=representation" };
+
+      // Step 1: find the split_rule_id for rule_type="equal" in coa_split_rules
+      const rulesResp = await fetch(`${base}/rest/v1/coa_split_rules?select=id,rule_type&rule_type=eq.equal&limit=5`, { headers: hdrs });
+      if (!rulesResp.ok) return NextResponse.json({ error: `coa_split_rules fetch failed: ${rulesResp.status} ${await rulesResp.text()}` }, { status: 500 });
+      const rules = await rulesResp.json() as Array<{ id: number; rule_type: string }>;
+      if (!rules.length) return NextResponse.json({ error: "No equal rule found in coa_split_rules" }, { status: 500 });
+      const equalRuleId = rules[0].id;
+
+      // Step 2: read current mapping for 611151
+      const currentResp = await fetch(`${base}/rest/v1/zoho_coa_mapping?select=id,account_code,ebitda_line,split_rule_id&zoho_org=eq.spa&account_code=eq.611151`, { headers: hdrs });
+      if (!currentResp.ok) return NextResponse.json({ error: `read current mapping failed: ${currentResp.status}` }, { status: 500 });
+      const currentRows = await currentResp.json() as Array<{ id: number; account_code: string; ebitda_line: string; split_rule_id: number }>;
+
+      // Step 3: update split_rule_id for each matching row
+      const updated: unknown[] = [];
+      for (const row of currentRows) {
+        const patchResp = await fetch(`${base}/rest/v1/zoho_coa_mapping?id=eq.${row.id}`, {
+          method: "PATCH", headers: hdrs, body: JSON.stringify({ split_rule_id: equalRuleId }),
+        });
+        updated.push({ id: row.id, account_code: row.account_code, old_rule_id: row.split_rule_id, new_rule_id: equalRuleId, ok: patchResp.ok, status: patchResp.status });
+      }
+      return NextResponse.json({ equal_rule_id: equalRuleId, rows_found: currentRows.length, updated });
+    }
 
     // Usage D: check runtime coaMap for fuel accounts
     if (body.coa_check) {

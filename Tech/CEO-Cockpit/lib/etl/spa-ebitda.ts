@@ -193,7 +193,7 @@ export const COA_MAP: Record<string, [string, string]> = {
   "611141":  ["equal",            "sga"],
   "611142":  ["equal",            "sga"],   // Motor Vehicles - Repairs & Maintenance (also in Supabase as sga_maintenance)
   "611143":  ["equal",            "sga"],
-  "611151":  ["salary_cost",      "sga"],
+  "611151":  ["equal",             "sga"],
   "611152":  ["intercontinental", "sga"],
   "611160":  ["equal",            "sga"],
   "611170":  ["sales_ratio",      "sga"],
