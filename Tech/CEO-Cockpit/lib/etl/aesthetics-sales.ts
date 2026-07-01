@@ -5,7 +5,9 @@ import { ETLLogger } from "./etl-logger";
 
 const REQUIRED_HEADERS = ["Costumer", "Service / Products", "Date of service", "Price", "Employee"] as const;
 
+const LOW_VAT_PERSONS = new Set(["francesca", "giovanni", "kendra", "giovani"]);
 const DEFAULT_VAT = 0.18;
+const LOW_VAT     = 0.12;
 
 // ── CSV helpers ───────────────────────────────────────────────────────────────
 
@@ -160,7 +162,7 @@ async function runAestheticsSalesInner(
     const monthKey = `${lastDate.slice(0, 7)}-01`;
     if (!validMonths.has(monthKey)) continue;
 
-    const rate    = DEFAULT_VAT;
+    const rate    = (notePerson && LOW_VAT_PERSONS.has(notePerson.toLowerCase())) ? LOW_VAT : DEFAULT_VAT;
     const priceEx = +(priceInc / (1 + rate)).toFixed(2);
 
     if (!buckets.has(monthKey)) buckets.set(monthKey, []);
