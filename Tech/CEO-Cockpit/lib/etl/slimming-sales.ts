@@ -116,6 +116,7 @@ async function runSlimmingSalesInner(
     const colTreatments = col(row, "treatments");
     const colWeightLoss = col(row, "weight loss");
     const colMedical    = col(row, "medical consultation");
+    const colProducts   = col(row, "products");
 
     let serviceType: string;
     let descr: string | null;
@@ -128,13 +129,16 @@ async function runSlimmingSalesInner(
     } else if (colMedical) {
       serviceType = "medical";
       descr = colMedical;
+    } else if (colProducts) {
+      serviceType = "product";
+      descr = colProducts;
     } else {
       serviceType = "unknown";
       descr = null;
     }
 
-    // Skip totals/commission rows (no client + no programme)
-    if (!client && !descr) continue;
+    // Skip totals/commission rows: no client, no programme AND no paid amount
+    if (!client && !descr && !parsePrice(priceRaw)) continue;
     if (therapist && /total/i.test(therapist)) continue;
 
     const paid = parsePrice(priceRaw);
