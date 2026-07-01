@@ -718,6 +718,70 @@ export async function GET(req: Request) {
     }
   }
 
+  // ── 6c. Cash salaries → wages (must run BEFORE Section 6b fallback guard) ──
+  // Applied here so that venues[venue].wages > 0 when the fallback check runs
+  // below — preventing the wage fallback from firing for venues that already
+  // have frozen supplement data for the target period.
+  type CashSalaryRow = { spa_slug: string; employee_name: string; amount: number; role?: string };
+  const cashByMonth = new Map<string, CashSalaryRow[]>();
+  for (const row of (cashSalaries.data ?? [])) {
+    const m = (row.month as string).slice(0, 10);
+    if (!cashByMonth.has(m)) cashByMonth.set(m, []);
+    cashByMonth.get(m)!.push({
+      spa_slug:      (row.spa_slug      as string) ?? "",
+      employee_name: (row.employee_name as string) ?? "",
+      amount:        Number(row.amount  ?? 0),
+      role:          ((row.role as string) || "").toLowerCase().trim() || undefined,
+    });
+  }
+
+  const frozenCashMonths = Array.from(cashByMonth.keys()).sort();
+
+  for (const targetMonth of overlappingMonths(dateFrom, dateTo)) {
+    let cashRows = cashByMonth.get(targetMonth);
+    let cashSourceMonth = targetMonth;
+    let cashIsFallback  = false;
+
+    if (!cashRows || cashRows.length === 0) {
+      const candidate = [...frozenCashMonths].reverse().find(m => m < targetMonth);
+      if (candidate) {
+        cashRows        = cashByMonth.get(candidate)!;
+        cashSourceMonth = candidate;
+        cashIsFallback  = true;
+      }
+    }
+
+    if (!cashRows || cashRows.length === 0) continue;
+
+    const cashDaysInRange = daysOfMonthInRange(targetMonth, dateFrom, dateTo);
+    const cashFactor      = cashDaysInRange / totalDaysInMonth(targetMonth);
+
+    for (const cashRow of cashRows) {
+      const SLUG_NORM: Record<string, string> = { inter: "intercontinental" };
+      const venueKey = SLUG_NORM[cashRow.spa_slug] ?? cashRow.spa_slug;
+      if (!venueKey || !venues[venueKey]) continue;
+      const amount = cashRow.amount * cashFactor;
+      const cashRoleRaw = ((cashRow.role as string) || "").toLowerCase().trim() || "unassigned";
+      const cashRole: WageRole = (WAGE_ROLES as readonly string[]).includes(cashRoleRaw)
+        ? (cashRoleRaw as WageRole)
+        : "unassigned";
+      venues[venueKey].wages                   += amount;
+      venues[venueKey].wage_by_role[cashRole]  += amount;
+    }
+
+    if (cashIsFallback) {
+      const label = targetMonth.slice(0, 7);
+      const src   = cashSourceMonth.slice(0, 7);
+      warnings.push(`Cash salaries ${label}: no frozen data — using ${src} as fallback`);
+      fallbackApplied.push({
+        venue:       "all_spa",
+        ebitda_line: "wages_cash",
+        rule_type:   `prior_month_fallback (${src})`,
+        value:       cashRows.reduce((s, r) => s + r.amount, 0) * cashFactor,
+      });
+    }
+  }
+
   // ── 6b. Apply ebitda_fallback_rules for partial periods ──────────────────
   // For partial calendar months, lumpy costs (rent, insurance, prof services,
   // laundry, telecom etc.) may not yet be posted. Apply the configured fallback
@@ -958,71 +1022,7 @@ export async function GET(req: Request) {
     }
   }
 
-  // ── 7. Cash salaries → wages ─────────────────────────────────────────────
-  // Employees paid in cash don't appear in Zoho transactions_raw.
-  // Their wages are synced monthly from the Cockpit datasheet "Cash" column
-  // into salary_supplement_monthly (is_frozen=true rows only).
-  type CashSalaryRow = { spa_slug: string; employee_name: string; amount: number; role?: string };
-  const cashByMonth = new Map<string, CashSalaryRow[]>();
-  for (const row of (cashSalaries.data ?? [])) {
-    const m = (row.month as string).slice(0, 10);
-    if (!cashByMonth.has(m)) cashByMonth.set(m, []);
-    cashByMonth.get(m)!.push({
-      spa_slug:      (row.spa_slug      as string) ?? "",
-      employee_name: (row.employee_name as string) ?? "",
-      amount:        Number(row.amount  ?? 0),
-      role:          ((row.role as string) || "").toLowerCase().trim() || undefined,
-    });
-  }
-
-  const frozenCashMonths = Array.from(cashByMonth.keys()).sort();
-
-  for (const targetMonth of overlappingMonths(dateFrom, dateTo)) {
-    let rows = cashByMonth.get(targetMonth);
-    let sourceMonth = targetMonth;
-    let isFallback  = false;
-
-    if (!rows || rows.length === 0) {
-      const candidate = [...frozenCashMonths].reverse().find(m => m < targetMonth);
-      if (candidate) {
-        rows        = cashByMonth.get(candidate)!;
-        sourceMonth = candidate;
-        isFallback  = true;
-      }
-    }
-
-    if (!rows || rows.length === 0) continue;
-
-    const daysInRange = daysOfMonthInRange(targetMonth, dateFrom, dateTo);
-    const factor      = daysInRange / totalDaysInMonth(targetMonth);
-
-    for (const row of rows) {
-      const SLUG_NORM: Record<string, string> = { inter: "intercontinental" };
-      const venueKey = SLUG_NORM[row.spa_slug] ?? row.spa_slug;
-      if (!venueKey || !venues[venueKey]) continue;
-      const amount = row.amount * factor;
-      const cashRoleRaw = ((row.role as string) || "").toLowerCase().trim() || "unassigned";
-      const cashRole: WageRole = (WAGE_ROLES as readonly string[]).includes(cashRoleRaw)
-        ? (cashRoleRaw as WageRole)
-        : "unassigned";
-      venues[venueKey].wages                   += amount;
-      venues[venueKey].wage_by_role[cashRole]  += amount;
-    }
-
-    if (isFallback) {
-      const label = targetMonth.slice(0, 7);
-      const src   = sourceMonth.slice(0, 7);
-      warnings.push(`Cash salaries ${label}: no frozen data — using ${src} as fallback`);
-      fallbackApplied.push({
-        venue:       "all_spa",
-        ebitda_line: "wages_cash",
-        rule_type:   `prior_month_fallback (${src})`,
-        value:       rows.reduce((s, r) => s + r.amount, 0) * factor,
-      });
-    }
-  }
-
-  // ── 8. Compute EBITDA per venue ───────────────────────────────────────────
+  // ── 7. Compute EBITDA per venue ───────────────────────────────────────────
   for (const vc of VENUE_CONFIG) {
     const v = venues[vc.slug];
     // Clamp ad channels to 0 — credit notes in a short window can push a channel
@@ -1044,7 +1044,7 @@ export async function GET(req: Request) {
     v.ebitda      = +v.ebitda.toFixed(2);
   }
 
-  // ── 9. Group totals ───────────────────────────────────────────────────────
+  // ── 8. Group totals ───────────────────────────────────────────────────────
   const group = emptyVenueData();
   for (const vc of VENUE_CONFIG) {
     const v = venues[vc.slug];
