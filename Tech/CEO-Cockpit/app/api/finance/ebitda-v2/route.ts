@@ -793,6 +793,27 @@ export async function GET(req: Request) {
         prevMap.set(k, (prevMap.get(k) ?? 0) + Number(r.amount ?? 0));
       }
 
+      // Sub-line level maps — built from same histRows/prevRows, used by sub-line
+      // specific fallback rules (e.g. laundry within SGA). No extra DB query needed.
+      const subHistMap    = new Map<string, {ttm: number}>();
+      const subHistMonths = new Map<string, Set<string>>();
+      const subPrevMap    = new Map<string, number>();
+      for (const r of histRows) {
+        const sl = r.ebitda_sub_line;
+        if (!sl) continue;
+        const k = `${sl}|${r.venue}`;
+        subHistMap.set(k, { ttm: (subHistMap.get(k)?.ttm ?? 0) + Number(r.amount ?? 0) });
+        const mon = (r.date ?? "").slice(0, 7);
+        if (!subHistMonths.has(k)) subHistMonths.set(k, new Set());
+        subHistMonths.get(k)!.add(mon);
+      }
+      for (const r of prevRows) {
+        const sl = r.ebitda_sub_line;
+        if (!sl) continue;
+        const k = `${sl}|${r.venue}`;
+        subPrevMap.set(k, (subPrevMap.get(k) ?? 0) + Number(r.amount ?? 0));
+      }
+
       // Days in prior month (for previous_month pro-rating)
       const prevMonthStr = prevMonthFrom + "-01";
       const daysInPrevMonth = totalDaysInMonth(prevMonthStr.slice(0, 7) + "-01");
@@ -807,7 +828,47 @@ export async function GET(req: Request) {
         const ruleType    = rule.rule_type as string;
         const accountCode = rule.account_code as string;
         const zohoOrg     = rule.zoho_org as string | undefined;
+        const ruleParams  = (rule.params ?? null) as Record<string,unknown> | null;
+        const subLine     = ruleParams?.sub_line as string | undefined;
         const expectedBrand = ({"spa":"SPA","aesthetics":"AES","slimming":"SLIM"} as Record<string,string>)[zohoOrg ?? ""];
+
+        // ── Sub-line specific rule (e.g. params.sub_line = "laundry" within SGA) ──
+        // Fires for specific SGA sub-lines that are posted as monthly lump sums and
+        // therefore absent from partial-period date ranges.
+        if (subLine) {
+          const subKeys = [...subHistMap.keys()].filter(k => {
+            if (!k.startsWith(subLine + "|")) return false;
+            if (!expectedBrand) return true;
+            const slug = k.split("|")[1];
+            return VENUE_CONFIG.find(v => v.slug === slug)?.brand === expectedBrand;
+          });
+          for (const subKey of subKeys) {
+            const venue = subKey.split("|")[1];
+            if (!venues[venue]) continue;
+            // Skip if parent line-level rule already applied an aggregate estimate
+            if (appliedFallbackKeys.has(`${accountCode}|${venue}`)) continue;
+            const subDedupKey = `${accountCode}.${subLine}|${venue}`;
+            if (appliedFallbackKeys.has(subDedupKey)) continue;
+            // Skip if real Zoho data or already-estimated value exists for this sub-line
+            const alreadyHasZoho = allRawCosts.some(r => r.venue === venue && r.ebitda_sub_line === subLine);
+            const alreadyHasSub  = (venues[venue].sga_by_sub[subLine] ?? 0) > 0;
+            if (alreadyHasZoho || alreadyHasSub) continue;
+            appliedFallbackKeys.add(subDedupKey);
+            const subHist = subHistMap.get(subKey)!;
+            let fallbackValue = 0;
+            if (ruleType === "ttm_spread") {
+              const actualMonths = Math.max(subHistMonths.get(subKey)?.size ?? 1, 1);
+              fallbackValue = (subHist.ttm / actualMonths) * 12 * (daysInPeriod / 365);
+            } else if (ruleType === "previous_month") {
+              fallbackValue = (subPrevMap.get(subKey) ?? 0) * (daysInPeriod / daysInPrevMonth);
+            }
+            if (fallbackValue <= 0) continue;
+            venues[venue].sga += fallbackValue;
+            venues[venue].sga_by_sub[subLine] = (venues[venue].sga_by_sub[subLine] ?? 0) + fallbackValue;
+            fallbackApplied.push({ venue, ebitda_line: subLine, rule_type: ruleType, value: +fallbackValue.toFixed(2) });
+          }
+          continue; // sub-line rule processed — skip regular line-level handling
+        }
 
         // Find all ebitda_line|venue combos for this category, scoped by org.
         const venueKeys = [...histMap.keys()].filter(k => {
@@ -964,6 +1025,13 @@ export async function GET(req: Request) {
   // ── 8. Compute EBITDA per venue ───────────────────────────────────────────
   for (const vc of VENUE_CONFIG) {
     const v = venues[vc.slug];
+    // Clamp ad channels to 0 — credit notes in a short window can push a channel
+    // negative (refund > spend for that channel in the period). Clamp so no
+    // sub-line shows as negative; total clamped too so EBITDA stays consistent.
+    for (const ch of AD_CHANNELS) {
+      if ((v.ad_by_channel[ch] ?? 0) < 0) v.ad_by_channel[ch] = 0;
+    }
+    v.advertising = Math.max(0, v.advertising);
     v.ebitda = v.revenue - v.wages - v.advertising - v.sga - v.cogs - v.rent - v.utilities;
     // Round to 2dp
     v.revenue     = +v.revenue.toFixed(2);
