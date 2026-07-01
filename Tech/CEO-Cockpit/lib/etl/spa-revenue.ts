@@ -155,11 +155,9 @@ async function fetchCockpitProducts(
     const spa    = stripCol(row, "Point of Sales") || stripCol(row, "Point of Sales ");
     const locId  = COCKPIT_SPA_LOCATION_MAP[spa];
     if (locId === undefined) continue;
-    // Source column is "VAT Exclusive Amount" (ex-VAT). Multiply by 1.18 to
-    // store inc-VAT for consistency with the services path.
-    const amountEx = safeFloat(stripCol(row, "VAT Exclusive Amount") || stripCol(row, "VAT Exclusive Amount "));
-    if (amountEx <= 0) continue;
-    const amount = +(amountEx * (1 + VAT_RATE)).toFixed(2);
+    // Source column is "Total Amount" (inc-VAT). Use directly.
+    const amount = safeFloat(stripCol(row, "Total Amount") || stripCol(row, "Total Amount "));
+    if (amount <= 0) continue;
     const brand  = stripCol(row, "Brand").toUpperCase();
     const col2   = BRAND_MAP[brand] ?? "product_other";
     const mk     = monthKey(d);
@@ -204,10 +202,9 @@ async function fetchCockpitProductsByDay(dateFrom: Date, dateTo: Date): Promise<
     const spa   = stripCol(row, "Point of Sales") || stripCol(row, "Point of Sales ");
     const locId = COCKPIT_SPA_LOCATION_MAP[spa];
     if (locId === undefined) continue;
-    // Source column is "VAT Exclusive Amount" (ex-VAT). Multiply by 1.18 → inc-VAT.
-    const amountEx = safeFloat(stripCol(row, "VAT Exclusive Amount") || stripCol(row, "VAT Exclusive Amount "));
-    if (amountEx <= 0) continue;
-    const amount = +(amountEx * (1 + VAT_RATE)).toFixed(2);
+    // Source column is "Total Amount" (inc-VAT). Use directly.
+    const amount = safeFloat(stripCol(row, "Total Amount") || stripCol(row, "Total Amount "));
+    if (amount <= 0) continue;
     const brand = stripCol(row, "Brand").toUpperCase();
     const col2  = BRAND_MAP[brand] ?? "product_other";
     const dk    = dateKey(d);
