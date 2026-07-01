@@ -829,11 +829,16 @@ export async function GET(req: Request) {
           // Don't stack fallback on top of a hardwired rule — hardwired is definitive
           if (hardwiredMap.has(`${venue}|${hist.ebitda_line}`)) continue;
 
-          // Check if there's already real data for this ebitda_line+venue in the period
-          const alreadyHasData = allRawCosts.some(
+          // Skip if real Zoho data exists for this ebitda_line+venue in the period
+          const alreadyHasZoho = allRawCosts.some(
             r => r.venue === venue && r.ebitda_line === accountCode
           );
-          if (alreadyHasData) continue; // real data trumps fallback
+          // Skip if this line already has a non-zero accumulated value from any source
+          // (e.g. the Meta/Google API advertising fallback in section 5b).
+          const venueRecord = venues[venue] as Record<string, unknown>;
+          const alreadyHasAccumulated = typeof venueRecord[hist.ebitda_line] === "number"
+            && (venueRecord[hist.ebitda_line] as number) > 0;
+          if (alreadyHasZoho || alreadyHasAccumulated) continue; // real data trumps fallback
 
           appliedFallbackKeys.add(dedupKey);
 
