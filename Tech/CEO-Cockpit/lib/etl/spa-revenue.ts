@@ -127,6 +127,7 @@ async function fetchCockpitServices(
 
   for (const row of rows) {
     if (!["Given", "Unplanned"].includes(stripCol(row, "Status"))) continue;
+    if (stripCol(row, "Payment Type").toLowerCase().replace(/\s+/g, " ") === "payment center") continue;
     const d = parseCockpitDate(stripCol(row, "Service Date"));
     if (!d || d < dateFrom || d > dateTo) continue;
     const locId = COCKPIT_SPA_LOCATION_MAP[stripCol(row, "Sales Point")];
@@ -179,6 +180,7 @@ async function fetchCockpitServicesByDay(dateFrom: Date, dateTo: Date): Promise<
   const totals: DailyServiceTotals = {};
   for (const row of rows) {
     if (!["Given", "Unplanned"].includes(stripCol(row, "Status"))) continue;
+    if (stripCol(row, "Payment Type").toLowerCase().replace(/\s+/g, " ") === "payment center") continue;
     const d = parseCockpitDate(stripCol(row, "Service Date"));
     if (!d || d < dateFrom || d > dateTo) continue;
     const locId = COCKPIT_SPA_LOCATION_MAP[stripCol(row, "Sales Point")];
