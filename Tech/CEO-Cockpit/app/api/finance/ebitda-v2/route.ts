@@ -746,10 +746,10 @@ export async function GET(req: Request) {
           const { data, error } = await supabase
             .from("transactions_raw")
             .select("account_code, venue, date, amount, ebitda_line, ebitda_sub_line")
-            .in("account_code", activeCodes)
+            .in("ebitda_line", activeCodes)
             .gte("date", from)
             .lt("date", to)
-            .order("date").order("account_code").order("venue")
+            .order("date").order("ebitda_line").order("venue")
             .range(offset, offset + HIST_PAGE - 1);
           if (error) throw new Error(`histRows page ${offset}: ${error.message}`);
           if (!data || data.length === 0) break;
@@ -758,20 +758,20 @@ export async function GET(req: Request) {
         return all;
       }
 
-      // Historical totals by (account_code, venue) over TTM window
+      // Historical totals by (ebitda_line, venue) over TTM window
       const prevMonthFrom = shiftMonth(dateFrom, -1);
       const [histRows, prevRows] = await Promise.all([
         fetchHistRows(ttmFrom, ttmTo),
         fetchHistRows(prevMonthFrom, dateFrom),
       ]);
 
-      // Group historical amounts by account+venue AND track distinct months
+      // Group historical amounts by ebitda_line+venue AND track distinct months
       // (needed to correctly annualise when <12 months of SPA history exist)
-      type HistKey = string; // "account_code|venue"
+      type HistKey = string; // "ebitda_line|venue"
       const histMap    = new Map<HistKey, { ttm: number; ebitda_line: string; ebitda_sub_line: string }>();
       const histMonths = new Map<HistKey, Set<string>>(); // track distinct YYYY-MM per key
       for (const r of histRows) {
-        const k = `${r.account_code}|${r.venue}`;
+        const k = `${r.ebitda_line}|${r.venue}`;
         const mon = (r.date ?? "").slice(0, 7);
         if (!histMonths.has(k)) histMonths.set(k, new Set());
         histMonths.get(k)!.add(mon);
@@ -789,7 +789,7 @@ export async function GET(req: Request) {
 
       const prevMap = new Map<HistKey, number>();
       for (const r of prevRows) {
-        const k = `${r.account_code}|${r.venue}`;
+        const k = `${r.ebitda_line}|${r.venue}`;
         prevMap.set(k, (prevMap.get(k) ?? 0) + Number(r.amount ?? 0));
       }
 
@@ -797,19 +797,25 @@ export async function GET(req: Request) {
       const prevMonthStr = prevMonthFrom + "-01";
       const daysInPrevMonth = totalDaysInMonth(prevMonthStr.slice(0, 7) + "-01");
 
-      // Track which account_code|venue combos have had fallback applied to prevent
+      // Track which ebitda_line|venue combos have had fallback applied to prevent
       // duplicate rules (same account_code appearing twice in ebitda_fallback_rules)
       // from doubling costs.
       const appliedFallbackKeys = new Set<string>();
 
       for (const rule of (fallbackRules.data ?? [])) {
         if (!rule.active) continue;
-        const ruleType   = rule.rule_type as string;
+        const ruleType    = rule.rule_type as string;
         const accountCode = rule.account_code as string;
-        // rule.zoho_org available as "spa" | "aesthetics" if needed
+        const zohoOrg     = rule.zoho_org as string | undefined;
+        const expectedBrand = ({"spa":"SPA","aesthetics":"AES","slimming":"SLIM"} as Record<string,string>)[zohoOrg ?? ""];
 
-        // Find all venue+ebitda_line combos for this account in historical data
-        const venueKeys = [...histMap.keys()].filter(k => k.startsWith(accountCode + "|"));
+        // Find all ebitda_line|venue combos for this category, scoped by org.
+        const venueKeys = [...histMap.keys()].filter(k => {
+          if (!k.startsWith(accountCode + "|")) return false;
+          if (!expectedBrand) return true;
+          const slug = k.split("|")[1];
+          return VENUE_CONFIG.find(v => v.slug === slug)?.brand === expectedBrand;
+        });
 
         for (const key of venueKeys) {
           const [, venue] = key.split("|");
@@ -823,9 +829,9 @@ export async function GET(req: Request) {
           // Don't stack fallback on top of a hardwired rule — hardwired is definitive
           if (hardwiredMap.has(`${venue}|${hist.ebitda_line}`)) continue;
 
-          // Check if there's already real data for this account+venue in the period
+          // Check if there's already real data for this ebitda_line+venue in the period
           const alreadyHasData = allRawCosts.some(
-            r => r.venue === venue && (r as unknown as Record<string,unknown>).account_code === accountCode
+            r => r.venue === venue && r.ebitda_line === accountCode
           );
           if (alreadyHasData) continue; // real data trumps fallback
 
